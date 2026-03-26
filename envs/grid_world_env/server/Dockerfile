@@ -1,22 +1,47 @@
-# Use the base image we built locally
-FROM envtorch-base:latest
+ARG BASE_IMAGE=ghcr.io/meta-pytorch/openenv-base:latest
+FROM ${BASE_IMAGE} AS builder
 
-# 1. Install dependencies
-# FIX: Source path is envs/..., not src/envs/...
-COPY envs/grid_world_env/server/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+WORKDIR /app
 
-# 2. Copy Core Utilities
-# (This part was correct based on your 'find' command earlier)
-COPY src/openenv/core/ /app/src/openenv/core/
+ARG BUILD_MODE=in-repo
 
-# 3. Copy Your Environment
-# FIX: Source path must match your repo root (envs/grid_world_env)
-COPY envs/grid_world_env/ /app/envs/grid_world_env/
+COPY . /app/env
 
-# 4. Environment Variables
-# Add /app to PYTHONPATH so python can find 'envs.grid_world_env'
-ENV PYTHONPATH="${PYTHONPATH}:/app"
+WORKDIR /app/env
+
+RUN if ! command -v uv >/dev/null 2>&1; then \
+        curl -LsSf https://astral.sh/uv/install.sh | sh && \
+        mv /root/.local/bin/uv /usr/local/bin/uv && \
+        mv /root/.local/bin/uvx /usr/local/bin/uvx; \
+    fi
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    if [ -f uv.lock ]; then \
+        uv sync --frozen --no-install-project --no-editable; \
+    else \
+        uv sync --no-install-project --no-editable; \
+    fi
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    if [ -f uv.lock ]; then \
+        uv sync --frozen --no-editable; \
+    else \
+        uv sync --no-editable; \
+    fi
+
+FROM ${BASE_IMAGE}
+
+WORKDIR /app
+
+COPY --from=builder /app/env/.venv /app/.venv
+COPY --from=builder /app/env /app/env
+
+ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONPATH="/app/env:$PYTHONPATH"
 ENV ENABLE_WEB_INTERFACE=false
 
 EXPOSE 8000
@@ -25,6 +50,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3).read()" || exit 1
 
-# 5. Run the Server
-# Note: We run from the module path 'envs.grid_world_env.server.app'
-CMD ["uvicorn", "envs.grid_world_env.server.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "cd /app/env && uvicorn server.app:app --host 0.0.0.0 --port 8000"]

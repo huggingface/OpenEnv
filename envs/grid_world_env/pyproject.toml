@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "grid_world_env"
 version = "0.1.0"
 description = "A simple Grid World environment for OpenEnv"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 authors = [
     {name = "Yuv Raj Pant", email = "yuvrajpant5@gmail.com"},
 ]
@@ -29,7 +29,3 @@ server = "grid_world_env.server.app:main"
 include-package-data = true
 packages = ["grid_world_env", "grid_world_env.server"]
 package-dir = { "grid_world_env" = ".", "grid_world_env.server" = "server" }
-
-# CRITICAL: This tells uv to look for openenv two folders up
-[tool.uv.sources]
-openenv = { path = "../../", editable = true }

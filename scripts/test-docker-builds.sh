@@ -5,9 +5,12 @@
 # Exits non-zero if any build or health check fails.
 #
 # Usage:
-#   bash scripts/test-docker-builds.sh                  # test all envs
-#   bash scripts/test-docker-builds.sh echo-env         # test one env
-#   bash scripts/test-docker-builds.sh --no-base        # skip base image rebuild
+#   bash scripts/test-docker-builds.sh                              # test all envs, both platforms
+#   bash scripts/test-docker-builds.sh echo-env                     # test one env, both platforms
+#   bash scripts/test-docker-builds.sh "echo-env,grid-world-env"    # test multiple envs, both platforms
+#   bash scripts/test-docker-builds.sh --platform=linux/arm64       # test all envs, arm64 only
+#   bash scripts/test-docker-builds.sh --platform=linux/amd64,linux/arm64  # explicit both
+#   bash scripts/test-docker-builds.sh --no-base                    # skip base image rebuild
 #   SKIP_ENVS="chat-env finrl-env" bash scripts/test-docker-builds.sh
 #
 # Requirements: docker (with buildx)
@@ -20,9 +23,12 @@ HEALTH_TIMEOUT=120   # seconds to wait for /health to respond
 HEALTH_INTERVAL=3    # seconds between polls
 START_PORT=18000     # base port; each env gets its own to allow parallelism
 
+# Default: test both architectures. Override with --platform=linux/amd64
+PLATFORMS=("linux/amd64" "linux/arm64")
+
 # ---------------------------------------------------------------------------
-# Environment matrix: name | context | dockerfile
-# Format: "name:context:dockerfile"
+# Environment matrix: name | context | dockerfile | container_port (optional, default 8000)
+# Format: "name:context:dockerfile" or "name:context:dockerfile:port"
 # Keep this list in sync with the matrix in .github/workflows/docker-build.yml
 # ---------------------------------------------------------------------------
 declare -a ENVS=(
@@ -44,12 +50,12 @@ declare -a ENVS=(
     "unity-env:envs/unity_env:envs/unity_env/server/Dockerfile"
     "openapp-env:envs/openapp_env:envs/openapp_env/server/Dockerfile"
     "openspiel-env:envs/openspiel_env:envs/openspiel_env/server/Dockerfile"
+    "grid-world-env:envs/grid_world_env:envs/grid_world_env/server/Dockerfile"
+    "calendar-env:envs/calendar_env:envs/calendar_env/Dockerfile:8004"
 )
 
 # Envs that need special runtime deps or take very long — skip health check,
 # only verify the build succeeds.
-# Example:
-# BUILD_ONLY_ENVS1="sumo-rl-env finrl-env"
 BUILD_ONLY_ENVS=""
 
 # ---------------------------------------------------------------------------
@@ -88,6 +94,14 @@ is_build_only() {
     return 1
 }
 
+# Returns 0 if name matches the FILTER (or FILTER is empty)
+in_filter() {
+    local name="$1"
+    [[ -z "$FILTER" ]] && return 0
+    echo ",$FILTER," | grep -q ",${name}," && return 0
+    return 1
+}
+
 # ---------------------------------------------------------------------------
 # Parse args
 # ---------------------------------------------------------------------------
@@ -96,8 +110,12 @@ FILTER=""
 for arg in "$@"; do
     case "$arg" in
         --no-base) BUILD_BASE=false ;;
+        --platform=*)
+            IFS=',' read -ra PLATFORMS <<< "${arg#--platform=}"
+            ;;
         --*) warn "Unknown flag: $arg" ;;
-        *)   FILTER="$arg" ;;
+        # Positional arg: single env name or comma-separated list
+        *) FILTER="$arg" ;;
     esac
 done
 
@@ -106,101 +124,122 @@ SKIP_ENVS="${SKIP_ENVS:-}"
 cd "$REPO_ROOT"
 
 # ---------------------------------------------------------------------------
-# Build base image
-# ---------------------------------------------------------------------------
-if $BUILD_BASE; then
-    log "Building base image: $BASE_IMAGE"
-    docker build \
-        -t "$BASE_IMAGE" \
-        -f src/openenv/core/containers/images/Dockerfile \
-        . \
-        --quiet \
-    && ok "Base image built" \
-    || { fail "Base image build failed"; exit 1; }
-else
-    log "Skipping base image build (--no-base)"
-fi
-
-# ---------------------------------------------------------------------------
-# Build and test each env
+# Build and test each env for each platform
 # ---------------------------------------------------------------------------
 PASSED=()
 FAILED=()
 SKIPPED=()
-port=$START_PORT
 
-for entry in "${ENVS[@]}"; do
-    IFS=':' read -r name context dockerfile <<< "$entry"
+for platform in "${PLATFORMS[@]}"; do
+    # linux/amd64 → linux-amd64  (safe for docker tag / result labels)
+    plat_tag="${platform//\//-}"
+    # Base image reuses the same local tag for each platform — platforms are built
+    # sequentially so there's no collision, and plain docker build can find it locally.
+    base_tag="$BASE_IMAGE"
 
-    # Filter to a single env if requested
-    if [[ -n "$FILTER" && "$FILTER" != "$name" ]]; then
-        continue
-    fi
+    log ""
+    log "════════════════════════════════════════════"
+    log "Platform: $platform"
+    log "════════════════════════════════════════════"
 
-    # Skip envs listed in SKIP_ENVS
-    if echo "$SKIP_ENVS" | grep -qw "$name"; then
-        warn "Skipping $name (in SKIP_ENVS)"
-        SKIPPED+=("$name")
-        continue
-    fi
-
-    # Skip if dockerfile doesn't exist
-    if [[ ! -f "$dockerfile" ]]; then
-        warn "Skipping $name ($dockerfile not found)"
-        SKIPPED+=("$name")
-        continue
-    fi
-
-    image="openenv-test-${name}"
-    log "─────────────────────────────────────────"
-    log "Building $name"
-    log "  context:    $context"
-    log "  dockerfile: $dockerfile"
-
-    if ! docker build \
-            -t "$image" \
-            -f "$dockerfile" \
-            --build-arg "BASE_IMAGE=$BASE_IMAGE" \
-            "$context" \
-            2>&1 | sed 's/^/  /'; then
-        fail "Build failed: $name"
-        FAILED+=("$name (build)")
-        continue
-    fi
-    ok "Build succeeded: $name"
-
-    # Build-only envs: don't run a container
-    if is_build_only "$name"; then
-        ok "Build-only check passed: $name"
-        PASSED+=("$name")
-        (( port++ ))
-        continue
-    fi
-
-    # Start container
-    log "Starting container for $name on port $port"
-    if ! cid=$(docker run -d --rm -p "${port}:8000" "$image" 2>&1) || [[ -z "$cid" ]]; then
-        fail "Failed to start container: $name"
-        FAILED+=("$name (start)")
-        (( port++ )) || true
-        continue
-    fi
-
-    # Poll health endpoint
-    health_url="http://localhost:${port}/health"
-    log "Waiting for $health_url (up to ${HEALTH_TIMEOUT}s)"
-    if wait_for_health "$health_url" "$HEALTH_TIMEOUT" "$HEALTH_INTERVAL"; then
-        ok "Health check passed: $name → $health_url"
-        PASSED+=("$name")
+    if $BUILD_BASE; then
+        log "Building base image for $platform: $base_tag"
+        if ! docker build \
+                --platform "$platform" \
+                -t "$base_tag" \
+                -f src/openenv/core/containers/images/Dockerfile \
+                . \
+                2>&1 | sed 's/^/  /'; then
+            fail "Base image build failed for $platform"
+            exit 1
+        fi
+        ok "Base image built: $base_tag"
     else
-        fail "Health check timed out: $name"
-        log "Container logs:"
-        docker logs "$cid" 2>&1 | tail -30 | sed 's/^/  /'
-        FAILED+=("$name (health)")
+        log "Skipping base image build (--no-base)"
     fi
 
-    cleanup_container "$cid"
-    (( port++ ))
+    port=$START_PORT
+
+    for entry in "${ENVS[@]}"; do
+        IFS=':' read -r name context dockerfile container_port <<< "$entry"
+        container_port="${container_port:-8000}"
+
+        if ! in_filter "$name"; then
+            continue
+        fi
+
+        if echo "$SKIP_ENVS" | grep -qw "$name"; then
+            warn "Skipping $name [$platform] (in SKIP_ENVS)"
+            SKIPPED+=("$name ($plat_tag)")
+            continue
+        fi
+
+        if [[ ! -f "$dockerfile" ]]; then
+            warn "Skipping $name ($dockerfile not found)"
+            SKIPPED+=("$name ($plat_tag)")
+            continue
+        fi
+
+        image="openenv-test-${name}-${plat_tag}"
+        log "─────────────────────────────────────────"
+        log "Building $name [$platform]"
+        log "  context:    $context"
+        log "  dockerfile: $dockerfile"
+        log "  port:       $container_port"
+
+        if ! docker build \
+                --platform "$platform" \
+                -t "$image" \
+                -f "$dockerfile" \
+                --build-arg "BASE_IMAGE=$base_tag" \
+                "$context" \
+                2>&1 | sed 's/^/  /'; then
+            fail "Build failed: $name [$platform]"
+            FAILED+=("$name ($plat_tag, build)")
+            continue
+        fi
+        ok "Build succeeded: $name [$platform]"
+
+        # Build-only envs: don't run a container
+        if is_build_only "$name"; then
+            ok "Build-only check passed: $name [$platform]"
+            PASSED+=("$name ($plat_tag)")
+            (( port++ ))
+            continue
+        fi
+
+        # Start container
+        log "Starting container for $name [$platform] on port $port → container:$container_port"
+        run_out=$(docker run -d \
+                --platform "$platform" \
+                -p "${port}:${container_port}" \
+                "$image" 2>&1)
+        run_exit=$?
+        cid=$(echo "$run_out" | tail -1)   # last line is the container ID on success
+        if [[ $run_exit -ne 0 ]] || [[ -z "$cid" ]]; then
+            fail "Failed to start container: $name [$platform]"
+            log "  docker run output: $run_out"
+            FAILED+=("$name ($plat_tag, start)")
+            (( port++ )) || true
+            continue
+        fi
+
+        # Poll health endpoint
+        health_url="http://localhost:${port}/health"
+        log "Waiting for $health_url (up to ${HEALTH_TIMEOUT}s)"
+        if wait_for_health "$health_url" "$HEALTH_TIMEOUT" "$HEALTH_INTERVAL"; then
+            ok "Health check passed: $name [$platform] → $health_url"
+            PASSED+=("$name ($plat_tag)")
+        else
+            fail "Health check timed out: $name [$platform]"
+            log "Container logs:"
+            docker logs "$cid" 2>&1 | tail -30 | sed 's/^/  /'
+            FAILED+=("$name ($plat_tag, health)")
+        fi
+
+        cleanup_container "$cid"
+        (( port++ ))
+    done
 done
 
 # ---------------------------------------------------------------------------

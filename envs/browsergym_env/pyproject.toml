@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "openenv-browsergym_env"
 version = "0.1.0"
 description = "BrowserGym Environment for OpenEnv - Web automation using Playwright"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 dependencies = [
     "openenv-core[core]>=0.2.3",
     "browsergym-core==0.14.3",
@@ -15,6 +15,7 @@ dependencies = [
     "playwright==1.44.0",
     "greenlet==3.0.3",
     "Pillow>=10.0.0",
+    "chromium",
 ]
 
 [project.optional-dependencies]
@@ -33,3 +34,9 @@ package-dir = { "browsergym_env" = ".", "browsergym_env.server" = "server" }
 
 [tool.setuptools.package-data]
 browsergym_env = ["**/*.yaml", "**/*.yml", "**/*.md"]
+
+[tool.uv]
+# libwebarena==0.0.4 (pulled in by browsergym-webarena>=0.13.1) pins beartype==0.12.0
+# on Windows, conflicting with openenv-core's beartype>=0.20.0 requirement.
+# Override to allow a compatible version on all platforms.
+override-dependencies = ["beartype>=0.20.0"]

@@ -84,19 +84,25 @@ ENV PYTHONPATH="${CARLA_ROOT}/PythonAPI/carla:${PYTHONPATH}"
 
 WORKDIR /app
 
-# Upgrade pip and install cffi explicitly (fixes _cffi_backend error)
+# Upgrade pip, install cffi explicitly (fixes _cffi_backend error), and install uv
 RUN pip install --upgrade pip \
-    && pip install --no-cache-dir cffi cryptography
+    && pip install --no-cache-dir cffi cryptography uv
 
-# Install OpenEnv core from GitHub
-RUN pip install --no-cache-dir git+https://github.com/meta-pytorch/OpenEnv.git
-
-# Copy and install environment dependencies
-COPY server/requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.txt
+# Install environment dependencies via uv
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system \
+        "openenv-core[core]>=0.2.2" \
+        "fastapi>=0.115.0" \
+        "uvicorn>=0.24.0" \
+        "pydantic>=2.0.0" \
+        "requests>=2.31.0" \
+        "websockets>=13.0" \
+        "numpy>=1.26.0" \
+        "shapely>=2.0.0" \
+        "networkx>=3.0"
 
 # Install CARLA Python client (UE5 API, compatible with CARLA 0.9.x and 0.10.x)
-RUN pip install --no-cache-dir carla-ue5-api==0.10.0
+RUN uv pip install --system carla-ue5-api==0.10.0
 
 # Copy CARLA environment code
 COPY . /app/carla_env/

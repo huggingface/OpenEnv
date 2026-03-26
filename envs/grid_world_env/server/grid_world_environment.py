@@ -11,7 +11,13 @@ try:
 except ImportError:
     from core.env_server import Environment
     from core.env_server.types import State
-from ..models import GridWorldAction, GridWorldObservation, MoveAction
+
+try:
+    from ..models import GridWorldAction, GridWorldObservation, MoveAction
+except ImportError as e:
+    if "relative import" not in str(e) and "no known parent package" not in str(e):
+        raise
+    from models import GridWorldAction, GridWorldObservation, MoveAction
 
 
 class GridWorldEnvironment(Environment):
