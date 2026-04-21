@@ -43,7 +43,7 @@ We'll start by installing **TRL** (with vLLM support), the **OpenEnv** Wordle en
 pip install -Uq trl[vllm] git+https://huggingface.co/spaces/openenv/wordle trackio
 ```
 
-### Log in to Hugging Face
+## Log in to Hugging Face
 
 Log in to your **Hugging Face** account to save your fine-tuned model, track your experiment results directly on the Hub or access gated models. You can find your **access token** on your [account settings page](https://huggingface.co/settings/tokens).
 
@@ -231,7 +231,7 @@ trainer = GRPOTrainer(
 )
 ```
 
-Show memory stats before training
+### Show memory stats before training
 
 ```python
 import torch
@@ -244,13 +244,13 @@ print(f"GPU = {gpu_stats.name}. Max memory = {max_memory} GB.")
 print(f"{start_gpu_memory} GB of memory reserved.")
 ```
 
-And train!
+### And train!
 
 ```python
 trainer_stats = trainer.train()
 ```
 
-Show memory stats after training
+### Show memory stats after training
 
 ```python
 used_memory = round(torch.cuda.max_memory_reserved() / 1024 / 1024 / 1024, 3)
@@ -289,6 +289,7 @@ tokenizer = AutoTokenizer.from_pretrained(model_name)
 
 ```python
 import json
+import re
 
 
 def play_wordle(model, tokenizer):
@@ -333,7 +334,6 @@ def play_wordle(model, tokenizer):
                 guess_word = args.get("guess", "")
             else:
                 # Fallback: extract from brackets [word]
-                import re
                 match = re.search(r"\[([a-zA-Z]{5})\]", generated_text)
                 guess_word = match.group(1) if match else generated_text.strip()[:5]
 
