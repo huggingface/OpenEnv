@@ -55,3 +55,15 @@ def test_does_not_flag_user_defined_myopen_function():
     )
     assert observation.reward == 0.0
     assert "safety_violation" not in observation.metadata
+
+
+def test_does_not_flag_attribute_method_named_exec():
+    observation = _apply_safety_transform(
+        "class DB:\n"
+        "    def exec(self, sql):\n"
+        "        return sql\n"
+        "db = DB()\n"
+        "result = db.exec('SELECT 1')"
+    )
+    assert observation.reward == 0.0
+    assert "safety_violation" not in observation.metadata

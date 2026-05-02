@@ -89,8 +89,6 @@ class PythonCodeActEnv(Environment):
     def step(
         self,
         action: Action,
-        timeout_s: Optional[float] = None,
-        **kwargs: Any,
     ) -> Observation:
         """
         Execute code action and return observation.

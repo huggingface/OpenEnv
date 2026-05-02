@@ -48,14 +48,10 @@ class CodeSafetyTransform(Transform):
                     return f"import {top_level_module}"
 
             if isinstance(node, ast.Call):
-                called_name: str | None = None
                 if isinstance(node.func, ast.Name):
                     called_name = node.func.id
-                elif isinstance(node.func, ast.Attribute):
-                    called_name = node.func.attr
-
-                if called_name in {"eval", "exec", "open", "__import__"}:
-                    return called_name
+                    if called_name in {"eval", "exec", "open", "__import__"}:
+                        return called_name
 
         return None
 
