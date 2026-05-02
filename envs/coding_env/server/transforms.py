@@ -7,7 +7,6 @@
 """Transforms specific to coding environments."""
 
 import ast
-import re
 
 from openenv.core.env_server.base_transforms import CompositeTransform
 from openenv.core.env_server.interfaces import Transform
@@ -21,14 +20,44 @@ class CodeSafetyTransform(Transform):
 
     def __init__(self, penalty: float = -1.0):
         self.penalty = penalty
-        self.dangerous_patterns = [
-            r"import\s+os",
-            r"import\s+subprocess",
-            r"eval\(",
-            r"exec\(",
-            r"__import__",
-            r"open\(",
-        ]
+
+    def _detect_violation(self, code: str) -> str | None:
+        """
+        Detect dangerous operations using AST analysis.
+
+        AST-based detection avoids false positives from harmless string literals
+        (e.g. ``print("import os")``) or similarly named user functions
+        (e.g. ``myopen()``).
+        """
+        try:
+            tree = ast.parse(code)
+        except SyntaxError:
+            # Syntax quality is handled by CodeQualityTransform.
+            return None
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    top_level_module = alias.name.split(".", 1)[0]
+                    if top_level_module in {"os", "subprocess"}:
+                        return f"import {top_level_module}"
+
+            if isinstance(node, ast.ImportFrom) and node.module:
+                top_level_module = node.module.split(".", 1)[0]
+                if top_level_module in {"os", "subprocess"}:
+                    return f"import {top_level_module}"
+
+            if isinstance(node, ast.Call):
+                called_name: str | None = None
+                if isinstance(node.func, ast.Name):
+                    called_name = node.func.id
+                elif isinstance(node.func, ast.Attribute):
+                    called_name = node.func.attr
+
+                if called_name in {"eval", "exec", "open", "__import__"}:
+                    return called_name
+
+        return None
 
     def __call__(self, observation: Observation) -> Observation:
         if not isinstance(observation, CodeObservation):
@@ -36,14 +65,12 @@ class CodeSafetyTransform(Transform):
 
         if "last_code" in observation.metadata:
             code = observation.metadata["last_code"]
-            for pattern in self.dangerous_patterns:
-                if re.search(pattern, code):
-                    observation.reward = self.penalty
-                    observation.metadata["safety_violation"] = pattern
-                    break
-            else:
-                if observation.reward is None:
-                    observation.reward = 0.0
+            violation = self._detect_violation(code)
+            if violation is not None:
+                observation.reward = self.penalty
+                observation.metadata["safety_violation"] = violation
+            elif observation.reward is None:
+                observation.reward = 0.0
 
         return observation
 
