@@ -12,6 +12,7 @@ Python code actions using PyExecutor.
 """
 
 import uuid
+from typing import Any, Optional
 
 from openenv.core.env_server.interfaces import Action, Environment, Observation
 
@@ -50,7 +51,12 @@ class PythonCodeActEnv(Environment):
         self._executor = PyExecutor()
         self._state = CodeState()
 
-    def reset(self) -> Observation:
+    def reset(
+        self,
+        seed: Optional[int] = None,
+        episode_id: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Observation:
         """
         Reset environment and start fresh execution session.
 
@@ -58,7 +64,10 @@ class PythonCodeActEnv(Environment):
             Initial observation with empty stdout/stderr and exit_code=0
         """
         # Initialize fresh state
-        self._state = CodeState(episode_id=str(uuid.uuid4()), step_count=0)
+        self._state = CodeState(
+            episode_id=episode_id or str(uuid.uuid4()),
+            step_count=0,
+        )
         # Add last_exit_code to state
         self._state.last_exit_code = 0
 
@@ -77,7 +86,12 @@ class PythonCodeActEnv(Environment):
 
         return self._apply_transform(observation)
 
-    def step(self, action: Action) -> Observation:
+    def step(
+        self,
+        action: Action,
+        timeout_s: Optional[float] = None,
+        **kwargs: Any,
+    ) -> Observation:
         """
         Execute code action and return observation.
 
