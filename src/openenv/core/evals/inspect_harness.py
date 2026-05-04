@@ -108,7 +108,13 @@ class InspectAIHarness(EvalHarness):
         if model_args:
             eval_kwargs["model_args"] = model_args
 
-        for key in ("max_samples", "max_connections", "temperature", "max_tokens", "epochs"):
+        for key in (
+            "max_samples",
+            "max_connections",
+            "temperature",
+            "max_tokens",
+            "epochs",
+        ):
             value = eval_parameters.get(key)
             if value is not None:
                 eval_kwargs[key] = value
