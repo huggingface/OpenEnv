@@ -24,6 +24,14 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    TextColumn,
+    TimeElapsedColumn,
+)
+
 from huggingface_hub import HfApi
 
 from ..env_server.mcp_types import Tool
@@ -256,40 +264,60 @@ class CollectRunner:
         num_dropped = 0
         rewards: list[float] = []
 
-        for episode_id in planned_ids:
-            # Preserve task-to-episode alignment even when resume skips ids.
-            task = self._next_task()
-            if episode_id in already:
-                num_skipped += 1
-                continue
+        progress = Progress(
+            TextColumn("[cyan]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TextColumn(
+                "collected={task.fields[collected]} reward={task.fields[avg_reward]:.2f}"
+            ),
+            TimeElapsedColumn(),
+        )
+        task_id = progress.add_task(
+            "Collecting", total=len(planned_ids), collected=0, avg_reward=0.0
+        )
 
-            session = self._session_factory.create(task=task, episode_id=episode_id)
-            try:
-                rollout = self._harness_adapter.run_white_box(
-                    model_step=model_step,
-                    session=session,
-                    limits=self._limits,
-                )
-                verify = session.verify(
-                    transcript=rollout.messages,
-                    final_state=_rollout_final_state(rollout),
-                )
-                record = EpisodeRecord.from_rollout(
-                    episode_id=episode_id,
-                    rollout=rollout,
-                    verify=verify,
-                    task=task,
-                )
-            finally:
-                session.close()
+        with progress:
+            for episode_id in planned_ids:
+                # Preserve task-to-episode alignment even when resume skips ids.
+                task = self._next_task()
+                if episode_id in already:
+                    num_skipped += 1
+                    progress.advance(task_id)
+                    continue
 
-            if should_keep is not None and not should_keep(record):
-                num_dropped += 1
-                continue
+                session = self._session_factory.create(task=task, episode_id=episode_id)
+                try:
+                    rollout = self._harness_adapter.run_white_box(
+                        model_step=model_step,
+                        session=session,
+                        limits=self._limits,
+                    )
+                    verify = session.verify(
+                        transcript=rollout.messages,
+                        final_state=_rollout_final_state(rollout),
+                    )
+                    record = EpisodeRecord.from_rollout(
+                        episode_id=episode_id,
+                        rollout=rollout,
+                        verify=verify,
+                        task=task,
+                    )
+                finally:
+                    session.close()
 
-            self._serializer.write_episode(record)
-            num_collected += 1
-            rewards.append(record.reward)
+                if should_keep is not None and not should_keep(record):
+                    num_dropped += 1
+                    progress.advance(task_id)
+                    continue
+
+                self._serializer.write_episode(record)
+                num_collected += 1
+                rewards.append(record.reward)
+                avg = sum(rewards) / len(rewards)
+                progress.update(
+                    task_id, advance=1, collected=num_collected, avg_reward=avg
+                )
 
         avg_reward = sum(rewards) / len(rewards) if rewards else 0.0
         success_rate = (
