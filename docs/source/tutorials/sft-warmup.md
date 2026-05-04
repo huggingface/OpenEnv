@@ -229,7 +229,7 @@ Things to check:
 
 ## 8. Measure token lengths
 
-Set `max_seq_length` in `SFTConfig` to cover nearly all examples without wasting GPU memory on padding.
+Set `max_length` in `SFTConfig` to cover nearly all examples without wasting GPU memory on padding.
 The 99th percentile is a good target: you truncate fewer than 1% of examples while keeping batches tight.
 
 ```python
@@ -375,8 +375,7 @@ async def evaluate_model(model_name, n_eval=50, seed=999):
     }
 
 
-YOUR_HF_USERNAME = "your-username"  # replace with your HF username
-assert YOUR_HF_USERNAME != "your-username", "Replace YOUR_HF_USERNAME with your Hugging Face username"
+import asyncio
 
 base_metrics = asyncio.run(evaluate_model("Qwen/Qwen3-1.7B"))
 sft_metrics = asyncio.run(

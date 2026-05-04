@@ -45,7 +45,9 @@ except ImportError:  # pragma: no cover - openspiel env optional at import time
     OpenSpielSessionFactory = None  # type: ignore[assignment]
 
 try:
-    from reasoning_gym_env.client import ReasoningGymEnv  # type: ignore[import-not-found]
+    from reasoning_gym_env.client import (  # type: ignore[import-not-found]
+        ReasoningGymEnv,
+    )
     from reasoning_gym_env.harness import (  # type: ignore[import-not-found]
         ReasoningGymSessionFactory,
     )

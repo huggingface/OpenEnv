@@ -355,9 +355,11 @@ def create_llm_client(
             f"Unsupported provider: {provider!r}. "
             f"Supported: {sorted(_HOSTED_PROVIDERS)}"
         )
+    _MAX_COMPLETION_TOKENS_MODELS = {"gpt-5-mini", "o1", "o3", "o4-mini"}
+
     endpoint, port, cls = _HOSTED_PROVIDERS[key]
     extra: dict[str, Any] = {}
-    if cls is OpenAIClient:
+    if cls is OpenAIClient and model in _MAX_COMPLETION_TOKENS_MODELS:
         extra["use_max_completion_tokens"] = True
     return cls(
         endpoint,

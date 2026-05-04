@@ -24,6 +24,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
+from huggingface_hub import HfApi
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
@@ -31,8 +32,6 @@ from rich.progress import (
     TextColumn,
     TimeElapsedColumn,
 )
-
-from huggingface_hub import HfApi
 
 from ..env_server.mcp_types import Tool
 from ..llm_client import LLMClient
