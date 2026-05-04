@@ -14,6 +14,7 @@ the collect pipeline).
 
 from __future__ import annotations
 
+import random
 from typing import Any, Callable
 
 from openenv.core.env_server.mcp_types import Tool
@@ -87,11 +88,12 @@ class ReasoningGymSessionFactory:
         episode_id: str | None = None,
     ) -> StepEnvSessionAdapter:
         client = self._client_factory()
+        effective_seed = seed if seed is not None else random.randint(0, 2**31 - 1)
 
         return StepEnvSessionAdapter(
             client=client,
             task=task,
-            seed=seed,
+            seed=effective_seed,
             episode_id=episode_id,
             tool_specs=list(_REASONING_GYM_TOOLS),
             action_builder=lambda name, arguments: ReasoningGymAction(
