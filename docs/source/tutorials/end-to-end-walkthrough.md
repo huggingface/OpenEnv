@@ -1,6 +1,6 @@
 # End-to-end OpenEnv walkthrough: train a reasoning agent with GRPO
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/meta-pytorch/OpenEnv/blob/main/examples/grpo_reasoning_gym/end_to_end_walkthrough.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/meta-pytorch/OpenEnv/blob/main/examples/end_to_end_walkthrough.ipynb)
 
 In this tutorial you'll take a small open-weight model, an OpenEnv environment, and TRL, and run the full training pipeline end-to-end:
 
