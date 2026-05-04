@@ -34,7 +34,7 @@ from openenv.core.llm_client import create_llm_client, LLMClient, LLMResponse, T
 from .._cli_utils import console
 
 # Imported eagerly so tests can monkeypatch these names on this module.
-# The real imports only happen when the selected --env is openspiel.
+# The real imports only happen when the selected --env is openspiel/reasoning_gym.
 try:
     from openspiel_env.client import OpenSpielEnv  # type: ignore[import-not-found]
     from openspiel_env.harness import (  # type: ignore[import-not-found]
@@ -43,6 +43,15 @@ try:
 except ImportError:  # pragma: no cover - openspiel env optional at import time
     OpenSpielEnv = None  # type: ignore[assignment]
     OpenSpielSessionFactory = None  # type: ignore[assignment]
+
+try:
+    from reasoning_gym_env.client import ReasoningGymEnv  # type: ignore[import-not-found]
+    from reasoning_gym_env.harness import (  # type: ignore[import-not-found]
+        ReasoningGymSessionFactory,
+    )
+except ImportError:  # pragma: no cover - reasoning_gym env optional at import time
+    ReasoningGymEnv = None  # type: ignore[assignment]
+    ReasoningGymSessionFactory = None  # type: ignore[assignment]
 
 app = typer.Typer(help="Collect rollouts from a deployed OpenEnv environment.")
 
@@ -137,7 +146,10 @@ def _build_llm_model_step(
     llm_port: int,
     temperature: float,
     max_tokens: int,
+    system_prompt: str | None = None,
 ):
+    effective_system_prompt = system_prompt or _SYSTEM_PROMPT
+
     if llm_endpoint:
         # Self-hosted OpenAI-compatible endpoint (vLLM, TGI, Ollama, ...).
         from openenv.core.llm_client import OpenAIClient
@@ -147,7 +159,7 @@ def _build_llm_model_step(
             port=llm_port,
             model=model,
             api_key=os.getenv("OPENAI_API_KEY") or "not-needed",
-            system_prompt=_SYSTEM_PROMPT,
+            system_prompt=effective_system_prompt,
             temperature=temperature,
             max_tokens=max_tokens,
         )
@@ -156,35 +168,58 @@ def _build_llm_model_step(
             provider=provider,
             model=model,
             api_key=_resolve_api_key(provider),
-            system_prompt=_SYSTEM_PROMPT,
+            system_prompt=effective_system_prompt,
             temperature=temperature,
             max_tokens=max_tokens,
         )
 
-    return build_model_step(client, system_prompt=_SYSTEM_PROMPT)
+    return build_model_step(client, system_prompt=effective_system_prompt)
 
 
-def _build_session_factory(env_spec: str, base_url: str):
-    """Dispatch an env spec ``"openspiel:tic_tac_toe"`` to a session factory."""
-    env_name, _, game = env_spec.partition(":")
-    if env_name != "openspiel":
+def _build_session_factory(
+    env_spec: str,
+    base_url: str,
+    dataset_config: dict[str, Any] | None = None,
+):
+    """Dispatch an env spec to a session factory.
+
+    Supported specs:
+    - ``openspiel:<game>``      e.g. ``openspiel:tic_tac_toe``
+    - ``reasoning_gym:<dataset>`` e.g. ``reasoning_gym:chain_sum``
+    """
+    env_name, _, variant = env_spec.partition(":")
+    if not variant:
         raise typer.BadParameter(
-            f"Unknown env {env_spec!r}. Supported: openspiel:<game>",
+            f"Missing variant. Use e.g. {env_name}:chain_sum",
             param_hint="ENV",
         )
-    if not game:
-        raise typer.BadParameter(
-            "Missing game name. Use e.g. openspiel:tic_tac_toe",
-            param_hint="ENV",
+
+    if env_name == "openspiel":
+        if OpenSpielEnv is None or OpenSpielSessionFactory is None:
+            raise typer.BadParameter(
+                "openspiel_env is not importable. Ensure envs/ is on PYTHONPATH.",
+                param_hint="ENV",
+            )
+        return OpenSpielSessionFactory(
+            lambda: OpenSpielEnv(base_url=base_url),
+            game_name=variant,
         )
-    if OpenSpielEnv is None or OpenSpielSessionFactory is None:
-        raise typer.BadParameter(
-            "openspiel_env is not importable. Ensure envs/ is on PYTHONPATH.",
-            param_hint="ENV",
+
+    if env_name == "reasoning_gym":
+        if ReasoningGymEnv is None or ReasoningGymSessionFactory is None:
+            raise typer.BadParameter(
+                "reasoning_gym_env is not importable. Ensure envs/ is on PYTHONPATH.",
+                param_hint="ENV",
+            )
+        return ReasoningGymSessionFactory(
+            lambda: ReasoningGymEnv(base_url=base_url),
+            dataset_name=variant,
+            dataset_config=dataset_config,
         )
-    return OpenSpielSessionFactory(
-        lambda: OpenSpielEnv(base_url=base_url),
-        game_name=game,
+
+    raise typer.BadParameter(
+        f"Unknown env {env_spec!r}. Supported: openspiel:<game>, reasoning_gym:<dataset>",
+        param_hint="ENV",
     )
 
 
@@ -289,6 +324,24 @@ def collect(
             help="Commit message for the Hub upload.",
         ),
     ] = None,
+    dataset_config: Annotated[
+        str | None,
+        typer.Option(
+            "--dataset-config",
+            help=(
+                "JSON string of dataset config for envs that support it "
+                "(e.g. reasoning_gym). Example: "
+                '\'{"min_terms": 2, "max_terms": 3}\''
+            ),
+        ),
+    ] = None,
+    system_prompt: Annotated[
+        str | None,
+        typer.Option(
+            "--system-prompt",
+            help="Custom system prompt for the teacher model.",
+        ),
+    ] = None,
 ) -> None:
     """Collect rollouts from a deployed OpenEnv environment."""
     uses_llm_teacher = _uses_llm_teacher(provider, llm_endpoint)
@@ -300,7 +353,19 @@ def collect(
             param_hint="--model",
         )
 
-    factory = _build_session_factory(env, base_url)
+    parsed_dataset_config: dict[str, Any] | None = None
+    if dataset_config is not None:
+        try:
+            parsed_dataset_config = json.loads(dataset_config)
+        except json.JSONDecodeError as exc:
+            raise typer.BadParameter(
+                f"--dataset-config must be valid JSON: {exc}",
+                param_hint="--dataset-config",
+            )
+
+    factory = _build_session_factory(
+        env, base_url, dataset_config=parsed_dataset_config
+    )
     serializer = RolloutSerializer(output_dir)
     serializer.write_metadata(
         {
@@ -324,6 +389,7 @@ def collect(
             llm_port=llm_port,
             temperature=temperature,
             max_tokens=max_tokens,
+            system_prompt=system_prompt,
         )
     else:
         model_step = _build_scripted_model_step()
