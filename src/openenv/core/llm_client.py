@@ -326,6 +326,13 @@ _HOSTED_PROVIDERS: dict[str, tuple[str, int, type[LLMClient]]] = {
     "anthropic": ("https://api.anthropic.com", 443, AnthropicClient),
 }
 
+# Models that require max_completion_tokens instead of max_tokens and do not
+# accept an explicit temperature parameter. Checked by prefix to cover versioned
+# names such as "o1-2024-12-17" or "gpt-5-mini-2026-01-15".
+_MAX_COMPLETION_TOKENS_PREFIXES: frozenset[str] = frozenset(
+    {"gpt-5-mini", "o1", "o3", "o4-mini"}
+)
+
 
 def create_llm_client(
     provider: str,
@@ -355,11 +362,11 @@ def create_llm_client(
             f"Unsupported provider: {provider!r}. "
             f"Supported: {sorted(_HOSTED_PROVIDERS)}"
         )
-    _MAX_COMPLETION_TOKENS_MODELS = {"gpt-5-mini", "o1", "o3", "o4-mini"}
-
     endpoint, port, cls = _HOSTED_PROVIDERS[key]
     extra: dict[str, Any] = {}
-    if cls is OpenAIClient and model in _MAX_COMPLETION_TOKENS_MODELS:
+    if cls is OpenAIClient and any(
+        model.startswith(prefix) for prefix in _MAX_COMPLETION_TOKENS_PREFIXES
+    ):
         extra["use_max_completion_tokens"] = True
     return cls(
         endpoint,

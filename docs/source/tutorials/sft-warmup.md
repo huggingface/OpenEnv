@@ -172,9 +172,9 @@ def to_qwen3_messages(record):
             args = json.loads(tc["function"]["arguments"])
             answer_str = args.get("answer", "")
             tool_call_text = (
-                f'<tool_call>\n'
-                f'{{"name": "answer", "arguments": {{"answer": "{answer_str}"}}}}\n'
-                f'</tool_call>'
+                "<tool_call>\n"
+                + json.dumps({"name": "answer", "arguments": {"answer": answer_str}})
+                + "\n</tool_call>"
             )
             converted.append({"role": "assistant", "content": tool_call_text})
         else:
@@ -375,12 +375,8 @@ async def evaluate_model(model_name, n_eval=50, seed=999):
     }
 
 
-import asyncio
-
-base_metrics = asyncio.run(evaluate_model("Qwen/Qwen3-1.7B"))
-sft_metrics = asyncio.run(
-    evaluate_model(f"{YOUR_HF_USERNAME}/reasoning-gym-chain-sum-Qwen3-1.7B-sft")
-)
+base_metrics = await evaluate_model("Qwen/Qwen3-1.7B")
+sft_metrics = await evaluate_model(f"{YOUR_HF_USERNAME}/reasoning-gym-chain-sum-Qwen3-1.7B-sft")
 
 print(f"\n{'Metric':<25} {'Base model':>12} {'After SFT':>12} {'Delta':>10}")
 print("-" * 62)
