@@ -134,6 +134,9 @@ class OpenAIClient(LLMClient):
         system_prompt: Optional system message prepended to every request.
         temperature: Default sampling temperature.
         max_tokens: Default max tokens in the response.
+        use_max_completion_tokens: Use max_completion_tokens instead of
+            max_tokens. Required for newer OpenAI models (gpt-5-mini, o1, o3).
+            Not supported by self-hosted OpenAI-compatible endpoints.
     """
 
     def __init__(
@@ -145,12 +148,16 @@ class OpenAIClient(LLMClient):
         system_prompt: str | None = None,
         temperature: float = 0.0,
         max_tokens: int = 256,
+        use_max_completion_tokens: bool = False,
     ):
         super().__init__(endpoint, port)
         self.model = model
         self.system_prompt = system_prompt
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self._tokens_param = (
+            "max_completion_tokens" if use_max_completion_tokens else "max_tokens"
+        )
 
         self._client = AsyncOpenAI(
             base_url=f"{self.base_url}/v1",
@@ -176,7 +183,7 @@ class OpenAIClient(LLMClient):
             model=self.model,
             messages=messages,
             temperature=kwargs.get("temperature", self.temperature),
-            max_completion_tokens=kwargs.get("max_tokens", self.max_tokens),
+            **{self._tokens_param: kwargs.get("max_tokens", self.max_tokens)},
         )
         return response.choices[0].message.content or ""
 
@@ -190,7 +197,7 @@ class OpenAIClient(LLMClient):
             "model": self.model,
             "messages": messages,
             "temperature": kwargs.get("temperature", self.temperature),
-            "max_completion_tokens": kwargs.get("max_tokens", self.max_tokens),
+            self._tokens_param: kwargs.get("max_tokens", self.max_tokens),
         }
         openai_tools = _mcp_tools_to_openai(tools)
         if openai_tools:
@@ -345,6 +352,9 @@ def create_llm_client(
             f"Supported: {sorted(_HOSTED_PROVIDERS)}"
         )
     endpoint, port, cls = _HOSTED_PROVIDERS[key]
+    extra: dict[str, Any] = {}
+    if cls is OpenAIClient:
+        extra["use_max_completion_tokens"] = True
     return cls(
         endpoint,
         port,
@@ -353,6 +363,7 @@ def create_llm_client(
         system_prompt=system_prompt,
         temperature=temperature,
         max_tokens=max_tokens,
+        **extra,
     )
 
 
