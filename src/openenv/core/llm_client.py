@@ -176,7 +176,7 @@ class OpenAIClient(LLMClient):
             model=self.model,
             messages=messages,
             temperature=kwargs.get("temperature", self.temperature),
-            max_tokens=kwargs.get("max_tokens", self.max_tokens),
+            max_completion_tokens=kwargs.get("max_tokens", self.max_tokens),
         )
         return response.choices[0].message.content or ""
 
@@ -190,7 +190,7 @@ class OpenAIClient(LLMClient):
             "model": self.model,
             "messages": messages,
             "temperature": kwargs.get("temperature", self.temperature),
-            "max_tokens": kwargs.get("max_tokens", self.max_tokens),
+            "max_completion_tokens": kwargs.get("max_tokens", self.max_tokens),
         }
         openai_tools = _mcp_tools_to_openai(tools)
         if openai_tools:
