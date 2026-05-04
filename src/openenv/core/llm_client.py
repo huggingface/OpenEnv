@@ -158,6 +158,7 @@ class OpenAIClient(LLMClient):
         self._tokens_param = (
             "max_completion_tokens" if use_max_completion_tokens else "max_tokens"
         )
+        self._omit_temperature = use_max_completion_tokens
 
         self._client = AsyncOpenAI(
             base_url=f"{self.base_url}/v1",
@@ -179,12 +180,14 @@ class OpenAIClient(LLMClient):
             messages.append({"role": "system", "content": self.system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        response = await self._client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=kwargs.get("temperature", self.temperature),
-            **{self._tokens_param: kwargs.get("max_tokens", self.max_tokens)},
-        )
+        call_kwargs: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            self._tokens_param: kwargs.get("max_tokens", self.max_tokens),
+        }
+        if not self._omit_temperature:
+            call_kwargs["temperature"] = kwargs.get("temperature", self.temperature)
+        response = await self._client.chat.completions.create(**call_kwargs)
         return response.choices[0].message.content or ""
 
     async def complete_with_tools(
@@ -196,9 +199,10 @@ class OpenAIClient(LLMClient):
         create_kwargs: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
-            "temperature": kwargs.get("temperature", self.temperature),
             self._tokens_param: kwargs.get("max_tokens", self.max_tokens),
         }
+        if not self._omit_temperature:
+            create_kwargs["temperature"] = kwargs.get("temperature", self.temperature)
         openai_tools = _mcp_tools_to_openai(tools)
         if openai_tools:
             create_kwargs["tools"] = openai_tools
