@@ -30,12 +30,6 @@ from openenv.core.env_server import create_app
 app = create_app(PythonCodeActEnv, CodeAction, CodeObservation, env_name="coding_env")
 
 
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
 def main():
     """Main entry point for running the server."""
     import uvicorn
