@@ -56,6 +56,57 @@ The `openenv` CLI provides a set of commands for building, validating, and pushi
    :show-inheritance:
 ```
 
+## `openenv skills`
+
+Installs an `openenv-cli` skill into your AI assistant's skills directory so
+it knows the `openenv` CLI is available and what each command does. Supports
+Claude Code, Cursor, Codex, and OpenCode.
+
+**Install for a single assistant (project-local):**
+
+```bash
+openenv skills add --claude    # → .claude/skills/openenv-cli/
+openenv skills add --cursor    # → .cursor/skills/openenv-cli/
+openenv skills add --codex     # → .codex/skills/openenv-cli/
+openenv skills add --opencode  # → .opencode/skills/openenv-cli/
+```
+
+Multiple flags can be combined — `openenv skills add --claude --cursor` installs
+for both at once. The skill file is written to a central location
+(`.agents/skills/openenv-cli/`) and each agent directory gets a symlink, so
+there is only one copy to update.
+
+**Install globally (user-level, across all projects):**
+
+```bash
+openenv skills add --claude --global  # → ~/.claude/skills/openenv-cli/
+```
+
+**Overwrite an existing installation** (e.g. after upgrading `openenv-core`):
+
+```bash
+openenv skills add --claude --force
+```
+
+**Preview the skill content without installing:**
+
+```bash
+openenv skills preview
+```
+
+**Install to a custom path** (for non-standard agent setups):
+
+```bash
+openenv skills add --dest /path/to/my-agent/skills/
+```
+
+```{eval-rst}
+.. automodule:: openenv.cli.commands.skills
+   :members:
+   :undoc-members:
+   :show-inheritance:
+```
+
 # API Reference
 
 ## Entry point

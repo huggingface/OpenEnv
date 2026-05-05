@@ -37,9 +37,9 @@ The agent will:
 We will start by installing **TRL**, which automatically includes the main dependencies like **Transformers**.
 We will also install the **OpenEnv** framework (for the environment), **trackio** (for logging and monitoring training runs), and **vLLM** (for efficient generation).
 
-\`\`\`python
+```python
 !pip install -Uq git+https://github.com/huggingface/trl.git git+https://github.com/meta-pytorch/OpenEnv.git trackio vllm==0.10.2 bitsandbytes
-\`\`\`
+```
 
 ---
 
@@ -47,30 +47,30 @@ We will also install the **OpenEnv** framework (for the environment), **trackio*
 
 Log in to your **Hugging Face** account to save your fine-tuned model, track your experiment results directly on the Hub or access gated models. You can find your **access token** on your [account settings page](https://huggingface.co/settings/tokens).
 
-\`\`\`python
+```python
 from huggingface_hub import notebook_login
 
 notebook_login()
-\`\`\`
+```
 
 ---
 
 ## Initialize the Environment
 
 Let us begin by setting up the environment that will be used during training.
-For this task, we will rely on the **TextArena** environment from **OpenEnv**, which exposes a familiar Gymnasium-style API (\`reset()\`, \`step()\`, etc.) to simplify interaction.
+For this task, we will rely on the **TextArena** environment from **OpenEnv**, which exposes a familiar Gymnasium-style API (`reset()`, `step()`, etc.) to simplify interaction.
 
 In this example, we will connect to the hosted environment at [burtenshaw/textarena](https://huggingface.co/spaces/burtenshaw/textarena).
 For production use or custom configurations, we **strongly recommend** running the environment locally via Docker. The hosted versions on the Hub currently have limited concurrency support, so duplicating the Space to your own account is the preferred approach in those cases.
 
 For more information, refer to the [TRL-OpenEnv documentation](https://huggingface.co/docs/trl/main/en/openenv).
 
-\`\`\`python
+```python
 from envs.textarena_env import TextArenaEnv
 
 textarena_url = "https://burtenshaw-textarena.hf.space" # Duplicate the Space and update this!
 env = TextArenaEnv(base_url=textarena_url)
-\`\`\`
+```
 
 ---
 
@@ -80,13 +80,13 @@ We will use [Qwen/Qwen3-1.7B](https://huggingface.co/Qwen/Qwen3-1.7B), a lightwe
 Despite its small size, it can still learn interesting strategies during fine-tuning.
 If you have stronger hardware, you can easily scale up to larger models.
 
-\`\`\`python
+```python
 from transformers import AutoTokenizer
 
 model_name = "Qwen/Qwen3-1.7B"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 tokenizer.pad_token = tokenizer.eos_token
-\`\`\`
+```
 
 ---
 
@@ -98,14 +98,14 @@ It is responsible for generating model completions, collecting feedback (rewards
 In this setup:
 
 - The function is called automatically by the **GRPOTrainer** during each training step.
-- It uses the trainer's built-in \`generate_rollout_completions()\` method for efficient generation with vLLM in colocate mode.
+- It uses the trainer's built-in `generate_rollout_completions()` method for efficient generation with vLLM in colocate mode.
 - Each rollout represents a full interaction loop. The model guesses, receives feedback from Wordle, and updates based on reward signals.
 
 ### System Prompt
 
-First, we define the \`system_prompt\` that guides the model's behavior as an expert Wordle solver with strategic reasoning and structured responses.
+First, we define the `system_prompt` that guides the model's behavior as an expert Wordle solver with strategic reasoning and structured responses.
 
-\`\`\`python
+```python
 system_prompt = """
 You are an expert Wordle solver with deep knowledge of English vocabulary, letter frequency patterns, and optimal guessing strategies.
 
@@ -141,11 +141,11 @@ Do not repeat the same guess twice.
 
 Solve the Wordle in as few guesses as possible by strategically using feedback to eliminate impossible words and narrow down the solution space efficiently.
 """
-\`\`\`
+```
 
 ### Rollout Function
 
-\`\`\`python
+```python
 def rollout_func(prompts, trainer=None):
     """
     Rollout function for GRPO training with environment interaction.
@@ -184,15 +184,15 @@ def rollout_func(prompts, trainer=None):
         "yellow_reward": yellow_rewards,
         "repetition_reward": repetition_rewards,
     }
-\`\`\`
+```
 
 ---
 
 ## Define rollout_once
 
-The \`rollout_once\` function runs **one full interaction loop** between the model and the Wordle environment using the trainer's generation method.
+The `rollout_once` function runs **one full interaction loop** between the model and the Wordle environment using the trainer's generation method.
 
-\`\`\`python
+```python
 from collections import defaultdict
 from envs.textarena_env import TextArenaAction
 from envs.textarena_env.rewards import extract_feedback_counts, extract_guess, extract_wordle_feedback
@@ -277,13 +277,13 @@ def rollout_once(trainer, env, tokenizer, dataset_prompt, system_prompt, max_tur
         "yellow_reward": yellow_scores[-1] if yellow_scores else 0.0,
         "repetition_reward": repetition_scores[-1] if repetition_scores else 0.0,
     }
-\`\`\`
+```
 
 ---
 
 ## Helper functions
 
-\`\`\`python
+```python
 def make_user_prompt(prompt_text, messages):
     """Builds a structured user prompt combining the task description and message history"""
     history = format_history(messages)
@@ -311,13 +311,13 @@ def scale_repetition_score(previous_occurrences, max_occurrences):
     if max_occurrences == 0:
         return 0.0
     return (max_occurrences - previous_occurrences) / max_occurrences
-\`\`\`
+```
 
 ---
 
 ## Define reward functions
 
-\`\`\`python
+```python
 def reward_correct(completions, **kwargs):
     rewards = kwargs.get("correct_reward") if kwargs else None
     if rewards is None:
@@ -344,26 +344,26 @@ def reward_repetition(completions, **kwargs):
     if rewards is None:
         return [0.0 for _ in completions]
     return [float(r) for r in rewards]
-\`\`\`
+```
 
 ---
 
 ## Create dataset
 
-\`\`\`python
+```python
 from datasets import Dataset
 
 dataset_size = 1000
 dataset_prompt = "Play Wordle like an expert."
 
 dataset = Dataset.from_dict({"prompt": [dataset_prompt] * dataset_size})
-\`\`\`
+```
 
 ---
 
 ## Set GRPO Config
 
-\`\`\`python
+```python
 from trl import GRPOConfig
 
 output_dir = "wordle-grpo-Qwen3-1.7B"
@@ -389,13 +389,13 @@ grpo_config = GRPOConfig(
     gradient_checkpointing_kwargs = {"use_reentrant": False},
     push_to_hub = True,
 )
-\`\`\`
+```
 
 ---
 
 ## Create GRPOTrainer and start training
 
-\`\`\`python
+```python
 from trl import GRPOTrainer
 
 trainer = GRPOTrainer(
@@ -411,11 +411,11 @@ trainer = GRPOTrainer(
     args=grpo_config,
     rollout_func=rollout_func,
 )
-\`\`\`
+```
 
 ### Memory stats before training
 
-\`\`\`python
+```python
 import torch
 gpu_stats = torch.cuda.get_device_properties(0)
 start_gpu_memory = round(torch.cuda.max_memory_reserved() / 1024 / 1024 / 1024, 3)
@@ -423,19 +423,19 @@ max_memory = round(gpu_stats.total_memory / 1024 / 1024 / 1024, 3)
 
 print(f"GPU = {gpu_stats.name}. Max memory = {max_memory} GB.")
 print(f"{start_gpu_memory} GB of memory reserved.")
-\`\`\`
+```
 
 **Output:**
-\`\`\`
+```
 GPU = NVIDIA A100-SXM4-40GB. Max memory = 39.557 GB.
 10.516 GB of memory reserved.
-\`\`\`
+```
 
 ### Train!
 
-\`\`\`python
+```python
 trainer_stats = trainer.train()
-\`\`\`
+```
 
 **Training Progress:**
 
@@ -475,7 +475,7 @@ trainer_stats = trainer.train()
 
 ### Memory stats after training
 
-\`\`\`python
+```python
 used_memory = round(torch.cuda.max_memory_reserved() / 1024 / 1024 / 1024, 3)
 used_memory_for_training = round(used_memory - start_gpu_memory, 3)
 used_percentage = round(used_memory / max_memory * 100, 3)
@@ -487,40 +487,40 @@ print(f"Peak reserved memory = {used_memory} GB.")
 print(f"Peak reserved memory for training = {used_memory_for_training} GB.")
 print(f"Peak reserved memory % of max memory = {used_percentage} %.")
 print(f"Peak reserved memory for training % of max memory = {training_memory_percentage} %.")
-\`\`\`
+```
 
 **Output:**
-\`\`\`
+```
 5231.7046 seconds used for training.
 87.2 minutes used for training.
 Peak reserved memory = 36.68 GB.
 Peak reserved memory for training = 26.164 GB.
 Peak reserved memory % of max memory = 92.727 %.
 Peak reserved memory for training % of max memory = 66.143 %.
-\`\`\`
+```
 
 ### Save and push to Hub
 
-\`\`\`python
+```python
 env.close()
 trainer.save_model(output_dir)
 trainer.push_to_hub()
-\`\`\`
+```
 
 ---
 
 ## Load the Fine-Tuned Model and Run Inference
 
-\`\`\`python
+```python
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 model_name = "sergiopaniego/wordle-grpo-Qwen3-1.7B" # Replace with your HF username
 
 fine_tuned_model = AutoModelForCausalLM.from_pretrained(model_name, dtype="auto", device_map="auto")
 tokenizer = AutoTokenizer.from_pretrained(model_name)
-\`\`\`
+```
 
-\`\`\`python
+```python
 MAX_TURNS=6
 
 def play_wordle(env, model, tokenizer):
@@ -569,19 +569,19 @@ def play_wordle(env, model, tokenizer):
     print("\nGame finished")
     print(f"   Reward: {result.reward}")
     print(f"   Done: {result.done}")
-\`\`\`
+```
 
 ### Let us play the game!
 
-\`\`\`python
+```python
 try:
     play_wordle(env, fine_tuned_model, tokenizer)
 finally:
     env.close()
-\`\`\`
+```
 
 **Output:**
-\`\`\`
+```
 Initial Prompt:
 You are Player 0 in Wordle.
 A secret 5-letter word has been chosen. You have 6 attempts to guess it.
@@ -622,7 +622,7 @@ You have 4 guesses left.
 Game finished
    Reward: 0.0
    Done: True
-\`\`\`
+```
 
 !!! note "Observation"
     The model has learned some good opening strategies (starting with "crane", then "spare"), but still tends to repeat guesses. This is a common challenge in RL training that can be improved with:

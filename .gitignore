@@ -136,6 +136,7 @@ envs/finqa_env/data/
 # Sphinx build output
 docs/_build/
 docs/source/_build/
+docs/source/_env_assets/
 
 # Sphinx-gallery generated output
 docs/source/auto_getting_started/
