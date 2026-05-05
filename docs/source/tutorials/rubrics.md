@@ -1,5 +1,7 @@
 # Rubrics: Composable Reward Computation
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/meta-pytorch/OpenEnv/blob/main/examples/rubrics.ipynb)
+
 Rubrics are OpenEnv's first-class abstraction for computing rewards. They let you build multi-criteria reward functions from small reusable pieces. This tutorial walks through the API end-to-end, from a one-line rubric to a full environment that introspects its reward signal at training time.
 
 ## Why Rubrics?
