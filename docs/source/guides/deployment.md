@@ -1,10 +1,8 @@
 # Deployment
 
 :::{note}
-Coming Soon — this page is under construction.
+This page is still being filled in. Missing: `openenv push` CLI (including env vars and secrets), building from `openenv.yaml`, and the full local-dev → docker build → push → HF Space → reconnect workflow.
 :::
-
-Deploy
 
 Deploy your OpenEnv environments to Docker, Hugging Face Spaces, and more.
 
