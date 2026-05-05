@@ -7,10 +7,6 @@ actually performs on a held-out set of episodes. OpenEnv integrates with
 [Inspect AI](https://inspect.aisi.org.uk/) — an open-source evaluation
 framework by the UK AI Safety Institute — through `InspectAIHarness`.
 
-```{note}
-**Time**: ~20 minutes | **Difficulty**: Intermediate | **GPU Required**: No
-```
-
 ## How the pieces fit together
 
 Inspect AI and OpenEnv are complementary, not overlapping:
@@ -57,7 +53,7 @@ import getpass, os
 
 # --- Option A: OpenAI ---
 os.environ.setdefault("OPENAI_API_KEY", getpass.getpass("OpenAI API key: "))
-MODEL = "openai/gpt-4o-mini"
+MODEL = "openai/gpt-5-mini"
 
 # --- Option B: Anthropic ---
 # os.environ.setdefault("ANTHROPIC_API_KEY", getpass.getpass("Anthropic API key: "))
@@ -225,7 +221,7 @@ result = harness.run_from_config(EvalConfig(
     library_versions={"openenv": openenv.__version__},
     dataset="tasks/echo_eval.py@openenv_echo_eval",
     eval_parameters={
-        "model": "openai/gpt-4o-mini",
+        "model": "openai/gpt-5-mini",
         "task": "tasks/echo_eval.py@openenv_echo_eval",
     },
 ))
@@ -242,6 +238,13 @@ Replace `echo_env_solver` with a solver that uses your env and model:
    factory here so the eval env matches training exactly.
 3. **Scorer** — use the env's reward signal directly, or write an Inspect AI
    `@scorer` that checks the final observation against a ground-truth target.
+
+```{tip}
+Run this eval **before training** on your base model to establish a baseline,
+then again after training to measure the improvement. The delta (post − pre)
+is more informative than either number alone — a model that scores 60% after
+training tells you little without knowing it started at 4%.
+```
 
 ```python
 import asyncio
@@ -273,9 +276,9 @@ def my_env_solver(base_url: str):
 
 ## Next steps
 
+- [End-to-end walkthrough](https://meta-pytorch.org/OpenEnv/tutorials/end-to-end-walkthrough.html) — full GRPO training loop that produces a model you can evaluate with this tutorial
+- [SFT warm-up tutorial](https://meta-pytorch.org/OpenEnv/tutorials/sft-warmup.html) — collect rollouts, filter by reward, and fine-tune a student model before running GRPO
 - [Rubrics tutorial](https://meta-pytorch.org/OpenEnv/tutorials/rubrics.html) — define reward functions inside
   the environment using composable rubrics
-- [Wordle GRPO](https://meta-pytorch.org/OpenEnv/tutorials/wordle-grpo.html) — full training loop that produces a model you
-  can evaluate with this tutorial
 - [Inspect AI documentation](https://inspect.aisi.org.uk/) — full reference
   for tasks, solvers, scorers, and the log viewer
