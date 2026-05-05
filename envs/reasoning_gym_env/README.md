@@ -15,7 +15,7 @@ tags:
 
 # Reasoning Gym Environment
 
-An OpenEnv environment that integrates the [Reasoning Gym](https://github.com/reasoning-labs/reasoning-gym) library to provide single-step reasoning tasks. Each episode presents one question from a configurable dataset, the agent submits an answer, and receives a score.
+An OpenEnv environment that integrates the [Reasoning Gym](https://github.com/open-thought/reasoning-gym) library to provide single-step reasoning tasks. Each episode presents one question from a configurable dataset, the agent submits an answer, and receives a score.
 
 ## Quick Start
 
@@ -187,7 +187,7 @@ Available datasets from reasoning_gym library:
 - `leg_counting` - Count legs of various objects
 - `reverse_sort` - Sort lists in reverse order
 - `chess_state_eval` - Chess position evaluation
-- And more (see [Reasoning Gym documentation](https://github.com/reasoning-labs/reasoning-gym))
+- And more (see [Reasoning Gym documentation](https://github.com/open-thought/reasoning-gym))
 
 ### Composite Datasets
 
@@ -382,6 +382,6 @@ The Reasoning Gym environment is ideal for:
 
 ## Learn More
 
-- [Reasoning Gym Library](https://github.com/reasoning-labs/reasoning-gym)
+- [Reasoning Gym Library](https://github.com/open-thought/reasoning-gym)
 - [OpenEnv Documentation](https://github.com/meta-pytorch/OpenEnv)
 - [OpenEnv Environment Design](https://github.com/meta-pytorch/OpenEnv/blob/main/README.md)
