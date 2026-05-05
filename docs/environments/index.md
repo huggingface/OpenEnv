@@ -239,6 +239,20 @@ env = AutoEnv("coding")  # Code execution environment
 
   <div class="environment-card">
     <div class="environment-card__body">
+      <span class="environment-card__tag">Agent World Model</span>
+      <p class="environment-card__description">
+        AgentWorldModel-1K: 1,000 synthetic MCP tool-use environments with 10,000 tasks for large-scale agentic RL training. Each scenario spawns an isolated MCP environment with its own SQLite-backed state and task-specific verifier.
+      </p>
+    </div>
+    <div class="environment-card__links">
+      <span class="environment-card__category">🤖 Simulation</span>
+      <a href="agent_world_model/">📄 Docs</a>
+      <a href="https://huggingface.co/spaces/ChilleD/agent_world_model_env">🤗 Hugging Face</a>
+    </div>
+  </div>
+
+  <div class="environment-card">
+    <div class="environment-card__body">
       <span class="environment-card__tag">Chat</span>
       <p class="environment-card__description">
         Message-driven loop tailored for conversational agents that need structured turns, safety rails, and message attribution.
