@@ -308,7 +308,7 @@ else:
 A delta of **+10 to +30 pp** is what you should expect at this difficulty; outside that range:
 
 - **Δ ≈ 0 pp, initial already high (≥90%)** — `DATASET_CONFIG` is too easy; the model already solves it before training. Bump `min_terms` / `min_digits`.
-- **Δ ≈ 0 pp, initial very low (≤20%)** — task is too hard for the base model to ever stumble onto a correct answer, so GRPO has no positive rollouts to learn from. Lower `min_terms` / `min_digits`.
+- **Δ ≈ 0 pp, initial very low (≤20%)** — task is too hard for the base model to ever stumble onto a correct answer, so GRPO has no positive rollouts to learn from. Lower `min_terms` / `min_digits`. If the reward stays near zero even at minimum difficulty, the bottleneck is likely **format compliance** rather than task difficulty — the model never produces a valid `<tool_call>` so the env cannot score it. See the [SFT warm-up tutorial](https://meta-pytorch.org/OpenEnv/tutorials/sft-warmup.html) for how to fix this before returning to GRPO.
 - **Δ negative** — you trained past saturation: once `reward` plateaus, the KL penalty starts pulling the policy back toward the reference. Reduce `max_steps` so training stops while it's still net-improving.
 
 ```{note}
@@ -321,4 +321,5 @@ This delta is measured *during training* — same prompt format, same env, same 
 
 - **Swap the dataset.** `chain_sum` is one of ~100 datasets in [Reasoning Gym](https://github.com/open-thought/reasoning-gym) — try `simple_equations`, `letter_counting`, or `propositional_logic` by changing `DATASET_NAME` and re-running the same recipe.
 - **Try a different environment.** The same `environment_factory` shape works for any OpenEnv environment with a small tool surface — browse the [environment catalog](https://meta-pytorch.org/OpenEnv/environments.html) for ideas.
+- **Use SFT as a warm-start.** If format compliance is the bottleneck (initial reward near zero regardless of difficulty), the [SFT warm-up tutorial](https://meta-pytorch.org/OpenEnv/tutorials/sft-warmup.html) shows how to collect teacher rollouts, filter by reward, and fine-tune a student model — so GRPO starts with non-zero `reward_std` from the first batch.
 - **Read the other tutorials.** [Wordle GRPO](https://meta-pytorch.org/OpenEnv/tutorials/wordle-grpo.html) covers the multi-step variant; the full list is in the [tutorials index](https://meta-pytorch.org/OpenEnv/tutorials/index.html).
