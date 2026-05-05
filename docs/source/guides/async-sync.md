@@ -1,11 +1,5 @@
 # Async vs Sync Usage
 
-:::{note}
-Coming Soon
-    This page is under construction.
-
-OpenEnv supports both
-
 OpenEnv supports both asynchronous and synchronous usage patterns.
 
 ## When to Use Each
@@ -78,4 +72,3 @@ asyncio.run(main())
 
 - [RL Framework Integration](rl-integration.md) - Using async with RL training
 - [Auto-Discovery](auto-discovery.md) - Discover and load environments
-:::
