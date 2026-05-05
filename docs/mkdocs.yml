@@ -1,5 +1,5 @@
-site_name: OpenEnv Documentation
-site_description: Official documentation for the OpenEnv agentic execution framework
+site_name: OpenEnv
+site_description: Agentic execution environments for RL training
 site_url: https://meta-pytorch.github.io/OpenEnv
 repo_url: https://github.com/meta-pytorch/OpenEnv
 repo_name: meta-pytorch/OpenEnv
@@ -7,8 +7,12 @@ repo_name: meta-pytorch/OpenEnv
 docs_dir: .
 site_dir: ../site
 
+exclude_docs: |
+  source/
+
 theme:
   name: material
+  custom_dir: overrides
   font:
     text: Inter
   logo: https://github.com/user-attachments/assets/2700a971-e5d6-4036-b03f-2f89c9791609
@@ -17,11 +21,15 @@ theme:
       primary: grey
       accent: blue grey
   features:
+    - navigation.sections
     - navigation.expand
     - navigation.top
-    - toc.integrate
+    - navigation.indexes
+    - toc.follow
     - content.code.copy
-    - navigation.instant
+    - content.tabs.link
+    - search.highlight
+    - search.suggest
 
 extra_css:
   - styles/theme.css
@@ -46,14 +54,22 @@ plugins:
 markdown_extensions:
   - admonition
   - attr_list
+  - md_in_html
   - pymdownx.details
   - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - def_list
   - footnotes
   - tables
   - toc:
       permalink: true
-      toc_depth: 1
+      toc_depth: 2
   - pymdownx.blocks.admonition:
       types:
         - name: note
@@ -70,18 +86,37 @@ watch:
 
 nav:
   - Get Started:
-    - What is OpenEnv?: index.md
+    - Introduction: index.md
     - Quick Start: quickstart.md
-    - Auto-Discovery API: auto-discovery.md
-    - Building an Environment: environment-builder.md
-    - Contributing Environments: contributing-envs.md
-    - Customizing the Web UI: customizing-web-ui.md
+    - Installation: installation.md
+    - Core Concepts: concepts.md
+
+  - Guides:
+    - guides/index.md
+    - Using Environments:
+      - Auto-Discovery: guides/auto-discovery.md
+      - Connecting to Servers: guides/connecting.md
+      - Async vs Sync Usage: guides/async-sync.md
+    - Building Environments:
+      - Your First Environment: guides/first-environment.md
+      - Environment Anatomy: guides/environment-anatomy.md
+      - Deployment: guides/deployment.md
+    - Training:
+      - RL Framework Integration: guides/rl-integration.md
+      - Reward Design: guides/rewards.md
+
   - Tutorials:
-    - OpenEnv Tutorial: tutorials/openenv-tutorial.md
-    - Wordle GRPO with TRL: tutorials/wordle-grpo.md
-  - Environments: environments.md
+    - tutorials/index.md
+    - OpenEnv in 15 Minutes: tutorials/openenv-tutorial.md
+    - Wordle with GRPO: tutorials/wordle-grpo.md
+
+  - Environments: environments/index.md
 
   - API Reference:
-    - Core: core.md
-    - CLI: cli.md
+    - reference/index.md
+    - Core API: reference/core.md
+    - CLI: reference/cli.md
 
+  - Community:
+    - Contributing: contributing.md
+    - Contributing Environments: contributing-envs.md

@@ -14,10 +14,18 @@ __all__ = [
     "SyncEnvClient",
 ]
 
-try:
-    __version__ = metadata.version("openenv")  # type: ignore[arg-type]
-except metadata.PackageNotFoundError:  # pragma: no cover - local dev
-    __version__ = "0.0.0"
+
+def _load_package_version() -> str:
+    """Resolve the installed distribution version for the OpenEnv package."""
+    for distribution_name in ("openenv-core", "openenv"):
+        try:
+            return metadata.version(distribution_name)
+        except metadata.PackageNotFoundError:
+            continue
+    return "0.0.0"
+
+
+__version__ = _load_package_version()
 
 
 _LAZY_MODULES = {

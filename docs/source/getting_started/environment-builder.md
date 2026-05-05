@@ -345,6 +345,9 @@ openenv push --registry ghcr.io/my-org --tag my-env:latest
 
 # Customize image base or visibility
 openenv push --base-image ghcr.io/meta-pytorch/openenv-base:latest --private
+
+# Configure Space variables and secrets at push time
+openenv push -e OPENSPIEL_GAME=tic_tac_toe --secret OPENAI_API_KEY=sk-...
 ```
 
 Key options:
@@ -355,8 +358,27 @@ Key options:
 - `--interface/--no-interface`: toggle the optional web UI
 - `--base-image`: override the Dockerfile `FROM`
 - `--private`: mark the space as private
+- `--env-var/-e KEY=VALUE`: set a public Space variable (repeatable); overrides matching keys from `variables:` in `openenv.yaml`
+- `--secret KEY=VALUE`: set a private Space secret (repeatable); value is never logged
 
 The command validates your `openenv.yaml`, injects Hugging Face frontmatter when needed, and uploads the prepared bundle.
+Space variables and secrets are only applied on direct Hugging Face Space pushes;
+they are not available for `--registry`, and they cannot be staged through
+`--create-pr`.
+
+#### Declaring public variables in `openenv.yaml`
+
+For defaults that belong with the environment (game name, benchmark, max
+steps…), add a `variables:` block to `openenv.yaml`; `openenv push` will apply
+them to the Space automatically:
+
+```yaml
+variables:
+  OPENSPIEL_GAME: catch
+```
+
+CLI `-e` overrides matching keys. Put secrets (API keys, tokens) **only** on
+the CLI via `--secret KEY=VALUE` — never in the yaml.
 
 ### 9. Automate Builds (optional)
 

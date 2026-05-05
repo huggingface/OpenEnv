@@ -19,8 +19,12 @@ try:
     # In-repo imports (when running from OpenEnv repository)
     from openenv.core.env_server.types import Action, Observation, State
 except ImportError:
-    # Standalone imports (when environment is standalone with openenv-core from pip)
-    from openenv_core.env_server.types import Action, Observation, State
+    try:
+        # Standalone imports with the current package namespace.
+        from openenv.core.env_server.types import Action, Observation, State
+    except ImportError:
+        # Backward-compatible standalone imports when only openenv_core is available.
+        from openenv_core.env_server.types import Action, Observation, State
 
 
 class MazeAction(Action):

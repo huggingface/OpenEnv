@@ -15,7 +15,7 @@ OpenEnv/
 ├── envs/                     # Example environments (not installed, used via PYTHONPATH)
 ├── tests/                    # Test suite
 ├── examples/                 # Usage examples and tutorials
-├── docs/                     # Documentation (MkDocs)
+├── docs/                     # Documentation (Sphinx)
 ├── rfcs/                     # Design documents and architectural decisions
 ├── scripts/                  # Utility scripts
 │
@@ -199,27 +199,40 @@ rfcs/
 
 ## Documentation (`docs/`)
 
-MkDocs-based documentation:
+Sphinx-based documentation:
 
 ```
 docs/
-├── mkdocs.yml                # MkDocs configuration
-├── index.md                  # Home page
-├── quickstart.md             # Getting started guide
-├── core.md                   # Core library documentation
-├── cli.md                    # CLI reference
-├── environment-builder.md    # How to create environments
+├── Makefile                  # Sphinx build targets (html, html-noplot, html-stable)
+├── README.md                 # Local build instructions
 │
-├── environments/             # Per-environment documentation
-│   ├── echo.md
-│   ├── coding.md
-│   └── ...
-│
-├── tutorials/                # Step-by-step guides
-│   ├── openenv-tutorial.md
-│   └── wordle-grpo.md
-│
-└── styles/                   # Custom CSS
+└── source/                   # Sphinx source root
+    ├── conf.py               # Sphinx configuration
+    ├── index.md              # Home page
+    ├── core.md               # Core API reference (autodoc)
+    ├── cli.md                # CLI reference (autodoc)
+    ├── auto_discovery.md     # Auto-discovery API docs
+    ├── customizing-web-ui.md # Web UI customization guide
+    ├── environments.md       # Environments catalog page
+    │
+    ├── environments/         # Per-environment documentation
+    │   ├── echo.md
+    │   ├── coding.md
+    │   └── ...
+    │
+    ├── getting_started/      # Sphinx Gallery executable tutorials
+    │   ├── plot_01_introduction_quickstart.py
+    │   ├── plot_02_using_environments.py
+    │   ├── plot_03_building_environments.py
+    │   ├── contributing-envs.md
+    │   └── environment-builder.md
+    │
+    ├── tutorials/            # Additional tutorials
+    │   ├── openenv-tutorial.md
+    │   ├── wordle-grpo.md
+    │   └── rl-training-2048.md
+    │
+    └── _static/              # Static assets (versions.json, etc.)
 ```
 
 ## Key Files to Know

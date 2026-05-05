@@ -16,11 +16,15 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import logging
 import os
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, Dict, Optional, Type
+from contextlib import AsyncExitStack
+from typing import Any, AsyncContextManager, Callable, cast, Dict, Optional, Type
+
+_MISSING = object()
 
 from fastapi import (
     Body,
@@ -204,14 +208,28 @@ class HTTPEnvServer:
         self.observation_cls = observation_cls
 
         # Session management for WebSocket connections
-        self._sessions: Dict[str, Environment] = {}
+        self._sessions: Dict[str, Optional[Environment]] = {}
         self._session_executors: Dict[str, ThreadPoolExecutor] = {}
+        self._session_stacks: Dict[str, AsyncExitStack] = {}
         self._session_info: Dict[str, SessionInfo] = {}
         self._session_lock = asyncio.Lock()
 
         # Create thread pool for running sync code in async context
         # This is needed for environments using sync libraries (e.g., Playwright)
         self._executor = ThreadPoolExecutor(max_workers=32)
+
+        self._requires_single_thread_executor = self._detect_single_thread_requirement()
+        self._shared_session_executor: Optional[ThreadPoolExecutor] = None
+        if self._requires_single_thread_executor:
+            self._shared_session_executor = ThreadPoolExecutor(max_workers=1)
+
+        # Idle session reaper configuration.
+        # Timeout is taken from ConcurrencyConfig.session_timeout;
+        # None means no timeout (default — reaper is a no-op).
+        self._session_idle_timeout_s: Optional[float] = (
+            self._concurrency_config.session_timeout
+        )
+        self._reaper_task: Optional[asyncio.Task[None]] = None
 
     def _validate_concurrency_safety(self) -> None:
         """
@@ -221,11 +239,17 @@ class HTTPEnvServer:
             ConcurrencyConfigurationError: If max_concurrent_envs > 1 for an
                 environment that is not marked as SUPPORTS_CONCURRENT_SESSIONS.
         """
+        import functools
+
         if self._max_concurrent_envs <= 1:
             return
 
-        if inspect.isclass(self._env_factory):
-            env_cls = self._env_factory
+        factory = self._env_factory
+        if isinstance(factory, functools.partial):
+            factory = factory.func
+
+        if inspect.isclass(factory):
+            env_cls = factory
         else:
             _temp_env = self._env_factory()
             env_cls = type(_temp_env)
@@ -237,6 +261,16 @@ class HTTPEnvServer:
                 environment_name=env_cls.__name__,
                 max_concurrent_envs=self._max_concurrent_envs,
             )
+
+    def _detect_single_thread_requirement(self) -> bool:
+        import functools
+
+        factory = self._env_factory
+        if isinstance(factory, functools.partial):
+            factory = factory.func
+        if inspect.isclass(factory):
+            return getattr(factory, "REQUIRES_SINGLE_THREAD_EXECUTOR", False)
+        return False
 
     def get_capacity_status(self) -> ServerCapacityStatus:
         """
@@ -303,7 +337,10 @@ class HTTPEnvServer:
 
             # Create executor and reserve slot so capacity is not exceeded while
             # we create the env outside the lock (avoids blocking other sessions)
-            executor = ThreadPoolExecutor(max_workers=1)
+            if self._shared_session_executor is not None:
+                executor = self._shared_session_executor
+            else:
+                executor = ThreadPoolExecutor(max_workers=1)
             self._session_executors[session_id] = executor
             self._sessions[session_id] = None  # placeholder until env is ready
 
@@ -313,7 +350,8 @@ class HTTPEnvServer:
             env = await loop.run_in_executor(executor, self._env_factory)
         except Exception as e:
             async with self._session_lock:
-                executor.shutdown(wait=False)
+                if executor is not self._shared_session_executor:
+                    executor.shutdown(wait=False)
                 self._session_executors.pop(session_id, None)
                 self._sessions.pop(session_id, None)
             factory_name = getattr(
@@ -321,12 +359,37 @@ class HTTPEnvServer:
             )
             raise EnvironmentFactoryError(factory_name) from e
 
+        # Hold the MCP session open for the lifetime of this session,
+        # matching the WebSocket path's AsyncExitStack pattern.  This
+        # prevents per-request MCP transport teardown/reconnection and
+        # preserves FastMCP session state (ctx.set_state / ctx.get_state)
+        # across HTTP calls within the same OpenEnv session.
+        stack = AsyncExitStack()
+        try:
+            mcp_session_factory = getattr(env, "mcp_session", None)
+            if callable(mcp_session_factory):
+                mcp_session_cm = cast(AsyncContextManager[Any], mcp_session_factory())
+                await stack.enter_async_context(mcp_session_cm)
+        except Exception:
+            # MCP transport failed to start — clean up the reserved slot,
+            # the env, and the executor so they don't leak permanently
+            # against _max_concurrent_envs.
+            await stack.aclose()  # best-effort
+            async with self._session_lock:
+                self._sessions.pop(session_id, None)
+                self._session_executors.pop(session_id, None)
+                self._session_info.pop(session_id, None)
+            await self._cleanup_session_resources(env, executor)
+            raise
+
         async with self._session_lock:
             self._sessions[session_id] = env
+            self._session_stacks[session_id] = stack
+            now = time.time()
             self._session_info[session_id] = SessionInfo(
                 session_id=session_id,
                 created_at=current_time,
-                last_activity_at=current_time,
+                last_activity_at=now,
                 step_count=0,
                 environment_type=type(env).__name__,
             )
@@ -343,7 +406,26 @@ class HTTPEnvServer:
         async with self._session_lock:
             env = self._sessions.pop(session_id, None)
             executor = self._session_executors.pop(session_id, None)
+            stack = self._session_stacks.pop(session_id, None)
             self._session_info.pop(session_id, None)
+
+        await self._cleanup_session_resources(env, executor, stack)
+
+    async def _cleanup_session_resources(
+        self,
+        env: Optional[Environment],
+        executor: Optional[ThreadPoolExecutor],
+        stack: Optional[AsyncExitStack] = None,
+    ) -> None:
+        """Close an environment and shut down its executor (best-effort)."""
+        # Close the MCP session stack first — this gracefully exits the
+        # mcp_session() context (and the underlying FastMCP Client session)
+        # before we tear down the environment references.
+        if stack is not None:
+            try:
+                await stack.aclose()
+            except Exception:
+                pass  # Best effort cleanup
 
         # Run close() in the same executor where the env was created
         # This is required for thread-sensitive libraries like Playwright/greenlet
@@ -364,8 +446,7 @@ class HTTPEnvServer:
                 except Exception:
                     pass  # Best effort cleanup
 
-        # Shutdown executor after close is done
-        if executor is not None:
+        if executor is not None and executor is not self._shared_session_executor:
             executor.shutdown(wait=False)
 
     def _update_session_activity(
@@ -382,6 +463,51 @@ class HTTPEnvServer:
             self._session_info[session_id].last_activity_at = time.time()
             if increment_step:
                 self._session_info[session_id].step_count += 1
+
+    async def _reap_idle_sessions(self) -> None:
+        """Background task that periodically destroys sessions idle beyond the timeout."""
+        timeout = self._session_idle_timeout_s
+        if timeout is None:
+            return  # no timeout configured — noop
+        interval = max(timeout / 4, 5.0)  # check frequently enough
+        while True:
+            try:
+                await asyncio.sleep(interval)
+                now = time.time()
+                stale_ids: list[str] = []
+                async with self._session_lock:
+                    for sid, info in self._session_info.items():
+                        if now - info.last_activity_at > timeout:
+                            stale_ids.append(sid)
+                for sid in stale_ids:
+                    # Re-check under lock: activity may have arrived since
+                    # the snapshot was taken, making this session active again.
+                    # Refresh `now` so slow _destroy_session calls don't cause
+                    # subsequent entries to be validated against a stale clock.
+                    now = time.time()
+                    async with self._session_lock:
+                        info = self._session_info.get(sid)
+                        if info is None or (now - info.last_activity_at) <= timeout:
+                            continue
+                    await self._destroy_session(sid)
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logging.getLogger(__name__).warning(
+                    "Idle-session reaper encountered an error (will retry): %s",
+                    exc,
+                )
+
+    def _start_reaper(self) -> None:
+        """Start the idle-session reaper if a timeout is configured."""
+        if self._session_idle_timeout_s is not None and self._reaper_task is None:
+            self._reaper_task = asyncio.create_task(self._reap_idle_sessions())
+
+    def _stop_reaper(self) -> None:
+        """Cancel the reaper background task."""
+        if self._reaper_task is not None:
+            self._reaper_task.cancel()
+            self._reaper_task = None
 
     def get_session_info(self, session_id: str) -> Optional[SessionInfo]:
         """
@@ -458,6 +584,22 @@ class HTTPEnvServer:
                     f"Invalid mode: '{mode}'. Must be one of: {valid_modes}"
                 )
 
+        # Wire up idle-session reaper lifecycle via app events
+        server_ref = self
+
+        async def _start_session_reaper() -> None:
+            server_ref._start_reaper()
+
+        async def _stop_session_reaper() -> None:
+            server_ref._stop_reaper()
+            if server_ref._shared_session_executor is not None:
+                server_ref._shared_session_executor.shutdown(wait=True)
+
+        if not getattr(app.router, "_openenv_reaper_registered", False):
+            app.router.on_startup.append(_start_session_reaper)
+            app.router.on_shutdown.append(_stop_session_reaper)
+            app.router._openenv_reaper_registered = True  # type: ignore[attr-defined]
+
         # Helper function to handle reset endpoint
         async def reset_handler(
             request: ResetRequest = Body(default_factory=ResetRequest),
@@ -526,53 +668,214 @@ class HTTPEnvServer:
 
         # Helper function to handle MCP endpoint
         async def mcp_handler(
-            request: JsonRpcRequest, session_env: Optional[Environment] = None
+            request: JsonRpcRequest,
+            session_env: Optional[Environment] = None,
+            session_id: Optional[str] = None,
         ) -> JsonRpcResponse:
             """
             Handle MCP JSON-RPC requests.
 
-            Supports tools/list and tools/call methods in JSON-RPC 2.0 format.
+            Supports tools/list and tools/call methods in JSON-RPC 2.0 format,
+            plus OpenEnv session lifecycle methods for HTTP MCP:
+            - openenv/session/create
+            - openenv/session/close
             """
             method = request.method
             request_id = request.id
+            params = request.params
+            if not isinstance(params, dict):
+                return JsonRpcResponse.error_response(
+                    JsonRpcErrorCode.INVALID_PARAMS,
+                    "Params must be an object",
+                    request_id=request_id,
+                )
+
+            # OpenEnv extension methods for explicit MCP session management.
+            # This enables persistent MCP lifecycles over HTTP /mcp, matching WebSocket semantics.
+            if method == "openenv/session/create":
+                if session_env is not None and session_id is not None:
+                    return JsonRpcResponse.success(
+                        result={"session_id": session_id},
+                        request_id=request_id,
+                    )
+                try:
+                    created_session_id, _ = await self._create_session()
+                except SessionCapacityError as e:
+                    return JsonRpcResponse.error_response(
+                        JsonRpcErrorCode.SERVER_ERROR,
+                        str(e),
+                        request_id=request_id,
+                        data={
+                            "active_sessions": e.active_sessions,
+                            "max_sessions": e.max_sessions,
+                        },
+                    )
+                except EnvironmentFactoryError as e:
+                    return JsonRpcResponse.error_response(
+                        JsonRpcErrorCode.SERVER_ERROR,
+                        str(e),
+                        request_id=request_id,
+                        data={"factory_name": e.factory_name},
+                    )
+                return JsonRpcResponse.success(
+                    result={"session_id": created_session_id},
+                    request_id=request_id,
+                )
+
+            if method == "openenv/session/close":
+                target_session_id = params.get("session_id")
+                if not target_session_id:
+                    return JsonRpcResponse.error_response(
+                        JsonRpcErrorCode.INVALID_PARAMS,
+                        "Invalid params - 'session_id' is required",
+                        request_id=request_id,
+                    )
+
+                if session_id is not None and target_session_id == session_id:
+                    return JsonRpcResponse.error_response(
+                        JsonRpcErrorCode.INVALID_REQUEST,
+                        "Cannot close active WebSocket-managed session via MCP method",
+                        request_id=request_id,
+                    )
+
+                async with self._session_lock:
+                    env = self._sessions.pop(target_session_id, _MISSING)
+                    if env is not _MISSING:
+                        executor = self._session_executors.pop(target_session_id, None)
+                        stack = self._session_stacks.pop(target_session_id, None)
+                        self._session_info.pop(target_session_id, None)
+                    else:
+                        executor = None
+                        stack = None
+
+                if env is _MISSING:
+                    return JsonRpcResponse.error_response(
+                        JsonRpcErrorCode.INVALID_PARAMS,
+                        f"Unknown session_id: {target_session_id}",
+                        request_id=request_id,
+                    )
+
+                if env is None:
+                    # Session slot reserved but env factory still running;
+                    # re-insert the placeholder AND the executor so
+                    # _create_session can finish and the executor remains
+                    # tracked for eventual shutdown.
+                    async with self._session_lock:
+                        self._sessions[target_session_id] = None
+                        if executor is not None:
+                            self._session_executors[target_session_id] = executor
+                    return JsonRpcResponse.error_response(
+                        JsonRpcErrorCode.INVALID_REQUEST,
+                        f"Session {target_session_id} is still initializing; retry shortly",
+                        request_id=request_id,
+                    )
+
+                # env/executor/stack cleanup outside the lock
+                await self._cleanup_session_resources(env, executor, stack)
+                return JsonRpcResponse.success(
+                    result={"session_id": target_session_id, "closed": True},
+                    request_id=request_id,
+                )
+
+            requested_session_id = params.get("session_id")
+            managed_session_id = session_id
 
             # Use provided session environment or create temporary one
             if session_env is not None:
                 _env = session_env
                 should_close = False
+            elif requested_session_id:
+                async with self._session_lock:
+                    _env = self._sessions.get(requested_session_id, _MISSING)
+
+                if _env is _MISSING:
+                    return JsonRpcResponse.error_response(
+                        JsonRpcErrorCode.INVALID_PARAMS,
+                        f"Unknown session_id: {requested_session_id}",
+                        request_id=request_id,
+                    )
+
+                if _env is None:
+                    return JsonRpcResponse.error_response(
+                        JsonRpcErrorCode.INVALID_REQUEST,
+                        f"Session {requested_session_id} is still initializing; retry shortly",
+                        request_id=request_id,
+                    )
+
+                should_close = False
+                managed_session_id = requested_session_id
             else:
                 _env = self._env_factory()
                 should_close = True
             try:
+                mcp_client = getattr(_env, "mcp_client", None)
+                mcp_server = getattr(_env, "mcp_server", None)
+                mcp_session_factory = getattr(_env, "mcp_session", None)
+
                 if method == McpMethod.TOOLS_LIST:
                     # Check if environment is MCP-enabled
-                    if not hasattr(_env, "mcp_client"):
+                    if mcp_client is None and mcp_server is None:
                         return JsonRpcResponse.error_response(
                             JsonRpcErrorCode.INTERNAL_ERROR,
                             "Environment does not support MCP",
                             request_id=request_id,
                         )
 
-                    # Use async context manager for MCP client
-                    async with _env.mcp_client:
-                        tools = await _env.mcp_client.list_tools()
+                    if mcp_client:
+                        if managed_session_id and mcp_client.is_connected():
+                            # Session-managed with live transport — call
+                            # directly, no redundant re-entry.
+                            tools = await mcp_client.list_tools()
+                        elif callable(mcp_session_factory):
+                            # Stateless request, or session-managed but the
+                            # background transport was lost: (re-)open.
+                            mcp_session_cm = cast(
+                                AsyncContextManager[Any], mcp_session_factory()
+                            )
+                            async with mcp_session_cm:
+                                tools = await mcp_client.list_tools()
+                        else:
+                            async with mcp_client:
+                                tools = await mcp_client.list_tools()
 
-                    return JsonRpcResponse.success(
-                        result={
-                            "tools": [
-                                t.model_dump() if hasattr(t, "model_dump") else dict(t)
-                                for t in tools
-                            ]
-                        },
+                        return JsonRpcResponse.success(
+                            result={
+                                "tools": [
+                                    t.model_dump()
+                                    if hasattr(t, "model_dump")
+                                    else dict(t)
+                                    for t in tools
+                                ]
+                            },
+                            request_id=request_id,
+                        )
+
+                    if mcp_server:
+                        tools = []
+                        for _tool_name, tool in get_server_tools(mcp_server).items():
+                            tools.append(
+                                {
+                                    "name": tool.name,
+                                    "description": tool.description or "",
+                                    "inputSchema": tool.parameters or {},
+                                }
+                            )
+                        return JsonRpcResponse.success(
+                            result={"tools": tools},
+                            request_id=request_id,
+                        )
+
+                    return JsonRpcResponse.error_response(
+                        JsonRpcErrorCode.INTERNAL_ERROR,
+                        "MCP server not available",
                         request_id=request_id,
                     )
 
                 elif method == McpMethod.TOOLS_CALL:
-                    params = request.params
                     tool_name = params.get("name")
                     arguments = params.get("arguments", {})
 
-                    if not hasattr(_env, "mcp_client"):
+                    if mcp_client is None and mcp_server is None:
                         return JsonRpcResponse.error_response(
                             JsonRpcErrorCode.INTERNAL_ERROR,
                             "Environment does not support MCP",
@@ -581,15 +884,51 @@ class HTTPEnvServer:
 
                     if not tool_name:
                         return JsonRpcResponse.error_response(
-                            JsonRpcErrorCode.INVALID_REQUEST,
+                            JsonRpcErrorCode.INVALID_PARAMS,
                             "Missing 'name' in params",
                             request_id=request_id,
                         )
 
-                    # Use async context manager for MCP client
-                    async with _env.mcp_client:
-                        result = await _env.mcp_client.call_tool(
-                            name=tool_name, arguments=arguments
+                    if mcp_client:
+                        if managed_session_id and mcp_client.is_connected():
+                            # Session-managed with live transport.
+                            result = await mcp_client.call_tool(
+                                name=tool_name, arguments=arguments
+                            )
+                        elif callable(mcp_session_factory):
+                            # Stateless request, or session-managed but the
+                            # background transport was lost: (re-)open.
+                            mcp_session_cm = cast(
+                                AsyncContextManager[Any], mcp_session_factory()
+                            )
+                            async with mcp_session_cm:
+                                result = await mcp_client.call_tool(
+                                    name=tool_name, arguments=arguments
+                                )
+                        else:
+                            async with mcp_client:
+                                result = await mcp_client.call_tool(
+                                    name=tool_name, arguments=arguments
+                                )
+                    elif mcp_server:
+                        server_tools = get_server_tools(mcp_server)
+                        if tool_name in server_tools:
+                            tool = server_tools[tool_name]
+                            if inspect.iscoroutinefunction(tool.fn):
+                                result = await tool.fn(**arguments)
+                            else:
+                                result = tool.fn(**arguments)
+                        else:
+                            return JsonRpcResponse.error_response(
+                                JsonRpcErrorCode.INVALID_PARAMS,
+                                f"Tool not found: {tool_name}",
+                                request_id=request_id,
+                            )
+                    else:
+                        return JsonRpcResponse.error_response(
+                            JsonRpcErrorCode.INTERNAL_ERROR,
+                            "MCP server not available",
+                            request_id=request_id,
                         )
 
                     # Ensure result is JSON serializable
@@ -614,6 +953,11 @@ class HTTPEnvServer:
                     request_id=request_id,
                 )
             finally:
+                if managed_session_id:
+                    self._update_session_activity(
+                        managed_session_id,
+                        increment_step=(method == McpMethod.TOOLS_CALL),
+                    )
                 if should_close:
                     _env.close()
 
@@ -637,42 +981,59 @@ class HTTPEnvServer:
             try:
                 # Create session with dedicated environment
                 session_id, session_env = await self._create_session()
+                if session_env is None:
+                    raise RuntimeError(
+                        "Session environment not initialized for MCP websocket"
+                    )
 
-                while True:
-                    # Receive message from client
-                    raw_message = await websocket.receive_text()
+                # If environment has an mcp_session context manager, hold it open
+                # for the lifetime of the websocket connection
 
-                    try:
-                        jsonrpc_dict = json.loads(raw_message)
-                        jsonrpc_request = JsonRpcRequest(**jsonrpc_dict)
-                    except json.JSONDecodeError as e:
-                        error_resp = JsonRpcResponse.error_response(
-                            JsonRpcErrorCode.PARSE_ERROR,
-                            f"Parse error: {e}",
+                async with AsyncExitStack() as stack:
+                    mcp_session_factory = getattr(session_env, "mcp_session", None)
+                    if callable(mcp_session_factory):
+                        mcp_session_cm = cast(
+                            AsyncContextManager[Any], mcp_session_factory()
                         )
-                        await websocket.send_text(error_resp.model_dump_json())
-                        continue
-                    except ValidationError as e:
-                        error_resp = JsonRpcResponse.error_response(
-                            JsonRpcErrorCode.INVALID_REQUEST,
-                            f"Invalid request: {e}",
-                        )
-                        await websocket.send_text(error_resp.model_dump_json())
-                        continue
+                        await stack.enter_async_context(mcp_session_cm)
 
-                    try:
-                        # Call mcp_handler with session environment
-                        response = await mcp_handler(
-                            jsonrpc_request, session_env=session_env
-                        )
-                        await websocket.send_text(response.model_dump_json())
-                    except Exception as e:
-                        error_resp = JsonRpcResponse.error_response(
-                            JsonRpcErrorCode.INTERNAL_ERROR,
-                            str(e),
-                            request_id=jsonrpc_request.id,
-                        )
-                        await websocket.send_text(error_resp.model_dump_json())
+                    while True:
+                        # Receive message from client
+                        raw_message = await websocket.receive_text()
+
+                        try:
+                            jsonrpc_dict = json.loads(raw_message)
+                            jsonrpc_request = JsonRpcRequest(**jsonrpc_dict)
+                        except json.JSONDecodeError as e:
+                            error_resp = JsonRpcResponse.error_response(
+                                JsonRpcErrorCode.PARSE_ERROR,
+                                f"Parse error: {e}",
+                            )
+                            await websocket.send_text(error_resp.model_dump_json())
+                            continue
+                        except ValidationError as e:
+                            error_resp = JsonRpcResponse.error_response(
+                                JsonRpcErrorCode.INVALID_REQUEST,
+                                f"Invalid request: {e}",
+                            )
+                            await websocket.send_text(error_resp.model_dump_json())
+                            continue
+
+                        try:
+                            # Call mcp_handler with session environment
+                            response = await mcp_handler(
+                                jsonrpc_request,
+                                session_env=session_env,
+                                session_id=session_id,
+                            )
+                            await websocket.send_text(response.model_dump_json())
+                        except Exception as e:
+                            error_resp = JsonRpcResponse.error_response(
+                                JsonRpcErrorCode.INTERNAL_ERROR,
+                                str(e),
+                                request_id=jsonrpc_request.id,
+                            )
+                            await websocket.send_text(error_resp.model_dump_json())
 
             except WebSocketDisconnect:
                 pass
@@ -931,120 +1292,8 @@ all schema information needed to interact with the environment.
                     JsonRpcErrorCode.PARSE_ERROR
                 ).model_dump()
 
-            method = request.method
-            params = request.params
-            request_id = request.id
-
-            # Create a temporary environment for MCP access
-            _env = self._env_factory()
-
-            try:
-                # Check if environment supports MCP
-                if not hasattr(_env, "mcp_client") and not hasattr(_env, "mcp_server"):
-                    return JsonRpcResponse.error_response(
-                        JsonRpcErrorCode.INTERNAL_ERROR,
-                        "Environment does not support MCP",
-                        request_id=request_id,
-                    ).model_dump()
-
-                if method == McpMethod.TOOLS_LIST:
-                    # List tools from MCP server
-                    if hasattr(_env, "mcp_client") and _env.mcp_client:
-                        async with _env.mcp_client:
-                            tools = await _env.mcp_client.list_tools()
-                        return JsonRpcResponse.success(
-                            result={
-                                "tools": [
-                                    t.model_dump()
-                                    if hasattr(t, "model_dump")
-                                    else dict(t)
-                                    for t in tools
-                                ]
-                            },
-                            request_id=request_id,
-                        ).model_dump()
-                    elif hasattr(_env, "mcp_server") and _env.mcp_server:
-                        # Use server directly
-                        tools = []
-                        for tool_name, tool in get_server_tools(
-                            _env.mcp_server
-                        ).items():
-                            tool_dict = {
-                                "name": tool.name,
-                                "description": tool.description or "",
-                                "inputSchema": tool.parameters or {},
-                            }
-                            tools.append(tool_dict)
-                        return JsonRpcResponse.success(
-                            result={"tools": tools},
-                            request_id=request_id,
-                        ).model_dump()
-                    else:
-                        return JsonRpcResponse.error_response(
-                            JsonRpcErrorCode.INTERNAL_ERROR,
-                            "MCP server not available",
-                            request_id=request_id,
-                        ).model_dump()
-
-                elif method == McpMethod.TOOLS_CALL:
-                    tool_name = params.get("name")
-                    arguments = params.get("arguments", {})
-
-                    if not tool_name:
-                        return JsonRpcResponse.error_response(
-                            JsonRpcErrorCode.INVALID_PARAMS,
-                            "Invalid params - 'name' is required",
-                            request_id=request_id,
-                        ).model_dump()
-
-                    # Call tool via MCP
-                    if hasattr(_env, "mcp_client") and _env.mcp_client:
-                        async with _env.mcp_client:
-                            result = await _env.mcp_client.call_tool(
-                                name=tool_name, arguments=arguments
-                            )
-                    elif hasattr(_env, "mcp_server") and _env.mcp_server:
-                        # Call tool directly on FastMCP server
-                        server_tools = get_server_tools(_env.mcp_server)
-                        if tool_name in server_tools:
-                            tool = server_tools[tool_name]
-                            result = tool.fn(**arguments)
-                        else:
-                            return JsonRpcResponse.error_response(
-                                JsonRpcErrorCode.INVALID_PARAMS,
-                                f"Tool not found: {tool_name}",
-                                request_id=request_id,
-                            ).model_dump()
-                    else:
-                        return JsonRpcResponse.error_response(
-                            JsonRpcErrorCode.INTERNAL_ERROR,
-                            "MCP server not available",
-                            request_id=request_id,
-                        ).model_dump()
-
-                    # Make result JSON serializable
-                    serializable_result = _make_json_serializable(result)
-
-                    return JsonRpcResponse.success(
-                        result=serializable_result,
-                        request_id=request_id,
-                    ).model_dump()
-
-                else:
-                    return JsonRpcResponse.error_response(
-                        JsonRpcErrorCode.METHOD_NOT_FOUND,
-                        f"Method not found: {method}",
-                        request_id=request_id,
-                    ).model_dump()
-
-            except Exception as e:
-                return JsonRpcResponse.error_response(
-                    JsonRpcErrorCode.INTERNAL_ERROR,
-                    str(e),
-                    request_id=request_id,
-                ).model_dump()
-            finally:
-                _env.close()
+            response = await mcp_handler(request)
+            return response.model_dump()
 
         # Register WebSocket endpoint for persistent sessions
         @app.websocket("/ws")
@@ -1066,135 +1315,167 @@ all schema information needed to interact with the environment.
             try:
                 # Create session with dedicated environment
                 session_id, session_env = await self._create_session()
+                if session_env is None:
+                    raise RuntimeError(
+                        "Session environment not initialized for websocket"
+                    )
 
-                while True:
-                    # Receive message from client
-                    raw_message = await websocket.receive_text()
+                # Keep MCP session open for entire websocket lifetime
+                # (avoids reconnect overhead on every message)
 
-                    try:
-                        message_dict = json.loads(raw_message)
-                    except json.JSONDecodeError as e:
-                        error_resp = WSErrorResponse(
-                            data={
-                                "message": f"Invalid JSON: {e}",
-                                "code": WSErrorCode.INVALID_JSON,
-                            }
+                async with AsyncExitStack() as stack:
+                    mcp_session_factory = getattr(session_env, "mcp_session", None)
+                    if callable(mcp_session_factory):
+                        mcp_session_cm = cast(
+                            AsyncContextManager[Any], mcp_session_factory()
                         )
-                        await websocket.send_text(error_resp.model_dump_json())
-                        continue
+                        await stack.enter_async_context(mcp_session_cm)
 
-                    msg_type = message_dict.get("type", "")
+                    while True:
+                        # Receive message from client
+                        raw_message = await websocket.receive_text()
 
-                    try:
-                        match msg_type:
-                            case "reset":
-                                msg = WSResetMessage(**message_dict)
+                        try:
+                            message_dict = json.loads(raw_message)
+                        except json.JSONDecodeError as e:
+                            error_resp = WSErrorResponse(
+                                data={
+                                    "message": f"Invalid JSON: {e}",
+                                    "code": WSErrorCode.INVALID_JSON,
+                                }
+                            )
+                            await websocket.send_text(error_resp.model_dump_json())
+                            continue
 
-                                is_async = (
-                                    session_env.reset_async.__func__
-                                    is not Environment.reset_async
-                                )
+                        msg_type = message_dict.get("type", "")
 
-                                if is_async:
-                                    sig = inspect.signature(session_env.reset_async)
-                                    valid_kwargs = self._get_valid_kwargs(sig, msg.data)
-                                    observation = await session_env.reset_async(
-                                        **valid_kwargs
-                                    )
-                                else:
-                                    sig = inspect.signature(session_env.reset)
-                                    valid_kwargs = self._get_valid_kwargs(sig, msg.data)
-                                    observation = await self._run_in_session_executor(
-                                        session_id, session_env.reset, **valid_kwargs
-                                    )
+                        try:
+                            match msg_type:
+                                case "reset":
+                                    msg = WSResetMessage(**message_dict)
 
-                                self._update_session_activity(session_id)
-
-                                response = WSObservationResponse(
-                                    data=serialize_observation(observation),
-                                )
-
-                            case "step":
-                                msg = WSStepMessage(**message_dict)
-                                action = deserialize_action(msg.data, self.action_cls)
-
-                                is_async = (
-                                    session_env.step_async.__func__
-                                    is not Environment.step_async
-                                )
-
-                                if is_async:
-                                    observation = await session_env.step_async(action)
-                                else:
-                                    observation = await self._run_in_session_executor(
-                                        session_id, session_env.step, action
+                                    is_async = (
+                                        session_env.reset_async.__func__
+                                        is not Environment.reset_async
                                     )
 
-                                self._update_session_activity(
-                                    session_id, increment_step=True
-                                )
+                                    if is_async:
+                                        sig = inspect.signature(session_env.reset_async)
+                                        valid_kwargs = self._get_valid_kwargs(
+                                            sig, msg.data
+                                        )
+                                        observation = await session_env.reset_async(
+                                            **valid_kwargs
+                                        )
+                                    else:
+                                        sig = inspect.signature(session_env.reset)
+                                        valid_kwargs = self._get_valid_kwargs(
+                                            sig, msg.data
+                                        )
+                                        observation = (
+                                            await self._run_in_session_executor(
+                                                session_id,
+                                                session_env.reset,
+                                                **valid_kwargs,
+                                            )
+                                        )
 
-                                response = WSObservationResponse(
-                                    data=serialize_observation(observation)
-                                )
+                                    self._update_session_activity(session_id)
 
-                            case "state":
-                                msg = WSStateMessage(**message_dict)
-                                state = session_env.state
-                                if hasattr(state, "model_dump"):
-                                    state_data = state.model_dump()
-                                else:
-                                    state_data = dict(state) if state else {}
-
-                                response = WSStateResponse(data=state_data)
-
-                            case "close":
-                                msg = WSCloseMessage(**message_dict)
-                                break
-
-                            case "mcp":
-                                msg = WSMCPMessage(**message_dict)
-                                try:
-                                    rpc_request = JsonRpcRequest(**msg.data)
-                                except (ValidationError, Exception) as e:
-                                    rpc_response = JsonRpcResponse.error_response(
-                                        JsonRpcErrorCode.INVALID_REQUEST,
-                                        f"Invalid request: {e}",
+                                    response = WSObservationResponse(
+                                        data=serialize_observation(observation),
                                     )
-                                else:
-                                    rpc_response = await mcp_handler(
-                                        rpc_request,
-                                        session_env=session_env,
+
+                                case "step":
+                                    msg = WSStepMessage(**message_dict)
+                                    action = deserialize_action(
+                                        msg.data, self.action_cls
                                     )
-                                response = WSMCPResponse(data=rpc_response.model_dump())
 
-                            case _:
-                                response = WSErrorResponse(
-                                    data={
-                                        "message": f"Unknown message type: {msg_type}",
-                                        "code": WSErrorCode.UNKNOWN_TYPE,
-                                    }
-                                )
+                                    is_async = (
+                                        session_env.step_async.__func__
+                                        is not Environment.step_async
+                                    )
 
-                        await websocket.send_text(response.model_dump_json())
+                                    if is_async:
+                                        observation = await session_env.step_async(
+                                            action
+                                        )
+                                    else:
+                                        observation = (
+                                            await self._run_in_session_executor(
+                                                session_id, session_env.step, action
+                                            )
+                                        )
 
-                    except ValidationError as e:
-                        error_resp = WSErrorResponse(
-                            data={
-                                "message": "Invalid message",
-                                "code": WSErrorCode.VALIDATION_ERROR,
-                                "errors": e.errors(),
-                            }
-                        )
-                        await websocket.send_text(error_resp.model_dump_json())
-                    except Exception as e:
-                        error_resp = WSErrorResponse(
-                            data={
-                                "message": str(e),
-                                "code": WSErrorCode.EXECUTION_ERROR,
-                            }
-                        )
-                        await websocket.send_text(error_resp.model_dump_json())
+                                    self._update_session_activity(
+                                        session_id, increment_step=True
+                                    )
+
+                                    response = WSObservationResponse(
+                                        data=serialize_observation(observation)
+                                    )
+
+                                case "state":
+                                    msg = WSStateMessage(**message_dict)
+                                    state = session_env.state
+                                    if hasattr(state, "model_dump"):
+                                        state_data = state.model_dump()
+                                    else:
+                                        state_data = dict(state) if state else {}
+
+                                    response = WSStateResponse(data=state_data)
+
+                                case "close":
+                                    msg = WSCloseMessage(**message_dict)
+                                    break
+
+                                case "mcp":
+                                    msg = WSMCPMessage(**message_dict)
+                                    try:
+                                        rpc_request = JsonRpcRequest(**msg.data)
+                                    except (ValidationError, Exception) as e:
+                                        rpc_response = JsonRpcResponse.error_response(
+                                            JsonRpcErrorCode.INVALID_REQUEST,
+                                            f"Invalid request: {e}",
+                                        )
+                                    else:
+                                        rpc_response = await mcp_handler(
+                                            rpc_request,
+                                            session_env=session_env,
+                                            session_id=session_id,
+                                        )
+                                    response = WSMCPResponse(
+                                        data=rpc_response.model_dump()
+                                    )
+
+                                case _:
+                                    response = WSErrorResponse(
+                                        data={
+                                            "message": f"Unknown message type: {msg_type}",
+                                            "code": WSErrorCode.UNKNOWN_TYPE,
+                                        }
+                                    )
+
+                            await websocket.send_text(response.model_dump_json())
+
+                        except ValidationError as e:
+                            error_resp = WSErrorResponse(
+                                data={
+                                    "message": "Invalid message",
+                                    "code": WSErrorCode.VALIDATION_ERROR,
+                                    "errors": e.errors(),
+                                }
+                            )
+                            await websocket.send_text(error_resp.model_dump_json())
+                        except Exception as e:
+                            error_resp = WSErrorResponse(
+                                data={
+                                    "message": str(e),
+                                    "code": WSErrorCode.EXECUTION_ERROR,
+                                }
+                            )
+                            await websocket.send_text(error_resp.model_dump_json())
 
             except WebSocketDisconnect:
                 pass
@@ -1276,7 +1557,7 @@ def create_app(
         from .web_interface import create_web_interface_app
 
         return create_web_interface_app(
-            env,
+            cast(Any, env),
             action_cls,
             observation_cls,
             env_name,

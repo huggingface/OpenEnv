@@ -15,6 +15,11 @@ FROM ${BASE_IMAGE} AS builder
 
 WORKDIR /app
 
+# Staged Hub builds resolve openenv-core from a git URL.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
 # Build argument to control whether we're building standalone or in-repo
 ARG BUILD_MODE=in-repo
 ARG ENV_NAME=web_search

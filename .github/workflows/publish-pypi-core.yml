@@ -21,10 +21,27 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
+
+    - name: Validate version matches release tag
+      if: github.event_name == 'release'
+      run: |
+        PKG_VERSION=$(python3 -c "
+        import tomllib
+        with open('pyproject.toml', 'rb') as f:
+            d = tomllib.load(f)
+        print(d['project']['version'])
+        ")
+        TAG_VERSION="${GITHUB_REF_NAME#v}"
+        echo "pyproject.toml: $PKG_VERSION  |  tag: $TAG_VERSION"
+        if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+          echo "ERROR: version mismatch — bump pyproject.toml before creating the release"
+          exit 1
+        fi
+        echo "Version confirmed: $PKG_VERSION"
 
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: '3.11'
 

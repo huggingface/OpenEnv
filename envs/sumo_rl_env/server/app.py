@@ -15,8 +15,17 @@ import os
 
 from openenv.core.env_server import create_app
 
-from ..models import SumoAction, SumoObservation
-from .sumo_environment import SumoEnvironment
+# Support both in-repo and standalone imports
+try:
+    # In-repo imports (when running from OpenEnv repository)
+    from ..models import SumoAction, SumoObservation
+    from .sumo_environment import SumoEnvironment
+except ImportError as e:
+    if "relative import" not in str(e) and "no known parent package" not in str(e):
+        raise
+    # Standalone imports (when running via uvicorn server.app:app)
+    from models import SumoAction, SumoObservation
+    from server.sumo_environment import SumoEnvironment
 
 # Get configuration from environment variables
 net_file = os.getenv("SUMO_NET_FILE", "/app/nets/single-intersection.net.xml")

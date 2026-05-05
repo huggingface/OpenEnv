@@ -77,7 +77,11 @@ New to OpenEnv? Follow our recommended learning path:
 
 2. **[Build Your Own Environment](auto_getting_started/environment-builder)** — The complete reference guide for creating, packaging, and deploying custom environments with Docker and Hugging Face Hub.
 
-3. **[Explore Environments](environments)** — Browse pre-built environments for games, coding, web browsing, and more.
+3. **[Simulation vs Production Mode](simulation-vs-production)** — Understand when to use the training loop, when to expose MCP directly, and how tools behave in each mode.
+
+4. **[MCP Environment Lifecycle](mcp-environment-lifecycle)** — Understand how MCP tools fit into the OpenEnv step loop, when `step_async()` is used, and when to use `call_tool()` versus `step(...)`.
+
+5. **[Explore Environments](environments)** — Browse pre-built environments for games, coding, web browsing, and more.
 
 ## How Can I Contribute?
 
@@ -89,21 +93,66 @@ OpenEnv is currently in an experimental stage. You should expect bugs, incomplet
 
 ```{toctree}
 :maxdepth: 2
-:caption: Learn
+:caption: Get Started
 :hidden:
 
+quickstart
+installation
+concepts
 auto_getting_started/index
-tutorials/index
-environments
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Guides
+:hidden:
+
+guides/index
+guides/auto-discovery
+guides/connecting
+guides/async-sync
+simulation-vs-production
+mcp-environment-lifecycle
+guides/first-environment
+guides/environment-anatomy
+guides/deployment
+guides/rl-integration
+guides/rewards
 customizing-web-ui
 ```
 
 ```{toctree}
 :maxdepth: 2
-:caption: Reference
+:caption: Tutorials
 :hidden:
 
+tutorials/index
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Environments
+:hidden:
+
+environments
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: API Reference
+:hidden:
+
+reference/index
+core
 cli
 auto_discovery
-core
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Community
+:hidden:
+
+contributing
+auto_getting_started/contributing-envs
 ```

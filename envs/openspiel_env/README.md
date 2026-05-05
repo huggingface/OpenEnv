@@ -118,6 +118,12 @@ The `openenv push` command will:
 - `--repo-id`, `-r`: Repository ID in format 'username/repo-name' (defaults to 'username/env-name' from openenv.yaml)
 - `--base-image`, `-b`: Base Docker image to use (overrides Dockerfile FROM)
 - `--private`: Deploy the space as private (default: public)
+- `--env-var`, `-e`: Public Space variable as `KEY=VALUE` (repeatable). Overrides matching keys from `variables:` in openenv.yaml.
+- `--secret`: Private Space secret as `KEY=VALUE` (repeatable). Value is never logged.
+
+Space variables and secrets are only applied on direct Hugging Face Space
+pushes. They are not supported with `--registry`, and they cannot be staged via
+`--create-pr`.
 
 ### Examples
 
@@ -133,7 +139,26 @@ openenv push --private
 
 # Combine options
 openenv push --repo-id my-org/openspiel-env --private
+
+# Select a game at push time (overrides variables: in openenv.yaml)
+openenv push -e OPENSPIEL_GAME=tic_tac_toe
+
+# Push with a private secret (not logged, stored encrypted in the Space)
+openenv push --secret OPENAI_API_KEY=sk-...
 ```
+
+### Declaring defaults in `openenv.yaml`
+
+Public variables that your server reads (e.g. `OPENSPIEL_GAME`) can be declared
+in `openenv.yaml` and will be set automatically on each `openenv push`:
+
+```yaml
+variables:
+  OPENSPIEL_GAME: catch
+```
+
+CLI `-e` overrides any matching key from the yaml. Secrets are **never** put in
+`openenv.yaml` — only on the CLI via `--secret KEY=VALUE`.
 
 After deployment, your space will be available at:
 `https://huggingface.co/spaces/<repo-id>`

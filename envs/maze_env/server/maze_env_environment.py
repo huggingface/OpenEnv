@@ -23,9 +23,14 @@ try:
 except ImportError:
     from models import MazeAction, MazeObservation, MazeState
 
-    # Standalone imports (when environment is standalone with openenv-core from pip)
-    from openenv_core.env_server.interfaces import Environment
-    from openenv_core.env_server.types import State
+    try:
+        # Standalone imports with the current package namespace.
+        from openenv.core.env_server.interfaces import Environment
+        from openenv.core.env_server.types import State
+    except ImportError:
+        # Backward-compatible standalone imports with the legacy namespace.
+        from openenv_core.env_server.interfaces import Environment
+        from openenv_core.env_server.types import State
 
 from .maze import Maze, Render, Status
 

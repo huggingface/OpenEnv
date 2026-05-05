@@ -13,9 +13,17 @@ This module provides an optimized Git environment for scenarios where:
 import uuid
 
 from openenv.core.env_server import Action, Environment, Observation
-from openenv.core.tools.git_server_client import GitServerClient
 
-from ..models import GitAction, GitObservation, GitState
+# Support both in-repo and standalone imports
+try:
+    # In-repo imports (when running from OpenEnv repository)
+    from ..models import GitAction, GitObservation, GitState
+except ImportError as e:
+    if "relative import" not in str(e) and "no known parent package" not in str(e):
+        raise
+    # Standalone imports (when running via uvicorn server.app:app)
+    from models import GitAction, GitObservation, GitState
+from openenv.core.tools.git_server_client import GitServerClient
 
 
 class GitTaskEnvironment(Environment):

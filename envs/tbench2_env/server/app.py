@@ -26,6 +26,10 @@ Usage:
 
     # Or run directly:
     python -m server.app
+
+Environment Variables:
+    TB2_MODE: Execution mode - "local" (default), "docker", or "auto"
+    MAX_CONCURRENT_ENVS: Maximum concurrent WebSocket sessions (default: 8)
 """
 
 import os
@@ -67,12 +71,14 @@ else:
 
 
 # Create the app with web interface and README integration
+max_concurrent = int(os.getenv("MAX_CONCURRENT_ENVS", "8"))
+
 app = create_app(
     _DEFAULT_ENVIRONMENT,
     Tbench2Action,
     Tbench2Observation,
     env_name="tbench2_env" + _ENV_SUFFIX,
-    max_concurrent_envs=1,  # increase this number to allow more concurrent WebSocket sessions
+    max_concurrent_envs=max_concurrent,
 )
 
 

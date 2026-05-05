@@ -10,8 +10,17 @@ import os
 from pathlib import Path
 from openenv.core.env_server import create_app
 
-from ..models import DIPGAction, DIPGObservation
-from .dipg_environment import DIPGEnvironment
+# Support both in-repo and standalone imports
+try:
+    # In-repo imports (when running from OpenEnv repository)
+    from ..models import DIPGAction, DIPGObservation
+    from .dipg_environment import DIPGEnvironment
+except ImportError as e:
+    if "relative import" not in str(e) and "no known parent package" not in str(e):
+        raise
+    # Standalone imports (when running via uvicorn server.app:app)
+    from models import DIPGAction, DIPGObservation
+    from server.dipg_environment import DIPGEnvironment
 
 # Get dataset path from environment, falling back to the bundled sample dataset.
 DEFAULT_DATASET_PATH = (

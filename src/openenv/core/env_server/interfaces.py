@@ -6,7 +6,9 @@
 
 import inspect
 from abc import ABC, abstractmethod
-from typing import Any, Generic, Optional, Protocol, TYPE_CHECKING, TypedDict, TypeVar
+from typing import Any, Generic, Optional, Protocol, TYPE_CHECKING, TypeVar
+
+from typing_extensions import TypedDict
 
 from .types import Action, EnvironmentMetadata, Observation, State
 
@@ -124,6 +126,8 @@ class Environment(ABC, Generic[ActT, ObsT, StateT]):
 
     # Class-level flag indicating whether this environment supports concurrent sessions
     SUPPORTS_CONCURRENT_SESSIONS: bool = False
+
+    REQUIRES_SINGLE_THREAD_EXECUTOR: bool = False
 
     # Optional rubric for reward computation
     rubric: Optional["Rubric"]

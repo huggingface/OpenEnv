@@ -1,10 +1,12 @@
 # OpenEnv: Production RL Made Simple
 
-<div align="center">
+<div align="center" markdown>
 
 <img src="https://upload.wikimedia.org/wikipedia/commons/1/10/PyTorch_logo_icon.svg" width="200" alt="PyTorch">
 
-## From "Hello World" to RL Training in 5 Minutes ✨
+*From "Hello World" to RL Training in 5 Minutes* ✨
+
+---
 
 **What if RL environments were as easy to use as REST APIs?**
 
@@ -15,9 +17,12 @@ That's OpenEnv. Type-safe. Isolated. Production-ready. 🎯
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-green.svg)](https://opensource.org/licenses/BSD-3-Clause)
 [![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
 
-Author: [Sanyam Bhutani](http://twitter.com/bhutanisanyam1/)
+**Author**: [Sanyam Bhutani](http://twitter.com/bhutanisanyam1/)
 
 </div>
+
+!!! note "Prefer the short path?"
+    If you want the fastest route before working through the full onboarding tutorial, start with the [Quick Start](../quickstart.md), browse environments in the [openenv organization](https://huggingface.co/openenv), or explore the [Environment Hub collection](https://huggingface.co/collections/openenv/environment-hub).
 
 ## Why OpenEnv?
 
@@ -43,51 +48,45 @@ Focus on experiments, use OpenEnvironments, and build agents that go beyond Cart
 
 ## 📋 What You'll Learn
 
-<table>
-<tr>
-<td width="50%">
+<div class="grid cards" markdown>
 
-**🎯 Part 1-2: The Fundamentals**
+-   **🎯 Part 1-2: The Fundamentals**
 
-- ⚡ RL in 60 seconds
-- 🤔 Why existing solutions fall short
-- 💡 The OpenEnv solution
+    ---
 
-</td>
-<td width="50%">
+    - ⚡ RL in 60 seconds
+    - 🤔 Why existing solutions fall short
+    - 💡 The OpenEnv solution
 
-**🏗️ Part 3-5: The Architecture**
+-   **🏗️ Part 3-5: The Architecture**
 
-- 🔧 How OpenEnv works
-- 🔍 Exploring real code
-- 🎮 OpenSpiel integration example
+    ---
 
-</td>
-</tr>
-<tr>
-<td width="50%">
+    - 🔧 How OpenEnv works
+    - 🔍 Exploring real code
+    - 🎮 OpenSpiel integration example
 
-**🎮 Part 6-8: Hands-On Demo**
+-   **🎮 Part 6-8: Hands-On Demo**
 
-- 🔌 Use existing OpenSpiel environment
-- 🤖 Test 4 different policies
-- 👀 Watch learning happen live
+    ---
 
-</td>
-<td width="50%">
+    - 🔌 Use existing OpenSpiel environment
+    - 🤖 Test 4 different policies
+    - 👀 Watch learning happen live
 
-**🔧 Part 9-10: Going Further**
+-   **🔧 Part 9-10: Going Further**
 
-- 🎮 Switch to other OpenSpiel games
-- ✨ Build your own integration
-- 🌐 Deploy to production
+    ---
 
-</td>
-</tr>
-</table>
+    - 🎮 Switch to other OpenSpiel games
+    - ✨ Build your own integration
+    - 🌐 Deploy to production
+
+</div>
 
 !!! tip "Pro Tip"
     This notebook is designed to run top-to-bottom in Google Colab with zero setup!
+
 
     ⏱️ **Time**: ~5 minutes | 📊 **Difficulty**: Beginner-friendly | 🎯 **Outcome**: Production-ready RL knowledge
 
@@ -163,7 +162,9 @@ while guesses_left > 0:
     guess = random.randint(1, 10)
     guesses_left -= 1
 
+
     print(f"💭 Guess #{3-guesses_left}: {guess}", end=" → ")
+
 
     # Reward signal (but we're not using it!)
     if guess == target:
@@ -294,8 +295,10 @@ if IN_COLAB:
     !git clone https://github.com/meta-pytorch/OpenEnv.git > /dev/null 2>&1
     %cd OpenEnv
 
+
     print("📚 Installing dependencies (this takes ~10 seconds)...")
     !pip install -q fastapi uvicorn requests
+
 
     import sys
     sys.path.insert(0, './src')
@@ -357,13 +360,16 @@ print("""
     class Environment(ABC):
         '''Base class for all environment implementations'''
 
+
         @abstractmethod
         def reset(self) -> Observation:
             '''Start new episode'''
 
+
         @abstractmethod
         def step(self, action: Action) -> Observation:
             '''Execute action, return observation'''
+
 
         @property
         def state(self) -> State:
@@ -374,11 +380,14 @@ print("""
     class HTTPEnvClient(ABC):
         '''Base class for HTTP clients'''
 
+
         def reset(self) -> StepResult:
             # HTTP POST /reset
 
+
         def step(self, action) -> StepResult:
             # HTTP POST /step
+
 
         def state(self) -> State:
             # HTTP GET /state
@@ -400,13 +409,16 @@ print("🎯 You focus on RL, OpenEnv handles the infrastructure.\n")
     class Environment(ABC):
         '''Base class for all environment implementations'''
 
+
         @abstractmethod
         def reset(self) -> Observation:
             '''Start new episode'''
 
+
         @abstractmethod
         def step(self, action: Action) -> Observation:
             '''Execute action, return observation'''
+
 
         @property
         def state(self) -> State:
@@ -417,11 +429,14 @@ print("🎯 You focus on RL, OpenEnv handles the infrastructure.\n")
     class HTTPEnvClient(ABC):
         '''Base class for HTTP clients'''
 
+
         def reset(self) -> StepResult:
             # HTTP POST /reset
 
+
         def step(self, action) -> StepResult:
             # HTTP POST /step
+
 
         def state(self) -> State:
             # HTTP GET /state
@@ -464,12 +479,14 @@ print("="*70)
 print("""
 class OpenSpielEnv(HTTPEnvClient[OpenSpielAction, OpenSpielObservation]):
 
+
     def _step_payload(self, action: OpenSpielAction) -> dict:
         '''Convert typed action to JSON for HTTP'''
         return {
             "action_id": action.action_id,
             "game_name": action.game_name,
         }
+
 
     def _parse_result(self, payload: dict) -> StepResult:
         '''Parse HTTP JSON response into typed observation'''
@@ -486,11 +503,14 @@ print("\n✨ Usage (works for ALL OpenEnv environments):")
 print("""
   env = OpenSpielEnv(base_url="http://localhost:8000")
 
+
   result = env.reset()
   # Returns StepResult[OpenSpielObservation] - Type safe!
 
+
   result = env.step(OpenSpielAction(action_id=2, game_name="catch"))
   # Type checker knows this is valid!
+
 
   state = env.state()
   # Returns OpenSpielState
@@ -508,12 +528,14 @@ print("\n🎯 This pattern works for ANY environment you want to wrap!\n")
 
 class OpenSpielEnv(HTTPEnvClient[OpenSpielAction, OpenSpielObservation]):
 
+
     def _step_payload(self, action: OpenSpielAction) -> dict:
         '''Convert typed action to JSON for HTTP'''
         return {
             "action_id": action.action_id,
             "game_name": action.game_name,
         }
+
 
     def _parse_result(self, payload: dict) -> StepResult:
         '''Parse HTTP JSON response into typed observation'''
@@ -530,11 +552,14 @@ class OpenSpielEnv(HTTPEnvClient[OpenSpielAction, OpenSpielObservation]):
 
   env = OpenSpielEnv(base_url="http://localhost:8000")
 
+
   result = env.reset()
   # Returns StepResult[OpenSpielObservation] - Type safe!
 
+
   result = env.step(OpenSpielAction(action_id=2, game_name="catch"))
   # Type checker knows this is valid!
+
 
   state = env.state()
   # Returns OpenSpielState
@@ -1066,9 +1091,11 @@ class YourEnvironment(Environment):
         # Initialize your game/simulation
         return YourObservation(...)
 
+
     def step(self, action: Action) -> Observation:
         # Execute action, update state
         return YourObservation(...)
+
 
     @property
     def state(self) -> State:
@@ -1086,6 +1113,7 @@ class YourEnv(HTTPEnvClient[YourAction, YourObservation]):
         """Convert action to JSON"""
         return {"action_value": action.action_value}
 
+
     def _parse_result(self, payload: dict) -> StepResult:
         """Parse JSON to observation"""
         return StepResult(
@@ -1093,6 +1121,7 @@ class YourEnv(HTTPEnvClient[YourAction, YourObservation]):
             reward=payload['reward'],
             done=payload['done']
         )
+
 
     def _parse_state(self, payload: dict) -> YourState:
         return YourState(...)
@@ -1150,56 +1179,53 @@ OpenEnv includes 3 complete examples:
 
 ### What You Learned
 
-<table>
-<tr>
-<td width="50%" style="vertical-align: top;">
+<div class="grid cards" markdown>
 
-### 📚 Concepts
+-   ### 📚 Concepts
 
-✅ **RL Fundamentals**
+    ---
 
-- The observe-act-reward loop
-- What makes good policies
-- Exploration vs exploitation
+    **RL Fundamentals**
 
-✅ **OpenEnv Architecture**
+    - The observe-act-reward loop
+    - What makes good policies
+    - Exploration vs exploitation
 
-- Client-server separation
-- Type-safe contracts
-- HTTP communication layer
+    **OpenEnv Architecture**
 
-✅ **Production Patterns**
+    - Client-server separation
+    - Type-safe contracts
+    - HTTP communication layer
 
-- Docker isolation
-- API design
-- Reproducible deployments
+    **Production Patterns**
 
-</td>
-<td width="50%" style="vertical-align: top;">
+    - Docker isolation
+    - API design
+    - Reproducible deployments
 
-### 🛠️ Skills
+-   ### 🛠️ Skills
 
-✅ **Using Environments**
+    ---
 
-- Import OpenEnv clients
-- Call reset/step/state
-- Work with typed observations
+    **Using Environments**
 
-✅ **Building Environments**
+    - Import OpenEnv clients
+    - Call reset/step/state
+    - Work with typed observations
 
-- Define type-safe models
-- Implement Environment class
-- Create HTTPEnvClient
+    **Building Environments**
 
-✅ **Testing & Debugging**
+    - Define type-safe models
+    - Implement Environment class
+    - Create HTTPEnvClient
 
-- Compare policies
-- Visualize episodes
-- Measure performance
+    **Testing & Debugging**
 
-</td>
-</tr>
-</table>
+    - Compare policies
+    - Visualize episodes
+    - Measure performance
+
+</div>
 
 ### OpenEnv vs Traditional RL
 
@@ -1214,6 +1240,7 @@ OpenEnv includes 3 complete examples:
 
 !!! success "The Bottom Line"
     OpenEnv brings **production engineering** to RL:
+
 
     - Same environments work locally and in production
     - Type safety catches bugs early

@@ -1,1 +1,2 @@
-../../environments/coding.md
+```{include} ../../../envs/coding_env/README.md
+```

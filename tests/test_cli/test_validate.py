@@ -33,7 +33,12 @@ class _MockResponse:
         return self._payload
 
 
-def _write_minimal_valid_env(env_dir: Path) -> None:
+def _write_minimal_valid_env(
+    env_dir: Path,
+    *,
+    main_signature: str = "def main():",
+    main_invocation: str = "main()",
+) -> None:
     """Create a minimal local environment that passes local validation."""
     (env_dir / "server").mkdir(parents=True)
 
@@ -51,7 +56,7 @@ def _write_minimal_valid_env(env_dir: Path) -> None:
         'server = "server.app:main"\n'
     )
     (env_dir / "server" / "app.py").write_text(
-        "def main():\n    return None\n\nif __name__ == '__main__':\n    main()\n"
+        f"{main_signature}\n    return None\n\nif __name__ == '__main__':\n    {main_invocation}\n"
     )
 
 
@@ -210,6 +215,55 @@ def test_validate_command_local_json_output(tmp_path: Path) -> None:
     assert payload["summary"]["passed_count"] == 1
     assert payload["summary"]["total_count"] == 1
     assert payload["summary"]["failed_criteria"] == []
+
+
+def test_validate_command_accepts_main_call_with_arguments(tmp_path: Path) -> None:
+    """Local validation accepts a guarded main(...) call with arguments."""
+    env_dir = tmp_path / "test_env"
+    _write_minimal_valid_env(
+        env_dir,
+        main_signature="def main(port: int = 8000):",
+        main_invocation="main(port=8000)",
+    )
+
+    result = runner.invoke(app, ["validate", str(env_dir)])
+
+    assert result.exit_code == 0
+    assert "main() function not callable" not in result.output
+    assert "[OK]" in result.output
+
+
+def test_validate_command_rejects_nested_main_guard(tmp_path: Path) -> None:
+    """Local validation requires the __main__ guard at module scope."""
+    env_dir = tmp_path / "test_env"
+    _write_minimal_valid_env(env_dir)
+    (env_dir / "server" / "app.py").write_text(
+        "def main():\n    return None\n\n"
+        "def wrapper():\n"
+        "    if __name__ == '__main__':\n"
+        "        main()\n"
+    )
+
+    result = runner.invoke(app, ["validate", str(env_dir)])
+
+    assert result.exit_code != 0
+    assert "main() function not callable" in result.output
+
+
+def test_validate_command_syntax_error_fallback_requires_dunder_main(
+    tmp_path: Path,
+) -> None:
+    """Syntax-error fallback still requires the literal __main__ guard string."""
+    env_dir = tmp_path / "test_env"
+    _write_minimal_valid_env(env_dir)
+    (env_dir / "server" / "app.py").write_text(
+        "def main(:\n    return None\n\nif __name__ ==\n    main(\n"
+    )
+
+    result = runner.invoke(app, ["validate", str(env_dir)])
+
+    assert result.exit_code != 0
+    assert "main() function not callable" in result.output
 
 
 def test_validate_command_rejects_mixed_path_and_url(tmp_path: Path) -> None:

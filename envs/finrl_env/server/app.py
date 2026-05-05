@@ -33,13 +33,19 @@ from pathlib import Path
 
 import pandas as pd
 
-try:
-    from core.env_server import create_app
-except ImportError:
-    from openenv.core.env_server import create_app
+from openenv.core.env_server import create_app
 
-from ..models import FinRLAction, FinRLObservation
-from .finrl_environment import FinRLEnvironment
+# Support both in-repo and standalone imports
+try:
+    # In-repo imports (when running from OpenEnv repository)
+    from ..models import FinRLAction, FinRLObservation
+    from .finrl_environment import FinRLEnvironment
+except ImportError as e:
+    if "relative import" not in str(e) and "no known parent package" not in str(e):
+        raise
+    # Standalone imports (when running via uvicorn server.app:app)
+    from models import FinRLAction, FinRLObservation
+    from server.finrl_environment import FinRLEnvironment
 
 
 def load_finrl_config():

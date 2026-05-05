@@ -168,14 +168,15 @@ def remove_orphan_and_duplicate_toctree(app, docname, source):
         if content.startswith(":orphan:"):
             content = content.replace(":orphan:\n\n", "", 1)
             content = content.replace(":orphan:\n", "", 1)
-        
+
         # Remove the sphinx-gallery generated hidden toctree
         # Find and remove the hidden toctree block
         import re
+
         # Match: .. toctree::\n   :hidden:\n\n   /auto_getting_started/...
-        pattern = r'\.\. toctree::\n\s+:hidden:\n\n(?:\s+/auto_getting_started/plot_\d+_\w+\n)+'
-        content = re.sub(pattern, '', content)
-        
+        pattern = r"\.\. toctree::\n\s+:hidden:\n\n(?:\s+/auto_getting_started/plot_\d+_\w+\n)+"
+        content = re.sub(pattern, "", content)
+
         source[0] = content
 
 
@@ -187,8 +188,8 @@ def copy_md_pages_to_gallery(app):
     generated gallery directory so Sphinx can discover them as part of the
     same toctree (important for section-nav context in pydata-sphinx-theme).
     """
-    import shutil
     import glob
+    import shutil
 
     srcdir = os.path.join(app.srcdir, "getting_started")
     dstdir = os.path.join(app.srcdir, "auto_getting_started")

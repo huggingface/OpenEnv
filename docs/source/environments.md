@@ -1,5 +1,9 @@
 # Environments
 
+```{note}
+The environments listed here may not reflect the latest additions. For the official OpenEnv collection, see the [OpenEnv organization on Hugging Face](https://huggingface.co/openenv). You may also find additional community environments tagged `agent-environment` on [Hugging Face Spaces](https://huggingface.co/spaces?category=agent-environment). The environments highlighted below are a curated selection.
+```
+
 The OpenEnv community has built a catalog of ready-to-run environments that cover deterministic smoke tests, full developer workflows, and multi-step reasoning challenges. Explore the surface area below and jump directly into the guides for each environment.
 
 `````{grid} 1 2 3 3
@@ -275,6 +279,26 @@ Calendar tool-use environment exposing a Calendar Gym through the OpenEnv reset/
 ```
 ````
 
+````{grid-item-card} CARLA
+:class-card: sd-border-1
+
+Embodied evaluation environment for testing LLM decision-making in a full 3D driving simulator with irreversible consequences and ethical trolley scenarios.
+
++++
+```{button-link} environments/carla.html
+:color: primary
+:outline:
+
+{octicon}`file;1em` Docs
+```
+```{button-link} https://huggingface.co/spaces/sergiopaniego/carla-env
+:color: warning
+:outline:
+
+🤗 Hugging Face
+```
+````
+
 ````{grid-item-card} Chess
 :class-card: sd-border-1
 
@@ -463,6 +487,26 @@ Autonomous wildfire-control simulation where agents contain spreading fires usin
 ```
 ````
 
+````{grid-item-card} Agent World Model
+:class-card: sd-border-1
+
+AgentWorldModel-1K — 1,000 synthetic MCP tool-use environments with 10,000 tasks for large-scale agentic RL training.
+
++++
+```{button-link} environments/agent_world_model.html
+:color: primary
+:outline:
+
+{octicon}`file;1em` Docs
+```
+```{button-link} https://huggingface.co/spaces/ChilleD/agent_world_model_env
+:color: warning
+:outline:
+
+🤗 Hugging Face
+```
+````
+
 `````
 
 ```{tip}
@@ -515,6 +559,7 @@ environments/websearch
 environments/browsergym
 environments/repl
 environments/calendar
+environments/carla
 environments/chess
 environments/connect4
 environments/dm_control
@@ -528,4 +573,5 @@ environments/reasoning_gym
 environments/tbench2
 environments/unity
 environments/wildfire
+environments/agent_world_model
 ```

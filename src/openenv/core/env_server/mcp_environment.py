@@ -56,6 +56,7 @@ import asyncio
 import inspect
 from abc import abstractmethod
 from collections import defaultdict
+from contextlib import asynccontextmanager
 from typing import Any, Callable, Dict, Optional
 
 from fastmcp import Client
@@ -163,6 +164,52 @@ class MCPEnvironment(Environment):
 
         # Track tool schemas for list_tools: {tool_name: {mode: schema}}
         self._mode_tool_schemas = defaultdict(dict)
+
+    def _require_mcp_client(self) -> Any:
+        """Return MCP client or raise if environment has been closed."""
+        if self.mcp_client is None:
+            raise RuntimeError("MCP client is not available; environment is closed")
+        return self.mcp_client
+
+    def _require_mcp_server(self) -> Any:
+        """Return MCP server or raise if environment has been closed."""
+        if self.mcp_server is None:
+            raise RuntimeError("MCP server is not available; environment is closed")
+        return self.mcp_server
+
+    @asynccontextmanager
+    async def mcp_session(self):
+        """
+        Context manager for MCP client sessions.
+
+        This wrapper serves two purposes:
+
+        1. **Null guard** — raises a clear error if ``close()`` has already
+           been called (``mcp_client`` is ``None``).
+
+        2. **AsyncExitStack adapter** — FastMCP's ``Client.__aenter__``
+           creates a background ``asyncio.Task`` for session management.
+           When entered directly via ``AsyncExitStack`` in the HTTP session
+           path (``_create_session``), this task can be cancelled by ASGI
+           harnesses (e.g. Starlette ``TestClient``) between requests,
+           corrupting session state.  Wrapping in an ``asynccontextmanager``
+           generator isolates the task lifecycle: the generator frame keeps
+           ``async with client:`` suspended at ``yield``, so cleanup only
+           runs when the stack explicitly closes the generator — not when
+           the event loop cancels orphaned tasks.
+
+        Delegates to FastMCP's ``Client`` context manager which is
+        reentrant: the first entry opens the transport and subsequent
+        (nested) entries simply increment an internal reference counter.
+        The transport is closed only when the outermost context exits.
+
+        No external lock is needed because ``Client._connect`` /
+        ``Client._disconnect`` already serialise connection state changes
+        through their own ``anyio.Lock``.
+        """
+        client = self._require_mcp_client()
+        async with client:
+            yield client
 
     @property
     def supports_code_mode(self) -> bool:
@@ -292,7 +339,8 @@ class MCPEnvironment(Environment):
 
             # If mode is None, register with FastMCP as usual
             if mode is None:
-                decorated_func = self.mcp_server.tool()(func)
+                mcp_server = self._require_mcp_server()
+                decorated_func = mcp_server.tool()(func)
                 self._mode_tools[tool_name][None] = func
                 return decorated_func
 
@@ -372,24 +420,49 @@ class MCPEnvironment(Environment):
             return self._step_impl(action, timeout_s=timeout_s, **kwargs)
 
     def _handle_list_tools(self) -> ListToolsObservation:
+        """Sync wrapper — delegates to the canonical async implementation."""
+        return run_async_safely(self._async_handle_list_tools())
+
+    async def _async_list_tools(self) -> list:
         """
-        Handle a ListToolsAction by querying the MCP server.
+        Async helper to list tools from the MCP client.
 
         Returns:
-            ListToolsObservation containing all available tools with their
-            names, descriptions, and input schemas, filtered by current mode.
+            List of tool objects from the MCP server.
         """
+        async with self.mcp_session() as client:
+            return await client.list_tools()
+
+    def _handle_call_tool(
+        self,
+        action: CallToolAction,
+        timeout_s: Optional[float] = None,
+    ) -> CallToolObservation:
+        """Sync wrapper — delegates to the canonical async implementation."""
+        return run_async_safely(
+            self._async_handle_call_tool(action, timeout_s=timeout_s)
+        )
+
+    async def _async_call_tool(self, tool_name: str, arguments: dict) -> Any:
+        """
+        Async helper to call a tool on the MCP server.
+
+        Args:
+            tool_name: Name of the tool to invoke.
+            arguments: Dictionary of arguments to pass to the tool.
+
+        Returns:
+            The result from the tool execution.
+        """
+        async with self.mcp_session() as client:
+            return await client.call_tool(tool_name, arguments)
+
+    async def _async_handle_list_tools(self) -> ListToolsObservation:
+        """Async version of _handle_list_tools — avoids run_async_safely."""
         try:
-            # Get current mode
             current_mode = getattr(self, "_mode", None)
-
-            # Start with tools from FastMCP server (mode=None tools)
-            tools_result = run_async_safely(self._async_list_tools())
-
-            # Build list of Tool objects
+            tools_result = await self._async_list_tools()
             tools = []
-
-            # Add FastMCP tools that are not mode-specific
             for tool in tools_result:
                 if tool.name not in self._mode_tool_schemas:
                     tools.append(
@@ -401,11 +474,8 @@ class MCPEnvironment(Environment):
                             else {},
                         )
                     )
-
-            # Add mode-specific tools available in current mode
             for tool_name, mode_schemas in self._mode_tool_schemas.items():
                 if None in mode_schemas:
-                    # Tool available in all modes
                     schema = mode_schemas[None]
                     tools.append(
                         Tool(
@@ -415,7 +485,6 @@ class MCPEnvironment(Environment):
                         )
                     )
                 elif current_mode in mode_schemas:
-                    # Tool available in current mode
                     schema = mode_schemas[current_mode]
                     tools.append(
                         Tool(
@@ -424,65 +493,30 @@ class MCPEnvironment(Environment):
                             input_schema=schema["input_schema"],
                         )
                     )
-
             return ListToolsObservation(tools=tools)
-
         except Exception as e:
-            # Return an observation with error in metadata
             return ListToolsObservation(
                 tools=[],
-                metadata={
-                    "error": str(e),
-                    "error_type": "list_tools_failed",
-                },
+                metadata={"error": str(e), "error_type": "list_tools_failed"},
             )
 
-    async def _async_list_tools(self) -> list:
-        """
-        Async helper to list tools from the MCP client.
-
-        Returns:
-            List of tool objects from the MCP server.
-        """
-        async with self.mcp_client:
-            return await self.mcp_client.list_tools()
-
-    def _handle_call_tool(
+    async def _async_handle_call_tool(
         self,
         action: CallToolAction,
         timeout_s: Optional[float] = None,
     ) -> CallToolObservation:
-        """
-        Handle a CallToolAction by invoking the specified tool.
-
-        Args:
-            action: The CallToolAction containing tool_name and arguments.
-            timeout_s: Timeout in seconds. Defaults to MCP_TOOL_CALL_TIMEOUT (30s).
-
-        Returns:
-            CallToolObservation with the tool's result or an error.
-        """
+        """Async version of _handle_call_tool — avoids run_async_safely."""
         timeout = timeout_s if timeout_s is not None else MCP_TOOL_CALL_TIMEOUT
-
-        # Check if this is a mode-specific tool
         tool_name = action.tool_name
         current_mode = getattr(self, "_mode", None)
 
         if tool_name in self._mode_tools:
             mode_info = self._mode_tools[tool_name]
-
-            # Check if tool is available in current mode
-            # Tool is available if:
-            # 1. It has a None mode (available in all modes), OR
-            # 2. It has an implementation for the current mode
             if None in mode_info:
-                # Use the mode-agnostic version
                 func = mode_info[None]
             elif current_mode in mode_info:
-                # Use the mode-specific version
                 func = mode_info[current_mode]
             else:
-                # Tool not available in current mode
                 return CallToolObservation(
                     tool_name=tool_name,
                     result=None,
@@ -491,16 +525,11 @@ class MCPEnvironment(Environment):
                         message=f"Tool '{tool_name}' not available in {current_mode} mode",
                     ),
                 )
-
-            # Call the mode-specific function directly
             try:
-                # Check if function is async and await if necessary
                 if inspect.iscoroutinefunction(func):
-                    result = run_async_safely(func(**action.arguments))
+                    result = await func(**action.arguments)
                 else:
                     result = func(**action.arguments)
-
-                # Wrap result in CallToolResult format to match FastMCP behavior
                 return CallToolObservation(
                     tool_name=tool_name,
                     result=CallToolResult(
@@ -521,22 +550,12 @@ class MCPEnvironment(Environment):
                     ),
                 )
 
-        # Not a mode-specific tool, use FastMCP
         try:
-            # Run the async call_tool with timeout
-            # Use run_async_safely to handle both sync and async contexts
-            result = run_async_safely(
-                asyncio.wait_for(
-                    self._async_call_tool(action.tool_name, action.arguments),
-                    timeout=timeout,
-                )
+            result = await asyncio.wait_for(
+                self._async_call_tool(action.tool_name, action.arguments),
+                timeout=timeout,
             )
-
-            return CallToolObservation(
-                tool_name=action.tool_name,
-                result=result,
-            )
-
+            return CallToolObservation(tool_name=action.tool_name, result=result)
         except asyncio.TimeoutError:
             return CallToolObservation(
                 tool_name=action.tool_name,
@@ -546,11 +565,8 @@ class MCPEnvironment(Environment):
                     message=f"Tool '{action.tool_name}' timed out after {timeout} seconds",
                 ),
             )
-
         except Exception as e:
             error_message = str(e)
-
-            # Determine error type based on the exception
             if (
                 "not found" in error_message.lower()
                 or "unknown tool" in error_message.lower()
@@ -563,29 +579,34 @@ class MCPEnvironment(Environment):
                 error_type = ToolErrorType.INVALID_ARGS
             else:
                 error_type = ToolErrorType.EXECUTION_ERROR
-
             return CallToolObservation(
                 tool_name=action.tool_name,
                 result=None,
-                error=ToolError(
-                    error_type=error_type,
-                    message=error_message,
-                ),
+                error=ToolError(error_type=error_type, message=error_message),
             )
 
-    async def _async_call_tool(self, tool_name: str, arguments: dict) -> Any:
+    async def step_async(
+        self,
+        action: Action,
+        timeout_s: Optional[float] = None,
+        **kwargs: Any,
+    ) -> Observation:
         """
-        Async helper to call a tool on the MCP server.
+        Async step that routes MCP actions without going through run_async_safely.
 
-        Args:
-            tool_name: Name of the tool to invoke.
-            arguments: Dictionary of arguments to pass to the tool.
-
-        Returns:
-            The result from the tool execution.
+        The WebSocket handler calls this directly on the outer event loop, where
+        the MCP session is already open, avoiding the thread/event-loop deadlock
+        that occurs when the sync step() path is used via run_in_executor.
         """
-        async with self.mcp_client:
-            return await self.mcp_client.call_tool(tool_name, arguments)
+        if isinstance(action, ListToolsAction):
+            return await self._async_handle_list_tools()
+        elif isinstance(action, CallToolAction):
+            return await self._async_handle_call_tool(action, timeout_s=timeout_s)
+        else:
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(
+                None, lambda: self._step_impl(action, timeout_s=timeout_s, **kwargs)
+            )
 
     @abstractmethod
     def _step_impl(

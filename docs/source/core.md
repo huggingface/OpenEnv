@@ -2,6 +2,10 @@
 
 The `openenv.core` package provides the core abstractions for building and running environments. For an end-to-end tutorial on building environments with OpenEnv, see the [building an environment](auto_getting_started/environment-builder.md) guide.
 
+If you are trying to understand when OpenEnv exposes the training loop versus direct MCP access, see the [simulation vs production mode](simulation-vs-production.md) guide.
+
+For a high-level explanation of how MCP-backed environments move through `step()`, `step_async()`, and convenience tool helpers, see the [MCP environment lifecycle](mcp-environment-lifecycle.md) guide.
+
 ## Server
 
 ### Environment server primitives

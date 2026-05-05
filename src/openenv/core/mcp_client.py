@@ -52,6 +52,7 @@ Example (sync wrapper):
     ...     result = env.call_tool("echo_message", message="Hello!")
 """
 
+import asyncio
 from typing import Any, Dict, List, Optional
 
 from .client_types import StepResult
@@ -118,6 +119,66 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
         )
         self._tools_cache: Optional[List[Tool]] = None
         self.use_production_mode = False
+        self._production_session_id: Optional[str] = None
+        self._production_session_lock = asyncio.Lock()
+        self._jsonrpc_request_id = 0
+        self._http_client: Optional[Any] = None  # lazily-created httpx.AsyncClient
+
+    def _next_request_id(self) -> int:
+        """Generate a monotonically increasing JSON-RPC request id."""
+        self._jsonrpc_request_id += 1
+        return self._jsonrpc_request_id
+
+    def _production_mcp_url(self) -> str:
+        """Build HTTP MCP endpoint URL from the client's websocket URL."""
+        url = self._ws_url.replace("ws://", "http://").replace("wss://", "https://")
+        if url.endswith("/ws"):
+            url = url[: -len("/ws")]
+        return url.rstrip("/") + "/mcp"
+
+    async def _get_http_client(self) -> Any:
+        """Return a shared httpx.AsyncClient, creating one lazily."""
+        if self._http_client is None:
+            import httpx
+
+            self._http_client = httpx.AsyncClient()
+        return self._http_client
+
+    async def _production_mcp_request(
+        self, method: str, params: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Send a JSON-RPC request to HTTP /mcp and return parsed JSON response."""
+        client = await self._get_http_client()
+        response = await client.post(
+            self._production_mcp_url(),
+            json={
+                "jsonrpc": "2.0",
+                "method": method,
+                "params": params or {},
+                "id": self._next_request_id(),
+            },
+            timeout=self._message_timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def _ensure_production_session(self) -> str:
+        """Create and cache a persistent HTTP MCP session id if needed."""
+        async with self._production_session_lock:
+            if self._production_session_id is not None:
+                return self._production_session_id
+
+            data = await self._production_mcp_request("openenv/session/create")
+            if "error" in data:
+                message = data.get("error", {}).get("message", "unknown error")
+                raise RuntimeError(f"Failed to create MCP session: {message}")
+
+            session_id = data.get("result", {}).get("session_id")
+            if not session_id:
+                raise RuntimeError("Failed to create MCP session: missing session_id")
+
+            self._production_session_id = session_id
+            return session_id
 
     async def list_tools(self, use_cache: bool = True) -> List[Tool]:
         """
@@ -138,26 +199,18 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
         if use_cache and self._tools_cache is not None:
             return self._tools_cache
 
-        # Use production mode HTTP endpoint if enabled
-        if self.use_production_mode:
-            import requests
-
-            # Convert ws:// URL to http:// URL
-            url = self._ws_url.replace("ws://", "http://").replace("wss://", "https://")
-            # Remove /ws suffix if present and add /mcp
-            url = url.rstrip("/ws").rstrip("/") + "/mcp"
-
+        # Use production mode HTTP endpoint if enabled.
+        # Some tests instantiate with __new__ and skip __init__, so default missing flag to False.
+        if getattr(self, "use_production_mode", False):
             try:
-                response = requests.post(
-                    url,
-                    json={
-                        "jsonrpc": "2.0",
-                        "method": "tools/list",
-                        "params": {},
-                        "id": 1,
-                    },
+                session_id = await self._ensure_production_session()
+                data = await self._production_mcp_request(
+                    "tools/list",
+                    {"session_id": session_id},
                 )
-                data = response.json()
+                if "error" in data:
+                    message = data.get("error", {}).get("message", "unknown error")
+                    raise RuntimeError(f"list_tools failed: {message}")
                 if "result" in data and "tools" in data["result"]:
                     tools = [
                         Tool(
@@ -177,7 +230,12 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
             return []
 
         result = await self.step(ListToolsAction())
-        self._tools_cache = result.observation.tools
+        if isinstance(result.observation, ListToolsObservation):
+            self._tools_cache = result.observation.tools
+            return self._tools_cache
+
+        # Unexpected observation type; keep API stable with an empty tool list.
+        self._tools_cache = []
         return self._tools_cache
 
     def _step_payload(self, action: Any) -> Dict[str, Any]:
@@ -251,6 +309,35 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
             step_count=payload.get("step_count", 0),
         )
 
+    async def close(self) -> None:
+        """
+        Close client resources.
+
+        In production MCP mode, this also closes the server-side persistent
+        MCP session (best effort) before closing websocket/provider resources.
+        """
+        if self._production_session_id is not None:
+            try:
+                await self._production_mcp_request(
+                    "openenv/session/close",
+                    {"session_id": self._production_session_id},
+                )
+            except Exception:
+                # Best effort cleanup - do not mask normal close behavior
+                pass
+            finally:
+                self._production_session_id = None
+
+        if self._http_client is not None:
+            try:
+                await self._http_client.aclose()
+            except Exception:
+                pass
+            finally:
+                self._http_client = None
+
+        await super().close()
+
 
 class MCPToolClient(MCPClientBase):
     """
@@ -316,6 +403,26 @@ class MCPToolClient(MCPClientBase):
             >>> result = await env.call_tool("greet", name="Claude")
             >>> print(result)  # "Hello, Claude!"
         """
+        if getattr(self, "use_production_mode", False):
+            session_id = await self._ensure_production_session()
+            data = await self._production_mcp_request(
+                "tools/call",
+                {
+                    "name": name,
+                    "arguments": kwargs,
+                    "session_id": session_id,
+                },
+            )
+
+            if "error" in data:
+                message = data.get("error", {}).get("message", "unknown error")
+                raise RuntimeError(f"Tool '{name}' failed: {message}")
+
+            result = data.get("result")
+            if isinstance(result, dict) and "data" in result:
+                return result["data"]
+            return result
+
         action = CallToolAction(tool_name=name, arguments=kwargs)
         result = await self.step(action)
         obs = result.observation

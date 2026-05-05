@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openenv-core"
-version = "0.2.2.dev0"
+version = "0.2.3"
 description = "A unified framework for reinforcement learning environments"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -29,6 +29,7 @@ dependencies = [
     "fastmcp>=3.0.0",
     # Web UI dependencies
     "gradio>=4.0.0",
+    "httpx>=0.28.1",
 ]
 
 [project.optional-dependencies]
@@ -85,8 +86,12 @@ include-package-data = true
 [tool.setuptools.package-data]
 "openenv.cli" = ["templates/**/*"]
 
+[tool.setuptools.exclude-package-data]
+"*" = ["*.pyc", "*.pyo", "__pycache__/*"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
+exclude = ["*.__pycache__", "*.__pycache__.*"]
 
 [tool.coverage.run]
 omit = [

@@ -1,2 +1,2 @@
-```{include} ../auto-discovery.md
+```{include} guides/auto-discovery.md
 ```

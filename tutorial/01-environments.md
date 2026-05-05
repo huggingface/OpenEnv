@@ -343,94 +343,32 @@ src/envs/your_env/
 Let's explore the actual OpenEnv code to see how this works:
 
 ```python
-# Import OpenEnv's core abstractions
-from core.env_server import Environment, Action, Observation, State
-from core.http_env_client import HTTPEnvClient
-
-print("="*70)
-print("   🧩 OPENENV CORE ABSTRACTIONS")
-print("="*70)
-
-print("""
-🖥️  SERVER SIDE (runs in Docker):
-
-    class Environment(ABC):
-        '''Base class for all environment implementations'''
-        
-        @abstractmethod
-        def reset(self) -> Observation:
-            '''Start new episode'''
-        
-        @abstractmethod
-        def step(self, action: Action) -> Observation:
-            '''Execute action, return observation'''
-        
-        @property
-        def state(self) -> State:
-            '''Get episode metadata'''
-
-📱 CLIENT SIDE (your training code):
-
-    class HTTPEnvClient(ABC):
-        '''Base class for HTTP clients'''
-        
-        def reset(self) -> StepResult:
-            # HTTP POST /reset
-        
-        def step(self, action) -> StepResult:
-            # HTTP POST /step
-        
-        def state(self) -> State:
-            # HTTP GET /state
-""")
-
-print("="*70)
-print("\n✨ Same interface on both sides - communication via HTTP!")
-print("🎯 You focus on RL, OpenEnv handles the infrastructure.\n")
+from openenv.core.env_client import EnvClient
+from openenv.core.env_server.interfaces import Environment
+from openenv.core.env_server.types import Action, Observation, State
 ```
 
-**Output:**
+Server side:
+
+```python
+class YourEnvironment(Environment[Action, Observation, State]):
+    def reset(self, seed=None, episode_id=None, **kwargs) -> Observation:
+        ...
+
+    def step(self, action: Action, timeout_s=None, **kwargs) -> Observation:
+        ...
 ```
-======================================================================
-   🧩 OPENENV CORE ABSTRACTIONS
-======================================================================
 
-🖥️  SERVER SIDE (runs in Docker):
+Client side:
 
-    class Environment(ABC):
-        '''Base class for all environment implementations'''
-        
-        @abstractmethod
-        def reset(self) -> Observation:
-            '''Start new episode'''
-        
-        @abstractmethod
-        def step(self, action: Action) -> Observation:
-            '''Execute action, return observation'''
-        
-        @property
-        def state(self) -> State:
-            '''Get episode metadata'''
-
-📱 CLIENT SIDE (your training code):
-
-    class HTTPEnvClient(ABC):
-        '''Base class for HTTP clients'''
-        
-        def reset(self) -> StepResult:
-            # HTTP POST /reset
-        
-        def step(self, action) -> StepResult:
-            # HTTP POST /step
-        
-        def state(self) -> State:
-            # HTTP GET /state
-
-======================================================================
-
-✨ Same interface on both sides - communication via HTTP!
-🎯 You focus on RL, OpenEnv handles the infrastructure.
+```python
+class YourEnv(EnvClient[Action, Observation, State]):
+    ...
 ```
+
+The environment implements the game or simulation logic. The client maintains the session and exposes the same `reset()`, `step()`, and `state()` flow to your training code.
+
+Same interface on both sides, with OpenEnv handling the transport and session management for you.
 
 ---
 

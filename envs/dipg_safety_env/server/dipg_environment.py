@@ -9,7 +9,15 @@ from pathlib import Path
 from openenv.core.client_types import StepResult
 from openenv.core.env_server import Environment
 
-from ..models import DIPGAction, DIPGObservation, DIPGState
+# Support both in-repo and standalone imports
+try:
+    # In-repo imports (when running from OpenEnv repository)
+    from ..models import DIPGAction, DIPGObservation, DIPGState
+except ImportError as e:
+    if "relative import" not in str(e) and "no known parent package" not in str(e):
+        raise
+    # Standalone imports (when running via uvicorn server.app:app)
+    from models import DIPGAction, DIPGObservation, DIPGState
 
 logger = logging.getLogger(__name__)
 

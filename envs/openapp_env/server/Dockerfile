@@ -83,7 +83,7 @@ RUN python -c "import open_apps; print('✓ OpenApps installed')"
 
 # Install openenv-core from GitHub with --no-deps to avoid openai>=2.7.2 conflict
 # Then install only the server dependencies (no openai needed for server)
-RUN pip install --no-cache-dir --no-deps "openenv-core[core]>=0.2.1" && \
+RUN pip install --no-cache-dir --no-deps "openenv-core[core]>=0.2.2" && \
     pip install --no-cache-dir fastapi pydantic uvicorn requests websockets fastmcp "beartype>=0.17.2"
 
 # Install openapp_env and remaining dependencies

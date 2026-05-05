@@ -33,8 +33,12 @@ try:
 except ImportError:
     from models import SnakeAction, SnakeObservation
 
-    # Standalone imports (when environment is standalone with openenv-core from pip)
-    from openenv_core.env_server.http_server import create_app
+    try:
+        # Standalone imports with the current openenv package namespace
+        from openenv.core.env_server.http_server import create_app
+    except ImportError:
+        # Backward-compatible standalone imports with the legacy namespace
+        from openenv_core.env_server.http_server import create_app
     from server.snake_environment import SnakeEnvironment
 
 

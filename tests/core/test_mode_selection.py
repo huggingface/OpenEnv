@@ -328,7 +328,7 @@ class TestModeDocumentation:
 # ============================================================================
 
 
-class TestMCPEnv(MCPEnvironment):
+class _TestMCPEnv(MCPEnvironment):
     """Concrete MCPEnvironment for testing with real FastMCP server."""
 
     def __init__(self, mcp_server):
@@ -381,7 +381,7 @@ class TestCodeModeCapability:
 
     def test_environment_has_code_mode_capability(self, mcp_server_with_tools):
         """Test environment can report code mode support."""
-        env = TestMCPEnv(mcp_server_with_tools)
+        env = _TestMCPEnv(mcp_server_with_tools)
 
         assert hasattr(env, "supports_code_mode")
         assert env.supports_code_mode is True
@@ -397,7 +397,7 @@ class TestCodeModeWithFastMCP:
 
     def test_get_callables_returns_tool_functions(self, mcp_server_with_tools):
         """Test get_callables() extracts functions from FastMCP server."""
-        env = TestMCPEnv(mcp_server_with_tools)
+        env = _TestMCPEnv(mcp_server_with_tools)
 
         callables = env.get_callables()
 
@@ -408,7 +408,7 @@ class TestCodeModeWithFastMCP:
 
     def test_callables_work_directly(self, mcp_server_with_tools):
         """Test callables from get_callables() can be called directly."""
-        env = TestMCPEnv(mcp_server_with_tools)
+        env = _TestMCPEnv(mcp_server_with_tools)
 
         callables = env.get_callables()
         result = callables["add"](a=5, b=3)
@@ -417,7 +417,7 @@ class TestCodeModeWithFastMCP:
 
     def test_code_mode_executes_python_directly(self, mcp_server_with_tools):
         """Test code mode executes Python code with tools as direct callables."""
-        env = TestMCPEnv(mcp_server_with_tools)
+        env = _TestMCPEnv(mcp_server_with_tools)
         env.reset()
 
         code = """
@@ -431,7 +431,7 @@ result = add(a=5, b=3)
 
     def test_code_mode_multiple_tool_calls_in_one_step(self, mcp_server_with_tools):
         """Test code mode allows multiple tool calls in a single step."""
-        env = TestMCPEnv(mcp_server_with_tools)
+        env = _TestMCPEnv(mcp_server_with_tools)
         env.reset()
 
         code = """
@@ -447,7 +447,7 @@ result = y
 
     def test_code_mode_with_complex_python_logic(self, mcp_server_with_tools):
         """Test code mode supports arbitrary Python logic around tool calls."""
-        env = TestMCPEnv(mcp_server_with_tools)
+        env = _TestMCPEnv(mcp_server_with_tools)
         env.reset()
 
         code = """
@@ -475,7 +475,7 @@ class TestCodeModeWithModeAwareTools:
         """Test get_callables() returns mode-specific tools for current mode."""
         mcp = FastMCP("mode-test")
 
-        class ModeEnv(TestMCPEnv):
+        class ModeEnv(_TestMCPEnv):
             def __init__(self):
                 super().__init__(mcp)
                 self._mode = "simulation"
@@ -500,7 +500,7 @@ class TestCodeModeWithModeAwareTools:
         """Test get_callables() returns different tools when mode changes."""
         mcp = FastMCP("mode-switch-test")
 
-        class ModeEnv(TestMCPEnv):
+        class ModeEnv(_TestMCPEnv):
             def __init__(self):
                 super().__init__(mcp)
                 self._mode = "simulation"
@@ -528,7 +528,7 @@ class TestCodeModeWithModeAwareTools:
         """Test execute_code() uses the correct mode-specific tools."""
         mcp = FastMCP("code-mode-test")
 
-        class ModeEnv(TestMCPEnv):
+        class ModeEnv(_TestMCPEnv):
             def __init__(self):
                 super().__init__(mcp)
                 self._mode = "simulation"
@@ -563,7 +563,7 @@ class TestToolCallingMode:
 
     def test_list_tools_still_works(self, mcp_server_with_tools):
         """Test ListToolsAction still works in tool-calling mode."""
-        env = TestMCPEnv(mcp_server_with_tools)
+        env = _TestMCPEnv(mcp_server_with_tools)
 
         action = ListToolsAction()
         obs = env.step(action)
@@ -575,7 +575,7 @@ class TestToolCallingMode:
         self, mcp_server_with_tools
     ):
         """Test code mode doesn't break tool discovery (list_tools still works)."""
-        env = TestMCPEnv(mcp_server_with_tools)
+        env = _TestMCPEnv(mcp_server_with_tools)
 
         # Tool discovery should still work via step()
         obs = env.step(ListToolsAction())
@@ -598,7 +598,7 @@ class TestCodeModeErrorHandling:
 
     def test_code_mode_handles_syntax_errors(self, mcp_server_with_tools):
         """Test code mode returns proper error for Python syntax errors."""
-        env = TestMCPEnv(mcp_server_with_tools)
+        env = _TestMCPEnv(mcp_server_with_tools)
         env.reset()
 
         code = """
@@ -612,7 +612,7 @@ result = add(a=5, b=  # Syntax error
 
     def test_code_mode_handles_runtime_errors(self, mcp_server_with_tools):
         """Test code mode returns proper error for runtime errors."""
-        env = TestMCPEnv(mcp_server_with_tools)
+        env = _TestMCPEnv(mcp_server_with_tools)
         env.reset()
 
         code = """
@@ -625,7 +625,7 @@ result = add(a=5, b="not a number")  # Type error
 
     def test_code_mode_handles_missing_tool(self, mcp_server_with_tools):
         """Test code mode returns proper error when calling non-existent tool."""
-        env = TestMCPEnv(mcp_server_with_tools)
+        env = _TestMCPEnv(mcp_server_with_tools)
         env.reset()
 
         code = """

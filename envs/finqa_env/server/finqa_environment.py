@@ -278,6 +278,55 @@ class FinQAEnvironment(MCPEnvironment):
 
         return obs
 
+    async def step_async(
+        self,
+        action: Action,
+        timeout_s: Optional[float] = None,
+        **kwargs: Any,
+    ) -> Observation:
+        """
+        Async step used by the WebSocket handler.
+
+        Mirrors step() logic (step count, submit_answer reward, max-step
+        termination) but delegates to MCPEnvironment.step_async to avoid
+        the run_async_safely event-loop deadlock on the WebSocket path.
+        """
+        self._state.step_count += 1
+
+        obs = await super().step_async(action, timeout_s=timeout_s, **kwargs)
+
+        if isinstance(action, CallToolAction) and action.tool_name == "submit_answer":
+            submitted_answer = action.arguments.get("answer", "")
+            reward = compute_reward(submitted_answer, self._state.ground_truth)
+            logger.info(
+                f"Episode {self._state.episode_id} ended: "
+                f"submitted='{submitted_answer}', truth='{self._state.ground_truth}', reward={reward}"
+            )
+            return Observation(
+                done=True,
+                reward=reward,
+                metadata={
+                    **obs.metadata,
+                    "ground_truth": self._state.ground_truth,
+                    "submitted_answer": submitted_answer,
+                },
+            )
+
+        if self._state.step_count >= self.max_steps:
+            logger.info(
+                f"Episode {self._state.episode_id} terminated: max steps reached"
+            )
+            return Observation(
+                done=True,
+                reward=0.0,
+                metadata={
+                    **obs.metadata,
+                    "error": f"Max steps ({self.max_steps}) reached without submitting answer.",
+                },
+            )
+
+        return obs
+
     @property
     def state(self) -> FinQAState:
         """Get the current environment state."""

@@ -442,7 +442,7 @@ class TestProductionModeMCPErrorHandling:
             # Should return invalid params error
             assert response["type"] == "mcp"
             assert "error" in response["data"]
-            assert response["data"]["error"]["code"] == -32600
+            assert response["data"]["error"]["code"] == -32602
             assert "name" in response["data"]["error"]["message"].lower()
 
 

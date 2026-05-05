@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y \
 COPY envs/coding_env/ ./envs/coding_env/
 
 # Install openenv-core first from PyPI, then coding_env
-RUN pip install --no-cache-dir "openenv-core[core]>=0.2.1" && \
+RUN pip install --no-cache-dir "openenv-core[core]>=0.2.2" && \
     pip install --no-cache-dir ./envs/coding_env/
 
 # Environment variables

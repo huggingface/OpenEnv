@@ -68,8 +68,8 @@ COPY --from=builder /app/env /app/env
 # Set PATH to use the virtual environment
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Set PYTHONPATH so imports work correctly
-ENV PYTHONPATH="/app/env:$PYTHONPATH"
+# Prefer the staged repo sources so env validation uses the checked-out OpenEnv tree.
+ENV PYTHONPATH="/app/env/src/core:/app/env/src:/app/env:$PYTHONPATH"
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

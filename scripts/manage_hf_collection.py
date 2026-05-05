@@ -4,7 +4,7 @@ Hugging Face Collection Manager for OpenEnv.
 
 This script manages two collection flows:
 1) Versioned release collection (for deployed suffix spaces)
-2) Global OpenEnv collection (all spaces tagged with `openenv`)
+2) Global OpenEnv collection (validated first-party canonicals by default)
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ DEFAULT_COLLECTION_SLUG = "openenv/environment-hub-68f16377abea1ea114fa0743"
 DEFAULT_VERSIONED_COLLECTION_TITLE_PREFIX = "OpenEnv Environment Hub"
 DEFAULT_GLOBAL_COLLECTION_TITLE = "OpenEnv Environment Hub"
 DEFAULT_TAG_FILTER = "openenv"
-DEFAULT_GLOBAL_SCOPE = "tagged"
+DEFAULT_GLOBAL_SCOPE = "canonical"
 FALLBACK_DEFAULT_VERSION = "0.2.0"
 VERSION_SUFFIX_PATTERN = re.compile(r"-(?:\d+\.\d+\.\d+|v\d+-\d+-\d+)$")
 DUAL_MODE_FLAGS = frozenset(
@@ -133,25 +133,58 @@ def find_collection_by_title(api: HfApi, namespace: str, title: str):
     return None
 
 
-def ensure_collection_privacy(
-    api: HfApi, collection_slug: str, private: bool, dry_run: bool
+def ensure_collection_metadata(
+    api: HfApi,
+    collection_slug: str,
+    *,
+    title: Optional[str],
+    description: Optional[str],
+    private: bool,
+    dry_run: bool,
 ) -> None:
-    """Ensure collection privacy metadata matches desired state."""
+    """Ensure collection metadata matches the desired state."""
     state = "private" if private else "public"
     if dry_run:
-        logger.info(f"[DRY RUN] Would set collection visibility to {state}: {collection_slug}")
+        logger.info(
+            f"[DRY RUN] Would set collection metadata to visibility={state}: {collection_slug}"
+        )
         return
 
     try:
-        api.update_collection_metadata(collection_slug=collection_slug, private=private)
-        logger.info(f"✓ Collection visibility set to {state}: {collection_slug}")
+        api.update_collection_metadata(
+            collection_slug=collection_slug,
+            title=title,
+            description=description,
+            private=private,
+        )
+        logger.info(f"✓ Collection metadata synced ({state}): {collection_slug}")
     except TypeError:
         # Backward compatibility for older hub versions (best effort).
-        logger.warning(
-            "Installed huggingface_hub may not support collection privacy metadata updates."
-        )
+        try:
+            api.update_collection_metadata(collection_slug=collection_slug, private=private)
+            logger.info(
+                f"✓ Collection visibility set to {state}: {collection_slug}"
+            )
+        except Exception as exc:
+            logger.warning(f"Could not set collection visibility for {collection_slug}: {exc}")
     except Exception as exc:
-        logger.warning(f"Could not set collection visibility for {collection_slug}: {exc}")
+        logger.warning(f"Could not sync collection metadata for {collection_slug}: {exc}")
+
+
+def resolve_explicit_collection_slug(api: HfApi, explicit_slug: str) -> str:
+    """Resolve a user-facing collection slug alias to the canonical Hub slug."""
+    try:
+        collection = api.get_collection(explicit_slug)
+    except Exception as exc:
+        logger.warning(
+            f"Could not resolve explicit collection slug '{explicit_slug}'; using it as-is: {exc}"
+        )
+        return explicit_slug
+
+    resolved_slug = getattr(collection, "slug", None) or explicit_slug
+    if resolved_slug != explicit_slug:
+        logger.info(f"Resolved collection slug alias '{explicit_slug}' -> '{resolved_slug}'")
+    return resolved_slug
 
 
 def resolve_collection_slug(
@@ -165,14 +198,29 @@ def resolve_collection_slug(
 ) -> str:
     """Resolve, create, and/or enforce visibility for a collection."""
     if explicit_slug:
-        ensure_collection_privacy(api, explicit_slug, private, dry_run)
-        return explicit_slug
+        resolved_slug = resolve_explicit_collection_slug(api, explicit_slug)
+        ensure_collection_metadata(
+            api,
+            resolved_slug,
+            title=title,
+            description=description,
+            private=private,
+            dry_run=dry_run,
+        )
+        return resolved_slug
 
     existing = find_collection_by_title(api, namespace, title)
     if existing:
         slug = existing.slug
         logger.info(f"Using existing collection: {slug}")
-        ensure_collection_privacy(api, slug, private, dry_run)
+        ensure_collection_metadata(
+            api,
+            slug,
+            title=title,
+            description=description,
+            private=private,
+            dry_run=dry_run,
+        )
         return slug
 
     if dry_run:
@@ -196,23 +244,28 @@ def resolve_collection_slug(
             description=description,
             exists_ok=True,
         )
-        ensure_collection_privacy(api, collection.slug, private, dry_run=False)
+        ensure_collection_metadata(
+            api,
+            collection.slug,
+            title=title,
+            description=description,
+            private=private,
+            dry_run=False,
+        )
 
     logger.info(f"✓ Created collection: {collection.slug}")
     return collection.slug
 
 
-def get_collection_spaces(
-    api: HfApi, collection_slug: str = DEFAULT_COLLECTION_SLUG
-) -> Set[str]:
-    """Retrieve space IDs currently in collection."""
+def get_collection_items(api: HfApi, collection_slug: str = DEFAULT_COLLECTION_SLUG):
+    """Retrieve collection items currently present for Spaces."""
     logger.info(f"Fetching current collection contents: {collection_slug}")
 
     try:
         collection = api.get_collection(collection_slug)
-        space_ids = {item.item_id for item in collection.items if item.item_type == "space"}
-        logger.info(f"✓ Found {len(space_ids)} spaces in collection")
-        return space_ids
+        items = [item for item in collection.items if item.item_type == "space"]
+        logger.info(f"✓ Found {len(items)} spaces in collection")
+        return items
     except HfHubHTTPError as exc:
         if exc.response.status_code == 404:
             logger.error(f"Collection not found: {collection_slug}")
@@ -222,6 +275,15 @@ def get_collection_spaces(
     except Exception as exc:
         logger.error(f"Unexpected error fetching collection: {exc}")
         sys.exit(1)
+
+
+def get_collection_spaces(
+    api: HfApi, collection_slug: str = DEFAULT_COLLECTION_SLUG
+) -> Set[str]:
+    """Retrieve space IDs currently in collection."""
+    return {
+        item.item_id for item in get_collection_items(api, collection_slug=collection_slug)
+    }
 
 
 def discover_openenv_spaces(
@@ -310,6 +372,18 @@ def discover_canonical_openenv_spaces(
     return deduped
 
 
+def discover_global_target_spaces(
+    api: HfApi,
+    namespace: str,
+    tag_filter: str,
+    scope: str,
+) -> List[str]:
+    """Resolve global collection targets for the requested discovery scope."""
+    if scope == "canonical":
+        return discover_canonical_openenv_spaces(api, namespace, tag_filter)
+    return discover_openenv_spaces(api, tag_filter)
+
+
 def dedupe_preserve_order(values: Iterable[str]) -> List[str]:
     """Deduplicate while preserving insertion order."""
     seen = set()
@@ -370,6 +444,46 @@ def add_spaces_to_collection(
     return added_count
 
 
+def remove_spaces_from_collection(
+    api: HfApi,
+    collection_slug: str,
+    current_items,
+    target_space_ids: List[str],
+    dry_run: bool = False,
+) -> int:
+    """Remove spaces that are not part of the target set."""
+    target_ids = set(target_space_ids)
+    items_to_remove = [item for item in current_items if item.item_id not in target_ids]
+    if not items_to_remove:
+        logger.info("No stale spaces to remove")
+        return 0
+
+    removed_count = 0
+    failed_count = 0
+    for item in items_to_remove:
+        if dry_run:
+            logger.info(f"[DRY RUN] Would remove space from {collection_slug}: {item.item_id}")
+            removed_count += 1
+            continue
+
+        try:
+            logger.info(f"Removing stale space from collection: {item.item_id}")
+            api.delete_collection_item(
+                collection_slug=collection_slug,
+                item_object_id=item.item_object_id,
+                missing_ok=True,
+            )
+            logger.info(f"✓ Removed: {item.item_id}")
+            removed_count += 1
+        except Exception as exc:
+            logger.error(f"Failed to remove {item.item_id}: {exc}")
+            failed_count += 1
+
+    if failed_count > 0:
+        logger.warning(f"Failed to remove {failed_count} spaces")
+    return removed_count
+
+
 def should_skip_fetch(collection_slug: str) -> bool:
     """Skip fetch for dry-run synthetic slugs."""
     return "/dry-run-" in collection_slug
@@ -390,13 +504,18 @@ Examples:
   python scripts/manage_hf_collection.py --version 0.2.1 \\
       --space-id openenv/echo_env-0.2.1 --space-id openenv/coding_env-0.2.1
 
-  # Sync only global OpenEnv collection from tag discovery
+  # Sync only the curated public OpenEnv collection from canonical discovery
   python scripts/manage_hf_collection.py --skip-versioned-collection
         """,
     )
 
     parser.add_argument("--dry-run", action="store_true", help="Preview changes only")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
+    parser.add_argument(
+        "--reconcile",
+        action="store_true",
+        help="Remove stale collection items that are not part of the resolved target set.",
+    )
     parser.add_argument(
         "--version",
         default=DEFAULT_VERSION,
@@ -523,16 +642,22 @@ Examples:
             dry_run=args.dry_run,
         )
 
-        current_spaces = (
-            set()
+        current_items = (
+            []
             if args.dry_run and should_skip_fetch(collection_slug)
-            else get_collection_spaces(api, collection_slug)
+            else get_collection_items(api, collection_slug)
         )
+        current_spaces = {item.item_id for item in current_items}
 
         if args.space_id:
             resolved_spaces = dedupe_preserve_order(args.space_id)
         else:
-            resolved_spaces = discover_openenv_spaces(api, args.tag_filter)
+            resolved_spaces = discover_global_target_spaces(
+                api,
+                namespace=args.collection_namespace,
+                tag_filter=args.tag_filter,
+                scope=args.global_scope,
+            )
 
         new_spaces = [space_id for space_id in resolved_spaces if space_id not in current_spaces]
 
@@ -543,6 +668,10 @@ Examples:
         logger.info(f"  Total spaces in collection: {len(current_spaces)}")
         logger.info(f"  Total spaces resolved: {len(resolved_spaces)}")
         logger.info(f"  New spaces to add: {len(new_spaces)}")
+        logger.info(
+            f"  Stale spaces to remove: "
+            f"{len([item for item in current_items if item.item_id not in set(resolved_spaces)]) if args.reconcile else 0}"
+        )
         logger.info("=" * 60)
 
         add_spaces_to_collection(
@@ -552,6 +681,14 @@ Examples:
             version=args.version,
             dry_run=args.dry_run,
         )
+        if args.reconcile:
+            remove_spaces_from_collection(
+                api=api,
+                collection_slug=collection_slug,
+                current_items=current_items,
+                target_space_ids=resolved_spaces,
+                dry_run=args.dry_run,
+            )
         logger.info(f"Collection URL: https://huggingface.co/collections/{collection_slug}")
         return
 
@@ -560,12 +697,12 @@ Examples:
     if (not args.skip_global_collection) or (
         not args.skip_versioned_collection and len(explicit_spaces) == 0
     ):
-        if args.global_scope == "canonical":
-            discovered_spaces = discover_canonical_openenv_spaces(
-                api, args.collection_namespace, args.tag_filter
-            )
-        else:
-            discovered_spaces = discover_openenv_spaces(api, args.tag_filter)
+        discovered_spaces = discover_global_target_spaces(
+            api,
+            namespace=args.collection_namespace,
+            tag_filter=args.tag_filter,
+            scope=args.global_scope,
+        )
 
     versioned_targets = explicit_spaces if explicit_spaces else discovered_spaces
     global_targets = discovered_spaces
@@ -590,11 +727,12 @@ Examples:
             dry_run=args.dry_run,
         )
 
-        current_versioned = (
-            set()
+        current_versioned_items = (
+            []
             if args.dry_run and should_skip_fetch(versioned_slug)
-            else get_collection_spaces(api, versioned_slug)
+            else get_collection_items(api, versioned_slug)
         )
+        current_versioned = {item.item_id for item in current_versioned_items}
         new_versioned = [s for s in versioned_targets if s not in current_versioned]
 
         logger.info("=" * 60)
@@ -607,6 +745,10 @@ Examples:
         logger.info(f"  Current spaces: {len(current_versioned)}")
         logger.info(f"  Resolved spaces: {len(versioned_targets)}")
         logger.info(f"  New spaces to add: {len(new_versioned)}")
+        logger.info(
+            f"  Stale spaces to remove: "
+            f"{len([item for item in current_versioned_items if item.item_id not in set(versioned_targets)]) if args.reconcile else 0}"
+        )
         logger.info("=" * 60)
 
         add_spaces_to_collection(
@@ -617,24 +759,48 @@ Examples:
             dry_run=args.dry_run,
             note=f"OpenEnv release {normalize_version(args.version)}",
         )
+        if args.reconcile:
+            remove_spaces_from_collection(
+                api=api,
+                collection_slug=versioned_slug,
+                current_items=current_versioned_items,
+                target_space_ids=versioned_targets,
+                dry_run=args.dry_run,
+            )
         logger.info(f"Versioned collection URL: https://huggingface.co/collections/{versioned_slug}")
 
     if not args.skip_global_collection:
+        global_description = (
+            "Validated first-party canonical OpenEnv environments on Hugging Face Hub"
+            if args.global_scope == "canonical"
+            else "All OpenEnv-tagged environments on Hugging Face Hub"
+        )
+        global_note = (
+            "OpenEnv canonical sync"
+            if args.global_scope == "canonical"
+            else f"OpenEnv tag sync ({args.tag_filter})"
+        )
+        discovery_label = (
+            "Canonical spaces discovered"
+            if args.global_scope == "canonical"
+            else "Tagged spaces discovered"
+        )
         global_slug = resolve_collection_slug(
             api=api,
             namespace=args.collection_namespace,
             title=args.global_collection_title,
-            description="All OpenEnv-tagged environments on Hugging Face Hub",
+            description=global_description,
             explicit_slug=args.global_collection_slug,
             private=args.private_global_collection,
             dry_run=args.dry_run,
         )
 
-        current_global = (
-            set()
+        current_global_items = (
+            []
             if args.dry_run and should_skip_fetch(global_slug)
-            else get_collection_spaces(api, global_slug)
+            else get_collection_items(api, global_slug)
         )
+        current_global = {item.item_id for item in current_global_items}
         new_global = [s for s in global_targets if s not in current_global]
 
         logger.info("=" * 60)
@@ -644,8 +810,12 @@ Examples:
             f"  Visibility: {'private' if args.private_global_collection else 'public'}"
         )
         logger.info(f"  Current spaces: {len(current_global)}")
-        logger.info(f"  Tagged spaces discovered: {len(global_targets)}")
+        logger.info(f"  {discovery_label}: {len(global_targets)}")
         logger.info(f"  New spaces to add: {len(new_global)}")
+        logger.info(
+            f"  Stale spaces to remove: "
+            f"{len([item for item in current_global_items if item.item_id not in set(global_targets)]) if args.reconcile else 0}"
+        )
         logger.info("=" * 60)
 
         add_spaces_to_collection(
@@ -654,8 +824,16 @@ Examples:
             space_ids=new_global,
             version=args.version,
             dry_run=args.dry_run,
-            note=f"OpenEnv tag sync ({args.tag_filter})",
+            note=global_note,
         )
+        if args.reconcile:
+            remove_spaces_from_collection(
+                api=api,
+                collection_slug=global_slug,
+                current_items=current_global_items,
+                target_space_ids=global_targets,
+                dry_run=args.dry_run,
+            )
         logger.info(f"Global collection URL: https://huggingface.co/collections/{global_slug}")
 
 
