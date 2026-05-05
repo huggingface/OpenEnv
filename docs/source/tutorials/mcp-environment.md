@@ -1,5 +1,7 @@
 # MCP Tools in OpenEnv Environments
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/meta-pytorch/OpenEnv/blob/main/examples/mcp_environment.ipynb)
+
 Most agentic work ends up needing the same thing: a way for the model to **call tools** and receive structured feedback, whether that is during RL training or offline evaluation. OpenEnv standardises that surface with **[MCP](https://modelcontextprotocol.io)** (Model Context Protocol), so the same tool interface works during training, eval, inference, and external serving. This tutorial covers the four paths you will walk in practice — wiring an MCP-backed environment into a training loop, using the same env for offline eval, inspecting the API underneath both of those, and building your own MCP environment when no existing one fits.
 
 ## Why MCP?
