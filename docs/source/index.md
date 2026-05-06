@@ -77,9 +77,9 @@ New to OpenEnv? Follow our recommended learning path:
 
 2. **[Build Your Own Environment](auto_getting_started/environment-builder)** — The complete reference guide for creating, packaging, and deploying custom environments with Docker and Hugging Face Hub.
 
-3. **[Simulation vs Production Mode](simulation-vs-production)** — Understand when to use the training loop, when to expose MCP directly, and how tools behave in each mode.
+3. **[Simulation vs Production Mode](guides/simulation-vs-production)** — Understand when to use the training loop, when to expose MCP directly, and how tools behave in each mode.
 
-4. **[MCP Environment Lifecycle](mcp-environment-lifecycle)** — Understand how MCP tools fit into the OpenEnv step loop, when `step_async()` is used, and when to use `call_tool()` versus `step(...)`.
+4. **[MCP Environment Lifecycle](guides/mcp-environment-lifecycle)** — Understand how MCP tools fit into the OpenEnv step loop, when `step_async()` is used, and when to use `call_tool()` versus `step(...)`.
 
 5. **[Explore Environments](environments)** — Browse pre-built environments for games, coding, web browsing, and more.
 

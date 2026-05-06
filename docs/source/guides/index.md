@@ -48,12 +48,12 @@ Integrate OpenEnv with RL frameworks for agent training.
 auto-discovery
 connecting
 async-sync
-../simulation-vs-production
-../mcp-environment-lifecycle
+simulation-vs-production
+mcp-environment-lifecycle
 first-environment
 environment-anatomy
 deployment
 rl-integration
 rewards
-../customizing-web-ui
+customizing-web-ui
 ```

@@ -221,7 +221,7 @@ That is not the model OpenEnv uses.
 
 ## Related Reading
 
-- [Core API](core.md)
+- [Core API](../reference/core.md)
 - [Getting Started Tutorials](auto_getting_started/index)
 - [RFC 002: Environment Spec](https://github.com/meta-pytorch/OpenEnv/blob/main/rfcs/002-env-spec.md)
 - [RFC 005: Agentic Harnesses](https://github.com/meta-pytorch/OpenEnv/blob/main/rfcs/005-agentic-harnesses.md)

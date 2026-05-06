@@ -158,6 +158,6 @@ Usually the action is flowing correctly, but through the async WebSocket path ra
 
 ## Related Reading
 
-- [Core API](core.md)
+- [Core API](../reference/core.md)
 - [Echo environment](environments/echo.md)
 - [FinQA environment](environments/finqa.md)

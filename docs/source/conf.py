@@ -158,6 +158,7 @@ sitemap_locales = [None]
 sitemap_excludes = [
     "search.html",
     "genindex.html",
+    "auto_getting_started/sg_execution_times.html",
 ]
 sitemap_url_scheme = "{link}"
 
