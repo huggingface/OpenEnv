@@ -12,7 +12,7 @@ dependencies = [
     "fastapi>=0.115.0",
     "pydantic>=2.0.0",
     "uvicorn>=0.24.0",
-    "requests>=2.31.0",
+    "requests>=2.33.0",
     "sqlalchemy>=2.0.41",
     "huggingface-hub>=0.20.0",
     "fastapi-mcp==0.4.0",
