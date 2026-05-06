@@ -170,7 +170,7 @@ The image:
 - Exposes the MCP API at `/mcp` and `/step`, the Gradio UI at `/web`,
   health at `/health`, and OpenAPI docs at `/docs`.
 - Reads `E2B_API_KEY` and (optionally) endpoint-specific env vars at
-  runtime (see [Environment Variables](#environment-variables)).
+  runtime; see the Environment Variables section below.
 
 ## The MCP Tool: `run_rollout`
 
@@ -291,4 +291,3 @@ opencode_env/
 - [OpenEnv docs](https://meta-pytorch.org/OpenEnv/)
 - [OpenCode CLI](https://opencode.ai/docs/cli/)
 - [E2B Python SDK](https://e2b.dev/docs)
-- [HF Inference Providers logprob matrix](../../../DOCS/HF/hf_inference_providers_logprobs.md)
