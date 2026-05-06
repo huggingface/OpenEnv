@@ -324,7 +324,11 @@ class CodingToolsEnvironment(MCPEnvironment):
         **kwargs: Any,
     ) -> Observation:
         self._state.step_count += 1
-        return super().step(action, timeout_s=timeout_s, **kwargs)
+        obs = super().step(action, timeout_s=timeout_s, **kwargs)
+        if self._state.submitted and self._state.last_reward is not None:
+            obs.done = True
+            obs.reward = self._state.last_reward
+        return obs
 
     async def step_async(
         self,
@@ -333,7 +337,11 @@ class CodingToolsEnvironment(MCPEnvironment):
         **kwargs: Any,
     ) -> Observation:
         self._state.step_count += 1
-        return await super().step_async(action, timeout_s=timeout_s, **kwargs)
+        obs = await super().step_async(action, timeout_s=timeout_s, **kwargs)
+        if self._state.submitted and self._state.last_reward is not None:
+            obs.done = True
+            obs.reward = self._state.last_reward
+        return obs
 
     @property
     def state(self) -> CodingToolsState:
@@ -363,6 +371,8 @@ class CodingToolsEnvironment(MCPEnvironment):
         self._state.last_error = error
 
     def _run_verify_commands(self) -> dict[str, Any]:
+        if not self._sandbox:
+            return {"passed": 0, "total": 0, "reward": None}
         self._sandbox.run_shell("mkdir -p /home/user/logs/verifier")
         self._state.verify_results = []
         passed = 0

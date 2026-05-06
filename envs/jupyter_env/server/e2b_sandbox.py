@@ -88,7 +88,7 @@ del _patched_show
         execution = self._sbx.run_code(code)
         return self._normalize(execution)
 
-    def run_shell(self, command: str) -> CellResult:
+    def run_shell(self, command: str, timeout_s: float = 120) -> CellResult:
         """
         Execute a shell command inside the sandbox.
 
@@ -97,7 +97,7 @@ del _patched_show
         """
         shell_code = (
             "import subprocess, sys\n"
-            f"_result = subprocess.run({command!r}, shell=True, capture_output=True, text=True, timeout=60)\n"
+            f"_result = subprocess.run({command!r}, shell=True, capture_output=True, text=True, timeout={float(timeout_s)!r})\n"
             "print(_result.stdout, end='')\n"
             "if _result.stderr: print(_result.stderr, end='', file=sys.stderr)\n"
         )

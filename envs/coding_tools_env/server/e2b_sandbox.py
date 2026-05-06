@@ -56,9 +56,10 @@ class E2BSandbox:
         stdout = str(result.get("stdout", ""))
         stderr = str(result.get("stderr", ""))
         ok = rc == 0
+        output = "\n".join(part for part in [stdout.strip(), stderr.strip()] if part)
         return ToolResult(
             ok=ok,
-            output=(stdout + stderr).strip(),
+            output=output,
             error=None if ok else f"exit_code={rc}",
             metadata={"exit_code": rc},
         )
@@ -91,19 +92,11 @@ class E2BSandbox:
         return ToolResult(ok=True, output=str(result.get("content", "")))
 
     def write_file(self, file_path: str, content: str) -> ToolResult:
-        code = (
-            "from pathlib import Path\n"
-            "import json\n"
-            f"_p = Path({file_path!r})\n"
-            "_p.parent.mkdir(parents=True, exist_ok=True)\n"
-            f"_p.write_text({content!r}, encoding='utf-8')\n"
-            "print(json.dumps({'ok': True, 'bytes': len(_p.read_bytes())}))\n"
-        )
-        execution = self._sbx.run_code(code)
-        result = _decode_json_line(execution.logs.stdout)
-        if result is None:
-            return ToolResult(ok=False, error=_format_error(execution))
-        return ToolResult(ok=True, output="write ok", metadata={"bytes": result.get("bytes", 0)})
+        try:
+            self._sbx.files.write(file_path, content.encode("utf-8"))
+            return ToolResult(ok=True, output="write ok", metadata={"bytes": len(content.encode("utf-8"))})
+        except Exception as exc:
+            return ToolResult(ok=False, error=f"write failed: {exc}")
 
     def glob_files(self, pattern: str, path: str | None = None) -> ToolResult:
         code = (

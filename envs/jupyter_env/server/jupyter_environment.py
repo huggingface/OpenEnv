@@ -347,7 +347,11 @@ class JupyterEnvironment(MCPEnvironment):
         **kwargs: Any,
     ) -> Observation:
         self._state.step_count += 1
-        return super().step(action, timeout_s=timeout_s, **kwargs)
+        obs = super().step(action, timeout_s=timeout_s, **kwargs)
+        if self._state.submitted_answer is not None and self._state.last_reward is not None:
+            obs.done = True
+            obs.reward = self._state.last_reward
+        return obs
 
     async def step_async(
         self,
@@ -356,7 +360,11 @@ class JupyterEnvironment(MCPEnvironment):
         **kwargs: Any,
     ) -> Observation:
         self._state.step_count += 1
-        return await super().step_async(action, timeout_s=timeout_s, **kwargs)
+        obs = await super().step_async(action, timeout_s=timeout_s, **kwargs)
+        if self._state.submitted_answer is not None and self._state.last_reward is not None:
+            obs.done = True
+            obs.reward = self._state.last_reward
+        return obs
 
     @property
     def state(self):
