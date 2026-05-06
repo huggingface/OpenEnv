@@ -554,6 +554,7 @@ def create_web_interface_app(
     is_chat_env = _is_chat_env(action_cls)
     quick_start_md = get_quick_start_markdown(metadata, action_cls, observation_cls)
 
+    display_title = title_override or get_gradio_display_title(metadata)
     default_blocks = build_gradio_app(
         web_manager,
         action_fields,
@@ -562,14 +563,14 @@ def create_web_interface_app(
         title=metadata.name,
         quick_start_md=quick_start_md,
     )
-    display_title = title_override or get_gradio_display_title(metadata)
+    default_blocks.title = display_title
     if gradio_builder is not None:
         custom_blocks = gradio_builder(
             web_manager,
             action_fields,
             metadata,
             is_chat_env,
-            metadata.name,
+            display_title,
             quick_start_md,
         )
         if not isinstance(custom_blocks, gr.Blocks):
@@ -578,10 +579,8 @@ def create_web_interface_app(
                 f"got {type(custom_blocks).__name__}"
             )
         if not show_default_tab:
-            # No TabbedInterface wrapper to carry `title_override`, so set it
-            # on the Blocks directly.
-            if title_override is not None:
-                custom_blocks.title = title_override
+            # No TabbedInterface wrapper to carry the app title.
+            custom_blocks.title = display_title
             gradio_blocks = custom_blocks
         else:
             if custom_tab_primary:
