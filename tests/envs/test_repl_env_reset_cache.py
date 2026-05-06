@@ -54,6 +54,7 @@ def test_reset_rebuilds_llm_on_model_change(monkeypatch):
     def tracked(token, model):
         calls.append((token, model))
         env.llm_query_fn = lambda *args, **kwargs: ""
+        env._runtime_controller = object()
 
     monkeypatch.setattr(env, "_create_llm_functions", tracked)
     env.reset(llm_model="model-A")
@@ -71,6 +72,7 @@ def test_reset_no_rebuild_when_model_resolves_to_same_default(monkeypatch):
     def tracked(token, model):
         calls.append((token, model))
         env.llm_query_fn = lambda *args, **kwargs: ""
+        env._runtime_controller = object()
 
     monkeypatch.setattr(env, "_create_llm_functions", tracked)
     default = REPLEnvironment._resolve_model(None)
@@ -78,3 +80,18 @@ def test_reset_no_rebuild_when_model_resolves_to_same_default(monkeypatch):
     env.reset()
 
     assert len(calls) == 1
+
+
+def test_reset_preserves_constructor_llm_functions(monkeypatch):
+    """Constructor-provided LLM functions are not HF runtime cache entries."""
+    env = REPLEnvironment(llm_query_fn=lambda prompt: f"custom: {prompt}")
+    calls: list[tuple[str | None, str | None]] = []
+
+    def tracked(token, model):
+        calls.append((token, model))
+
+    monkeypatch.setattr(env, "_create_llm_functions", tracked)
+    env.reset()
+
+    assert calls == []
+    assert env.llm_query_fn("prompt") == "custom: prompt"

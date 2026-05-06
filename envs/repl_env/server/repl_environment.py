@@ -271,7 +271,10 @@ class REPLEnvironment(Environment):
         # Compare resolved model names so reset(llm_model=<default>) and
         # reset() are treated as equal and don't trigger a redundant rebuild.
         resolved_model = self._resolve_model(llm_model)
-        model_changed = resolved_model != self._current_llm_model
+        has_runtime_llm = self._runtime_controller is not None
+        model_changed = (
+            has_runtime_llm and resolved_model != self._current_llm_model
+        )
         token_provided = hf_token is not None
         if not self.llm_query_fn or model_changed or token_provided:
             effective_token = (
