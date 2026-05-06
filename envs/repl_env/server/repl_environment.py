@@ -33,7 +33,12 @@ try:
     from ..models import CodeBlockResult, REPLAction, REPLObservation, REPLState
 except ImportError:
     try:
-        from repl_env.models import CodeBlockResult, REPLAction, REPLObservation, REPLState
+        from repl_env.models import (
+            CodeBlockResult,
+            REPLAction,
+            REPLObservation,
+            REPLState,
+        )
     except ImportError:
         from models import CodeBlockResult, REPLAction, REPLObservation, REPLState
 
@@ -47,9 +52,10 @@ except ImportError:
         from repl_env.rubrics import REPLRubric
         from .python_executor import PythonExecutor
     except ImportError:
-        from .python_executor import PythonExecutor
         from recursive_controller import create_server_recursive_controller
         from rubrics import REPLRubric
+
+        from .python_executor import PythonExecutor
 
 
 class REPLEnvironment(Environment):
@@ -138,6 +144,12 @@ class REPLEnvironment(Environment):
         self._executor: Optional[PythonExecutor] = None
         self._runtime_controller = None
         self._runtime_controller_chat_fn: Optional[Callable[..., str]] = None
+        self._current_llm_model: Optional[str] = None
+
+    @staticmethod
+    def _resolve_model(llm_model: Optional[str]) -> str:
+        """Resolve the effective model name: explicit arg > env var > hard default."""
+        return llm_model or os.environ.get("LLM_MODEL", "Qwen/Qwen3.5-9B")
 
     @staticmethod
     def _build_hf_chat_fn(
@@ -149,7 +161,7 @@ class REPLEnvironment(Environment):
         except ImportError:
             raise RuntimeError("huggingface_hub is required for HF-backed recursion")
 
-        default_model = llm_model or os.environ.get("LLM_MODEL", "Qwen/Qwen3.5-9B")
+        default_model = REPLEnvironment._resolve_model(llm_model)
         client = InferenceClient(model=default_model, token=hf_token, timeout=300)
 
         def chat_fn(messages: list[dict[str, str]], model: str | None = None) -> str:
@@ -255,13 +267,23 @@ class REPLEnvironment(Environment):
         self.rlm_max_depth = runtime_rlm_max_depth
         self.rlm_max_iterations = runtime_rlm_max_iterations
 
-        # Create or rebuild LLM functions when needed.
         # Token resolution: explicit hf_token > HF_TOKEN env var > cached HF login.
-        if not self.llm_query_fn:
+        # Compare resolved model names so reset(llm_model=<default>) and
+        # reset() are treated as equal and don't trigger a redundant rebuild.
+        resolved_model = self._resolve_model(llm_model)
+        has_runtime_llm = self._runtime_controller is not None
+        model_changed = (
+            has_runtime_llm and resolved_model != self._current_llm_model
+        )
+        token_provided = hf_token is not None
+        if not self.llm_query_fn or model_changed or token_provided:
             effective_token = (
                 hf_token if hf_token is not None else os.environ.get("HF_TOKEN")
             )
+            # Pass raw llm_model; _build_hf_chat_fn resolves it via
+            # _resolve_model so the client matches the cache key below.
             self._create_llm_functions(effective_token, llm_model)
+            self._current_llm_model = resolved_model
         elif depth_changed and self._runtime_controller is not None:
             # Rebuild controller with new depth/iteration config but reuse
             # the existing chat_fn — don't require re-providing credentials.
