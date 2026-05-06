@@ -1,11 +1,5 @@
 # Core Concepts
 
-:::{note}
-Coming Soon
-    This page is under construction.
-
-Understanding
-
 Understanding OpenEnv's core abstractions helps you work effectively with environments and build your own.
 
 ## The OpenEnv Model
@@ -112,4 +106,3 @@ OpenEnv supports multiple ways to connect to environments:
 - [Quick Start](quickstart.md) - Try these concepts hands-on
 - [Auto-Discovery](guides/auto-discovery.md) - How to discover and load environments
 - [Your First Environment](guides/first-environment.md) - Build your own environment
-:::

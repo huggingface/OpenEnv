@@ -82,6 +82,10 @@ import pytorch_sphinx_theme2
 html_theme = "pytorch_sphinx_theme2"
 html_theme_path = [pytorch_sphinx_theme2.get_html_theme_path()]
 html_static_path = ["_static"]
+# Populated by copy_env_assets() at build time (see setup() below).
+# Copies env README images to _build/html/ so raw HTML <img src="assets/...">
+# tags in {include}-based env pages resolve correctly.
+html_extra_path = ["_env_assets"]
 html_css_files = ["openenv-overrides.css"]
 html_js_files = ["cookie-banner.js"]
 
@@ -204,9 +208,39 @@ def copy_md_pages_to_gallery(app):
         shutil.copy2(md_file, dstdir)
 
 
+def copy_env_assets(app):
+    """Copy env README images into _env_assets so html_extra_path can serve them.
+
+    Scans envs/*/assets/ recursively and copies every file it finds, so any
+    new env image is picked up automatically with no conf.py edit required.
+
+    The _env_assets/ directory is gitignored to avoid committing binary blobs
+    that would trip the CRLF line-endings test.
+    """
+    import glob
+    import shutil
+
+    repo_root = os.path.dirname(os.path.dirname(app.srcdir))
+    dst_dir = os.path.join(app.srcdir, "_env_assets", "environments", "assets")
+    os.makedirs(dst_dir, exist_ok=True)
+
+    for src in glob.glob(os.path.join(repo_root, "envs", "*", "assets", "**"), recursive=True):
+        if os.path.isfile(src):
+            dst = os.path.join(dst_dir, os.path.basename(src))
+            if os.path.exists(dst):
+                import warnings
+                warnings.warn(
+                    f"copy_env_assets: {os.path.basename(src)} already exists from a previous env; overwriting with {src}",
+                    stacklevel=2,
+                )
+            shutil.copy2(src, dst_dir)
+
+
 def setup(app):
     # Copy extra .md pages into the gallery output dir (priority 900 so it
     # runs after sphinx-gallery's builder-inited handler at default priority).
     app.connect("builder-inited", copy_md_pages_to_gallery, priority=900)
+    # Copy env assets into _env_assets (gitignored; built at doc-build time).
+    app.connect("builder-inited", copy_env_assets, priority=900)
     # Hook into source-read to modify content before Sphinx processes it
     app.connect("source-read", remove_orphan_and_duplicate_toctree)

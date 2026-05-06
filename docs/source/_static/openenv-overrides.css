@@ -39,5 +39,6 @@
 .cookie-banner-wrapper .close-button:hover,
 .cookie-banner-wrapper .close-button:focus-visible {
   color: var(--pst-color-primary);
-  outline: none;
+  outline: 2px solid var(--pst-color-primary);
+  outline-offset: 2px;
 }
