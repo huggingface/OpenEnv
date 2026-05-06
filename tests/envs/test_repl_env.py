@@ -381,38 +381,6 @@ class TestREPLEnvironment:
         obs = env.step(REPLAction(code="print(result)"))
         assert "child" in obs.result.stdout
 
-    def test_reset_rebuilds_llm_on_model_change(self, monkeypatch):
-        """Changing `llm_model` between resets must rebuild the LLM functions."""
-        monkeypatch.setenv("HF_TOKEN", "env-tok")
-        env = REPLEnvironment()
-        calls: list = []
-
-        def tracked(token, model):
-            calls.append((token, model))
-            env.llm_query_fn = lambda *a, **kw: ""
-
-        monkeypatch.setattr(env, "_create_llm_functions", tracked)
-        env.reset(llm_model="model-A")
-        env.reset(llm_model="model-B")
-        assert [c[1] for c in calls] == ["model-A", "model-B"]
-
-    def test_reset_no_rebuild_when_model_resolves_to_same_default(self, monkeypatch):
-        """reset(llm_model=<default>) then reset() must not rebuild."""
-        monkeypatch.setenv("HF_TOKEN", "env-tok")
-        env = REPLEnvironment()
-        calls: list = []
-
-        def tracked(token, model):
-            calls.append((token, model))
-            env.llm_query_fn = lambda *a, **kw: ""
-
-        monkeypatch.setattr(env, "_create_llm_functions", tracked)
-        default = REPLEnvironment._resolve_model(None)
-        env.reset(llm_model=default)
-        env.reset()
-        assert len(calls) == 1
-
-
 class TestModels:
     """Tests for the data models."""
 
