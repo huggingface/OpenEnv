@@ -96,13 +96,28 @@ def create_repl_environment() -> REPLEnvironment:
 # Create the app with web interface and README integration.
 _sig = inspect.signature(create_app)
 if "gradio_builder" in _sig.parameters:
+    # Each kwarg is guarded by inspect.signature so older openenv-core
+    # releases that predate the param still boot this env.
+    create_app_kwargs: dict = {
+        "env_name": "repl_env",
+        "max_concurrent_envs": MAX_CONCURRENT_ENVS,
+        "gradio_builder": build_repl_gradio_app,
+    }
+    if "custom_tab_name" in _sig.parameters:
+        create_app_kwargs["custom_tab_name"] = "REPL"
+    if "custom_tab_primary" in _sig.parameters:
+        create_app_kwargs["custom_tab_primary"] = True
+    if "show_default_tab" in _sig.parameters:
+        create_app_kwargs["show_default_tab"] = False
+    if "title_override" in _sig.parameters:
+        create_app_kwargs["title_override"] = (
+            "OpenEnv REPL — Recursive Language Model playground"
+        )
     app = create_app(
         create_repl_environment,
         REPLAction,
         REPLObservation,
-        env_name="repl_env",
-        max_concurrent_envs=MAX_CONCURRENT_ENVS,
-        gradio_builder=build_repl_gradio_app,
+        **create_app_kwargs,
     )
 else:
     _logger.warning(

@@ -48,6 +48,10 @@ A **StepResult** bundles together everything returned from a step:
 - `truncated`: Whether the episode was cut short
 - `info`: Additional metadata
 
+### Rubric
+
+A **Rubric** is a composable unit of reward computation that lives inside the environment. Rubrics can be combined (`WeightedSum`, `Gate`, `Sequential`) to express multi-criteria rewards, support LLM judges for subjective criteria, and handle delayed rewards via `TrajectoryRubric`. Every environment declares `self.rubric` in its constructor; `step` calls it via `self._apply_rubric(action, observation)` and the result flows back through `observation.reward`. See the [Rubrics tutorial](tutorials/rubrics.md) for the full API.
+
 ### Client
 
 A **Client** is how you connect to and interact with an environment. OpenEnv provides both async and sync clients.

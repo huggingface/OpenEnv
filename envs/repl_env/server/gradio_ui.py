@@ -321,7 +321,7 @@ def build_repl_gradio_app(
             gr.update(open=False),
         )
 
-    with gr.Blocks(title=f"{title} - REPL") as blocks:
+    with gr.Blocks(title=title) as blocks:
         gr.Markdown(
             "# REPL Control Panel\n"
             "*Recursive Language Model REPL — run agentic Python with recursive LM calls.*"
