@@ -95,6 +95,9 @@ class BrowserGymEnvironment(Environment):
     provide unified access to multiple web navigation benchmarks.
     """
 
+    SUPPORTS_CONCURRENT_SESSIONS = True
+    REQUIRES_SINGLE_THREAD_EXECUTOR = True
+
     def __init__(
         self,
         benchmark: str = "miniwob",
@@ -382,4 +385,7 @@ class BrowserGymEnvironment(Environment):
     def close(self) -> None:
         """Clean up environment resources."""
         if hasattr(self, "gym_env"):
-            self.gym_env.close()
+            try:
+                self.gym_env.close()
+            except Exception as exc:  # noqa: BLE001 - browsergym/playwright cleanup
+                logger.warning("BrowserGym cleanup failed: %s", exc)

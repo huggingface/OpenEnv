@@ -175,7 +175,7 @@ except Exception as e:\n\
 # Start OpenEnv FastAPI server as non-root\n\
 echo "🚀 Starting OpenEnv server..."\n\
 cd /app\n\
-exec su - carla -c "cd /app && PYTHONPATH=/app:/opt/carla/PythonAPI/carla uvicorn carla_env.server.app:app --host 0.0.0.0 --port 8000"\n\
+exec su - carla -c "cd /app && CARLA_MODE=\"${CARLA_MODE}\" CARLA_SCENARIO=\"${CARLA_SCENARIO}\" CARLA_HOST=\"${CARLA_HOST}\" CARLA_PORT=\"${CARLA_PORT}\" PYTHONPATH=/app:/opt/carla/PythonAPI/carla uvicorn carla_env.server.app:app --host 0.0.0.0 --port 8000"\n\
 ' > /start.sh && chmod +x /start.sh
 
 CMD ["/start.sh"]

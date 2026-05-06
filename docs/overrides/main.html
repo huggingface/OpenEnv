@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block tabs %}
+<nav class="md-top-nav">
+  <div class="md-top-nav__inner">
+    <a href="{{ config.site_url }}" class="md-top-nav__link">Get Started</a>
+    <a href="{{ config.site_url }}guides/" class="md-top-nav__link">Guides</a>
+    <a href="{{ config.site_url }}tutorials/" class="md-top-nav__link">Tutorials</a>
+    <a href="{{ config.site_url }}environments/" class="md-top-nav__link">Environments</a>
+    <a href="{{ config.site_url }}reference/" class="md-top-nav__link">API Reference</a>
+    <a href="{{ config.site_url }}contributing/" class="md-top-nav__link">Community</a>
+  </div>
+</nav>
+{{ super() }}
+{% endblock %}

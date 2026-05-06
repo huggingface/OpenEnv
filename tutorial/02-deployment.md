@@ -410,7 +410,7 @@ from echo_env import EchoEnv, EchoAction
 
 # Async (recommended)
 async def main():
-    async with EchoEnv(base_url="http://localhost:8000") as env:
+    async with EchoEnv(base_url="http://localhost:7860") as env:
         result = await env.reset()
         print(result.observation)
         result = await env.step(EchoAction(message="Hello"))
@@ -419,7 +419,7 @@ async def main():
 asyncio.run(main())
 
 # Sync (using .sync() wrapper)
-with EchoEnv(base_url="http://localhost:8000").sync() as env:
+with EchoEnv(base_url="http://localhost:7860").sync() as env:
     result = env.reset()
     print(result.observation)
     result = env.step(EchoAction(message="Hello"))

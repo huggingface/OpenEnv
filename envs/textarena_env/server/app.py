@@ -45,6 +45,7 @@ max_turns = int(max_turns_env) if max_turns_env is not None else None
 download_nltk = os.getenv("TEXTARENA_DOWNLOAD_NLTK", "1") in {"1", "true", "True"}
 
 extra_kwargs = _parse_env_kwargs()
+max_concurrent = int(os.getenv("MAX_CONCURRENT_ENVS", "8"))
 
 
 # Factory function to create TextArenaEnvironment instances
@@ -71,6 +72,7 @@ if "gradio_builder" in _sig.parameters:
         TextArenaAction,
         TextArenaObservation,
         env_name="textarena_env",
+        max_concurrent_envs=max_concurrent,
         gradio_builder=build_textarena_gradio_app,
     )
 else:
@@ -83,6 +85,7 @@ else:
         TextArenaAction,
         TextArenaObservation,
         env_name="textarena_env",
+        max_concurrent_envs=max_concurrent,
     )
 
 

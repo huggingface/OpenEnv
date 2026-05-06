@@ -38,10 +38,10 @@ jobs:
     #       --health-start-period 30s
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
@@ -51,8 +51,11 @@ jobs:
           pip install -e ".[docs]"
           pip install -e ./envs/openspiel_env
 
+      - name: Check environment docs are in sync
+        run: python scripts/sync_env_docs.py --check
+
       - name: Setup Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
 
       - name: Build docs
         run: |
@@ -60,7 +63,7 @@ jobs:
           make html
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: docs/_build/html
 
@@ -74,4 +77,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

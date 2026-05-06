@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 
@@ -93,3 +95,63 @@ def test_probe_space_dispatches_gradio_web(mock_probe_gradio_web_space) -> None:
 
     assert result == [{"ok": True}]
     mock_probe_gradio_web_space.assert_called_once()
+
+
+def test_main_probes_ready_domain_while_app_starting(capsys) -> None:
+    runtime = SimpleNamespace(
+        stage="APP_STARTING",
+        raw={
+            "domains": [{"domain": "openenv-echo-env-0-2-3.hf.space", "stage": "READY"}]
+        },
+    )
+    fake_info = SimpleNamespace(runtime=runtime)
+    fake_api = Mock()
+    fake_api.list_spaces.return_value = []
+    fake_api.space_info.return_value = fake_info
+
+    with (
+        patch.object(
+            sys,
+            "argv",
+            [
+                "verify_private_spaces.py",
+                "--probe-profile",
+                "gradio_web",
+                "--space-id",
+                "openenv/echo_env-0.2.3",
+            ],
+        ),
+        patch("verify_private_spaces.get_token", return_value="hf_test_token"),
+        patch("verify_private_spaces.HfApi", return_value=fake_api),
+        patch(
+            "verify_private_spaces.probe_space", return_value=[{"ok": True}]
+        ) as mock_probe_space,
+    ):
+        verify_private_spaces.main()
+
+    report = json.loads(capsys.readouterr().out)
+    assert report == [
+        {
+            "space": "openenv/echo_env-0.2.3",
+            "stage": "APP_STARTING",
+            "domain": "openenv-echo-env-0-2-3.hf.space",
+            "runtime_error": None,
+            "probe_profile": "gradio_web",
+            "checks": [{"ok": True}],
+            "success": True,
+            "domain_attempts": [
+                {
+                    "domain": "openenv-echo-env-0-2-3.hf.space",
+                    "stage": "READY",
+                    "success": True,
+                    "checks": [{"ok": True}],
+                }
+            ],
+        }
+    ]
+    mock_probe_space.assert_called_once_with(
+        "https://openenv-echo-env-0-2-3.hf.space",
+        {"Authorization": "Bearer hf_test_token"},
+        timeout=20.0,
+        probe_profile="gradio_web",
+    )

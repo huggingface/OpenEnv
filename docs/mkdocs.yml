@@ -1,0 +1,122 @@
+site_name: OpenEnv
+site_description: Agentic execution environments for RL training
+site_url: https://meta-pytorch.github.io/OpenEnv
+repo_url: https://github.com/meta-pytorch/OpenEnv
+repo_name: meta-pytorch/OpenEnv
+
+docs_dir: .
+site_dir: ../site
+
+exclude_docs: |
+  source/
+
+theme:
+  name: material
+  custom_dir: overrides
+  font:
+    text: Inter
+  logo: https://github.com/user-attachments/assets/2700a971-e5d6-4036-b03f-2f89c9791609
+  palette:
+    - scheme: slate
+      primary: grey
+      accent: blue grey
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.indexes
+    - toc.follow
+    - content.code.copy
+    - content.tabs.link
+    - search.highlight
+    - search.suggest
+
+extra_css:
+  - styles/theme.css
+
+plugins:
+  - search
+  - include-markdown:
+      rewrite_relative_urls: true
+      opening_tag: "--8<--"
+      closing_tag: ""
+      directives:
+        include-markdown: ""
+  - mkdocstrings:
+      handlers:
+        python:
+          paths:
+            - ../src
+          options:
+            show_source: false
+            members_order: source
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - def_list
+  - footnotes
+  - tables
+  - toc:
+      permalink: true
+      toc_depth: 2
+  - pymdownx.blocks.admonition:
+      types:
+        - name: note
+        - name: tip
+        - name: important
+        - name: warning
+        - name: caution
+  - meta
+
+watch:
+  - ../src/openenv/core
+  - ../src/openenv/cli
+  - ../src/openenv/auto
+
+nav:
+  - Get Started:
+    - Introduction: index.md
+    - Quick Start: quickstart.md
+    - Installation: installation.md
+    - Core Concepts: concepts.md
+
+  - Guides:
+    - guides/index.md
+    - Using Environments:
+      - Auto-Discovery: guides/auto-discovery.md
+      - Connecting to Servers: guides/connecting.md
+      - Async vs Sync Usage: guides/async-sync.md
+    - Building Environments:
+      - Your First Environment: guides/first-environment.md
+      - Environment Anatomy: guides/environment-anatomy.md
+      - Deployment: guides/deployment.md
+    - Training:
+      - RL Framework Integration: guides/rl-integration.md
+      - Reward Design: guides/rewards.md
+
+  - Tutorials:
+    - tutorials/index.md
+    - OpenEnv in 15 Minutes: tutorials/openenv-tutorial.md
+    - Wordle with GRPO: tutorials/wordle-grpo.md
+
+  - Environments: environments/index.md
+
+  - API Reference:
+    - reference/index.md
+    - Core API: reference/core.md
+    - CLI: reference/cli.md
+
+  - Community:
+    - Contributing: contributing.md
+    - Contributing Environments: contributing-envs.md

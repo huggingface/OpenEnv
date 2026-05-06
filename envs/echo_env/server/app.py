@@ -21,6 +21,8 @@ Usage:
     uv run --project . server
 """
 
+import os
+
 # Support both in-repo and standalone imports
 try:
     # In-repo imports (when running from OpenEnv repository)
@@ -37,8 +39,14 @@ except ImportError:
 # Create the app with web interface and README integration
 # Pass the class (factory) instead of an instance for WebSocket session support
 # Use MCP types for action/observation since this is a pure MCP environment
+max_concurrent = int(os.getenv("MAX_CONCURRENT_ENVS", "8"))
+
 app = create_app(
-    EchoEnvironment, CallToolAction, CallToolObservation, env_name="echo_env"
+    EchoEnvironment,
+    CallToolAction,
+    CallToolObservation,
+    env_name="echo_env",
+    max_concurrent_envs=max_concurrent,
 )
 
 
