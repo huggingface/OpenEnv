@@ -381,6 +381,7 @@ class TestREPLEnvironment:
         obs = env.step(REPLAction(code="print(result)"))
         assert "child" in obs.result.stdout
 
+
 class TestModels:
     """Tests for the data models."""
 
