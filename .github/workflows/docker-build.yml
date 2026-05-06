@@ -105,6 +105,9 @@ jobs:
           - name: unity-env
             dockerfile: envs/unity_env/server/Dockerfile
             context: envs/unity_env
+          - name: opencode-env
+            dockerfile: envs/opencode_env/server/Dockerfile
+            context: envs/opencode_env
           - name: openapp-env
             dockerfile: envs/openapp_env/server/Dockerfile
             context: envs/openapp_env
