@@ -36,9 +36,9 @@ An MCP-backed env is consumed like any other OpenEnv env from the trainer's side
 
 ```python
 obs = env.step(CallToolAction(tool_name=..., arguments=...))
-# obs.result.data   — tool reply the model sees
-# obs.reward        — env's reward for this turn (may be None)
-# obs.done          — episode terminated
+# obs.result       — runtime tool result object, or None on error
+# obs.reward       — env's reward for this turn (may be None)
+# obs.done         — episode terminated
 ```
 
 That is the only MCP-specific piece. Everything around it — how the trainer generates actions, how tool schemas are surfaced to the model, how rewards are collected — belongs to your training framework, not to MCP.
@@ -73,11 +73,13 @@ def echo(self, message: str) -> str:
     Args:
         message: The message to echo.
     """
-    obs = self.env.step(
+    step_result = self.env.step(
         CallToolAction(tool_name="echo_message", arguments={"message": message})
     )
-    self.reward = obs.reward or 0.0  # Echo has no domain reward — swap in FinQA or similar
-    return obs.result.data            # what the model sees as the tool's reply
+    obs = step_result.observation
+    self.reward = step_result.reward or obs.reward or 0.0
+    result = obs.result
+    return result.data if hasattr(result, "data") else result
 ```
 
 `environment_factory` is a TRL API, not an MCP API. It works equally well with non-MCP envs (Wordle uses it with `TextArenaAction`), and MCP envs work equally well without it (the rollout-loop path above). They compose, but they are orthogonal.
@@ -120,11 +122,12 @@ obs = env.step(
 
 assert isinstance(obs, CallToolObservation)
 print(obs.tool_name)       # "echo_message"
-print(obs.result.data)     # "Hello from MCP!" — the raw tool return value
 print(obs.error)           # None
+result = obs.result
+print(result.data if hasattr(result, "data") else result)  # "Hello from MCP!"
 ```
 
-`obs.result` is a `CallToolResult` wrapper exposing the return value in a few shapes: `.data` is the raw Python value the tool returned, `.structured_content` is its JSON-encoded form, and `.content` is the MCP protocol's list of typed content blocks (useful when a tool returns rich multi-part output). `obs.error` carries **every** failure mode — transport errors, unknown tool names, malformed arguments, **and** exceptions raised from inside the tool function itself (as `ToolErrorType.EXECUTION_ERROR`). On an error, `obs.result` is `None`. Always branch on `obs.error is None` before reading `obs.result.data`, or a tool that raised will look like a successful call that returned `None`.
+`CallToolObservation.result` is typed as `Any` in OpenEnv. At runtime, FastMCP commonly returns a `fastmcp.client.client.CallToolResult` object with `.data`, `.structured_content`, and `.content` attributes, but JSON round-trips or custom environments can surface a plain dict or value instead. Treat `.data` as a convenience when it exists, not as an OpenEnv-defined wrapper type. `obs.error` carries **every** failure mode — transport errors, unknown tool names, malformed arguments, **and** exceptions raised from inside the tool function itself (as `ToolErrorType.EXECUTION_ERROR`). On an error, `obs.result` is `None`. Always branch on `obs.error is None` before reading a runtime result.
 
 ### Error handling
 
@@ -142,10 +145,10 @@ The `ToolError.error_type` enum (`TOOL_NOT_FOUND`, `INVALID_ARGS`, `EXECUTION_ER
 
 ### `step(CallToolAction(...))` vs `call_tool()`
 
-Environment clients that inherit from `MCPToolClient` (such as `EchoEnv` and `FinQAEnv`) expose a shorter **async** `await env.call_tool("name", arg=value)` helper. It still goes through the step loop and still updates rewards, step counts, and trajectory state, but returns the tool's raw return value directly instead of a `CallToolObservation` — and it **raises `RuntimeError`** on any `obs.error` (transport failure, unknown tool, or a tool exception), so you cannot branch on `error_type` without a `try/except`. Use `step(CallToolAction(...))` when you need the whole observation (reward, done, metadata, or graceful error classification); reach for `call_tool()` in async scripts where the raw result is all you care about and a failure is allowed to propagate. The [lifecycle guide](../mcp-environment-lifecycle.md#which-pattern-should-you-use) covers the exact trade-offs.
+Environment clients that inherit from `MCPToolClient` (such as `EchoEnv` and `FinQAEnv`) expose a shorter **async** `await env.call_tool("name", arg=value)` helper for a running environment server. It returns the tool's raw return value directly instead of a `CallToolObservation` — and it **raises `RuntimeError`** on any tool error (transport failure, unknown tool, invalid arguments, or a tool exception), so you cannot branch on `error_type` without a `try/except`. Use `step(CallToolAction(...))` when you need the whole observation (reward, done, metadata, or graceful error classification); reach for `call_tool()` in async production scripts where the raw result is all you care about and a failure is allowed to propagate. The [lifecycle guide](../mcp-environment-lifecycle.md) covers the exact trade-offs.
 
 ```{note}
-`call_tool()` is production-only: `MCPToolClient.__init__` raises `ValueError` if `mode != "production"`. In simulation contexts, route tool calls through `step(CallToolAction(...))` instead.
+`MCPToolClient` and its base `MCPClientBase` only support `mode="production"`; construction raises `ValueError` for other modes. For direct in-process training or eval snippets like the ones above, call `env.step(CallToolAction(...))` on the environment class itself.
 ```
 
 ## Using MCP Tools for Evaluation
@@ -167,7 +170,11 @@ for sample in eval_dataset:
     )
     results.append({
         "prompt": sample.prompt,
-        "reply": obs.result.data if obs.error is None else None,
+        "reply": (
+            obs.result.data if obs.error is None and hasattr(obs.result, "data")
+            else obs.result if obs.error is None
+            else None
+        ),
         "reward": obs.reward or 0.0,
         "error": obs.error,
     })
@@ -263,4 +270,4 @@ You will see the discovery call, two tool invocations, and an error case printed
 - **MCP lifecycle details** — the [MCP Environment Lifecycle guide](../mcp-environment-lifecycle.md) covers `step()` vs `step_async()`, the `call_tool()` convenience path, and common debugging questions.
 - **A richer MCP environment** — [`envs/finqa_env/`](https://github.com/meta-pytorch/OpenEnv/tree/main/envs/finqa_env) shows tool calls participating in episode progression, rewards, and terminal submission — not just a stateless echo.
 - **Design rationale** — [RFC 003](https://github.com/meta-pytorch/OpenEnv/blob/main/rfcs/003-mcp-support.md) explains why OpenEnv picked MCP as the agent boundary and how tool-calling and CodeAct styles share the same plumbing.
-- **Serving tools to an external agent** — the `/mcp` JSON-RPC endpoint is available alongside `/ws` on any MCP environment server. Point an MCP-compatible client at it for production inference without going through the step loop.
+- **Serving tools to an external agent** — the `/mcp` JSON-RPC endpoint is available alongside `/ws` on any MCP environment server. Point an MCP-compatible client at it for production inference without going through the step loop. This direct path bypasses reward computation, step counts, and episode termination, and it exposes only registered MCP tools — not `reset`, `step`, or `state`.

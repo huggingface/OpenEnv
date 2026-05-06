@@ -1,43 +1,51 @@
 # Your First Environment
 
 :::{note}
-Coming Soon — this page will contain a streamlined guide to building your first OpenEnv environment. For now, see the [full environment builder guide](../auto_getting_started/environment-builder.md).
+This page is a condensed preview. For the end-to-end walk-through — including Docker packaging, `openenv.yaml`, and Hugging Face Space deployment — see the [full environment builder guide](../auto_getting_started/environment-builder.md).
 :::
 
 ## Overview
 
 Building an OpenEnv environment involves:
 
-1. **Define your models** - Action, Observation, and State types
+1. **Define your models** - `Action`, `Observation`, and `State` types
 2. **Implement the environment** - Core logic in a Python class
 3. **Create the server** - FastAPI wrapper for HTTP access
 4. **Package for deployment** - Docker container and manifest
 
 ## Quick Example
 
-Here's a minimal environment that echoes back messages:
+Here's a minimal environment that echoes back messages. Reward and `done` are fields on the `Observation` — `step` returns an observation, not a tuple.
 
 ```python
-from pydantic import BaseModel
-from openenv.core import Environment
+from openenv.core.env_server.interfaces import Environment
+from openenv.core.env_server.types import Action, Observation, State
 
-class EchoAction(BaseModel):
+
+class EchoAction(Action):
     message: str
 
-class EchoObservation(BaseModel):
+
+class EchoObservation(Observation):
     echo: str
 
-class EchoState(BaseModel):
+
+class EchoState(State):
     last_message: str = ""
 
+
 class EchoEnvironment(Environment[EchoAction, EchoObservation, EchoState]):
-    def reset(self) -> EchoObservation:
-        self.state = EchoState()
+    def reset(self, seed=None, episode_id=None, **kwargs) -> EchoObservation:
+        self._state = EchoState()
         return EchoObservation(echo="Ready!")
 
-    def step(self, action: EchoAction) -> tuple[EchoObservation, float, bool]:
-        self.state.last_message = action.message
-        return EchoObservation(echo=action.message), 0.0, False
+    def step(self, action: EchoAction, timeout_s=None, **kwargs) -> EchoObservation:
+        self._state.last_message = action.message
+        return EchoObservation(echo=action.message, reward=0.0, done=False)
+
+    @property
+    def state(self) -> EchoState:
+        return self._state
 ```
 
 ## Next Steps

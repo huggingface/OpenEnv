@@ -1,10 +1,8 @@
 # RL Framework Integration
 
 :::{note}
-Coming Soon
-    This page is under construction.
-
-Use OpenEnv
+This page is still being filled in. TRL integration is covered below; torchforge and SkyRL integrations are planned.
+:::
 
 Use OpenEnv with popular RL frameworks like TRL, torchforge, and SkyRL.
 
@@ -32,22 +30,6 @@ trainer = GRPOTrainer(
 ```
 
 See the [Wordle with GRPO](../tutorials/wordle-grpo.md) tutorial for a complete example.
-
-## torchforge Integration
-
-[torchforge](https://github.com/pytorch-labs/torchforge) provides optimized RL training utilities.
-
-```python
-# Coming soon - integration example
-```
-
-## SkyRL Integration
-
-[SkyRL](https://github.com/skydeck/skyrl) is another RL framework compatible with OpenEnv.
-
-```python
-# Coming soon - integration example
-```
 
 ## Generic Training Loop
 
@@ -78,4 +60,3 @@ with env.sync() as client:
 
 - [Reward Design](rewards.md) - Design effective reward functions
 - [Wordle with GRPO](../tutorials/wordle-grpo.md) - Complete TRL example
-:::

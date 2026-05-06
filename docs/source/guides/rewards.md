@@ -1,10 +1,8 @@
 # Reward Design
 
 :::{note}
-Coming Soon
-    This page is under construction.
-
-Learn how to design
+This page is still being filled in — it will be rewritten around the [Rubric system (RFC 004)](https://github.com/meta-pytorch/OpenEnv/blob/main/rfcs/004-rubrics.md) that lives in `openenv.core.rubrics`. The content below covers the basics of ad-hoc reward shaping until then.
+:::
 
 Learn how to design effective reward functions for your OpenEnv environments.
 
@@ -85,4 +83,3 @@ reward = observation.score_delta + (10.0 if observation.won else 0.0)
 
 - [RL Framework Integration](rl-integration.md) - Use rewards in training
 - [Environment Anatomy](environment-anatomy.md) - Where to implement rewards
-:::
