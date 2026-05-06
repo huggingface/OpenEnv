@@ -28,6 +28,8 @@ Usage:
     python -m server.app
 """
 
+import os
+
 try:
     from openenv.core.env_server.http_server import create_app
 except Exception as e:  # pragma: no cover
@@ -43,13 +45,31 @@ except ImportError:
 from .reasoning_gym_environment import ReasoningGymEnvironment
 
 
-# Create the app with web interface and README integration
+_max_concurrent_raw = os.getenv("MAX_CONCURRENT_ENVS", "8")
+try:
+    max_concurrent = int(_max_concurrent_raw)
+except ValueError:
+    raise ValueError(
+        f"MAX_CONCURRENT_ENVS must be an integer, got: {_max_concurrent_raw!r}"
+    ) from None
+
+
+def create_reasoning_gym_environment() -> ReasoningGymEnvironment:
+    """Factory: fresh environment per WebSocket session.
+
+    Required for `max_concurrent_envs > 1` so each session gets its own dataset
+    iterator. `ReasoningGymEnvironment` already declares
+    `SUPPORTS_CONCURRENT_SESSIONS = True`.
+    """
+    return ReasoningGymEnvironment()
+
+
 app = create_app(
-    ReasoningGymEnvironment,
+    create_reasoning_gym_environment,
     ReasoningGymAction,
     ReasoningGymObservation,
     env_name="reasoning_gym",
-    max_concurrent_envs=1,  # increase this number to allow more concurrent WebSocket sessions
+    max_concurrent_envs=max_concurrent,
 )
 
 
