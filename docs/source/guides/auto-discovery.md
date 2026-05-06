@@ -435,5 +435,5 @@ spec_version: 1
 ## See Also
 
 - [Your First Environment](first-environment.md) - How to create your own environments
-- [Core API Documentation](../core.md) - Low-level API details
+- [Core API Documentation](../reference/core.md) - Low-level API details
 - [HuggingFace Hub](https://huggingface.co/meta-pytorch) - Pre-built environments

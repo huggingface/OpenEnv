@@ -5,8 +5,8 @@
     A unified framework for building, deploying, and interacting with isolated execution environments for agentic reinforcement learning—powered by simple, Gymnasium-style APIs.
   </p>
   <div class="hero__actions">
-    <a class="hero__button hero__button--primary" href="auto_getting_started/index.html">
-      Getting Started Tutorials
+    <a class="hero__button hero__button--primary" href="tutorials/index.html">
+      Getting Started
     </a>
     <a class="hero__button" href="auto_getting_started/environment-builder.html">
       Build Your Own Environment
@@ -73,13 +73,13 @@ Powerful command-line interface for environment management and deployment.
 
 New to OpenEnv? Follow our recommended learning path:
 
-1. **[Getting Started Tutorials](auto_getting_started/index)** — A hands-on, 3-part series covering what OpenEnv is, how to use existing environments, and how to build your own.
+1. **[Getting Started Series](tutorials/index)** — A 5-part series covering what OpenEnv is, how to use and build environments, and how to contribute. No GPU required.
 
 2. **[Build Your Own Environment](auto_getting_started/environment-builder)** — The complete reference guide for creating, packaging, and deploying custom environments with Docker and Hugging Face Hub.
 
-3. **[Simulation vs Production Mode](simulation-vs-production)** — Understand when to use the training loop, when to expose MCP directly, and how tools behave in each mode.
+3. **[Simulation vs Production Mode](guides/simulation-vs-production)** — Understand when to use the training loop, when to expose MCP directly, and how tools behave in each mode.
 
-4. **[MCP Environment Lifecycle](mcp-environment-lifecycle)** — Understand how MCP tools fit into the OpenEnv step loop, when `step_async()` is used, and when to use `call_tool()` versus `step(...)`.
+4. **[MCP Environment Lifecycle](guides/mcp-environment-lifecycle)** — Understand how MCP tools fit into the OpenEnv step loop, when `step_async()` is used, and when to use `call_tool()` versus `step(...)`.
 
 5. **[Explore Environments](environments)** — Browse pre-built environments for games, coding, web browsing, and more.
 
@@ -99,7 +99,6 @@ OpenEnv is currently in an experimental stage. You should expect bugs, incomplet
 quickstart
 installation
 concepts
-auto_getting_started/index
 ```
 
 ```{toctree}
@@ -108,17 +107,6 @@ auto_getting_started/index
 :hidden:
 
 guides/index
-guides/auto-discovery
-guides/connecting
-guides/async-sync
-simulation-vs-production
-mcp-environment-lifecycle
-guides/first-environment
-guides/environment-anatomy
-guides/deployment
-guides/rl-integration
-guides/rewards
-customizing-web-ui
 ```
 
 ```{toctree}
@@ -143,9 +131,6 @@ environments
 :hidden:
 
 reference/index
-core
-cli
-auto_discovery
 ```
 
 ```{toctree}
@@ -154,5 +139,4 @@ auto_discovery
 :hidden:
 
 contributing
-auto_getting_started/contributing-envs
 ```

@@ -92,7 +92,7 @@ html_js_files = ["cookie-banner.js"]
 html_theme_options = {
     "navigation_with_keys": False,
     "analytics_id": "GTM-T8XT4PS",
-    "header_links_before_dropdown": 7,
+    "header_links_before_dropdown": 8,
     "logo": {
         "text": "OpenEnv",
     },
@@ -114,7 +114,6 @@ html_theme_options = {
         },
     ],
     "use_edit_page_button": True,
-    "navbar_center": "navbar-nav",
     "switcher": {
         "json_url": "_static/versions.json",
         "version_match": switcher_version,
@@ -159,6 +158,7 @@ sitemap_locales = [None]
 sitemap_excludes = [
     "search.html",
     "genindex.html",
+    "auto_getting_started/sg_execution_times.html",
 ]
 sitemap_url_scheme = "{link}"
 

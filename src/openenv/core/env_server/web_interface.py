@@ -433,6 +433,10 @@ def create_web_interface_app(
     max_concurrent_envs: Optional[int] = None,
     concurrency_config: Optional[Any] = None,
     gradio_builder: Optional[Callable[..., Any]] = None,
+    custom_tab_name: str = "Custom",
+    custom_tab_primary: bool = False,
+    show_default_tab: bool = True,
+    title_override: Optional[str] = None,
 ) -> FastAPI:
     """
     Create a FastAPI application with web interface for the given environment.
@@ -447,6 +451,22 @@ def create_web_interface_app(
         gradio_builder: Optional callable (web_manager, action_fields, metadata,
             is_chat_env, title, quick_start_md) -> gr.Blocks to use instead of the
             default Gradio UI. Lets envs replace or customize the /web interface.
+        custom_tab_name: Label shown on the env-specific tab when ``gradio_builder``
+            is provided. Defaults to ``"Custom"`` for backwards compatibility; envs
+            that ship a rich custom UI should pass a descriptive name
+            (e.g. ``"REPL"``). Ignored when ``show_default_tab=False`` (no tab chrome
+            is rendered).
+        custom_tab_primary: When True, the env-specific tab is rendered first and
+            selected by default; the auto-generated Playground becomes secondary.
+            Use this for envs whose custom tab is the real interaction surface
+            (so visitors don't land on a less informative schema form). Ignored
+            when ``show_default_tab=False``.
+        show_default_tab: When False, the auto-generated Playground tab is not
+            rendered and the env's ``gradio_builder`` output is mounted directly
+            (single-view UI, no tab chrome). Only meaningful when
+            ``gradio_builder`` is provided.
+        title_override: If set, used verbatim as the Gradio app/browser-tab
+            title instead of the default ``"OpenEnv Agentic Environment: {name}"``.
 
     Returns:
         FastAPI application instance with web interface
@@ -534,6 +554,7 @@ def create_web_interface_app(
     is_chat_env = _is_chat_env(action_cls)
     quick_start_md = get_quick_start_markdown(metadata, action_cls, observation_cls)
 
+    display_title = title_override or get_gradio_display_title(metadata)
     default_blocks = build_gradio_app(
         web_manager,
         action_fields,
@@ -542,13 +563,14 @@ def create_web_interface_app(
         title=metadata.name,
         quick_start_md=quick_start_md,
     )
+    default_blocks.title = display_title
     if gradio_builder is not None:
         custom_blocks = gradio_builder(
             web_manager,
             action_fields,
             metadata,
             is_chat_env,
-            metadata.name,
+            display_title,
             quick_start_md,
         )
         if not isinstance(custom_blocks, gr.Blocks):
@@ -556,11 +578,22 @@ def create_web_interface_app(
                 f"gradio_builder must return a gr.Blocks instance, "
                 f"got {type(custom_blocks).__name__}"
             )
-        gradio_blocks = gr.TabbedInterface(
-            [default_blocks, custom_blocks],
-            tab_names=["Playground", "Custom"],
-            title=get_gradio_display_title(metadata),
-        )
+        if not show_default_tab:
+            # No TabbedInterface wrapper to carry the app title.
+            custom_blocks.title = display_title
+            gradio_blocks = custom_blocks
+        else:
+            if custom_tab_primary:
+                tab_blocks = [custom_blocks, default_blocks]
+                tab_labels = [custom_tab_name, "Playground"]
+            else:
+                tab_blocks = [default_blocks, custom_blocks]
+                tab_labels = ["Playground", custom_tab_name]
+            gradio_blocks = gr.TabbedInterface(
+                tab_blocks,
+                tab_names=tab_labels,
+                title=display_title,
+            )
     else:
         gradio_blocks = default_blocks
     app = gr.mount_gradio_app(

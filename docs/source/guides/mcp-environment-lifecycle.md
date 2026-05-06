@@ -80,48 +80,45 @@ The same rule applies to `reset()` and `reset_async()`.
 
 Environment-specific MCP clients such as `EchoEnv` and `FinQAEnv` inherit from `MCPToolClient`.
 
-Those clients expose convenience methods:
+Those clients target a running environment server and expose convenience methods:
 
 - `list_tools()`
-- `call_tool()`
+- `call_tool()` — **async**, must be awaited
 
 These are helpers, not a separate environment lifecycle.
 
-### Default behavior
+### Client behavior
 
-By default, the convenience methods still go through the OpenEnv session path.
+`MCPToolClient` and its base `MCPClientBase` only support `mode="production"`; construction raises `ValueError` for other modes. For direct in-process training or eval code, instantiate the environment class and call `env.step(CallToolAction(...))` instead of using `MCPToolClient`.
 
-- `list_tools()` wraps `step(ListToolsAction())`
-- `call_tool()` wraps `step(CallToolAction(...))`
+- `list_tools()` wraps `step(ListToolsAction())` and returns the `list[Tool]` directly.
+- `call_tool(name, **kwargs)` returns the **unwrapped tool return value** directly — not the `CallToolObservation`, and not the runtime result object you would get from `obs.result`.
+- `call_tool()` raises `RuntimeError` on any tool error. Use `step(CallToolAction(...))` when you need to inspect `ToolError.error_type` or continue after a failed tool call.
 
-This preserves:
-
-- episode context
-- rewards
-- step counting
-- trajectory semantics
+Remote `step(CallToolAction(...))` calls return a `StepResult`; the full observation is on `result.observation`, while `result.reward` carries the serialized reward field.
 
 ### Direct MCP behavior
 
 When production MCP access is explicitly enabled on the client, the same convenience methods use the HTTP `/mcp` JSON-RPC endpoint directly.
 
-That path is for tool-serving behavior, not the training loop.
+That path is for tool-serving behavior, not the training loop. It bypasses reward computation, step counts, trajectory tracking, and `done` handling.
 
 ## Which Pattern Should You Use?
 
-Use `step(CallToolAction(...))` when you need the full OpenEnv result object:
+Use `step(CallToolAction(...))` when you need the full `CallToolObservation`:
 
 - `reward`
 - `done`
 - observation metadata
+- `obs.result`, a runtime result object typed as `Any`; FastMCP commonly returns `fastmcp.client.client.CallToolResult` with `.data`, `.content`, and `.structured_content`, but serialized clients or custom envs may surface a dict or plain value
 - trajectory-compatible behavior
 
-Use `call_tool()` when you only want the tool result and do not need to manually inspect the full `StepResult`.
+Use `await env.call_tool(name, **kwargs)` when you only want the tool's raw return value and do not need to inspect the full observation. It is async and unwraps the result for you.
 
 In other words:
 
 - `step(...)` is the canonical simulation pattern
-- `call_tool()` is a convenience wrapper
+- `call_tool()` is an async convenience wrapper that returns the unwrapped tool output
 
 ## Concrete Examples
 
@@ -161,6 +158,6 @@ Usually the action is flowing correctly, but through the async WebSocket path ra
 
 ## Related Reading
 
-- [Core API](core.md)
+- [Core API](../reference/core.md)
 - [Echo environment](environments/echo.md)
 - [FinQA environment](environments/finqa.md)
