@@ -73,7 +73,7 @@ Powerful command-line interface for environment management and deployment.
 
 New to OpenEnv? Follow our recommended learning path:
 
-1. **[Getting Started Tutorials](auto_getting_started/index)** — A hands-on, 3-part series covering what OpenEnv is, how to use existing environments, and how to build your own.
+1. **[Getting Started Series](tutorials/index)** — A 5-part series covering what OpenEnv is, how to use and build environments, and how to contribute. No GPU required.
 
 2. **[Build Your Own Environment](auto_getting_started/environment-builder)** — The complete reference guide for creating, packaging, and deploying custom environments with Docker and Hugging Face Hub.
 
@@ -99,7 +99,6 @@ OpenEnv is currently in an experimental stage. You should expect bugs, incomplet
 quickstart
 installation
 concepts
-auto_getting_started/index
 ```
 
 ```{toctree}
