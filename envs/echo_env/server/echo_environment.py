@@ -66,6 +66,8 @@ class EchoEnvironment(MCPEnvironment):
         ...     print(result)
     """
 
+    SUPPORTS_CONCURRENT_SESSIONS = True
+
     def __init__(self):
         """Initialize the echo environment with MCP server and tools."""
         # Create MCP server and define tools inline

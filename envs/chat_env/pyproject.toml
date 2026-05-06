@@ -14,18 +14,17 @@ version = "0.1.0"
 description = "Chat Environment for OpenEnv - LLM-powered conversational agent"
 requires-python = ">=3.10"
 dependencies = [
-    "openenv-core[core]>=0.2.2",
+    "openenv-core[core]>=0.2.3",
     "fastapi>=0.115.0",
     "pydantic>=2.0.0",
     "uvicorn>=0.24.0",
     "requests>=2.31.0",
-    "torch",
     "transformers",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0.0",
+    "pytest>=9.0.3",
     "pytest-cov>=4.0.0",
 ]
 

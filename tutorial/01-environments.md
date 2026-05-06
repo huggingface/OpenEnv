@@ -343,94 +343,32 @@ src/envs/your_env/
 Let's explore the actual OpenEnv code to see how this works:
 
 ```python
-# Import OpenEnv's core abstractions
-from core.env_server import Environment, Action, Observation, State
-from core.http_env_client import HTTPEnvClient
-
-print("="*70)
-print("   🧩 OPENENV CORE ABSTRACTIONS")
-print("="*70)
-
-print("""
-🖥️  SERVER SIDE (runs in Docker):
-
-    class Environment(ABC):
-        '''Base class for all environment implementations'''
-        
-        @abstractmethod
-        def reset(self) -> Observation:
-            '''Start new episode'''
-        
-        @abstractmethod
-        def step(self, action: Action) -> Observation:
-            '''Execute action, return observation'''
-        
-        @property
-        def state(self) -> State:
-            '''Get episode metadata'''
-
-📱 CLIENT SIDE (your training code):
-
-    class HTTPEnvClient(ABC):
-        '''Base class for HTTP clients'''
-        
-        def reset(self) -> StepResult:
-            # HTTP POST /reset
-        
-        def step(self, action) -> StepResult:
-            # HTTP POST /step
-        
-        def state(self) -> State:
-            # HTTP GET /state
-""")
-
-print("="*70)
-print("\n✨ Same interface on both sides - communication via HTTP!")
-print("🎯 You focus on RL, OpenEnv handles the infrastructure.\n")
+from openenv.core.env_client import EnvClient
+from openenv.core.env_server.interfaces import Environment
+from openenv.core.env_server.types import Action, Observation, State
 ```
 
-**Output:**
+Server side:
+
+```python
+class YourEnvironment(Environment[Action, Observation, State]):
+    def reset(self, seed=None, episode_id=None, **kwargs) -> Observation:
+        ...
+
+    def step(self, action: Action, timeout_s=None, **kwargs) -> Observation:
+        ...
 ```
-======================================================================
-   🧩 OPENENV CORE ABSTRACTIONS
-======================================================================
 
-🖥️  SERVER SIDE (runs in Docker):
+Client side:
 
-    class Environment(ABC):
-        '''Base class for all environment implementations'''
-        
-        @abstractmethod
-        def reset(self) -> Observation:
-            '''Start new episode'''
-        
-        @abstractmethod
-        def step(self, action: Action) -> Observation:
-            '''Execute action, return observation'''
-        
-        @property
-        def state(self) -> State:
-            '''Get episode metadata'''
-
-📱 CLIENT SIDE (your training code):
-
-    class HTTPEnvClient(ABC):
-        '''Base class for HTTP clients'''
-        
-        def reset(self) -> StepResult:
-            # HTTP POST /reset
-        
-        def step(self, action) -> StepResult:
-            # HTTP POST /step
-        
-        def state(self) -> State:
-            # HTTP GET /state
-
-======================================================================
-
-✨ Same interface on both sides - communication via HTTP!
-🎯 You focus on RL, OpenEnv handles the infrastructure.
+```python
+class YourEnv(EnvClient[Action, Observation, State]):
+    ...
 ```
+
+The environment implements the game or simulation logic. The client maintains the session and exposes the same `reset()`, `step()`, and `state()` flow to your training code.
+
+Same interface on both sides, with OpenEnv handling the transport and session management for you.
 
 ---
 
@@ -453,95 +391,38 @@ We've wrapped **6 OpenSpiel games** following the OpenEnv pattern:
 
 This shows how OpenEnv can wrap **any** existing RL library!
 
+The client (`envs/openspiel_env/client.py`) inherits from `EnvClient` and declares how actions and observations cross the wire:
+
 ```python
-from envs.openspiel_env.client import OpenSpielEnv
-
-print("="*70)
-print("   🔌 HOW OPENENV WRAPS OPENSPIEL")
-print("="*70)
-
-print("""
-class OpenSpielEnv(HTTPEnvClient[OpenSpielAction, OpenSpielObservation]):
-    
+class OpenSpielEnv(EnvClient[OpenSpielAction, OpenSpielObservation, OpenSpielState]):
     def _step_payload(self, action: OpenSpielAction) -> dict:
-        '''Convert typed action to JSON for HTTP'''
+        """Convert typed action to JSON for HTTP."""
         return {
             "action_id": action.action_id,
             "game_name": action.game_name,
+            "game_params": action.game_params,
         }
-    
+
     def _parse_result(self, payload: dict) -> StepResult:
-        '''Parse HTTP JSON response into typed observation'''
+        """Parse HTTP JSON response into typed observation."""
         return StepResult(
             observation=OpenSpielObservation(...),
-            reward=payload['reward'],
-            done=payload['done']
+            reward=payload["reward"],
+            done=payload["done"],
         )
-
-""")
-
-print("─" * 70)
-print("\n✨ Usage (works for ALL OpenEnv environments):")
-print("""
-  env = OpenSpielEnv(base_url="http://localhost:8000")
-  
-  result = env.reset()
-  # Returns StepResult[OpenSpielObservation] - Type safe!
-  
-  result = env.step(OpenSpielAction(action_id=2, game_name="catch"))
-  # Type checker knows this is valid!
-  
-  state = env.state()
-  # Returns OpenSpielState
-""")
-
-print("─" * 70)
-print("\n🎯 This pattern works for ANY environment you want to wrap!\n")
 ```
 
-**Output:**
+Usage is the same as any OpenEnv environment:
+
+```python
+env = OpenSpielEnv(base_url="http://localhost:8000")
+
+result = env.reset()                                                # StepResult[OpenSpielObservation]
+result = env.step(OpenSpielAction(action_id=2, game_name="catch"))
+state = env.state()                                                 # OpenSpielState
 ```
-======================================================================
-   🔌 HOW OPENENV WRAPS OPENSPIEL
-======================================================================
 
-class OpenSpielEnv(HTTPEnvClient[OpenSpielAction, OpenSpielObservation]):
-    
-    def _step_payload(self, action: OpenSpielAction) -> dict:
-        '''Convert typed action to JSON for HTTP'''
-        return {
-            "action_id": action.action_id,
-            "game_name": action.game_name,
-        }
-    
-    def _parse_result(self, payload: dict) -> StepResult:
-        '''Parse HTTP JSON response into typed observation'''
-        return StepResult(
-            observation=OpenSpielObservation(...),
-            reward=payload['reward'],
-            done=payload['done']
-        )
-
-
-──────────────────────────────────────────────────────────────────────
-
-✨ Usage (works for ALL OpenEnv environments):
-
-  env = OpenSpielEnv(base_url="http://localhost:8000")
-  
-  result = env.reset()
-  # Returns StepResult[OpenSpielObservation] - Type safe!
-  
-  result = env.step(OpenSpielAction(action_id=2, game_name="catch"))
-  # Type checker knows this is valid!
-  
-  state = env.state()
-  # Returns OpenSpielState
-
-──────────────────────────────────────────────────────────────────────
-
-🎯 This pattern works for ANY environment you want to wrap!
-```
+This pattern works for any environment you want to wrap.
 
 ### Type-Safe Models
 

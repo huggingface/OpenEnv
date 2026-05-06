@@ -24,6 +24,7 @@ Environment variables:
     OPENSPIEL_GAME: Game name to serve (default: "catch")
     OPENSPIEL_AGENT_PLAYER: Agent player ID (default: 0)
     OPENSPIEL_OPPONENT_POLICY: Opponent policy (default: "random")
+    MAX_CONCURRENT_ENVS: Maximum concurrent WebSocket sessions (default: 8)
 """
 
 import os
@@ -46,6 +47,7 @@ except ImportError:
 game_name = os.getenv("OPENSPIEL_GAME", "catch")
 agent_player = int(os.getenv("OPENSPIEL_AGENT_PLAYER", "0"))
 opponent_policy = os.getenv("OPENSPIEL_OPPONENT_POLICY", "random")
+max_concurrent = int(os.getenv("MAX_CONCURRENT_ENVS", "8"))
 
 
 # Factory function to create OpenSpielEnvironment instances
@@ -65,6 +67,7 @@ app = create_app(
     OpenSpielAction,
     OpenSpielObservation,
     env_name="openspiel_env",
+    max_concurrent_envs=max_concurrent,
 )
 
 

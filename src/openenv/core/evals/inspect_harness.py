@@ -33,9 +33,11 @@ class InspectAIHarness(EvalHarness):
     | Key                      | Type     | Default         | Purpose                           |
     +==========================+==========+=================+===================================+
     | ``model``                | str      | *required*      | Model string, e.g. "openai/gpt-4o"|
+    | ``model_base_url``       | str|None | None            | Override provider base URL        |
     | ``task``                 | str|None | ``dataset`` arg | Task file path or task string     |
     | ``task_args``            | dict     | ``{}``          | Arguments to pass to the task     |
     | ``max_samples``          | int|None | None            | Limit samples per task            |
+    | ``max_connections``      | int|None | None            | Max concurrent model connections  |
     | ``temperature``          | float|None| None           | Model generation temperature      |
     | ``max_tokens``           | int|None | None            | Max generation tokens             |
     | ``epochs``               | int|None | None            | Number of evaluation epochs       |
@@ -106,7 +108,13 @@ class InspectAIHarness(EvalHarness):
         if model_args:
             eval_kwargs["model_args"] = model_args
 
-        for key in ("max_samples", "temperature", "max_tokens", "epochs"):
+        for key in (
+            "max_samples",
+            "max_connections",
+            "temperature",
+            "max_tokens",
+            "epochs",
+        ):
             value = eval_parameters.get(key)
             if value is not None:
                 eval_kwargs[key] = value
@@ -119,6 +127,10 @@ class InspectAIHarness(EvalHarness):
 
         if self.log_dir is not None:
             eval_kwargs["log_dir"] = self.log_dir
+
+        model_base_url = eval_parameters.get("model_base_url")
+        if model_base_url is not None:
+            eval_kwargs["model_base_url"] = model_base_url
 
         # Run evaluation
         logs = inspect_eval(task, model=model, **eval_kwargs)

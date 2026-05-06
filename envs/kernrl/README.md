@@ -27,7 +27,7 @@ Requires: NVIDIA GPU with CUDA toolkit, PyTorch, Triton
 ## Quick Start
 
 ```python
-from openenv.envs.kernrl import kernrl_env, KernelAction
+from kernrl import KernelAction, kernrl_env
 
 # Connect to server
 env = kernrl_env(base_url="http://localhost:8000")

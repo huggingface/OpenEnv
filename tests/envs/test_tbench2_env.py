@@ -1,5 +1,6 @@
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -12,7 +13,41 @@ except Exception:
     camel = None
 
 from envs.tbench2_env.models import Tbench2Action
+from envs.tbench2_env.server import tbench2_env_environment
 from envs.tbench2_env.server.tbench2_env_environment import Tbench2Environment
+
+
+class _FakeTerminalToolkit:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+
+    def shell_exec(self, **kwargs):
+        return ""
+
+
+def test_tbench2_reset_uses_default_task_id(monkeypatch, tmp_path: Path):
+    """HTTP resets without kwargs should land on the default demo task."""
+    task_dir = tmp_path / "headless-terminal"
+    task_dir.mkdir()
+    (task_dir / "instruction.md").write_text("Solve the terminal task.\n")
+
+    monkeypatch.setattr(
+        tbench2_env_environment,
+        "_require_terminal_toolkit",
+        lambda: _FakeTerminalToolkit,
+    )
+
+    env = Tbench2Environment(
+        tasks_dir=str(tmp_path),
+        output_dir=str(tmp_path / "runs"),
+        default_task_id="headless-terminal",
+    )
+
+    observation = env.reset()
+
+    assert observation.success is True
+    assert observation.task_id == "headless-terminal"
+    assert "terminal task" in observation.instruction
 
 
 @pytest.mark.skipif(camel is None, reason="camel-ai not installed")

@@ -1,0 +1,65 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openenv-opencode-env"
+version = "0.1.0"
+description = "OpenCode coding-agent environment for OpenEnv — runs the OpenCode CLI in an E2B sandbox against any OpenAI-compatible LLM, optionally capturing per-token logprobs."
+requires-python = ">=3.10"
+dependencies = [
+    # Core OpenEnv (server + MCP).
+    #
+    # Intended end-state (post RFC 5 / PR #471 release on PyPI):
+    #     "openenv-core[core]>=0.2.2",
+    #
+    # Today this is installed from the ``opencode-harness`` branch instead,
+    # because PyPI's published ``openenv-core`` (0.2.x) does not yet contain
+    # the ``openenv.core.harness`` module that this env imports. Switch the
+    # line below back to the version-pinned form once the harness module
+    # ships in a published openenv-core release.
+    "openenv-core[core] @ git+https://github.com/adithya-s-k/OpenEnv.git@opencode-harness",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.0.0",
+    "fastmcp>=2.0.0",
+    "requests>=2.31.0",
+
+    # Web UI — pin to current major (6.x) to match local dev and avoid
+    # behavior drift on Space rebuilds.
+    "gradio>=6.0.0",
+
+    # OpenCode harness primitive — sandbox + proxy + agent driver
+    "httpx>=0.27.0",
+    "e2b>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.0.0",
+]
+
+[project.scripts]
+# Server entrypoint — enables ``uv run --project . server``.
+server = "opencode_env.server.app:main"
+
+[tool.setuptools]
+include-package-data = true
+packages = [
+    "opencode_env",
+    "opencode_env.sandbox",
+    "opencode_env.server",
+    "opencode_env.tests",
+]
+package-dir = { "opencode_env" = ".", "opencode_env.sandbox" = "sandbox", "opencode_env.server" = "server", "opencode_env.tests" = "tests" }
+
+[tool.setuptools.package-data]
+opencode_env = ["**/*.md"]

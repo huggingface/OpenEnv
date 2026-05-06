@@ -10,7 +10,56 @@ on:
       - main
   workflow_dispatch:  # Allow manual trigger
 
+env:
+  UV_VERSION: "0.9.3"
+
 jobs:
+  validate-env-locks:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Validate changed environment lockfiles
+        run: |
+          base_sha="${{ github.event.pull_request.base.sha }}"
+          head_sha="${{ github.sha }}"
+
+          mapfile -t env_dirs < <(
+            git diff --name-only "$base_sha" "$head_sha" \
+              | rg '^envs/[^/]+/(pyproject\.toml|uv\.lock)$' \
+              | xargs -r -n1 dirname \
+              | sort -u
+          )
+
+          if [ "${#env_dirs[@]}" -eq 0 ]; then
+            echo "No environment dependency files changed."
+            exit 0
+          fi
+
+          printf 'Validating %s\n' "${env_dirs[@]}"
+
+          for env_dir in "${env_dirs[@]}"; do
+            echo "::group::$env_dir"
+            (
+              cd "$env_dir"
+              uv sync --frozen --all-groups --all-extras --dry-run --no-install-project
+            )
+            echo "::endgroup::"
+          done
+
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -20,12 +69,12 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v7
         with:
-          version: "latest"
+          version: ${{ env.UV_VERSION }}
 
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
@@ -51,12 +100,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v7
         with:
-          version: "latest"
+          version: ${{ env.UV_VERSION }}
 
       - name: Set up Python
         run: uv python install 3.11
