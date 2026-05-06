@@ -77,9 +77,3 @@ By contributing, you agree that your contributions will be licensed under the sa
 
 Thank you for contributing! 🙏
 
-```{toctree}
-:hidden:
-:maxdepth: 1
-
-auto_getting_started/contributing-envs
-```

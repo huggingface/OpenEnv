@@ -58,3 +58,4 @@ Or view them directly in the documentation with full code output below.
    plot_02_using_environments
    plot_03_building_environments
    environment-builder
+   contributing-envs
