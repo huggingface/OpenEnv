@@ -22,7 +22,6 @@ The [Interactive Tutorials](/auto_getting_started/index) are a Sphinx Gallery se
 :maxdepth: 1
 :hidden:
 
-../auto_getting_started/index
 openenv-tutorial
 end-to-end-walkthrough
 mcp-environment

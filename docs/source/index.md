@@ -99,6 +99,7 @@ OpenEnv is currently in an experimental stage. You should expect bugs, incomplet
 quickstart
 installation
 concepts
+auto_getting_started/index
 ```
 
 ```{toctree}
