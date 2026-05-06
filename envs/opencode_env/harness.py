@@ -27,6 +27,8 @@ opencode CLI is the only path now.
 
 from __future__ import annotations
 
+import json
+import shlex
 from pathlib import Path
 from typing import Any, Callable, Literal
 
@@ -182,8 +184,7 @@ class OpenCodeSession(ResourceSession):
             line = line.strip()
             if not line:
                 continue
-            import json as _json
-            records.append(_json.loads(line))
+            records.append(json.loads(line))
         return records
 
 
@@ -461,31 +462,37 @@ class OpenCodeSessionFactory(ResourceSessionFactory):
             )
             sandbox.write_text("/home/user/proxy/__init__.py", "")
 
-        cap_flag = ""
+        proxy_args = [
+            "python",
+            "interception.py",
+            "--upstream-url",
+            self._config.base_url,
+            "--trace",
+            _PROXY_TRACE_PATH,
+            "--port",
+            str(_PROXY_PORT),
+            "--top-logprobs",
+            str(self._config.proxy_top_logprobs),
+        ]
         if self._config.proxy_max_tokens_cap is not None:
-            cap_flag = f"--max-tokens-cap {self._config.proxy_max_tokens_cap} "
-        thinking_flag = ""
+            proxy_args.extend(
+                ["--max-tokens-cap", str(self._config.proxy_max_tokens_cap)]
+            )
         if self._config.proxy_disable_thinking:
-            thinking_flag = "--disable-thinking "
+            proxy_args.append("--disable-thinking")
         # Force the upstream model id on every forwarded request — opencode's
         # internal title-gen call sometimes strips the provider prefix.
-        model_override_flag = ""
         if self._config.model:
-            model_override_flag = f"--model-override '{self._config.model}' "
+            proxy_args.extend(["--model-override", self._config.model])
+
+        quoted_proxy_args = " ".join(shlex.quote(arg) for arg in proxy_args)
         proxy_cmd = (
             "cd /home/user/proxy && "
-            "python interception.py "
-            f"--upstream-url {self._config.base_url} "
-            f"--upstream-api-key {self._config.api_key} "
-            f"--trace {_PROXY_TRACE_PATH} "
-            f"--port {_PROXY_PORT} "
-            f"--top-logprobs {self._config.proxy_top_logprobs} "
-            f"{cap_flag}"
-            f"{thinking_flag}"
-            f"{model_override_flag}"
-            f"> {_PROXY_LOG_PATH} 2>&1"
+            f"{quoted_proxy_args} "
+            f"> {shlex.quote(_PROXY_LOG_PATH)} 2>&1"
         )
-        proxy_job = sandbox.start_bg(proxy_cmd)
+        proxy_env = {"OPENCODE_UPSTREAM_API_KEY": self._config.api_key}
+        proxy_job = sandbox.start_bg(proxy_cmd, envs=proxy_env)
 
         # Wait for the proxy to start listening. Cold uvicorn boot inside
         # E2B can take anywhere from <1s to ~30s depending on cache state.

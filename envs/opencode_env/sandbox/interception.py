@@ -22,9 +22,8 @@ session, normally inside the sandbox on ``localhost:7000``.
 
 Run standalone::
 
-    python -m opencode_env.interception \\
+    OPENCODE_UPSTREAM_API_KEY=... python -m opencode_env.interception \\
         --upstream-url https://vllm.example/v1 \\
-        --upstream-api-key intercepted \\
         --trace /tmp/trace.jsonl \\
         --port 7000
 """
@@ -35,11 +34,12 @@ import argparse
 import asyncio
 import copy
 import json
+import logging
 import os
 import socket
 import threading
 import time
-from contextlib import closing
+from contextlib import asynccontextmanager, closing
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -51,6 +51,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 
 CHAT_COMPLETIONS_PATH = "/v1/chat/completions"
+_LOG = logging.getLogger(__name__)
 
 
 @dataclass
@@ -102,13 +103,22 @@ class TurnRecord:
 def _build_app(cfg: ProxyConfig) -> FastAPI:
     """Construct the FastAPI app that serves one proxy session."""
 
-    app = FastAPI(title="opencode-interception-proxy")
     state: dict[str, Any] = {"turn": 0, "lock": asyncio.Lock()}
 
     # HTTP client reused across requests. ``None`` auth header — we let each
     # request carry its own ``Authorization`` populated from ``upstream_api_key``.
     client = httpx.AsyncClient(timeout=cfg.request_timeout_s)
     trace_file = open(cfg.trace_path, "a", buffering=1)
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> Any:
+        try:
+            yield
+        finally:
+            await client.aclose()
+            trace_file.close()
+
+    app = FastAPI(title="opencode-interception-proxy", lifespan=lifespan)
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
@@ -154,11 +164,6 @@ def _build_app(cfg: ProxyConfig) -> FastAPI:
             trace_file=trace_file,
             turn_idx=turn_idx,
         )
-
-    @app.on_event("shutdown")
-    async def _shutdown() -> None:
-        await client.aclose()
-        trace_file.close()
 
     return app
 
@@ -309,10 +314,11 @@ async def _proxy_streaming(
             latency_s=latency,
         )
         trace_file.write(record.to_json() + "\n")
-        print(
-            f"[proxy] turn {turn_idx}: upstream {upstream.status_code}: "
-            f"{str(error_json)[:400]}",
-            flush=True,
+        _LOG.warning(
+            "proxy turn %s: upstream %s: %s",
+            turn_idx,
+            upstream.status_code,
+            str(error_json)[:400],
         )
         return JSONResponse(content=error_json, status_code=upstream.status_code)
 
@@ -599,7 +605,14 @@ def read_trace(path: str | os.PathLike) -> list[dict[str, Any]]:
 def main() -> None:
     parser = argparse.ArgumentParser(prog="opencode_env.interception")
     parser.add_argument("--upstream-url", required=True)
-    parser.add_argument("--upstream-api-key", default="intercepted")
+    parser.add_argument(
+        "--upstream-api-key",
+        default=None,
+        help=(
+            "Upstream API key. Prefer OPENCODE_UPSTREAM_API_KEY so the key "
+            "does not appear in process argv."
+        ),
+    )
     parser.add_argument("--trace", default="/tmp/opencode-proxy-trace.jsonl")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=7000)
@@ -622,10 +635,16 @@ def main() -> None:
         help="Rewrite the `model` field on every forwarded request.",
     )
     args = parser.parse_args()
+    upstream_api_key = (
+        args.upstream_api_key
+        or os.environ.get("OPENCODE_UPSTREAM_API_KEY")
+        or os.environ.get("UPSTREAM_API_KEY")
+        or "intercepted"
+    )
 
     cfg = ProxyConfig(
         upstream_url=args.upstream_url,
-        upstream_api_key=args.upstream_api_key,
+        upstream_api_key=upstream_api_key,
         trace_path=args.trace,
         host=args.host,
         port=args.port,

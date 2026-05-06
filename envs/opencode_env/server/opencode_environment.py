@@ -21,6 +21,7 @@ logprobs (Mode B) + setup/verify command results + file outputs.
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from typing import Any, Optional
@@ -36,7 +37,6 @@ try:
 except ImportError:  # pragma: no cover
     from openenv.core.env_server.mcp_environment import MCPEnvironment
     from openenv.core.env_server.types import Action, Observation
-
     from server.catalog import ENDPOINT_KINDS, resolve_endpoint  # type: ignore
 
 
@@ -480,12 +480,10 @@ class OpenCodeEnvironment(MCPEnvironment):
             if not line:
                 continue
             try:
-                import json as _json
-                rec = _json.loads(line)
+                rec = json.loads(line)
             except Exception:
                 continue
             response = rec.get("response") or {}
-            choice = (response.get("choices") or [{}])[0] if response.get("choices") else {}
             turns.append(
                 self._RolloutTurn(
                     turn=int(rec.get("turn") or 0),

@@ -24,6 +24,7 @@ one endpoint credential are present and pytest is invoked with
 from __future__ import annotations
 
 import os
+import shlex
 import sys
 
 import pytest
@@ -229,6 +230,109 @@ def test_opencode_task_coerce_rejects_unknown_type() -> None:
 
     with pytest.raises(TypeError, match="Cannot coerce"):
         OpenCodeTask.coerce(42)  # type: ignore[arg-type]
+
+
+def test_start_proxy_keeps_upstream_key_out_of_command() -> None:
+    """The proxy API key must be passed via env, not shell argv."""
+    from opencode_env import OpenCodeConfig, OpenCodeSessionFactory
+
+    class FakeExecResult:
+        exit_code = 0
+        stdout = "ok"
+        stderr = ""
+
+    class FakeBgJob:
+        def wait(self, timeout: float | None = None) -> int:
+            return 0
+
+        def kill(self) -> None:
+            pass
+
+    class FakeSandbox:
+        sandbox_id = "fake-sandbox"
+
+        def __init__(self) -> None:
+            self.started_cmd: str | None = None
+            self.started_envs: dict[str, str] | None = None
+            self.written: dict[str, str] = {}
+
+        def exec(self, *args, **kwargs) -> FakeExecResult:
+            return FakeExecResult()
+
+        def start_bg(self, cmd: str, *, envs=None, cwd=None) -> FakeBgJob:
+            self.started_cmd = cmd
+            self.started_envs = envs
+            return FakeBgJob()
+
+        def write_text(self, path: str, content: str) -> None:
+            self.written[path] = content
+
+        def read_text(self, path: str) -> str:
+            return ""
+
+        def exists(self, path: str) -> bool:
+            return path in self.written
+
+        def kill(self) -> None:
+            pass
+
+    class NoopInstallFactory(OpenCodeSessionFactory):
+        def _exec_with_retry(self, *args, **kwargs):
+            return FakeExecResult()
+
+    secret = "sk-test '$(leak)"
+    model = "provider/model'; touch /tmp/pwn #"
+    config = OpenCodeConfig(
+        base_url="https://example.test/v1?x='y",
+        api_key=secret,
+        model=model,
+    )
+    sandbox = FakeSandbox()
+    factory = NoopInstallFactory(
+        config=config,
+        sandbox_backend=object(),  # unused by this protected-method test
+        mode="transparent_proxy",
+    )
+
+    factory._start_proxy(sandbox)
+
+    assert sandbox.started_cmd is not None
+    assert sandbox.started_envs == {"OPENCODE_UPSTREAM_API_KEY": secret}
+    assert secret not in sandbox.started_cmd
+    assert "--upstream-api-key" not in sandbox.started_cmd
+
+    argv = shlex.split(
+        sandbox.started_cmd.split("&&", 1)[1].split(">", 1)[0].strip()
+    )
+    assert argv[argv.index("--upstream-url") + 1] == config.base_url
+    assert argv[argv.index("--model-override") + 1] == model
+
+
+def test_interception_cli_reads_upstream_key_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from opencode_env.sandbox import interception
+
+    captured = {}
+
+    def fake_serve(cfg) -> None:
+        captured["cfg"] = cfg
+
+    monkeypatch.setattr(interception, "serve", fake_serve)
+    monkeypatch.setenv("OPENCODE_UPSTREAM_API_KEY", "sk-from-env")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "interception.py",
+            "--upstream-url",
+            "https://example.test/v1",
+        ],
+    )
+
+    interception.main()
+
+    assert captured["cfg"].upstream_api_key == "sk-from-env"
 
 
 # ---------------------------------------------------------------------------
