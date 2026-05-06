@@ -7,18 +7,8 @@ updates:
       interval: "weekly"
     exclude-paths:
       - "envs/**"
-    groups:
-      root-uv:
-        applies-to: version-updates
-        patterns:
-          - "*"
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
-    groups:
-      root-actions:
-        applies-to: version-updates
-        patterns:
-          - "*"
