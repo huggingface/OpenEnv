@@ -5,8 +5,8 @@
     A unified framework for building, deploying, and interacting with isolated execution environments for agentic reinforcement learning—powered by simple, Gymnasium-style APIs.
   </p>
   <div class="hero__actions">
-    <a class="hero__button hero__button--primary" href="auto_getting_started/index.html">
-      Getting Started Tutorials
+    <a class="hero__button hero__button--primary" href="tutorials/index.html">
+      Getting Started
     </a>
     <a class="hero__button" href="auto_getting_started/environment-builder.html">
       Build Your Own Environment
