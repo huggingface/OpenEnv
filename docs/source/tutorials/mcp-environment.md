@@ -23,7 +23,7 @@ Inside OpenEnv, MCP plays a specific role in a two-surface split:
 - **Agents** use MCP tools over the `/mcp` JSON-RPC endpoint. Tools are what the model calls to act on the world.
 
 ```{note}
-In simulation mode, MCP tool calls flow **through** `step()`. The trainer stays in control of timing, rewards, and termination; the MCP action types are just a standardised action schema. The [MCP environment lifecycle guide](../mcp-environment-lifecycle.md) covers the split in depth.
+In simulation mode, MCP tool calls flow **through** `step()`. The trainer stays in control of timing, rewards, and termination; the MCP action types are just a standardised action schema. The [MCP environment lifecycle guide](../guides/mcp-environment-lifecycle.md) covers the split in depth.
 ```
 
 ```{note}
@@ -145,7 +145,7 @@ The `ToolError.error_type` enum (`TOOL_NOT_FOUND`, `INVALID_ARGS`, `EXECUTION_ER
 
 ### `step(CallToolAction(...))` vs `call_tool()`
 
-Environment clients that inherit from `MCPToolClient` (such as `EchoEnv` and `FinQAEnv`) expose a shorter **async** `await env.call_tool("name", arg=value)` helper for a running environment server. It returns the tool's raw return value directly instead of a `CallToolObservation` — and it **raises `RuntimeError`** on any tool error (transport failure, unknown tool, invalid arguments, or a tool exception), so you cannot branch on `error_type` without a `try/except`. Use `step(CallToolAction(...))` when you need the whole observation (reward, done, metadata, or graceful error classification); reach for `call_tool()` in async production scripts where the raw result is all you care about and a failure is allowed to propagate. The [lifecycle guide](../mcp-environment-lifecycle.md) covers the exact trade-offs.
+Environment clients that inherit from `MCPToolClient` (such as `EchoEnv` and `FinQAEnv`) expose a shorter **async** `await env.call_tool("name", arg=value)` helper for a running environment server. It returns the tool's raw return value directly instead of a `CallToolObservation` — and it **raises `RuntimeError`** on any tool error (transport failure, unknown tool, invalid arguments, or a tool exception), so you cannot branch on `error_type` without a `try/except`. Use `step(CallToolAction(...))` when you need the whole observation (reward, done, metadata, or graceful error classification); reach for `call_tool()` in async production scripts where the raw result is all you care about and a failure is allowed to propagate. The [lifecycle guide](../guides/mcp-environment-lifecycle.md) covers the exact trade-offs.
 
 ```{note}
 `MCPToolClient` and its base `MCPClientBase` only support `mode="production"`; construction raises `ValueError` for other modes. For direct in-process training or eval snippets like the ones above, call `env.step(CallToolAction(...))` on the environment class itself.
@@ -267,7 +267,7 @@ You will see the discovery call, two tool invocations, and an error case printed
 ## Next Steps
 
 - **End-to-end training recipe** — the [Wordle GRPO tutorial](wordle-grpo.md) walks through a full GRPO training run with `environment_factory`. The wrapper-class shape is the same for an MCP-backed env; inside each tool method, build a `CallToolAction(tool_name=..., arguments={...})` instead of Wordle's single-field `TextArenaAction(message=guess)`.
-- **MCP lifecycle details** — the [MCP Environment Lifecycle guide](../mcp-environment-lifecycle.md) covers `step()` vs `step_async()`, the `call_tool()` convenience path, and common debugging questions.
+- **MCP lifecycle details** — the [MCP Environment Lifecycle guide](../guides/mcp-environment-lifecycle.md) covers `step()` vs `step_async()`, the `call_tool()` convenience path, and common debugging questions.
 - **A richer MCP environment** — [`envs/finqa_env/`](https://github.com/meta-pytorch/OpenEnv/tree/main/envs/finqa_env) shows tool calls participating in episode progression, rewards, and terminal submission — not just a stateless echo.
 - **Design rationale** — [RFC 003](https://github.com/meta-pytorch/OpenEnv/blob/main/rfcs/003-mcp-support.md) explains why OpenEnv picked MCP as the agent boundary and how tool-calling and CodeAct styles share the same plumbing.
 - **Serving tools to an external agent** — the `/mcp` JSON-RPC endpoint is available alongside `/ws` on any MCP environment server. Point an MCP-compatible client at it for production inference without going through the step loop. This direct path bypasses reward computation, step counts, and episode termination, and it exposes only registered MCP tools — not `reset`, `step`, or `state`.

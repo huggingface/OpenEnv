@@ -76,3 +76,4 @@ ruff check .
 By contributing, you agree that your contributions will be licensed under the same license as the project.
 
 Thank you for contributing! 🙏
+

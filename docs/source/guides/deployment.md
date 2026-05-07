@@ -109,4 +109,4 @@ The web interface is disabled by default for custom registry pushes. `-e`/`--env
 
 - [Environment builder](../getting_started/environment-builder.md) — full `openenv push` flag reference and `openenv.yaml` `variables:` docs
 - [Contributing environments](../getting_started/contributing-envs.md) — PR-based update workflow and forking existing environments
-- [CLI reference](../cli.md) — all CLI commands
+- [CLI reference](../reference/cli.md) — all CLI commands
