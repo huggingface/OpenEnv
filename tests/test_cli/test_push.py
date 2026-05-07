@@ -551,7 +551,6 @@ def test_push_bare_repo_id_prepends_username(tmp_path: Path) -> None:
         mock_whoami.return_value = {"name": "testuser"}
         mock_login.return_value = None
         mock_hf_api_class.return_value = MagicMock()
-        mock_stage.return_value = tmp_path
         mock_create.return_value = None
         mock_upload.return_value = None
 
