@@ -6,10 +6,10 @@
 
 from __future__ import annotations
 
-from openenv.core.env_server.mcp_types import CallToolAction, ListToolsAction
 from coding_tools_env.models import CodingToolsState
 from coding_tools_env.server.coding_tools_env_environment import CodingToolsEnvironment
 from coding_tools_env.server.e2b_sandbox import ToolResult
+from openenv.core.env_server.mcp_types import CallToolAction, ListToolsAction
 
 
 class FakeSandbox:
@@ -21,10 +21,14 @@ class FakeSandbox:
 
     def run_shell(self, command: str, timeout_s: float = 30) -> ToolResult:
         if "exit 1" in command:
-            return ToolResult(ok=False, output="", error="exit_code=1", metadata={"exit_code": 1})
+            return ToolResult(
+                ok=False, output="", error="exit_code=1", metadata={"exit_code": 1}
+            )
         if command.startswith("cat /home/user/logs/verifier/reward.txt"):
             return ToolResult(ok=True, output="", error=None, metadata={"exit_code": 0})
-        return ToolResult(ok=True, output=f"shell: {command}", error=None, metadata={"exit_code": 0})
+        return ToolResult(
+            ok=True, output=f"shell: {command}", error=None, metadata={"exit_code": 0}
+        )
 
     def read_file(self, file_path: str, offset=None, limit=None) -> ToolResult:
         if file_path not in self.files:
@@ -38,18 +42,34 @@ class FakeSandbox:
 
     def write_file(self, file_path: str, content: str) -> ToolResult:
         self.files[file_path] = content
-        return ToolResult(ok=True, output="write ok", error=None, metadata={"bytes": len(content)})
+        return ToolResult(
+            ok=True, output="write ok", error=None, metadata={"bytes": len(content)}
+        )
 
     def glob_files(self, pattern: str, path: str | None = None) -> ToolResult:
-        return ToolResult(ok=True, output="\n".join(sorted(self.files.keys())), error=None, metadata={})
+        return ToolResult(
+            ok=True,
+            output="\n".join(sorted(self.files.keys())),
+            error=None,
+            metadata={},
+        )
 
-    def grep(self, pattern: str, path: str | None = None, include: str | None = None) -> ToolResult:
-        matches = [f"{name}:1:{text}" for name, text in self.files.items() if pattern in text]
+    def grep(
+        self, pattern: str, path: str | None = None, include: str | None = None
+    ) -> ToolResult:
+        matches = [
+            f"{name}:1:{text}" for name, text in self.files.items() if pattern in text
+        ]
         return ToolResult(ok=True, output="\n".join(matches), error=None, metadata={})
 
     def list_dir(self, path: str = ".", ignore=None) -> ToolResult:
         names = sorted(name.rsplit("/", 1)[-1] for name in self.files.keys())
-        return ToolResult(ok=True, output="\n".join(f"[file] {name}" for name in names), error=None, metadata={})
+        return ToolResult(
+            ok=True,
+            output="\n".join(f"[file] {name}" for name in names),
+            error=None,
+            metadata={},
+        )
 
     def kill(self) -> None:
         self.killed = True
@@ -135,8 +155,18 @@ def test_write_read_edit_and_submit(monkeypatch):
             tool_name="todo_write",
             arguments={
                 "todos": [
-                    {"id": "1", "content": "a", "status": "completed", "priority": "high"},
-                    {"id": "2", "content": "b", "status": "in_progress", "priority": "medium"},
+                    {
+                        "id": "1",
+                        "content": "a",
+                        "status": "completed",
+                        "priority": "high",
+                    },
+                    {
+                        "id": "2",
+                        "content": "b",
+                        "status": "in_progress",
+                        "priority": "medium",
+                    },
                 ]
             },
         )
@@ -162,8 +192,18 @@ def test_todo_write_rejects_multiple_in_progress(monkeypatch):
             tool_name="todo_write",
             arguments={
                 "todos": [
-                    {"id": "1", "content": "a", "status": "in_progress", "priority": "high"},
-                    {"id": "2", "content": "b", "status": "in_progress", "priority": "medium"},
+                    {
+                        "id": "1",
+                        "content": "a",
+                        "status": "in_progress",
+                        "priority": "high",
+                    },
+                    {
+                        "id": "2",
+                        "content": "b",
+                        "status": "in_progress",
+                        "priority": "medium",
+                    },
                 ]
             },
         )
