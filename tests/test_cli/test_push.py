@@ -513,7 +513,7 @@ def test_push_initializes_hf_api_without_token(tmp_path: Path) -> None:
 
 
 def test_push_validates_repo_id_format(tmp_path: Path) -> None:
-    """Test that push validates repo-id format."""
+    """Test that push rejects repo-ids with more than one slash."""
     _create_test_openenv_env(tmp_path)
 
     with (
@@ -522,21 +522,50 @@ def test_push_validates_repo_id_format(tmp_path: Path) -> None:
         patch("openenv.cli.commands.push.HfApi") as mock_hf_api_class,
     ):
         mock_whoami.return_value = {"name": "testuser"}
-        mock_login.return_value = None  # Prevent actual login prompt
-        # Mock HfApi to prevent actual API calls
-        mock_api = MagicMock()
-        mock_hf_api_class.return_value = mock_api
+        mock_login.return_value = None
+        mock_hf_api_class.return_value = MagicMock()
 
         old_cwd = os.getcwd()
         try:
             os.chdir(str(tmp_path))
-            # Invalid format (no slash)
-            result = runner.invoke(app, ["push", "--repo-id", "invalid-repo-id"])
+            result = runner.invoke(app, ["push", "--repo-id", "org/repo/extra"])
         finally:
             os.chdir(old_cwd)
 
         assert result.exit_code != 0
         assert "repo-id" in result.output.lower() or "format" in result.output.lower()
+
+
+def test_push_bare_repo_id_prepends_username(tmp_path: Path) -> None:
+    """Bare repo-name (no slash) should be expanded to username/repo-name."""
+    _create_test_openenv_env(tmp_path)
+
+    with (
+        patch("openenv.cli.commands.push.whoami") as mock_whoami,
+        patch("openenv.cli.commands.push.login") as mock_login,
+        patch("openenv.cli.commands.push.HfApi") as mock_hf_api_class,
+        patch("openenv.cli.commands.push._upload_to_hf_space") as mock_upload,
+        patch("openenv.cli.commands.push._create_hf_space") as mock_create,
+        patch("openenv.cli.commands.push._prepare_staging_directory") as mock_stage,
+    ):
+        mock_whoami.return_value = {"name": "testuser"}
+        mock_login.return_value = None
+        mock_hf_api_class.return_value = MagicMock()
+        mock_stage.return_value = tmp_path
+        mock_create.return_value = None
+        mock_upload.return_value = None
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(str(tmp_path))
+            result = runner.invoke(app, ["push", "--repo-id", "my-env"])
+        finally:
+            os.chdir(old_cwd)
+
+        # Must not error on format validation
+        assert "Invalid repo-id format" not in result.output
+        # Should have expanded to testuser/my-env
+        assert "testuser/my-env" in result.output
 
 
 def test_push_validates_manifest_is_dict(tmp_path: Path) -> None:

@@ -818,8 +818,10 @@ def push(
     if not repo_id:
         repo_id = f"{username}/{env_name}"
 
-    # Validate repo_id format
-    if "/" not in repo_id or repo_id.count("/") != 1:
+    # Accept bare repo-name and prepend the authenticated username
+    if "/" not in repo_id:
+        repo_id = f"{username}/{repo_id}"
+    elif repo_id.count("/") != 1:
         raise typer.BadParameter(
             f"Invalid repo-id format: {repo_id}. Expected format: 'username/repo-name'"
         )
