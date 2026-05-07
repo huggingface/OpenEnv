@@ -13,6 +13,7 @@ RFC 005 is still under review. Import them from ``openenv.core.harness``.
 from __future__ import annotations
 
 import json
+import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Callable, Protocol
@@ -23,6 +24,7 @@ from ..env_server.types import State
 from ..llm_client import LLMResponse
 
 Message = dict[str, Any]
+RESERVED_TOOL_NAMES = frozenset({"reset", "step", "state", "close"})
 
 
 @dataclass
@@ -221,10 +223,11 @@ def _resolve_env_reward(
             break
 
     verify_reward = None if verify.env_reward is None else float(verify.env_reward)
-    if (
-        trace_reward is not None
-        and verify_reward is not None
-        and verify_reward != trace_reward
+    if trace_reward is not None and verify_reward is not None and not math.isclose(
+        verify_reward,
+        trace_reward,
+        rel_tol=1e-9,
+        abs_tol=1e-6,
     ):
         raise ValueError(
             "verify.env_reward must forward the environment reward from the rollout"
@@ -232,7 +235,9 @@ def _resolve_env_reward(
 
     if trace_reward is not None:
         return trace_reward
-    return verify_reward or 0.0
+    if verify_reward is not None:
+        return verify_reward
+    raise ValueError("rollout did not produce an environment reward")
 
 
 class StepEnvSessionAdapter(ResourceSession):
@@ -273,6 +278,12 @@ class StepEnvSessionAdapter(ResourceSession):
         self._verify_builder = verify_builder or self._default_verify
         self._closed = False
         self._tools_by_name = {tool.name: tool for tool in self._tool_specs}
+        reserved = sorted(set(self._tools_by_name) & RESERVED_TOOL_NAMES)
+        if reserved:
+            raise ValueError(
+                "Tool names are reserved for orchestration controls: "
+                + ", ".join(reserved)
+            )
 
         reset_payload = dict(reset_kwargs or {})
         if seed is not None:
@@ -343,6 +354,8 @@ class StepEnvSessionAdapter(ResourceSession):
         return list(self._tool_specs)
 
     def call_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
+        if name in RESERVED_TOOL_NAMES:
+            raise KeyError(f"Reserved orchestration tool: {name}")
         if name not in self._tools_by_name:
             raise KeyError(f"Unknown tool: {name}")
 
@@ -413,9 +426,17 @@ class SessionMCPBridge:
                     request_id=request_id,
                 ).model_dump()
 
+            tool_name = params["name"]
+            if tool_name in RESERVED_TOOL_NAMES:
+                return JsonRpcResponse.error_response(
+                    JsonRpcErrorCode.INVALID_PARAMS,
+                    message=f"Reserved orchestration tool: {tool_name}",
+                    request_id=request_id,
+                ).model_dump()
+
             try:
                 result = self.session.call_tool(
-                    params["name"],
+                    tool_name,
                     dict(params.get("arguments", {})),
                 )
             except KeyError as exc:
@@ -681,6 +702,7 @@ __all__ = [
     "Message",
     "ModelStep",
     "ModelStepResult",
+    "RESERVED_TOOL_NAMES",
     "ResourceSession",
     "ResourceSessionFactory",
     "SessionMCPBridge",

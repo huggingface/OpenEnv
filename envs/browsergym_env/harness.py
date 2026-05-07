@@ -6,7 +6,12 @@ import re
 from typing import Any
 
 from openenv.core.env_server.mcp_types import Tool
-from openenv.core.harness import StepEnvSessionAdapter, ToolResult, VerifyResult
+from openenv.core.harness import (
+    ResourceSessionFactory,
+    StepEnvSessionAdapter,
+    ToolResult,
+    VerifyResult,
+)
 from openenv.core.llm_client import ToolCall
 
 from .models import BrowserGymAction
@@ -164,7 +169,7 @@ def _build_browsergym_verify(
     )
 
 
-class BrowserGymSessionFactory:
+class BrowserGymSessionFactory(ResourceSessionFactory):
     """Create BrowserGym-backed resource sessions from client factories."""
 
     def __init__(self, client_factory, *, default_task: str | None = None):

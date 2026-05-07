@@ -24,15 +24,6 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
-from huggingface_hub import HfApi
-from rich.progress import (
-    BarColumn,
-    MofNCompleteColumn,
-    Progress,
-    TextColumn,
-    TimeElapsedColumn,
-)
-
 from ..env_server.mcp_types import Tool
 from ..llm_client import LLMClient
 from ..utils import run_async_safely
@@ -262,6 +253,14 @@ class CollectRunner:
         num_collected = 0
         num_dropped = 0
         rewards: list[float] = []
+
+        from rich.progress import (
+            BarColumn,
+            MofNCompleteColumn,
+            Progress,
+            TextColumn,
+            TimeElapsedColumn,
+        )
 
         progress = Progress(
             TextColumn("[cyan]{task.description}"),
@@ -513,6 +512,8 @@ def push_to_hf_hub(
 
     num_episodes = _count_episodes(results_path)
     message = commit_message or f"Add {num_episodes} collected episode(s)"
+
+    from huggingface_hub import HfApi
 
     api = HfApi(token=token)
     api.create_repo(

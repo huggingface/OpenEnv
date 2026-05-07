@@ -23,6 +23,7 @@ from openenv.core.harness import (
     HarnessRunLimits,
     MCPHarnessAdapter,
     ModelStepResult,
+    RESERVED_TOOL_NAMES,
     SessionMCPBridge,
     StepEnvSessionAdapter,
     ToolResult,
@@ -171,6 +172,24 @@ class TestStepEnvSessionAdapter:
         assert result.metrics == {"kind": "custom"}
         assert seen["final_state"] == {"terminal": True}
 
+    def test_session_rejects_reserved_tool_names(self):
+        env = FakeSyncEnv()
+
+        with pytest.raises(ValueError, match="reserved"):
+            StepEnvSessionAdapter(
+                client=env,
+                task="reserved-tool",
+                tool_specs=[
+                    Tool(
+                        name="reset",
+                        description="Must remain an orchestration control",
+                        input_schema={"type": "object", "properties": {}},
+                    )
+                ],
+                action_builder=lambda name, arguments: name,
+                initial_messages_builder=lambda result, task: [],
+            )
+
 
 class TestSessionMCPBridge:
     """Tests for exposing sessions through an MCP-style JSON-RPC bridge."""
@@ -251,6 +270,29 @@ class TestSessionMCPBridge:
 
         assert response["error"]["message"] == "Unknown tool: missing"
         assert response["id"] == 9
+
+    def test_reserved_tool_returns_jsonrpc_error(self):
+        class ReservedSession:
+            def list_tools(self):
+                return []
+
+            def call_tool(self, name, arguments):
+                raise AssertionError("reserved names must be blocked by the bridge")
+
+        bridge = SessionMCPBridge(ReservedSession())
+
+        for name in RESERVED_TOOL_NAMES:
+            response = bridge.handle_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 12,
+                    "method": "tools/call",
+                    "params": {"name": name, "arguments": {}},
+                }
+            )
+
+            assert response["error"]["message"] == f"Reserved orchestration tool: {name}"
+            assert response["id"] == 12
 
     def test_value_error_returns_invalid_params_error(self):
         class ValueErrorSession:
@@ -506,6 +548,82 @@ class TestBuildHarnessRolloutFunc:
             ValueError,
             match="verify.env_reward must forward the environment reward",
         ):
+            rollout_func(["task-a"], trainer=object())
+
+    def test_rollout_func_accepts_float_rounding_in_reward_check(self):
+        class RecordingSession:
+            def initial_messages(self):
+                return [{"role": "user", "content": "task"}]
+
+            def list_tools(self):
+                return [
+                    Tool(
+                        name="finish",
+                        description="Finish the task",
+                        input_schema={"type": "object", "properties": {}},
+                    )
+                ]
+
+            def call_tool(self, name, arguments):
+                return ToolResult(
+                    data={"reward": 0.3},
+                    done=True,
+                    metadata={"reward": 0.3},
+                )
+
+            def verify(self, transcript, final_state=None):
+                return VerifyResult(env_reward=0.1 + 0.2, done=True)
+
+            def close(self):
+                pass
+
+        rollout_func = build_harness_rollout_func(
+            session_factory=RecordingSessionFactory(session=RecordingSession()),
+            harness_adapter=MCPHarnessAdapter(),
+            model_step_builder=lambda trainer, session: (
+                lambda messages, tools, sampling: ModelStepResult(
+                    response=LLMResponse(
+                        content="calling tool",
+                        tool_calls=[ToolCall(id="call-1", name="finish", args={})],
+                    ),
+                )
+            ),
+            limits=HarnessRunLimits(max_turns=1),
+        )
+
+        result = rollout_func(["task-a"], trainer=object())
+
+        assert result["env_reward"] == [0.3]
+
+    def test_rollout_func_rejects_missing_reward(self):
+        class RecordingSession:
+            def initial_messages(self):
+                return [{"role": "user", "content": "task"}]
+
+            def list_tools(self):
+                return []
+
+            def call_tool(self, name, arguments):
+                raise AssertionError("No tools expected")
+
+            def verify(self, transcript, final_state=None):
+                return VerifyResult(env_reward=None, done=True)
+
+            def close(self):
+                pass
+
+        rollout_func = build_harness_rollout_func(
+            session_factory=RecordingSessionFactory(session=RecordingSession()),
+            harness_adapter=MCPHarnessAdapter(),
+            model_step_builder=lambda trainer, session: (
+                lambda messages, tools, sampling: ModelStepResult(
+                    response=LLMResponse(content="done", tool_calls=[]),
+                )
+            ),
+            limits=HarnessRunLimits(max_turns=1),
+        )
+
+        with pytest.raises(ValueError, match="did not produce an environment reward"):
             rollout_func(["task-a"], trainer=object())
 
 

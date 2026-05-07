@@ -662,7 +662,7 @@ class TestPushToHfHub:
         output = _populated_output_dir(tmp_path)
         mock_api = MagicMock()
 
-        with patch("openenv.core.harness.collect.HfApi", return_value=mock_api):
+        with patch("huggingface_hub.HfApi", return_value=mock_api):
             url = push_to_hf_hub(output, "user/ttt-sft-v1")
 
         mock_api.create_repo.assert_called_once()
@@ -683,7 +683,7 @@ class TestPushToHfHub:
         output = _populated_output_dir(tmp_path)
         mock_api = MagicMock()
 
-        with patch("openenv.core.harness.collect.HfApi", return_value=mock_api):
+        with patch("huggingface_hub.HfApi", return_value=mock_api):
             push_to_hf_hub(output, "user/private-ds", private=True)
 
         assert mock_api.create_repo.call_args.kwargs["private"] is True
@@ -692,7 +692,7 @@ class TestPushToHfHub:
         output = _populated_output_dir(tmp_path)
         mock_api = MagicMock()
 
-        with patch("openenv.core.harness.collect.HfApi", return_value=mock_api):
+        with patch("huggingface_hub.HfApi", return_value=mock_api):
             push_to_hf_hub(output, "user/ds", commit_message="seed: 200 TTT games")
 
         assert (
@@ -704,7 +704,7 @@ class TestPushToHfHub:
         output = _populated_output_dir(tmp_path)
         mock_api = MagicMock()
 
-        with patch("openenv.core.harness.collect.HfApi", return_value=mock_api):
+        with patch("huggingface_hub.HfApi", return_value=mock_api):
             push_to_hf_hub(output, "user/ds")
 
         msg = mock_api.upload_folder.call_args.kwargs["commit_message"]
@@ -721,7 +721,7 @@ class TestPushToHfHub:
         mock_api = MagicMock()
         api_cls = MagicMock(return_value=mock_api)
 
-        with patch("openenv.core.harness.collect.HfApi", api_cls):
+        with patch("huggingface_hub.HfApi", api_cls):
             push_to_hf_hub(output, "user/ds", token="hf_xxx")
 
         assert api_cls.call_args.kwargs["token"] == "hf_xxx"
@@ -733,7 +733,7 @@ class TestPushToHfHub:
         output = _populated_output_dir(tmp_path)
         mock_api = MagicMock()
 
-        with patch("openenv.core.harness.collect.HfApi", return_value=mock_api):
+        with patch("huggingface_hub.HfApi", return_value=mock_api):
             push_to_hf_hub(output, "user/ds")
 
         readme = (output / README_FILENAME).read_text(encoding="utf-8")

@@ -25,6 +25,7 @@ from openenv.core.harness import (
     HarnessRunLimits,
     MCPHarnessAdapter,
     ModelStepResult,
+    ResourceSessionFactory,
 )
 from openenv.core.llm_client import LLMResponse
 
@@ -92,6 +93,8 @@ class FakeBrowserGymClient:
 
 def test_browsergym_session_factory_exposes_expected_tools():
     factory = BrowserGymSessionFactory(client_factory=FakeBrowserGymClient)
+    assert isinstance(factory, ResourceSessionFactory)
+
     session = factory.create(task="ignored-task")
 
     tool_names = [tool.name for tool in session.list_tools()]
