@@ -1,11 +1,5 @@
 # Core Concepts
 
-:::{note}
-Coming Soon
-    This page is under construction.
-
-Understanding
-
 Understanding OpenEnv's core abstractions helps you work effectively with environments and build your own.
 
 ## The OpenEnv Model
@@ -53,6 +47,10 @@ A **StepResult** bundles together everything returned from a step:
 - `terminated`: Whether the episode has ended
 - `truncated`: Whether the episode was cut short
 - `info`: Additional metadata
+
+### Rubric
+
+A **Rubric** is a composable unit of reward computation that lives inside the environment. Rubrics can be combined (`WeightedSum`, `Gate`, `Sequential`) to express multi-criteria rewards, support LLM judges for subjective criteria, and handle delayed rewards via `TrajectoryRubric`. Every environment declares `self.rubric` in its constructor; `step` calls it via `self._apply_rubric(action, observation)` and the result flows back through `observation.reward`. See the [Rubrics tutorial](tutorials/rubrics.md) for the full API.
 
 ### Client
 
@@ -112,4 +110,3 @@ OpenEnv supports multiple ways to connect to environments:
 - [Quick Start](quickstart.md) - Try these concepts hands-on
 - [Auto-Discovery](guides/auto-discovery.md) - How to discover and load environments
 - [Your First Environment](guides/first-environment.md) - Build your own environment
-:::

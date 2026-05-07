@@ -1,88 +1,93 @@
 # Reward Design
 
-:::{note}
-Coming Soon
-    This page is under construction.
+Good reward signals are the single biggest lever on RL training outcomes — and the hardest thing to get right. This page covers the design principles that apply in OpenEnv and points to the [Rubrics tutorial](../tutorials/rubrics.md) for the concrete implementation API.
 
-Learn how to design
+## Rewards Live Inside the Environment
 
-Learn how to design effective reward functions for your OpenEnv environments.
+The OpenEnv contract is that reward computation stays on the server side, inside `Environment.step`. The `openenv.core.rubrics` module exists to make that computation composable — think `torch.nn.Module` but for reward functions. An environment declares `self.rubric` in its constructor and the base class helper `self._apply_rubric(action, observation)` runs it every step.
 
-## Overview
+See the [Rubrics tutorial](../tutorials/rubrics.md) for the end-to-end walkthrough, including `WeightedSum`, `Gate`, `Sequential`, `LLMJudge`, and the trajectory rubrics used for delayed rewards like chess outcomes.
 
-Reward functions are critical for RL training. They signal to your agent what behaviors are desirable.
+## Design Principles
 
-## Reward Design Principles
+The principles below are independent of the rubric mechanics — they apply whether the reward is a single scalar or a composition of a dozen components.
 
-### 1. Start Simple
+### 1. Start simple
 
-Begin with sparse rewards (success/failure) before adding shaped rewards:
+Begin with a sparse success/failure signal. Only shape the reward after you've confirmed the agent can reach the positive signal at all.
 
 ```python
-def compute_reward(observation, action, terminated):
-    if terminated and observation.success:
-        return 1.0
-    elif terminated:
-        return -1.0
-    return 0.0
+class WinLossRubric(Rubric):
+    def forward(self, action, observation) -> float:
+        if not observation.done:
+            return 0.0
+        return 1.0 if observation.success else -1.0
 ```
 
-### 2. Shape Carefully
+### 2. Shape carefully
 
-Add intermediate rewards to help learning, but avoid reward hacking:
+Dense intermediate rewards speed up learning but invite reward hacking. Prefer adding shaping as a small-weighted *component* of a `WeightedSum`, so the dominant signal is still the real outcome.
 
 ```python
-def compute_reward(observation, action, terminated):
-    reward = 0.0
-
-    # Progress reward
-    reward += 0.1 * observation.progress_delta
-
-    # Success bonus
-    if terminated and observation.success:
-        reward += 10.0
-
-    return reward
+reward = WeightedSum(
+    [WinLossRubric(), ProgressRubric()],
+    weights=[0.8, 0.2],
+)
 ```
 
-### 3. Consider Density
+### 3. Consider density
 
-Dense rewards (every step) speed learning but can cause local optima. Sparse rewards are cleaner but slower.
+- **Sparse** rewards (signal only on terminal transitions) are cleaner but slower to learn from.
+- **Dense** rewards (signal every step) are faster but can push the agent into local optima that optimise the proxy instead of the goal.
 
-## Environment Examples
+For long-horizon tasks with a delayed outcome, reach for `TrajectoryRubric` and its built-in per-step credit assignment instead of hand-crafting a dense proxy.
 
-### Chess (Sparse)
+## Worked Examples
+
+### Chess — sparse, trajectory-based
 
 ```python
-# Win: +1, Loss: -1, Draw: 0
-reward = result.observation.game_result
+class ChessOutcomeRubric(ExponentialDiscountingTrajectoryRubric):
+    def score_trajectory(self, trajectory) -> float:
+        _, final_obs = trajectory[-1]
+        return final_obs.reward   # +1 / 0 / -1 from the engine
 ```
 
-### Coding (Dense)
+Rewards accumulate silently during the game, then the final step produces the outcome and `compute_step_rewards()` distributes it back with exponential discounting. This is exactly what `envs/chess_env/` ships with.
+
+### Coding — gated composition
 
 ```python
-reward = 0.0
-if observation.tests_passed > prev_tests_passed:
-    reward += 0.5 * (observation.tests_passed - prev_tests_passed)
-if observation.all_tests_passed:
-    reward += 5.0
+reward = Sequential(
+    Gate(CompilesRubric(), threshold=1.0),              # must compile
+    Gate(TestsPassRubric(), threshold=0.5),             # must pass at least half the tests
+    WeightedSum([TestsPassRubric(), StyleRubric()], [0.7, 0.3]),
+)
 ```
 
-### TextArena (Mixed)
+`Sequential` short-circuits to `0.0` the moment any child fails its gate, so expensive style / LLM judge calls never run on broken submissions.
+
+### Text tasks — mixed signal
 
 ```python
-# Per-turn progress + final outcome
-reward = observation.score_delta + (10.0 if observation.won else 0.0)
+reward = WeightedSum(
+    [WinLossRubric(), PerTurnProgressRubric()],
+    weights=[0.7, 0.3],
+)
 ```
+
+Per-turn progress helps the agent explore, but the terminal outcome still dominates the final score.
 
 ## Common Pitfalls
 
-1. **Reward hacking** - Agent finds unintended shortcuts
-2. **Sparse rewards** - Agent never finds positive signal
-3. **Conflicting signals** - Mixed incentives confuse learning
+1. **Reward hacking.** The agent optimises the proxy instead of the goal. Prefer shaping as a small-weighted component rather than a large intermediate bonus.
+2. **Sparse rewards that never fire.** If the agent cannot reach the success signal in practice, training stalls. Measure success rate on a random policy before relying on a sparse reward.
+3. **Conflicting signals.** Two criteria pulling in opposite directions produce a flat optimisation landscape. If you catch yourself subtracting rewards to "cancel out" a bad behaviour, consider a `Gate` instead — make the bad case a hard zero.
+4. **Component score drift.** Without component-level logging, you won't know which criterion dropped the total. Rubric introspection (`env.rubric.named_rubrics()` → `last_score`) gives you this for free.
 
 ## Next Steps
 
-- [RL Framework Integration](rl-integration.md) - Use rewards in training
-- [Environment Anatomy](environment-anatomy.md) - Where to implement rewards
-:::
+- [Rubrics tutorial](../tutorials/rubrics.md) — full API walkthrough with composable examples.
+- [RFC 004](https://github.com/meta-pytorch/OpenEnv/blob/main/rfcs/004-rubrics.md) — design rationale.
+- [RL Framework Integration](rl-integration.md) — consume the reward signal in a training loop.
+- [Environment Anatomy](environment-anatomy.md) — where the rubric plugs in.
