@@ -536,8 +536,8 @@ def test_push_validates_repo_id_format(tmp_path: Path) -> None:
         assert "repo-id" in result.output.lower() or "format" in result.output.lower()
 
 
-def test_push_bare_repo_id_prepends_username(tmp_path: Path) -> None:
-    """Bare repo-name (no slash) should be expanded to username/repo-name."""
+def test_push_bare_repo_id_expands_to_username(tmp_path: Path) -> None:
+    """Bare repo-name (no slash) is expanded to username/repo-name before push."""
     _create_test_openenv_env(tmp_path)
 
     with (
@@ -561,9 +561,9 @@ def test_push_bare_repo_id_prepends_username(tmp_path: Path) -> None:
         finally:
             os.chdir(old_cwd)
 
-        # Must not error on format validation
         assert "Invalid repo-id format" not in result.output
-        # Should have expanded to testuser/my-env
+        mock_create.assert_called_once()
+        assert mock_create.call_args.args[0] == "testuser/my-env"
         assert "testuser/my-env" in result.output
 
 
