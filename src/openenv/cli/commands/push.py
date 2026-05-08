@@ -540,7 +540,7 @@ def push(
         typer.Option(
             "--repo-id",
             "-r",
-            help="Repository ID in format 'username/repo-name' (defaults to 'username/env-name' from openenv.yaml)",
+            help="Repository ID as 'username/repo-name' or bare 'repo-name' (expanded using authenticated username). Defaults to 'username/env-name' from openenv.yaml.",
         ),
     ] = None,
     base_image: Annotated[

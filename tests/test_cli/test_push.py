@@ -546,7 +546,7 @@ def test_push_bare_repo_id_prepends_username(tmp_path: Path) -> None:
         patch("openenv.cli.commands.push.HfApi") as mock_hf_api_class,
         patch("openenv.cli.commands.push._upload_to_hf_space") as mock_upload,
         patch("openenv.cli.commands.push._create_hf_space") as mock_create,
-        patch("openenv.cli.commands.push._prepare_staging_directory") as mock_stage,
+        patch("openenv.cli.commands.push._prepare_staging_directory") as _mock_stage,
     ):
         mock_whoami.return_value = {"name": "testuser"}
         mock_login.return_value = None
