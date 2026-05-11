@@ -36,6 +36,7 @@ end-to-end-walkthrough
 mcp-environment
 rubrics
 wordle-grpo
+browsergym-harness
 rl-training-2048
 evaluation-inspect
 ```
