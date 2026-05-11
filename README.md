@@ -234,6 +234,9 @@ uv pip install -e .
 
 # Run server locally without Docker
 uv run server --host 0.0.0.0 --port 8000
+
+# Or use the OpenEnv CLI from the environment directory (reads openenv.yaml)
+openenv serve . --host 0.0.0.0 --port 8000
 ```
 
 See [`envs/README.md`](envs/README.md) for a complete guide on building environments.

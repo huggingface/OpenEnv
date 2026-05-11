@@ -5,8 +5,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import pytest
-
-# Import your client and models DIRECTLY
 from envs.grid_world_env.client import GridWorldEnv
 from envs.grid_world_env.models import GridWorldAction, MoveAction
 
