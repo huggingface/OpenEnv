@@ -540,7 +540,7 @@ def push(
         typer.Option(
             "--repo-id",
             "-r",
-            help="Repository ID in format 'username/repo-name' (defaults to 'username/env-name' from openenv.yaml)",
+            help="Repository ID as 'repo_name' or 'namespace/repo_name'. Defaults to 'username/env-name' from openenv.yaml.",
         ),
     ] = None,
     base_image: Annotated[
@@ -818,11 +818,12 @@ def push(
     if not repo_id:
         repo_id = f"{username}/{env_name}"
 
-    # Validate repo_id format
-    if "/" not in repo_id or repo_id.count("/") != 1:
+    if repo_id.count("/") > 1:
         raise typer.BadParameter(
-            f"Invalid repo-id format: {repo_id}. Expected format: 'username/repo-name'"
+            f"Invalid repo-id format: {repo_id!r}. Repo id must be in the form 'repo_name' or 'namespace/repo_name'."
         )
+    if "/" not in repo_id:
+        repo_id = f"{username}/{repo_id}"
 
     # Initialize Hugging Face API
     api = HfApi()
