@@ -46,3 +46,13 @@ class FinQACallToolAction(CallToolAction):
 app = create_app(
     _env_factory, FinQACallToolAction, CallToolObservation, env_name="finqa_env"
 )
+
+
+def main():
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+if __name__ == "__main__":
+    main()

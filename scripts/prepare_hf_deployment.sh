@@ -264,6 +264,9 @@ if [ -z "$HF_NAMESPACE" ]; then
     # Non-fatal if user is not logged in locally.
     if command -v hf >/dev/null 2>&1; then
         HF_NAMESPACE=$(hf auth whoami 2>/dev/null | head -n 1 | tr -d '\n' || true)
+        if printf "%s" "$HF_NAMESPACE" | grep -q '^user='; then
+            HF_NAMESPACE=$(printf "%s" "$HF_NAMESPACE" | sed -E 's/^user=([^[:space:]]+).*/\1/')
+        fi
     fi
     if [ -z "$HF_NAMESPACE" ]; then
         HF_NAMESPACE="openenv"

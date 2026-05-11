@@ -12,7 +12,7 @@ The WebSearch Env environment is an environment that searches the web with Googl
 
 from __future__ import annotations
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 # Support both in-repo and standalone imports
 try:
@@ -43,7 +43,7 @@ class WebSearchObservation(Observation):
     )
 
 
-class WebContent:
+class WebContent(BaseModel):
     """Web content of a search result."""
 
     title: str = Field(..., description="The title of the web content")
