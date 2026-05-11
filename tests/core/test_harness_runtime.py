@@ -18,12 +18,12 @@ from openenv.core.env_server.types import State
 from openenv.core.harness import (
     build_harness_rollout_func,
     CLIHarnessAdapter,
-    HarnessEvent,
     HarnessRolloutResult,
     HarnessRunLimits,
     MCPHarnessAdapter,
     ModelStepResult,
     RESERVED_TOOL_NAMES,
+    RolloutEvent,
     SessionMCPBridge,
     StepEnvSessionAdapter,
     ToolResult,
@@ -189,6 +189,24 @@ class TestStepEnvSessionAdapter:
                 action_builder=lambda name, arguments: name,
                 initial_messages_builder=lambda result, task: [],
             )
+
+    def test_session_closes_client_when_reset_fails(self):
+        class FailingResetEnv(FakeSyncEnv):
+            def reset(self, **kwargs: Any) -> StepResult[dict[str, Any]]:
+                raise RuntimeError("reset failed")
+
+        env = FailingResetEnv()
+
+        with pytest.raises(RuntimeError, match="reset failed"):
+            StepEnvSessionAdapter(
+                client=env,
+                task="bad-reset",
+                tool_specs=[],
+                action_builder=lambda name, arguments: None,
+                initial_messages_builder=lambda result, task: [],
+            )
+
+        assert env.closed is True
 
 
 class TestSessionMCPBridge:
@@ -664,7 +682,7 @@ class TestCLIHarnessAdapter:
                 messages=[{"role": "assistant", "content": "done"}],
                 tool_trace=[],
                 events=[
-                    HarnessEvent(
+                    RolloutEvent(
                         type="cli_runner",
                         payload={
                             "tools": list_response["result"]["tools"],

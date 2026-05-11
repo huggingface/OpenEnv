@@ -17,7 +17,11 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from openenv.core.env_server.mcp_types import Tool
-from openenv.core.harness import StepEnvSessionAdapter, ToolResult
+from openenv.core.harness import (
+    ResourceSessionFactory,
+    StepEnvSessionAdapter,
+    ToolResult,
+)
 
 from .client import OpenSpielEnv
 from .models import OpenSpielAction
@@ -118,7 +122,7 @@ def _build_tool_result(game_name: str) -> Callable[..., ToolResult]:
     return builder
 
 
-class OpenSpielSessionFactory:
+class OpenSpielSessionFactory(ResourceSessionFactory):
     """Create OpenSpiel-backed resource sessions for harness rollouts."""
 
     def __init__(

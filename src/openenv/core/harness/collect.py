@@ -20,7 +20,9 @@ The serialized schema is designed to be consumed directly by TRL's
 from __future__ import annotations
 
 import json
+import warnings
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
@@ -105,7 +107,7 @@ class EpisodeRecord:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return json.loads(json.dumps(asdict(self), default=str))
 
 
 class RolloutSerializer:
@@ -196,6 +198,7 @@ class CollectResult:
     num_collected: int
     num_skipped: int
     num_dropped: int
+    num_failed: int
     episode_ids: list[str]
     avg_reward: float
     success_rate: float
@@ -252,6 +255,7 @@ class CollectRunner:
         num_skipped = 0
         num_collected = 0
         num_dropped = 0
+        num_failed = 0
         rewards: list[float] = []
 
         from rich.progress import (
@@ -284,8 +288,12 @@ class CollectRunner:
                     progress.advance(task_id)
                     continue
 
-                session = self._session_factory.create(task=task, episode_id=episode_id)
+                session = None
                 try:
+                    session = self._session_factory.create(
+                        task=task,
+                        episode_id=episode_id,
+                    )
                     rollout = self._harness_adapter.run_white_box(
                         model_step=model_step,
                         session=session,
@@ -301,8 +309,16 @@ class CollectRunner:
                         verify=verify,
                         task=task,
                     )
+                except Exception as exc:
+                    num_failed += 1
+                    progress.console.print(
+                        f"[red]failed[/red] {episode_id}: {type(exc).__name__}: {exc}"
+                    )
+                    progress.advance(task_id)
+                    continue
                 finally:
-                    session.close()
+                    if session is not None:
+                        session.close()
 
                 if should_keep is not None and not should_keep(record):
                     num_dropped += 1
@@ -326,6 +342,7 @@ class CollectRunner:
             num_collected=num_collected,
             num_skipped=num_skipped,
             num_dropped=num_dropped,
+            num_failed=num_failed,
             episode_ids=planned_ids,
             avg_reward=avg_reward,
             success_rate=success_rate,
@@ -333,7 +350,24 @@ class CollectRunner:
 
     def _reset_results_file(self) -> None:
         if self._serializer.results_path.exists():
-            self._serializer.results_path.unlink()
+            results_path = self._serializer.results_path
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            backup_path = results_path.with_name(
+                f"{results_path.stem}.{timestamp}.bak{results_path.suffix}"
+            )
+            counter = 1
+            while backup_path.exists():
+                backup_path = results_path.with_name(
+                    f"{results_path.stem}.{timestamp}.{counter}.bak"
+                    f"{results_path.suffix}"
+                )
+                counter += 1
+            results_path.replace(backup_path)
+            warnings.warn(
+                f"resume=False moved existing results file to {backup_path}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
 
 def _tool_to_mcp_dict(tool: Tool) -> dict[str, Any]:
@@ -371,6 +405,13 @@ def build_model_step(
             effective_messages.insert(0, {"role": "system", "content": system_prompt})
 
         tool_dicts = [_tool_to_mcp_dict(t) for t in tools]
+        dropped_keys = sorted(set(sampling) - _SUPPORTED_SAMPLING_KEYS)
+        if dropped_keys:
+            warnings.warn(
+                "Dropping unsupported sampling keys: " + ", ".join(dropped_keys),
+                RuntimeWarning,
+                stacklevel=2,
+            )
         filtered_sampling = {
             k: v for k, v in sampling.items() if k in _SUPPORTED_SAMPLING_KEYS
         }

@@ -18,7 +18,11 @@ import random
 from typing import Any, Callable
 
 from openenv.core.env_server.mcp_types import Tool
-from openenv.core.harness import StepEnvSessionAdapter, ToolResult
+from openenv.core.harness import (
+    ResourceSessionFactory,
+    StepEnvSessionAdapter,
+    ToolResult,
+)
 
 from .client import ReasoningGymEnv
 from .models import ReasoningGymAction
@@ -67,7 +71,7 @@ def _build_tool_result() -> Callable[..., ToolResult]:
     return builder
 
 
-class ReasoningGymSessionFactory:
+class ReasoningGymSessionFactory(ResourceSessionFactory):
     """Create ReasoningGym-backed resource sessions for harness rollouts."""
 
     def __init__(

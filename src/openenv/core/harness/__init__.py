@@ -52,7 +52,7 @@ class VerifyResult:
 
 
 @dataclass
-class HarnessEvent:
+class RolloutEvent:
     """Event emitted while a harness drives a rollout."""
 
     type: str
@@ -84,7 +84,7 @@ class HarnessRolloutResult:
 
     messages: list[Message] = field(default_factory=list)
     tool_trace: list[ToolTraceEntry] = field(default_factory=list)
-    events: list[HarnessEvent] = field(default_factory=list)
+    events: list[RolloutEvent] = field(default_factory=list)
     done: bool = False
     metrics: dict[str, Any] = field(default_factory=dict)
     prompt_ids: list[int] = field(default_factory=list)
@@ -295,9 +295,14 @@ class StepEnvSessionAdapter(ResourceSession):
         if episode_id is not None:
             reset_payload.setdefault("episode_id", episode_id)
 
-        self._initial_result: StepResult[Any] = self._client.reset(**reset_payload)
         self._last_result: StepResult[Any] | None = None
-        self._last_state = self._read_state()
+        self._last_state = None
+        try:
+            self._initial_result: StepResult[Any] = self._client.reset(**reset_payload)
+            self._last_state = self._read_state()
+        except Exception:
+            self.close()
+            raise
 
     def _read_state(self) -> Any:
         if hasattr(self._client, "state") and callable(self._client.state):
@@ -502,7 +507,7 @@ class MCPHarnessAdapter(HarnessAdapter):
             result.completion_ids.extend(step_result.completion_ids)
             result.logprobs.extend(step_result.logprobs)
             result.events.append(
-                HarnessEvent(
+                RolloutEvent(
                     type="model_response",
                     payload={
                         "turn": turn_index,
@@ -546,7 +551,7 @@ class MCPHarnessAdapter(HarnessAdapter):
                 )
                 result.tool_trace.append(trace_entry)
                 result.events.append(
-                    HarnessEvent(
+                    RolloutEvent(
                         type="tool_call",
                         payload={
                             "tool_name": tool_call.name,
@@ -699,7 +704,6 @@ def build_harness_rollout_func(
 __all__ = [
     "CLIHarnessAdapter",
     "HarnessAdapter",
-    "HarnessEvent",
     "HarnessRolloutResult",
     "HarnessRunLimits",
     "MCPHarnessAdapter",
@@ -709,6 +713,7 @@ __all__ = [
     "RESERVED_TOOL_NAMES",
     "ResourceSession",
     "ResourceSessionFactory",
+    "RolloutEvent",
     "SessionMCPBridge",
     "StepEnvSessionAdapter",
     "ToolResult",

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-import re
+import ast
+import json
 from typing import Any
 
 from openenv.core.env_server.mcp_types import Tool
@@ -71,7 +72,7 @@ _BROWSERGYM_TOOLS = [
 
 
 def _quote(value: str) -> str:
-    return repr(value)
+    return json.dumps(value, ensure_ascii=False)
 
 
 def build_browsergym_action_str(tool_name: str, arguments: dict[str, Any]) -> str:
@@ -213,49 +214,70 @@ class BrowserGymSessionFactory(ResourceSessionFactory):
         )
 
 
-_CLICK_RE = re.compile(r"^click\(\s*(?P<q>['\"])(?P<bid>.+?)(?P=q)\s*\)$")
-_FILL_RE = re.compile(
-    r"^fill\(\s*(?P<bq>['\"])(?P<bid>.+?)(?P=bq)\s*,\s*"
-    r"(?P<tq>['\"])(?P<text>.*?)(?P=tq)\s*\)$"
-)
-_SEND_KEYS_RE = re.compile(r"^send_keys\(\s*(?P<q>['\"])(?P<text>.*?)(?P=q)\s*\)$")
-_SCROLL_RE = re.compile(r"^scroll\(\s*['\"]?(?P<direction>up|down)['\"]?\s*\)$")
-_NOOP_RE = re.compile(r"^noop\(\s*\)$")
+def _parse_action_call(action_text: str) -> tuple[str, list[Any]]:
+    try:
+        expression = ast.parse(action_text.strip(), mode="eval").body
+    except SyntaxError as exc:
+        raise ValueError(f"Unsupported BrowserGym action: {action_text}") from exc
+
+    if not isinstance(expression, ast.Call) or not isinstance(
+        expression.func, ast.Name
+    ):
+        raise ValueError(f"Unsupported BrowserGym action: {action_text}")
+    if expression.keywords:
+        raise ValueError("BrowserGym action arguments must be positional")
+
+    args: list[Any] = []
+    for arg in expression.args:
+        try:
+            args.append(ast.literal_eval(arg))
+        except (SyntaxError, ValueError) as exc:
+            raise ValueError("BrowserGym action arguments must be literals") from exc
+
+    return expression.func.id, args
+
+
+def _expect_str(value: Any, argument_name: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"BrowserGym {argument_name} argument must be a string")
+    return value
 
 
 def build_browsergym_action_tool_call(action_text: str) -> ToolCall:
     """Parse a text BrowserGym action into a structured tool call."""
 
-    text = action_text.strip()
-
-    if match := _CLICK_RE.match(text):
+    name, args = _parse_action_call(action_text)
+    if name == "click" and len(args) == 1:
         return ToolCall(
             id="browsergym-click",
             name="click",
-            args={"bid": match.group("bid")},
+            args={"bid": _expect_str(args[0], "bid")},
         )
-    if match := _FILL_RE.match(text):
+    if name == "fill" and len(args) == 2:
         return ToolCall(
             id="browsergym-fill",
             name="fill",
             args={
-                "bid": match.group("bid"),
-                "text": match.group("text"),
+                "bid": _expect_str(args[0], "bid"),
+                "text": _expect_str(args[1], "text"),
             },
         )
-    if match := _SEND_KEYS_RE.match(text):
+    if name == "send_keys" and len(args) == 1:
         return ToolCall(
             id="browsergym-send_keys",
             name="send_keys",
-            args={"text": match.group("text")},
+            args={"text": _expect_str(args[0], "text")},
         )
-    if match := _SCROLL_RE.match(text):
+    if name == "scroll" and len(args) == 1:
+        direction = _expect_str(args[0], "direction")
+        if direction not in {"up", "down"}:
+            raise ValueError("BrowserGym scroll direction must be 'up' or 'down'")
         return ToolCall(
             id="browsergym-scroll",
             name="scroll",
-            args={"direction": match.group("direction")},
+            args={"direction": direction},
         )
-    if _NOOP_RE.match(text):
+    if name == "noop" and not args:
         return ToolCall(id="browsergym-noop", name="noop", args={})
 
     raise ValueError(f"Unsupported BrowserGym action: {action_text}")

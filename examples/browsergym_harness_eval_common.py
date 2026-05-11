@@ -11,14 +11,16 @@ from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from openai import OpenAI
-
 from browsergym_env import BrowserGymEnv
 from browsergym_env.harness import (
     BrowserGymSessionFactory,
     build_browsergym_action_tool_call,
 )
+from openai import OpenAI
+from openenv.core.containers.runtime.providers import LocalDockerProvider
+from openenv.core.env_server.mcp_types import JsonRpcErrorCode, JsonRpcResponse
 from openenv.core.harness import (
+    _resolve_env_reward,
     CLIHarnessAdapter,
     HarnessRolloutResult,
     HarnessRunLimits,
@@ -27,8 +29,6 @@ from openenv.core.harness import (
     SessionMCPBridge,
     VerifyResult,
 )
-from openenv.core.containers.runtime.providers import LocalDockerProvider
-from openenv.core.env_server.mcp_types import JsonRpcErrorCode, JsonRpcResponse
 from openenv.core.llm_client import LLMResponse
 
 DEFAULT_BROWSERGYM_IMAGE = "browsergym-env:latest"
@@ -185,12 +185,7 @@ def create_openai_client(
     if api_base_url:
         client_kwargs["base_url"] = api_base_url
 
-    resolved_key = (
-        api_key
-        or os.getenv("OPENAI_API_KEY")
-        or os.getenv("API_KEY")
-        or os.getenv("HF_TOKEN")
-    )
+    resolved_key = api_key or os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY")
     if resolved_key:
         client_kwargs["api_key"] = resolved_key
 
@@ -295,7 +290,7 @@ def _finalize_episode(
         transcript=rollout.messages,
         final_state=_rollout_final_state(rollout),
     )
-    reward = float(verify.env_reward or 0.0)
+    reward = _resolve_env_reward(rollout, verify)
     done = bool(verify.done or rollout.done)
     step_count = int(verify.metrics.get("step_count", len(rollout.tool_trace)))
     success = reward > 0.0

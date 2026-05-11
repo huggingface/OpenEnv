@@ -7,6 +7,7 @@ import sys
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 import requests
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -17,14 +18,21 @@ sys.path.insert(0, os.path.join(_REPO_ROOT, "examples"))
 from browsergym_env import BrowserGymAction, BrowserGymObservation, BrowserGymState
 from browsergym_env.harness import BrowserGymSessionFactory
 from browsergym_harness_eval_common import (
+    _finalize_episode,
     build_openai_model_step,
+    create_openai_client,
     extract_browsergym_action,
     run_white_box_episode,
     SessionMCPHttpServer,
     summarize_episodes,
 )
 from openenv.core.client_types import StepResult
-from openenv.core.harness import HarnessRunLimits, SessionMCPBridge
+from openenv.core.harness import (
+    HarnessRolloutResult,
+    HarnessRunLimits,
+    SessionMCPBridge,
+    VerifyResult,
+)
 
 
 class FakeBrowserGymClient:
@@ -56,7 +64,7 @@ class FakeBrowserGymClient:
     def step(self, action: BrowserGymAction) -> StepResult[BrowserGymObservation]:
         self.step_actions.append(action.action_str)
         self._step_count += 1
-        done = action.action_str == "click('13')"
+        done = action.action_str == 'click("13")'
         reward = 1.0 if done else 0.0
         self._cum_reward += reward
         return StepResult(
@@ -177,3 +185,38 @@ def test_white_box_example_loop_runs_one_episode_and_aggregates_metrics():
     assert summary["success_rate"] == 1.0
     assert summary["avg_steps"] == 1.0
     assert fake_client.calls[0]["messages"][0]["role"] == "system"
+
+
+def test_finalize_episode_rejects_missing_env_reward():
+    class MissingRewardSession:
+        def verify(self, transcript, final_state=None):
+            return VerifyResult(env_reward=None, done=True)
+
+    with pytest.raises(ValueError, match="did not produce an environment reward"):
+        _finalize_episode(
+            MissingRewardSession(),
+            HarnessRolloutResult(
+                messages=[{"role": "assistant", "content": "done"}],
+                done=True,
+            ),
+        )
+
+
+def test_create_openai_client_does_not_fallback_to_hf_token(monkeypatch):
+    import browsergym_harness_eval_common as common
+
+    captured_kwargs: dict[str, Any] = {}
+
+    def fake_openai(**kwargs):
+        captured_kwargs.update(kwargs)
+        return object()
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("API_KEY", raising=False)
+    monkeypatch.setenv("HF_TOKEN", "hf-token")
+    monkeypatch.setattr(common, "OpenAI", fake_openai)
+
+    client = create_openai_client()
+
+    assert client is not None
+    assert "api_key" not in captured_kwargs

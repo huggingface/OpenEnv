@@ -143,6 +143,21 @@ class TestEpisodeRecord:
         assert record.task == {"game": "tic_tac_toe", "seed": 42}
         assert record.extra == {"teacher": "gpt-5-mini"}
 
+    def test_to_dict_returns_json_safe_payload(self):
+        record = EpisodeRecord.from_rollout(
+            "ep1",
+            _fake_rollout(),
+            _fake_verify(),
+            task=Path("task.json"),
+            extra={"artifact": Path("artifact.txt")},
+        )
+
+        payload = record.to_dict()
+
+        json.dumps(payload)
+        assert payload["task"] == "task.json"
+        assert payload["extra"]["artifact"] == "artifact.txt"
+
 
 class TestRolloutSerializer:
     def test_writes_one_jsonl_line_per_episode(self, tmp_path: Path):
@@ -412,14 +427,18 @@ class TestCollectRunner:
         runner.run(model_step=_noop_model_step, num_episodes=2)
 
         # Same output dir, resume=False should overwrite and collect 2 again.
-        runner.run(
-            model_step=_noop_model_step,
-            num_episodes=2,
-            resume=False,
-        )
+        with pytest.warns(RuntimeWarning, match="moved existing results file"):
+            runner.run(
+                model_step=_noop_model_step,
+                num_episodes=2,
+                resume=False,
+            )
 
         lines = (tmp_path / "results.jsonl").read_text().strip().splitlines()
         assert len(lines) == 2
+        backups = list(tmp_path.glob("results.*.bak.jsonl"))
+        assert len(backups) == 1
+        assert len(backups[0].read_text().strip().splitlines()) == 2
 
     def test_closes_session_after_each_episode(self, tmp_path: Path):
         factory = _FakeFactory()
@@ -509,6 +528,40 @@ class TestCollectRunner:
         assert result.num_collected == 4
         assert result.success_rate == pytest.approx(0.75)
         assert result.avg_reward == pytest.approx(0.75)
+
+    def test_episode_failure_is_counted_and_collection_continues(
+        self,
+        tmp_path: Path,
+    ):
+        class FailingAdapter(_FakeAdapter):
+            def run_white_box(
+                self,
+                model_step: ModelStep,
+                session: ResourceSession,
+                limits: HarnessRunLimits | None = None,
+            ) -> HarnessRolloutResult:
+                if getattr(session, "task") == "bad":
+                    raise RuntimeError("episode failed")
+                return super().run_white_box(model_step, session, limits)
+
+        factory = _FakeFactory()
+        runner = CollectRunner(
+            session_factory=factory,
+            harness_adapter=FailingAdapter(),
+            serializer=RolloutSerializer(tmp_path),
+            tasks=iter(["ok-1", "bad", "ok-2"]),
+        )
+
+        result = runner.run(model_step=_noop_model_step, num_episodes=3)
+
+        assert result.num_collected == 2
+        assert result.num_failed == 1
+        assert all(session.closed for session in factory.sessions)
+        payloads = [
+            json.loads(line)
+            for line in (tmp_path / "results.jsonl").read_text().strip().splitlines()
+        ]
+        assert [payload["task"] for payload in payloads] == ["ok-1", "ok-2"]
 
 
 class _RecordingLLMClient(LLMClient):
@@ -610,11 +663,15 @@ class TestBuildModelStep:
         client = _RecordingLLMClient(LLMResponse(content="", tool_calls=[]))
         step = build_model_step(client)
 
-        step(
-            [{"role": "user", "content": "go"}],
-            [],
-            {"temperature": 0.7, "max_tokens": 50, "unknown": "drop"},
-        )
+        with pytest.warns(
+            RuntimeWarning,
+            match="Dropping unsupported sampling keys: unknown",
+        ):
+            step(
+                [{"role": "user", "content": "go"}],
+                [],
+                {"temperature": 0.7, "max_tokens": 50, "unknown": "drop"},
+            )
 
         sampling = client.calls[0]["sampling"]
         assert sampling["temperature"] == 0.7

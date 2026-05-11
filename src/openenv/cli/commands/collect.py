@@ -21,7 +21,6 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import typer
-from openenv.core.env_server.mcp_types import Tool  # noqa: F401 (re-exported for users)
 from openenv.core.harness import HarnessRunLimits, MCPHarnessAdapter, ModelStepResult
 from openenv.core.harness.collect import (
     build_model_step,
@@ -422,7 +421,8 @@ def collect(
     console.print(
         f"[green]Collected[/green]={result.num_collected} "
         f"[yellow]skipped[/yellow]={result.num_skipped} "
-        f"[red]dropped[/red]={result.num_dropped}"
+        f"[red]dropped[/red]={result.num_dropped} "
+        f"[red]failed[/red]={result.num_failed}"
     )
     console.print(
         f"avg_reward={result.avg_reward:.3f} success_rate={result.success_rate:.0%}"

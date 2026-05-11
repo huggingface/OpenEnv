@@ -8,15 +8,13 @@
 
 from __future__ import annotations
 
-import os
-import sys
 from typing import Any
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
-
-from envs.browsergym_env import BrowserGymAction, BrowserGymObservation, BrowserGymState
-from envs.browsergym_env.harness import (
+import pytest
+from browsergym_env import BrowserGymAction, BrowserGymObservation, BrowserGymState
+from browsergym_env.harness import (
     BrowserGymSessionFactory,
+    build_browsergym_action_str,
     build_browsergym_action_tool_call,
 )
 from openenv.core.client_types import StepResult
@@ -58,7 +56,7 @@ class FakeBrowserGymClient:
     def step(self, action: BrowserGymAction) -> StepResult[BrowserGymObservation]:
         self.step_actions.append(action.action_str)
         self._step_count += 1
-        done = action.action_str == "click('13')"
+        done = action.action_str == 'click("13")'
         reward = 1.0 if done else 0.0
         self._cum_reward += reward
         return StepResult(
@@ -111,7 +109,7 @@ def test_browsergym_session_factory_exposes_expected_tools():
 def test_browsergym_tool_calls_match_plain_env_rewards():
     plain_client = FakeBrowserGymClient()
     plain_client.reset()
-    plain_result = plain_client.step(BrowserGymAction(action_str="click('13')"))
+    plain_result = plain_client.step(BrowserGymAction(action_str='click("13")'))
 
     factory = BrowserGymSessionFactory(client_factory=FakeBrowserGymClient)
     session = factory.create(task="ignored-task")
@@ -149,10 +147,27 @@ def test_browsergym_fill_parser_supports_embedded_quote():
 
 
 def test_browsergym_fill_parser_supports_single_quoted_embedded_quote():
-    fill = build_browsergym_action_tool_call("fill('42', 'O'Brien')")
+    fill = build_browsergym_action_tool_call("fill('42', 'O\\'Brien')")
 
     assert fill.name == "fill"
     assert fill.args == {"bid": "42", "text": "O'Brien"}
+
+
+def test_browsergym_action_builder_quotes_round_trip_through_parser():
+    action = build_browsergym_action_str(
+        "fill",
+        {"bid": 'button"42', "text": "O'Brien\nNext"},
+    )
+    tool_call = build_browsergym_action_tool_call(action)
+
+    assert action == 'fill("button\\"42", "O\'Brien\\nNext")'
+    assert tool_call.name == "fill"
+    assert tool_call.args == {"bid": 'button"42', "text": "O'Brien\nNext"}
+
+
+def test_browsergym_action_parser_rejects_malformed_strings():
+    with pytest.raises(ValueError, match="Unsupported BrowserGym action"):
+        build_browsergym_action_tool_call("fill('42', 'O'Brien')")
 
 
 def test_browsergym_session_factory_works_with_generic_rollout_helper():

@@ -32,6 +32,7 @@ def mock_pipeline():
         collect_result.num_collected = 3
         collect_result.num_skipped = 0
         collect_result.num_dropped = 0
+        collect_result.num_failed = 0
         collect_result.avg_reward = 0.6
         collect_result.success_rate = 0.6
         collect_result.episode_ids = ["ep-000000", "ep-000001", "ep-000002"]

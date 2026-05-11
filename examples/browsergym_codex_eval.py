@@ -23,24 +23,23 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 sys.path.insert(0, str(_REPO_ROOT / "envs"))
 
-from openenv.core.harness import (
-    CLIHarnessAdapter,
-    HarnessEvent,
-    HarnessRolloutResult,
-    HarnessRunLimits,
-)
-
 from browsergym_harness_eval_common import (
+    build_browsergym_session_factory,
     DEFAULT_BENCHMARK,
     DEFAULT_BROWSERGYM_IMAGE,
     DEFAULT_MAX_STEPS,
     DEFAULT_TASK_NAME,
-    SessionMCPHttpServer,
-    build_browsergym_session_factory,
     format_episode_summary,
     run_black_box_episode,
+    SessionMCPHttpServer,
     start_browsergym_runtime,
     summarize_episodes,
+)
+from openenv.core.harness import (
+    CLIHarnessAdapter,
+    HarnessRolloutResult,
+    HarnessRunLimits,
+    RolloutEvent,
 )
 
 
@@ -203,7 +202,7 @@ def build_codex_runner(
                 {"role": "assistant", "content": last_message},
             ],
             events=[
-                HarnessEvent(
+                RolloutEvent(
                     type="codex_exec",
                     payload={
                         "returncode": exec_result.returncode,
