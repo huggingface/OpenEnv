@@ -301,9 +301,7 @@ def test_start_proxy_keeps_upstream_key_out_of_command() -> None:
     assert secret not in sandbox.started_cmd
     assert "--upstream-api-key" not in sandbox.started_cmd
 
-    argv = shlex.split(
-        sandbox.started_cmd.split("&&", 1)[1].split(">", 1)[0].strip()
-    )
+    argv = shlex.split(sandbox.started_cmd.split("&&", 1)[1].split(">", 1)[0].strip())
     assert argv[argv.index("--upstream-url") + 1] == config.base_url
     assert argv[argv.index("--model-override") + 1] == model
 
