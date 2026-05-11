@@ -223,11 +223,15 @@ def _resolve_env_reward(
             break
 
     verify_reward = None if verify.env_reward is None else float(verify.env_reward)
-    if trace_reward is not None and verify_reward is not None and not math.isclose(
-        verify_reward,
-        trace_reward,
-        rel_tol=1e-9,
-        abs_tol=1e-6,
+    if (
+        trace_reward is not None
+        and verify_reward is not None
+        and not math.isclose(
+            verify_reward,
+            trace_reward,
+            rel_tol=1e-9,
+            abs_tol=1e-6,
+        )
     ):
         raise ValueError(
             "verify.env_reward must forward the environment reward from the rollout"

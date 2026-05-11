@@ -291,7 +291,9 @@ class TestSessionMCPBridge:
                 }
             )
 
-            assert response["error"]["message"] == f"Reserved orchestration tool: {name}"
+            assert (
+                response["error"]["message"] == f"Reserved orchestration tool: {name}"
+            )
             assert response["id"] == 12
 
     def test_value_error_returns_invalid_params_error(self):
