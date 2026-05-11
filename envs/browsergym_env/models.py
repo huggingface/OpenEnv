@@ -21,7 +21,7 @@ class BrowserGymAction(Action):
     - "click('Submit button')"
     - "fill('username', 'john@example.com')"
     - "goto('https://example.com')"
-    - "scroll(down)"
+    - "scroll('down')"
     - "send_keys('Enter')"
     """
 

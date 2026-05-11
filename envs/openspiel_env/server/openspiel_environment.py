@@ -66,6 +66,8 @@ class OpenSpielEnvironment(Environment):
         >>> print(obs.reward)
     """
 
+    SUPPORTS_CONCURRENT_SESSIONS = True
+
     def __init__(
         self,
         game_name: str = "catch",

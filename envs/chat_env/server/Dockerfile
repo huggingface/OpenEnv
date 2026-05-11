@@ -57,7 +57,7 @@ ENV HF_HOME=/.cache
 ENV TRANSFORMERS_CACHE=/.cache
 ENV TOKENIZER_NAME=gpt2
 ENV SYSTEM_PROMPT="You are a helpful AI assistant."
-ENV ENABLE_WEB_INTERFACE=false
+ENV ENABLE_WEB_INTERFACE=true
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1

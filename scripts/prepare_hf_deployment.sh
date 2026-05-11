@@ -390,6 +390,7 @@ strip_stage_artifacts() {
 create_environment_dockerfile() {
     local env_name="$1"
     local stage_dir="$2"
+    local space_repo="${3:-}"
     local dockerfile_path=""
     local prepare_script="envs/$env_name/server/prepare_hf.sh"
     local tmp_dockerfile="$stage_dir/Dockerfile.tmp"
@@ -473,10 +474,38 @@ create_environment_dockerfile() {
         fi
     fi
 
-    if ! grep -q '^ENV ENABLE_WEB_INTERFACE=' "$stage_dir/Dockerfile"; then
+    if grep -q '^ENV ENABLE_WEB_INTERFACE=' "$stage_dir/Dockerfile"; then
+        sed_inplace \
+            's/^ENV ENABLE_WEB_INTERFACE=.*/ENV ENABLE_WEB_INTERFACE=true/' \
+            "$stage_dir/Dockerfile"
+    else
         ensure_trailing_newline "$stage_dir/Dockerfile"
         echo "" >> "$stage_dir/Dockerfile"
         echo "ENV ENABLE_WEB_INTERFACE=true" >> "$stage_dir/Dockerfile"
+    fi
+
+    if [ "$env_name" = "textarena_env" ] && [ -n "$space_repo" ]; then
+        local repo_name="${space_repo##*/}"
+        local textarena_env_id=""
+        case "$repo_name" in
+            sudoku)
+                textarena_env_id="Sudoku-v0"
+                ;;
+            wordle)
+                textarena_env_id="Wordle-v0"
+                ;;
+        esac
+
+        if [ -n "$textarena_env_id" ]; then
+            if grep -q '^ENV TEXTARENA_ENV_ID=' "$stage_dir/Dockerfile"; then
+                sed_inplace \
+                    "s/^ENV TEXTARENA_ENV_ID=.*/ENV TEXTARENA_ENV_ID=$textarena_env_id/" \
+                    "$stage_dir/Dockerfile"
+            else
+                ensure_trailing_newline "$stage_dir/Dockerfile"
+                echo "ENV TEXTARENA_ENV_ID=$textarena_env_id" >> "$stage_dir/Dockerfile"
+            fi
+        fi
     fi
 }
 
@@ -688,7 +717,7 @@ prepare_stage() {
     pin_openenv_refs_in_pyproject "$stage_dir/pyproject.toml"
     pin_openenv_refs_in_pyproject "$stage_dir/envs/$env_name/pyproject.toml"
 
-    create_environment_dockerfile "$env_name" "$stage_dir"
+    create_environment_dockerfile "$env_name" "$stage_dir" "$space_repo"
     create_readme "$env_name" "$stage_dir" "$space_repo"
 }
 

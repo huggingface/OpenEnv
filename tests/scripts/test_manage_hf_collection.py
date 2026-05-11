@@ -427,6 +427,91 @@ class TestRemoveSpacesFromCollection:
         )
 
 
+class TestResolveCollectionSlug:
+    """Tests for resolving explicit collection slugs."""
+
+    def test_resolve_collection_slug_canonicalizes_explicit_alias(self):
+        """Explicit user-facing slugs should resolve to the canonical Hub slug."""
+        mock_api = Mock()
+        mock_collection = Mock()
+        mock_collection.slug = (
+            "openenv/openenv-environment-hub-69a154b16387f8b33a978dd7"
+        )
+        mock_api.get_collection.return_value = mock_collection
+
+        result = manage_hf_collection.resolve_collection_slug(
+            mock_api,
+            namespace="openenv",
+            title="OpenEnv Environment Hub",
+            description="desc",
+            explicit_slug="openenv/openenv-environment-hub",
+            private=False,
+            dry_run=False,
+        )
+
+        assert result == "openenv/openenv-environment-hub-69a154b16387f8b33a978dd7"
+        mock_api.get_collection.assert_called_once_with(
+            "openenv/openenv-environment-hub"
+        )
+        mock_api.update_collection_metadata.assert_called_once_with(
+            collection_slug="openenv/openenv-environment-hub-69a154b16387f8b33a978dd7",
+            title="OpenEnv Environment Hub",
+            description="desc",
+            private=False,
+        )
+
+    def test_resolve_collection_slug_falls_back_to_explicit_alias_on_lookup_failure(
+        self,
+    ):
+        """Lookup failures should fall back to the user-provided explicit slug."""
+        mock_api = Mock()
+        mock_api.get_collection.side_effect = Exception("lookup failed")
+
+        result = manage_hf_collection.resolve_collection_slug(
+            mock_api,
+            namespace="openenv",
+            title="OpenEnv Environment Hub",
+            description="desc",
+            explicit_slug="openenv/openenv-environment-hub",
+            private=False,
+            dry_run=False,
+        )
+
+        assert result == "openenv/openenv-environment-hub"
+        mock_api.update_collection_metadata.assert_called_once_with(
+            collection_slug="openenv/openenv-environment-hub",
+            title="OpenEnv Environment Hub",
+            description="desc",
+            private=False,
+        )
+
+    def test_resolve_collection_slug_updates_existing_collection_metadata(self):
+        """Existing collections should have description/title refreshed on reuse."""
+        mock_api = Mock()
+        mock_collection = Mock()
+        mock_collection.slug = "openenv/openenv-environment-hub-123"
+        mock_collection.title = "OpenEnv Environment Hub"
+        mock_api.list_collections.return_value = [mock_collection]
+
+        result = manage_hf_collection.resolve_collection_slug(
+            mock_api,
+            namespace="openenv",
+            title="OpenEnv Environment Hub",
+            description="validated canonicals",
+            explicit_slug=None,
+            private=False,
+            dry_run=False,
+        )
+
+        assert result == "openenv/openenv-environment-hub-123"
+        mock_api.update_collection_metadata.assert_called_once_with(
+            collection_slug="openenv/openenv-environment-hub-123",
+            title="OpenEnv Environment Hub",
+            description="validated canonicals",
+            private=False,
+        )
+
+
 class TestMain:
     """Tests for the main function."""
 
