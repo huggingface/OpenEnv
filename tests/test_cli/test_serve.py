@@ -27,6 +27,19 @@ ECHO_ENV = REPO_ROOT / "envs" / "echo_env"
 runner = CliRunner()
 
 
+@pytest.fixture(autouse=True)
+def _restore_cwd_and_syspath() -> None:
+    """``serve`` mutates cwd and ``sys.path``; CliRunner runs in-process."""
+    cwd = os.getcwd()
+    path = list(sys.path)
+    yield
+    try:
+        os.chdir(cwd)
+    except OSError:
+        pass
+    sys.path[:] = path
+
+
 def _pick_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
@@ -122,10 +135,22 @@ def test_serve_echo_env_health_subprocess() -> None:
                     )
                 time.sleep(0.4)
         if not ok:
+            # Stop the server before reading the pipe; a live Popen can block on
+            # stdout.read() indefinitely (Greptile P1).
+            proc.terminate()
+            try:
+                proc.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
             out = proc.stdout.read() if proc.stdout else ""
             pytest.fail(f"/health never OK (last error={last_exc!r}): {out}")
     finally:
-        proc.terminate()
+        if proc.poll() is None:
+            proc.terminate()
         try:
             proc.wait(timeout=15)
         except subprocess.TimeoutExpired:
