@@ -536,8 +536,11 @@ class REPLEnvironment(Environment):
         Returns:
             Final answer string or None if not found
         """
-        # Pattern 1: RLM-style FINAL(answer)
-        final_match = re.search(r"FINAL\((.*?)\)", stdout, re.DOTALL)
+        # Pattern 1: RLM-style FINAL(answer). Greedy + line-anchored so nested
+        # parentheses (e.g. FINAL(f(x)), FINAL((1, 2, 3))) are captured fully.
+        final_match = re.search(
+            r"^\s*FINAL\((.*)\)\s*$", stdout, re.MULTILINE | re.DOTALL
+        )
         if final_match:
             return final_match.group(1).strip()
 

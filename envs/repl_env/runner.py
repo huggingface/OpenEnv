@@ -243,8 +243,11 @@ class LocalRLMRunner:
         ]
         try:
             response = self._chat(final_prompt, model)
-            # Try to extract FINAL(...) from the response
-            match = re.search(r"FINAL\((.*?)\)", response, re.DOTALL)
+            # Try to extract FINAL(...) from the response. Greedy + line-anchored
+            # so nested parentheses are captured fully (matches official RLM).
+            match = re.search(
+                r"^\s*FINAL\((.*)\)\s*$", response, re.MULTILINE | re.DOTALL
+            )
             if match:
                 return match.group(1).strip()
             # If no FINAL pattern, return the raw response as best-effort
