@@ -8,7 +8,7 @@ Practical how-to guides for working with OpenEnv. These guides are task-oriented
 :::{grid-item-card} 🔌 Using Environments
 Learn how to connect to and interact with OpenEnv environments.
 
-[Auto-Discovery →](auto-discovery.md)
+[Concepts →](concepts.md)
 :::
 
 :::{grid-item-card} 🛠️ Building Environments
@@ -26,6 +26,7 @@ Integrate OpenEnv with RL frameworks for agent training.
 
 ## Using Environments
 
+- [**Concepts**](concepts.md) - Understand the core environment, action, observation, and reward abstractions
 - [**Auto-Discovery (AutoEnv)**](auto-discovery.md) - Automatically discover and load environments
 - [**Connecting to Servers**](connecting.md) - Connect via HTTP, Docker, or Hugging Face Spaces
 - [**Async vs Sync Usage**](async-sync.md) - When and how to use async vs sync clients
@@ -48,6 +49,7 @@ Integrate OpenEnv with RL frameworks for agent training.
 :hidden:
 :maxdepth: 1
 
+concepts
 auto-discovery
 connecting
 async-sync
