@@ -276,10 +276,6 @@ def test_start_proxy_keeps_upstream_key_out_of_command() -> None:
         def kill(self) -> None:
             pass
 
-    class NoopInstallFactory(OpenCodeSessionFactory):
-        def _exec_with_retry(self, *args, **kwargs):
-            return FakeExecResult()
-
     secret = "sk-test '$(leak)"
     model = "provider/model'; touch /tmp/pwn #"
     config = OpenCodeConfig(
@@ -288,12 +284,14 @@ def test_start_proxy_keeps_upstream_key_out_of_command() -> None:
         model=model,
     )
     sandbox = FakeSandbox()
-    factory = NoopInstallFactory(
+    factory = OpenCodeSessionFactory(
         config=config,
         sandbox_backend=object(),  # unused by this protected-method test
         mode="transparent_proxy",
     )
 
+    # _start_proxy delegates to CLIAgentDriver._start_proxy which runs the
+    # proxy inside the sandbox. The driver handles dep install + source upload.
     factory._start_proxy(sandbox)
 
     assert sandbox.started_cmd is not None
