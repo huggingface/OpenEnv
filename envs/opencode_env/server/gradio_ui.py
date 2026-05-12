@@ -31,10 +31,14 @@ from typing import Any
 import gradio as gr
 
 try:
-    from .catalog import ENDPOINT_KINDS, catalog_summary, resolve_endpoint
+    from .catalog import catalog_summary, ENDPOINT_KINDS, resolve_endpoint
     from .opencode_environment import OpenCodeEnvironment
 except ImportError:  # pragma: no cover
-    from server.catalog import ENDPOINT_KINDS, catalog_summary, resolve_endpoint  # type: ignore
+    from server.catalog import (  # type: ignore
+        catalog_summary,
+        ENDPOINT_KINDS,
+        resolve_endpoint,
+    )
     from server.opencode_environment import OpenCodeEnvironment  # type: ignore
 
 
@@ -144,7 +148,9 @@ def _command_rows(items: list[dict[str, Any]]) -> list[list[str]]:
                 cmd if len(cmd) <= 80 else cmd[:77] + "...",
                 str(it.get("exit_code", "")),
                 f"{it.get('duration_s', 0):.2f}s",
-                (it.get("stderr") or "").splitlines()[-1][:80] if it.get("exit_code") else "",
+                (it.get("stderr") or "").splitlines()[-1][:80]
+                if it.get("exit_code")
+                else "",
             ]
         )
     return rows
@@ -175,7 +181,8 @@ def _logprobs_md(turns: list[dict[str, Any]]) -> str:
         finishes[f] = finishes.get(f, 0) + 1
     if finishes:
         lines.append(
-            "**finish_reasons**: " + "  ".join(f"`{k}={v}`" for k, v in finishes.items())
+            "**finish_reasons**: "
+            + "  ".join(f"`{k}={v}`" for k, v in finishes.items())
         )
     productive_rows = [t for t in turns if t.get("completion_tokens")]
     if productive_rows:
@@ -249,12 +256,12 @@ def _catalog_banner() -> str:
 
 
 def opencode_gradio_builder(
-    web_manager,        # noqa: ARG001 (unused: we instantiate the env directly)
-    action_fields,      # noqa: ARG001
-    metadata,           # noqa: ARG001
-    is_chat_env,        # noqa: ARG001
+    web_manager,  # noqa: ARG001 (unused: we instantiate the env directly)
+    action_fields,  # noqa: ARG001
+    metadata,  # noqa: ARG001
+    is_chat_env,  # noqa: ARG001
     title,
-    quick_start_md,     # noqa: ARG001
+    quick_start_md,  # noqa: ARG001
 ) -> gr.Blocks:
     """Build the opencode_env console.
 
@@ -355,7 +362,12 @@ def opencode_gradio_builder(
         # First yield: announce we've started. Empty result panels.
         yield (
             f"### running…\n\n_endpoint=`{resolved.kind}`  model=`{resolved.model}`  mode=`{mode}`_",
-            [], [], "", "", "", {},
+            [],
+            [],
+            "",
+            "",
+            "",
+            {},
         )
 
         status_lines: list[tuple[float, str]] = []
@@ -374,7 +386,9 @@ def opencode_gradio_builder(
 
             # Render the live status pane.
             elapsed = time.time() - t_start
-            md = _live_status_md(resolved.kind, resolved.model, mode, elapsed, status_lines)
+            md = _live_status_md(
+                resolved.kind, resolved.model, mode, elapsed, status_lines
+            )
             yield (md, [], [], "", "", "", {})
 
         # Drain any final messages still in the queue.
@@ -390,9 +404,17 @@ def opencode_gradio_builder(
             err = result_holder.get("error", "unknown error")
             yield (
                 f"### error\n\n```\n{err}\n```",
-                [], [], "", "",
-                _live_status_md(resolved.kind, resolved.model, mode,
-                                time.time() - t_start, status_lines),
+                [],
+                [],
+                "",
+                "",
+                _live_status_md(
+                    resolved.kind,
+                    resolved.model,
+                    mode,
+                    time.time() - t_start,
+                    status_lines,
+                ),
                 {"error": err},
             )
             return
@@ -406,8 +428,13 @@ def opencode_gradio_builder(
             _logprobs_md(result.get("proxy_turns") or []),
             (
                 f"### live phase log\n\n"
-                + _live_status_md(resolved.kind, resolved.model, mode,
-                                  time.time() - t_start, status_lines)
+                + _live_status_md(
+                    resolved.kind,
+                    resolved.model,
+                    mode,
+                    time.time() - t_start,
+                    status_lines,
+                )
                 + f"\n\n### agent log (tail)\n```\n{result.get('agent_log_tail', '')[:4000]}\n```\n\n"
                 f"### proxy log (tail)\n```\n{result.get('proxy_log_tail', '')[:4000]}\n```"
             ),
@@ -436,17 +463,21 @@ def opencode_gradio_builder(
                 scale=1,
             )
             model = gr.Textbox(
-                label="Model (blank → catalog default)", placeholder="gpt-4o-mini",
+                label="Model (blank → catalog default)",
+                placeholder="gpt-4o-mini",
                 scale=2,
             )
         with gr.Row():
             base_url = gr.Textbox(
                 label="Base URL (blank → env / catalog default)",
-                placeholder="https://api.openai.com/v1", scale=2,
+                placeholder="https://api.openai.com/v1",
+                scale=2,
             )
             api_key = gr.Textbox(
                 label="API key (blank → server env var)",
-                placeholder="(server env)", type="password", scale=1,
+                placeholder="(server env)",
+                type="password",
+                scale=1,
             )
 
         instruction = gr.Textbox(
@@ -536,14 +567,28 @@ def opencode_gradio_builder(
         run_btn.click(
             fn=run,
             inputs=[
-                endpoint, model, base_url, api_key,
-                instruction, setup_text, verify_text,
-                mode, disable_thinking, template,
-                max_tokens_cap, top_logprobs, agent_timeout_s,
+                endpoint,
+                model,
+                base_url,
+                api_key,
+                instruction,
+                setup_text,
+                verify_text,
+                mode,
+                disable_thinking,
+                template,
+                max_tokens_cap,
+                top_logprobs,
+                agent_timeout_s,
             ],
             outputs=[
-                summary_md, setup_table, verify_table,
-                files_md, logprobs_md, logs_md, raw_json,
+                summary_md,
+                setup_table,
+                verify_table,
+                files_md,
+                logprobs_md,
+                logs_md,
+                raw_json,
             ],
         )
 

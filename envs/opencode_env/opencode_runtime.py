@@ -111,7 +111,9 @@ def build_run_cmd(config: OpenCodeConfig) -> str:
     ).strip()
 
 
-def build_env_vars(config: OpenCodeConfig, *, base_url_override: str | None = None) -> dict[str, str]:
+def build_env_vars(
+    config: OpenCodeConfig, *, base_url_override: str | None = None
+) -> dict[str, str]:
     """Return env vars to set on the OpenCode process.
 
     When a proxy is wrapping ``config.base_url`` the factory passes the proxy's

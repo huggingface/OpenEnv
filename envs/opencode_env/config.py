@@ -34,9 +34,7 @@ class OpenCodeConfig(BaseModel):
 
     # --- OpenCode CLI ---------------------------------------------------------
     opencode_version: str = "latest"
-    disabled_tools: list[str] = Field(
-        default_factory=lambda: ["webfetch", "question"]
-    )
+    disabled_tools: list[str] = Field(default_factory=lambda: ["webfetch", "question"])
     enabled_tools: list[str] | None = None
     system_prompt: str | None = None
     extra_opencode_json: dict[str, Any] = Field(default_factory=dict)

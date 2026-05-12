@@ -8,35 +8,30 @@
 
 Two layers in this package:
 
-1. **Harness primitive** — :class:`OpenCodeSessionFactory` /
+1. **Harness primitive** -- :class:`OpenCodeSessionFactory` /
    :class:`OpenCodeSession` / :class:`OpenCodeConfig` /
-   :class:`E2BSandboxBackend`. Used in-process to drive one rollout
-   inside an E2B sandbox. See ``harness.py``.
+   :class:`E2BSandboxBackend`. Built on the generic
+   :class:`CLIAgentDriver` from ``openenv.core.harness.agents``.
 
-2. **Deployable env** — :class:`OpenCodeEnv` (MCP client) talks to the
+2. **Deployable env** -- :class:`OpenCodeEnv` (MCP client) talks to the
    FastAPI server at ``server/app.py`` over HTTP. Use this when the
    sandbox + agent live behind an HTTP boundary (e.g. an HF Space).
    See ``client.py`` and ``server/``.
 """
 
 from openenv.core.env_server.mcp_types import CallToolAction, ListToolsAction
+from openenv.core.harness.sandbox import SandboxBackend, SandboxHandle
 
 from .client import OpenCodeEnv
 from .config import OpenCodeConfig, Provider
 from .harness import OpenCodeSession, OpenCodeSessionFactory
-from .models import (
-    CommandResult,
-    OpenCodeState,
-    RolloutResult,
-    RolloutTurn,
-)
-from openenv.core.harness.sandbox import SandboxBackend, SandboxHandle
+from .models import CommandResult, OpenCodeState, RolloutResult, RolloutTurn
+from .task import OpenCodeTask
 
 try:
     from openenv.core.harness.sandbox import E2BSandboxBackend
 except ImportError:  # e2b not installed
     E2BSandboxBackend = None  # type: ignore[assignment,misc]
-from .task import OpenCodeTask
 
 __all__ = [
     # Deployed-env client

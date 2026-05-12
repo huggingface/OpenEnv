@@ -189,9 +189,7 @@ class OpenCodeEnvironment(MCPEnvironment):
             reward=None,
             metadata={
                 "status": "ready",
-                "message": (
-                    "opencode_env ready. Call run_rollout(...) with a task."
-                ),
+                "message": ("opencode_env ready. Call run_rollout(...) with a task."),
             },
         )
 
@@ -399,8 +397,12 @@ class OpenCodeEnvironment(MCPEnvironment):
             result.error = f"{type(exc).__name__}: {exc}"
             _emit(f"ERROR: {result.error}")
             if session is not None:
-                result.proxy_log_tail = self._safe_read(session.sandbox, PROXY_LOG)[-2000:]
-                result.agent_log_tail = self._safe_read(session.sandbox, AGENT_LOG)[-2000:]
+                result.proxy_log_tail = self._safe_read(session.sandbox, PROXY_LOG)[
+                    -2000:
+                ]
+                result.agent_log_tail = self._safe_read(session.sandbox, AGENT_LOG)[
+                    -2000:
+                ]
         finally:
             if session is not None:
                 try:
@@ -450,9 +452,7 @@ class OpenCodeEnvironment(MCPEnvironment):
         except ValueError:
             return None
 
-    def _collect_files(
-        self, sandbox: Any
-    ) -> tuple[dict[str, str], list[str]]:
+    def _collect_files(self, sandbox: Any) -> tuple[dict[str, str], list[str]]:
         listing = sandbox.exec(
             f"find {WORKDIR} -maxdepth 2 -type f -size -64k 2>/dev/null | head -32",
             timeout=10,
@@ -491,7 +491,8 @@ class OpenCodeEnvironment(MCPEnvironment):
                     completion_tokens=list(rec.get("completion_tokens") or []),
                     completion_token_ids=list(rec.get("completion_token_ids") or []),
                     per_token_logps=[
-                        float(x) for x in (rec.get("per_token_logps") or [])
+                        float(x)
+                        for x in (rec.get("per_token_logps") or [])
                         if x is not None
                     ],
                     latency_s=float(rec.get("latency_s") or 0.0),

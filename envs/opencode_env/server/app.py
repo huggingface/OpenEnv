@@ -56,19 +56,13 @@ _load_env_file()
 
 try:
     from openenv.core.env_server.http_server import create_app
-    from openenv.core.env_server.mcp_types import (
-        CallToolAction,
-        CallToolObservation,
-    )
+    from openenv.core.env_server.mcp_types import CallToolAction, CallToolObservation
 
     from .gradio_ui import opencode_gradio_builder
     from .opencode_environment import OpenCodeEnvironment
 except ImportError:  # pragma: no cover
     from openenv.core.env_server.http_server import create_app
-    from openenv.core.env_server.mcp_types import (
-        CallToolAction,
-        CallToolObservation,
-    )
+    from openenv.core.env_server.mcp_types import CallToolAction, CallToolObservation
     from server.gradio_ui import opencode_gradio_builder  # type: ignore
     from server.opencode_environment import OpenCodeEnvironment  # type: ignore
 
