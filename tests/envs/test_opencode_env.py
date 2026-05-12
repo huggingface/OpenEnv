@@ -309,7 +309,7 @@ def test_start_proxy_keeps_upstream_key_out_of_command() -> None:
 def test_interception_cli_reads_upstream_key_from_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from opencode_env.sandbox import interception
+    from openenv.core.harness.sandbox import interception
 
     captured = {}
 

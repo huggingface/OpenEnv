@@ -4,7 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""E2B implementation of :class:`SandboxBackend`."""
+"""E2B implementation of :class:`SandboxBackend`.
+
+Works with both E2B cloud (api.e2b.dev) and self-hosted E2B-compatible
+backends like CubeSandbox. For CubeSandbox, set::
+
+    E2B_API_URL=http://your-cubesandbox:3000
+    E2B_API_KEY=dummy  # any non-empty string
+"""
 
 from __future__ import annotations
 
@@ -15,7 +22,7 @@ from pathlib import PurePosixPath
 from e2b import Sandbox
 from e2b.sandbox_sync.commands.command_handle import CommandHandle
 
-from .base import BgJob, ExecResult, SandboxBackend, SandboxHandle
+from openenv.core.harness.sandbox.base import BgJob, ExecResult, SandboxBackend, SandboxHandle
 
 
 class E2BBgJob:

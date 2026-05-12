@@ -52,7 +52,7 @@ from .opencode_runtime import (
     opencode_config_path,
     system_prompt_path,
 )
-from .sandbox.base import BgJob, SandboxBackend, SandboxHandle
+from openenv.core.harness.sandbox import BgJob, SandboxBackend, SandboxHandle
 from .task import OpenCodeTask
 
 
@@ -64,7 +64,10 @@ _PROXY_LOG_PATH = "/home/user/logs/agent/proxy.log"
 # Where the proxy source lives on disk (in this repo). Uploaded into the
 # sandbox at /home/user/proxy/interception.py before each rollout, unless
 # the sandbox was created from a template that already has it baked in.
-_PROXY_SOURCE_PATH = Path(__file__).parent / "sandbox" / "interception.py"
+_PROXY_SOURCE_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "src" / "openenv" / "core" / "harness" / "sandbox" / "interception.py"
+)
 
 
 Verifier = Callable[[SandboxHandle, OpenCodeTask], VerifyResult]

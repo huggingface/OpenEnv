@@ -44,8 +44,10 @@ from pathlib import Path
 from e2b import Template, default_build_logger
 
 
-_ENV_DIR = Path(__file__).resolve().parent
-_PROXY_SOURCE = _ENV_DIR / "interception.py"
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_PROXY_SOURCE = (
+    _REPO_ROOT / "src" / "openenv" / "core" / "harness" / "sandbox" / "interception.py"
+)
 
 
 def _load_env(path: Path) -> None:
@@ -91,7 +93,7 @@ def build_template(name: str, *, skip_cache: bool = False) -> str:
         .make_dir("/home/user/task")
         .make_dir("/home/user/workdir")
         .make_dir("/home/user/proxy")
-        .copy("interception.py", "/home/user/proxy/interception.py")
+        .copy(str(_PROXY_SOURCE), "/home/user/proxy/interception.py")
         .set_workdir("/home/user/workdir")
     )
     if skip_cache:
@@ -121,7 +123,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = p.parse_args(argv)
 
-    _load_env(_ENV_DIR / ".env")
+    _load_env(_REPO_ROOT / "envs" / "opencode_env" / "sandbox" / ".env")
     if not os.environ.get("E2B_API_KEY"):
         print("ERROR: E2B_API_KEY required.", file=sys.stderr)
         return 2

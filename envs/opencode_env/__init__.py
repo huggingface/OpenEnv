@@ -30,7 +30,12 @@ from .models import (
     RolloutResult,
     RolloutTurn,
 )
-from .sandbox import E2BSandboxBackend, SandboxBackend, SandboxHandle
+from openenv.core.harness.sandbox import SandboxBackend, SandboxHandle
+
+try:
+    from openenv.core.harness.sandbox import E2BSandboxBackend
+except ImportError:  # e2b not installed
+    E2BSandboxBackend = None  # type: ignore[assignment,misc]
 from .task import OpenCodeTask
 
 __all__ = [

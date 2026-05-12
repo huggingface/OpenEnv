@@ -6,15 +6,15 @@
 
 """Transparent OpenAI-compatible forwarding proxy with logprob capture.
 
-The proxy is a small FastAPI app that OpenCode talks to instead of the upstream
-LLM endpoint. It:
+The proxy is a small FastAPI app that agent CLIs (OpenCode, Claude Code,
+Codex, Pi, etc.) talk to instead of the upstream LLM endpoint. It:
 
 1. Forwards every ``POST /v1/chat/completions`` request to the real upstream
    URL, injecting ``logprobs=true`` and ``top_logprobs=N`` so the upstream
    returns per-token logprobs.
 2. Captures each ``(request, response, logprobs)`` triple to a JSON-lines
    trace file.
-3. Returns the upstream response to OpenCode verbatim (minus the ``logprobs``
+3. Returns the upstream response to the agent verbatim (minus the ``logprobs``
    field, which we strip so the CLI never sees anything unexpected).
 
 The proxy is stateless beyond the trace file. One proxy instance runs per
@@ -22,7 +22,7 @@ session, normally inside the sandbox on ``localhost:7000``.
 
 Run standalone::
 
-    OPENCODE_UPSTREAM_API_KEY=... python -m opencode_env.interception \\
+    UPSTREAM_API_KEY=... python -m openenv.core.harness.sandbox.interception \\
         --upstream-url https://vllm.example/v1 \\
         --trace /tmp/trace.jsonl \\
         --port 7000

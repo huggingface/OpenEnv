@@ -6,12 +6,12 @@
 
 """Sandbox backend protocol.
 
-A ``SandboxBackend`` produces ``SandboxHandle`` instances that the harness uses
-to stage files, run the OpenCode install, launch the agent as a background
-process, and later tear the sandbox down.
+A ``SandboxBackend`` produces ``SandboxHandle`` instances that harnesses use
+to stage files, install agent CLIs, launch the agent as a background process,
+and later tear the sandbox down.
 
-Backends can be implemented against any provider (E2B, Docker, Modal, Prime)
-as long as they satisfy the Protocols defined here.
+Backends can be implemented against any provider (E2B, CubeSandbox, Docker,
+Modal) as long as they satisfy the Protocols defined here.
 """
 
 from __future__ import annotations
