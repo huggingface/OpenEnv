@@ -283,10 +283,6 @@ def probe_space(
     return probe_generic_space(session, base_url, headers, timeout)
 
 
-def stage_is_healthy(stage: str | None) -> bool:
-    return bool(stage) and ("RUNNING" in stage or stage == "SLEEPING")
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Verify private OpenEnv spaces by suffix/explicit IDs."
@@ -353,7 +349,7 @@ def main() -> None:
         chosen_domain: str | None = None
         space_success = False
 
-        if stage_is_healthy(stage) and domain_candidates:
+        if domain_candidates:
             for candidate in domain_candidates:
                 domain_name = candidate["domain"]
                 base_url = f"https://{domain_name}"

@@ -82,40 +82,42 @@ import pytorch_sphinx_theme2
 html_theme = "pytorch_sphinx_theme2"
 html_theme_path = [pytorch_sphinx_theme2.get_html_theme_path()]
 html_static_path = ["_static"]
+# Populated by copy_env_assets() at build time (see setup() below).
+# Copies env README images to _build/html/ so raw HTML <img src="assets/...">
+# tags in {include}-based env pages resolve correctly.
+html_extra_path = ["_env_assets"]
+html_css_files = ["openenv-overrides.css"]
+html_js_files = ["cookie-banner.js"]
 
 html_theme_options = {
     "navigation_with_keys": False,
-    "analytics_id": "GTM-NPLPKN5G",
-    "header_links_before_dropdown": 7,
+    "analytics_id": "GTM-T8XT4PS",
+    "header_links_before_dropdown": 8,
     "logo": {
         "text": "OpenEnv",
     },
     "icon_links": [
         {
-            "name": "X",
-            "url": "https://x.com/PyTorch",
-            "icon": "fa-brands fa-x-twitter",
-        },
-        {
             "name": "GitHub",
             "url": "https://github.com/meta-pytorch/OpenEnv",
             "icon": "fa-brands fa-github",
         },
-        {
-            "name": "Discourse",
-            "url": "https://dev-discuss.pytorch.org/",
-            "icon": "fa-brands fa-discourse",
-        },
     ],
-    "use_edit_page_button": True,
-    "navbar_center": "navbar-nav",
+    "use_edit_page_button": False,
+    "secondary_sidebar_items": ["page-toc"],
+    "article_header_end": [],
+    "article_footer_items": [],
+    "show_lf_footer": False,
+    "show_pytorch_org_link": False,
     "switcher": {
         "json_url": "_static/versions.json",
         "version_match": switcher_version,
     },
     "check_switcher": False,
     "navbar_align": "left",
-    "navbar_start": ["navbar-logo", "version-switcher"],
+    # Hide the version switcher until versioned releases are published —
+    # with only "main" in versions.json it opens to an empty dropdown.
+    "navbar_start": ["navbar-logo"],
     "navbar_center": ["navbar-nav"],
     "navbar_end": ["theme-switcher", "navbar-icon-links"],
 }
@@ -130,16 +132,19 @@ templates_path = [
 
 html_context = {
     "theme_variables": theme_variables,
-    "display_github": True,
+    "display_github": False,
     "github_url": "https://github.com",
     "github_user": "meta-pytorch",
     "github_repo": "OpenEnv",
     "feedback_url": "https://github.com/meta-pytorch/OpenEnv",
     "github_version": "main",
     "doc_path": "docs/source",
-    "library_links": theme_variables.get("library_links", []),
-    "community_links": theme_variables.get("community_links", []),
-    "language_bindings_links": html_theme_options.get("language_bindings_links", []),
+    # Suppress the theme's PyTorch-wide sidebar blocks (PyTorch Libraries,
+    # PyTorch Community, Language Bindings) — they link to unrelated
+    # PyTorch projects and clutter the OpenEnv sidebar.
+    "library_links": [],
+    "community_links": [],
+    "language_bindings_links": [],
 }
 
 # Base URL for the site (used by sitemap and canonical URLs)
@@ -148,6 +153,7 @@ sitemap_locales = [None]
 sitemap_excludes = [
     "search.html",
     "genindex.html",
+    "auto_getting_started/sg_execution_times.html",
 ]
 sitemap_url_scheme = "{link}"
 
@@ -198,9 +204,39 @@ def copy_md_pages_to_gallery(app):
         shutil.copy2(md_file, dstdir)
 
 
+def copy_env_assets(app):
+    """Copy env README images into _env_assets so html_extra_path can serve them.
+
+    Scans envs/*/assets/ recursively and copies every file it finds, so any
+    new env image is picked up automatically with no conf.py edit required.
+
+    The _env_assets/ directory is gitignored to avoid committing binary blobs
+    that would trip the CRLF line-endings test.
+    """
+    import glob
+    import shutil
+
+    repo_root = os.path.dirname(os.path.dirname(app.srcdir))
+    dst_dir = os.path.join(app.srcdir, "_env_assets", "environments", "assets")
+    os.makedirs(dst_dir, exist_ok=True)
+
+    for src in glob.glob(os.path.join(repo_root, "envs", "*", "assets", "**"), recursive=True):
+        if os.path.isfile(src):
+            dst = os.path.join(dst_dir, os.path.basename(src))
+            if os.path.exists(dst):
+                import warnings
+                warnings.warn(
+                    f"copy_env_assets: {os.path.basename(src)} already exists from a previous env; overwriting with {src}",
+                    stacklevel=2,
+                )
+            shutil.copy2(src, dst_dir)
+
+
 def setup(app):
     # Copy extra .md pages into the gallery output dir (priority 900 so it
     # runs after sphinx-gallery's builder-inited handler at default priority).
     app.connect("builder-inited", copy_md_pages_to_gallery, priority=900)
+    # Copy env assets into _env_assets (gitignored; built at doc-build time).
+    app.connect("builder-inited", copy_env_assets, priority=900)
     # Hook into source-read to modify content before Sphinx processes it
     app.connect("source-read", remove_orphan_and_duplicate_toctree)

@@ -27,6 +27,63 @@ app = typer.Typer(help="Push an OpenEnv environment to Hugging Face Spaces")
 DEFAULT_PUSH_IGNORE_PATTERNS = [".*", "__pycache__", "*.pyc"]
 
 
+def _format_kv_entry_for_error(entry: str, *, flag: str) -> str:
+    """Redact secret values from CLI parse errors."""
+    if flag == "--secret":
+        return "<redacted>"
+    return repr(entry)
+
+
+def _parse_kv_pairs(raw_pairs: list[str], *, flag: str) -> dict[str, str]:
+    """Parse a list of 'KEY=VALUE' strings into a dict.
+
+    Splits only on the first '=', so values can contain '='. Later entries
+    override earlier ones with the same key (repeated CLI flags still work).
+    """
+    parsed: dict[str, str] = {}
+    for entry in raw_pairs:
+        entry_display = _format_kv_entry_for_error(entry, flag=flag)
+        if "=" not in entry:
+            raise typer.BadParameter(
+                f"Invalid {flag} format: {entry_display}. Expected KEY=VALUE."
+            )
+        key, value = entry.split("=", 1)
+        key = key.strip()
+        if not key:
+            raise typer.BadParameter(
+                f"Invalid {flag} format: {entry_display}. Key cannot be empty."
+            )
+        parsed[key] = value
+    return parsed
+
+
+def _apply_space_variables_and_secrets(
+    repo_id: str,
+    variables: dict[str, str],
+    secrets: dict[str, str],
+    api: HfApi,
+) -> None:
+    """Configure Space-level variables and secrets on a deployed repo.
+
+    Idempotent: add_space_variable/secret with the same key overwrites.
+    Secret values are never logged — only the key is printed.
+    """
+    for key, value in variables.items():
+        try:
+            api.add_space_variable(repo_id=repo_id, key=key, value=value)
+        except Exception as e:
+            console.print(f"[bold red]✗[/bold red] Failed to set variable {key}: {e}")
+            raise typer.Exit(1) from e
+        console.print(f"[bold green]✓[/bold green] Set variable {key} on {repo_id}")
+    for key, value in secrets.items():
+        try:
+            api.add_space_secret(repo_id=repo_id, key=key, value=value)
+        except Exception as e:
+            console.print(f"[bold red]✗[/bold red] Failed to set secret {key}: {e}")
+            raise typer.Exit(1) from e
+        console.print(f"[bold green]✓[/bold green] Set secret {key} on {repo_id}")
+
+
 def _path_matches_pattern(relative_path: Path, pattern: str) -> bool:
     """Return True if a relative path matches an exclude pattern."""
     normalized_pattern = pattern.strip()
@@ -483,7 +540,7 @@ def push(
         typer.Option(
             "--repo-id",
             "-r",
-            help="Repository ID in format 'username/repo-name' (defaults to 'username/env-name' from openenv.yaml)",
+            help="Repository ID as 'repo_name' or 'namespace/repo_name'. Defaults to 'username/env-name' from openenv.yaml.",
         ),
     ] = None,
     base_image: Annotated[
@@ -553,6 +610,21 @@ def push(
             min=1,
         ),
     ] = 1,
+    env_vars: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--env-var",
+            "-e",
+            help="Public Space variable as KEY=VALUE (repeatable). Overrides matching keys from openenv.yaml variables:.",
+        ),
+    ] = None,
+    secrets: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--secret",
+            help="Private Space secret as KEY=VALUE (repeatable). Value is never logged.",
+        ),
+    ] = None,
 ) -> None:
     """
     Push an OpenEnv environment to Hugging Face Spaces or a custom Docker registry.
@@ -594,6 +666,12 @@ def push(
 
         # Push with GPU hardware
         $ openenv push --hardware t4-medium
+
+        # Set a public Space variable (overrides openenv.yaml variables:)
+        $ openenv push -e OPENSPIEL_GAME=tic_tac_toe -e MAX_STEPS=100
+
+        # Set a private Space secret (value never logged)
+        $ openenv push --secret OPENAI_API_KEY=sk-...
     """
     # Validate --count flag combinations
     if count > 1 and registry:
@@ -655,6 +733,37 @@ def push(
     env_name, manifest = _validate_openenv_directory(env_dir)
     console.print(f"[bold green]✓[/bold green] Found OpenEnv environment: {env_name}")
 
+    # Parse and merge Space variables (yaml < CLI) and secrets (CLI only).
+    yaml_variables_raw = manifest.get("variables")
+    if yaml_variables_raw is None:
+        yaml_variables_raw = {}
+    elif not isinstance(yaml_variables_raw, dict):
+        raise typer.BadParameter(
+            "openenv.yaml 'variables' must be a mapping of KEY: value"
+        )
+    if registry and (env_vars or secrets):
+        raise typer.BadParameter(
+            "--env-var/--secret cannot be used with --registry because custom registry pushes do not configure Hugging Face Space settings"
+        )
+    if create_pr and (env_vars or secrets):
+        raise typer.BadParameter(
+            "--env-var/--secret cannot be used with --create-pr because Space settings are only applied to the live Space after merge"
+        )
+    merged_variables: dict[str, str] = {
+        str(k): str(v) for k, v in yaml_variables_raw.items()
+    }
+    cli_variables = _parse_kv_pairs(env_vars or [], flag="--env-var")
+    merged_variables.update(cli_variables)
+    cli_secrets = _parse_kv_pairs(secrets or [], flag="--secret")
+    if registry and merged_variables:
+        console.print(
+            "[bold yellow]⚠[/bold yellow] openenv.yaml variables: are only applied to Hugging Face Spaces and will be ignored with --registry"
+        )
+    if create_pr and merged_variables:
+        console.print(
+            "[bold yellow]⚠[/bold yellow] openenv.yaml variables: are not applied when using --create-pr; configure them after the PR is merged"
+        )
+
     # Handle custom registry push
     if registry:
         console.print("[bold cyan]Preparing to push to custom registry...[/bold cyan]")
@@ -709,11 +818,12 @@ def push(
     if not repo_id:
         repo_id = f"{username}/{env_name}"
 
-    # Validate repo_id format
-    if "/" not in repo_id or repo_id.count("/") != 1:
+    if repo_id.count("/") > 1:
         raise typer.BadParameter(
-            f"Invalid repo-id format: {repo_id}. Expected format: 'username/repo-name'"
+            f"Invalid repo-id format: {repo_id!r}. Repo id must be in the form 'repo_name' or 'namespace/repo_name'."
         )
+    if "/" not in repo_id:
+        repo_id = f"{username}/{repo_id}"
 
     # Initialize Hugging Face API
     api = HfApi()
@@ -754,6 +864,9 @@ def push(
                     create_pr=False,
                     ignore_patterns=ignore_patterns,
                 )
+                _apply_space_variables_and_secrets(
+                    instance_repo_id, merged_variables, cli_secrets, api
+                )
             console.print(
                 f"\n[bold green]✓ All {count} instances deployed![/bold green]"
             )
@@ -776,6 +889,13 @@ def push(
                 create_pr=create_pr,
                 ignore_patterns=ignore_patterns,
             )
+
+            # Skip variable/secret configuration in PR mode since the target
+            # repo's live environment should only change when the PR is merged.
+            if not create_pr:
+                _apply_space_variables_and_secrets(
+                    repo_id, merged_variables, cli_secrets, api
+                )
 
             console.print("\n[bold green]✓ Deployment complete![/bold green]")
             console.print(

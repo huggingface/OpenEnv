@@ -10,6 +10,7 @@ The auto-discovery system provides two main classes:
 - **`AutoAction`**: Automatically loads action classes for environments
 
 Both classes work with:
+
 - **Local packages**: Installed via `pip install openenv-<env-name>`
 - **HuggingFace Hub**: Environments hosted on HuggingFace Spaces
 
@@ -49,15 +50,16 @@ with env.sync() as client:
 Create an environment client from a name or HuggingFace Hub repository.
 
 **Parameters:**
-- `name`: Environment name or Hub repo ID
-  - Local: `"coding"`, `"coding-env"`, `"coding_env"`
-  - Hub: `"meta-pytorch/coding-env"`, `"username/env-name"`
-- `base_url`: Optional base URL for HTTP connection
-- `docker_image`: Optional Docker image name (overrides default)
-- `container_provider`: Optional container provider
-- `wait_timeout`: Timeout for container startup (default: 30s)
-- `env_vars`: Optional environment variables for the container
-- `**kwargs`: Additional arguments passed to the client class
+
+| Parameter | Description |
+|-----------|-------------|
+| `name` | Environment name or Hub repo ID. Local: `"coding"`, `"coding-env"`, `"coding_env"`. Hub: `"meta-pytorch/coding-env"`, `"username/env-name"` |
+| `base_url` | Optional base URL for HTTP connection |
+| `docker_image` | Optional Docker image name (overrides default) |
+| `container_provider` | Optional container provider |
+| `wait_timeout` | Timeout for container startup (default: 30s) |
+| `env_vars` | Optional environment variables for the container |
+| `**kwargs` | Additional arguments passed to the client class |
 
 **Returns:** Instance of the environment client class
 
@@ -132,7 +134,10 @@ env = CodingEnv.from_docker_image("coding-env:latest", wait_timeout=60.0)
 Get the Action class from an environment name or HuggingFace Hub repository.
 
 **Parameters:**
-- `name`: Environment name or Hub repo ID
+
+| Parameter | Description |
+|-----------|-------------|
+| `name` | Environment name or Hub repo ID |
 
 **Returns:** Action class (not an instance!)
 
@@ -385,6 +390,7 @@ python -c "from openenv import AutoEnv; AutoEnv.list_environments()"
 ```
 
 Each environment package includes:
+
 - Client classes (e.g., `CodingEnv`)
 - Action/Observation models (e.g., `CodeAction`, `CodeObservation`)
 - Server Docker image
@@ -417,15 +423,17 @@ spec_version: 1
 
 ## Benefits
 
-✅ **Simple**: No need to know which module to import from
-✅ **Flexible**: Works with local packages and HuggingFace Hub
-✅ **Discoverable**: List and explore available environments
-✅ **Type-Safe**: Returns properly typed environment classes
-✅ **HuggingFace-style**: Familiar API for ML practitioners
-✅ **Performant**: Caching and lazy loading for efficiency
+| Benefit | Description |
+|---------|-------------|
+| **Simple** | No need to know which module to import from |
+| **Flexible** | Works with local packages and HuggingFace Hub |
+| **Discoverable** | List and explore available environments |
+| **Type-Safe** | Returns properly typed environment classes |
+| **HuggingFace-style** | Familiar API for ML practitioners |
+| **Performant** | Caching and lazy loading for efficiency |
 
 ## See Also
 
-- [Environment Builder Guide](auto_getting_started/environment-builder.md) - How to create your own environments
-- [Core API Documentation](core.md) - Low-level API details
+- [Your First Environment](first-environment.md) - How to create your own environments
+- [Core API Documentation](../reference/core.md) - Low-level API details
 - [HuggingFace Hub](https://huggingface.co/meta-pytorch) - Pre-built environments

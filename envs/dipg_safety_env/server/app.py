@@ -118,3 +118,13 @@ def create_dipg_environment():
 app = create_app(
     create_dipg_environment, DIPGAction, DIPGObservation, env_name="dipg_safety_env"
 )
+
+
+def main():
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+if __name__ == "__main__":
+    main()

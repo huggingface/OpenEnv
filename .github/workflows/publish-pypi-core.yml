@@ -21,7 +21,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Validate version matches release tag
       if: github.event_name == 'release'
@@ -41,7 +41,7 @@ jobs:
         echo "Version confirmed: $PKG_VERSION"
 
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: '3.11'
 

@@ -24,9 +24,12 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0.0",
+    "pytest>=9.0.3",
     "pytest-cov>=4.0.0",
 ]
+
+[project.scripts]
+server = "connect4_env.server.app:main"
 
 [tool.setuptools]
 include-package-data = true

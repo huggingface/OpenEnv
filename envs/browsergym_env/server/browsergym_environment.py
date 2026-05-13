@@ -387,5 +387,5 @@ class BrowserGymEnvironment(Environment):
         if hasattr(self, "gym_env"):
             try:
                 self.gym_env.close()
-            except Exception as e:
-                logger.warning("BrowserGym close() failed: %s", e)
+            except Exception as exc:  # noqa: BLE001 - browsergym/playwright cleanup
+                logger.warning("BrowserGym cleanup failed: %s", exc)

@@ -1,5 +1,9 @@
 # Environments
 
+```{note}
+The environments listed here may not reflect the latest additions. For the official OpenEnv collection, see the [OpenEnv organization on Hugging Face](https://huggingface.co/openenv). You may also find additional community environments tagged `agent-environment` on [Hugging Face Spaces](https://huggingface.co/spaces?category=agent-environment). The environments highlighted below are a curated selection.
+```
+
 The OpenEnv community has built a catalog of ready-to-run environments that cover deterministic smoke tests, full developer workflows, and multi-step reasoning challenges. Explore the surface area below and jump directly into the guides for each environment.
 
 `````{grid} 1 2 3 3
@@ -42,6 +46,48 @@ Secure sandbox with filesystem access and evaluation hooks for executing generat
 :outline:
 
 🤗 Hugging Face
+```
+````
+
+````{grid-item-card} Jupyter
+:class-card: sd-border-1
+
+Notebook-style coding environment backed by E2B with setup/verify hooks and a web UI for interactive runs.
+
++++
+```{button-link} environments/jupyter.html
+:color: primary
+:outline:
+
+{octicon}`file;1em` Docs
+```
+````
+
+````{grid-item-card} Terminus
+:class-card: sd-border-1
+
+Terminal-first coding environment with high-contrast shell output and session controls for execute/verify/close flows.
+
++++
+```{button-link} environments/terminus.html
+:color: primary
+:outline:
+
+{octicon}`file;1em` Docs
+```
+````
+
+````{grid-item-card} Coding Tools
+:class-card: sd-border-1
+
+SETA-style multi-tool coding environment with shell, file editing, search, todos, and submit verification.
+
++++
+```{button-link} environments/coding_tools.html
+:color: primary
+:outline:
+
+{octicon}`file;1em` Docs
 ```
 ````
 
@@ -483,6 +529,40 @@ Autonomous wildfire-control simulation where agents contain spreading fires usin
 ```
 ````
 
+````{grid-item-card} Agent World Model
+:class-card: sd-border-1
+
+AgentWorldModel-1K — 1,000 synthetic MCP tool-use environments with 10,000 tasks for large-scale agentic RL training.
+
++++
+```{button-link} environments/agent_world_model.html
+:color: primary
+:outline:
+
+{octicon}`file;1em` Docs
+```
+```{button-link} https://huggingface.co/spaces/ChilleD/agent_world_model_env
+:color: warning
+:outline:
+
+🤗 Hugging Face
+```
+````
+
+````{grid-item-card} Opencode
+:class-card: sd-border-1
+
+`opencode_env` runs the OpenCode coding agent inside an isolated E2B sandbox against any OpenAI-compatible LLM endpoint, optionally capturing per-token logpr...
+
++++
+```{button-link} environments/opencode.html
+:color: primary
+:outline:
+
+{octicon}`file;1em` Docs
+```
+````
+
 `````
 
 ```{tip}
@@ -522,6 +602,9 @@ A suite of 400 environments that procedurally generate reasoning problems for LM
 
 environments/echo
 environments/coding
+environments/jupyter
+environments/terminus
+environments/coding_tools
 environments/chat
 environments/atari
 environments/openspiel
@@ -549,4 +632,6 @@ environments/reasoning_gym
 environments/tbench2
 environments/unity
 environments/wildfire
+environments/agent_world_model
+environments/opencode
 ```

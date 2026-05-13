@@ -15,7 +15,7 @@ That's OpenEnv. Type-safe. Isolated. Production-ready. 🎯
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-green.svg)](https://opensource.org/licenses/BSD-3-Clause)
 [![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
 
-Author: [Sanyam Bhutani](http://twitter.com/bhutanisanyam1/)
+Author: Sanyam Bhutani
 
 </div>
 

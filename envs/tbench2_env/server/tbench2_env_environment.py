@@ -105,6 +105,7 @@ class Tbench2Environment(Environment[Tbench2Action, Tbench2Observation, Tbench2S
         output_dir: str | None = None,
         command_timeout_s: float = 20.0,
         safe_mode: bool = False,
+        default_task_id: str | None = None,
     ) -> None:
         super().__init__()
         self.tasks_dir = tasks_dir or os.getenv("TB2_TASKS_DIR", "")
@@ -113,6 +114,9 @@ class Tbench2Environment(Environment[Tbench2Action, Tbench2Observation, Tbench2S
         )
         self.command_timeout_s = command_timeout_s
         self.safe_mode = safe_mode
+        self.default_task_id = default_task_id or os.getenv(
+            "TB2_DEFAULT_TASK_ID", "headless-terminal"
+        )
 
         self._state = Tbench2State()
         self._task_dir: Path | None = None
@@ -129,7 +133,9 @@ class Tbench2Environment(Environment[Tbench2Action, Tbench2Observation, Tbench2S
 
         TerminalToolkit = _require_terminal_toolkit()
 
-        task_id = kwargs.get("task_id") or kwargs.get("task_name")
+        task_id = (
+            kwargs.get("task_id") or kwargs.get("task_name") or self.default_task_id
+        )
         task_path = kwargs.get("task_path") or kwargs.get("path")
 
         task_dir = self._resolve_task_path(task_id, task_path)
@@ -351,6 +357,7 @@ class Tbench2DockerEnvironment(
         output_dir: str | None = None,
         command_timeout_s: float = 300.0,
         safe_mode: bool = True,
+        default_task_id: str | None = None,
     ) -> None:
         super().__init__()
         self.tasks_dir = tasks_dir or os.getenv("TB2_TASKS_DIR", "")
@@ -359,6 +366,9 @@ class Tbench2DockerEnvironment(
         )
         self.command_timeout_s = command_timeout_s
         self.safe_mode = safe_mode
+        self.default_task_id = default_task_id or os.getenv(
+            "TB2_DEFAULT_TASK_ID", "headless-terminal"
+        )
 
         self._state = Tbench2State()
         self._task_dir: Path | None = None
@@ -389,7 +399,9 @@ class Tbench2DockerEnvironment(
     ) -> Tbench2Observation:
         del seed
 
-        task_id = kwargs.get("task_id") or kwargs.get("task_name")
+        task_id = (
+            kwargs.get("task_id") or kwargs.get("task_name") or self.default_task_id
+        )
         task_path = kwargs.get("task_path") or kwargs.get("path")
 
         task_dir = self._resolve_task_path(task_id, task_path)
