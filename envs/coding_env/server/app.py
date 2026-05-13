@@ -21,9 +21,10 @@ Usage:
     python -m envs.coding_env.server.app
 """
 
+from openenv.core.env_server import create_app
+
 from coding_env.models import CodeAction, CodeObservation
 from coding_env.server.python_codeact_env import PythonCodeActEnv
-from openenv.core.env_server import create_app
 
 # Create the app with web interface and README integration
 # Pass the class (factory) instead of an instance for WebSocket session support

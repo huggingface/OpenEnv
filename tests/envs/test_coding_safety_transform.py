@@ -6,16 +6,8 @@
 
 """Tests for coding_env safety transform false-positive handling."""
 
-import os
-import sys
-from pathlib import Path
-
-# Add the project root and src to the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-
-from envs.coding_env.models import CodeObservation
-from envs.coding_env.server.transforms import CodeSafetyTransform
+from coding_env.models import CodeObservation
+from coding_env.server.transforms import CodeSafetyTransform
 
 
 def _apply_safety_transform(code: str) -> CodeObservation:
@@ -38,7 +30,9 @@ def test_blocks_real_dangerous_import():
 
 
 def test_blocks_builtin_open_call():
-    observation = _apply_safety_transform("with open('f.txt') as f:\n    data = f.read()")
+    observation = _apply_safety_transform(
+        "with open('f.txt') as f:\n    data = f.read()"
+    )
     assert observation.reward == -1.0
     assert "safety_violation" in observation.metadata
 

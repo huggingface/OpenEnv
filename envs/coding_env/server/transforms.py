@@ -32,7 +32,9 @@ class CodeSafetyTransform(Transform):
         try:
             tree = ast.parse(code)
         except SyntaxError:
-            # Syntax quality is handled by CodeQualityTransform.
+            # Intentional trade-off: once the code is syntactically invalid,
+            # this AST-only safety pass cannot reliably inspect partial code.
+            # CodeQualityTransform applies the syntax penalty instead.
             return None
 
         for node in ast.walk(tree):
