@@ -37,6 +37,24 @@ def test_blocks_builtin_open_call():
     assert "safety_violation" in observation.metadata
 
 
+def test_blocks_builtin_eval_call():
+    observation = _apply_safety_transform("result = eval('1 + 1')")
+    assert observation.reward == -1.0
+    assert observation.metadata["safety_violation"] == "eval"
+
+
+def test_blocks_builtin_exec_call():
+    observation = _apply_safety_transform("exec('x = 1')")
+    assert observation.reward == -1.0
+    assert observation.metadata["safety_violation"] == "exec"
+
+
+def test_blocks_builtin_import_call():
+    observation = _apply_safety_transform("__import__('os')")
+    assert observation.reward == -1.0
+    assert observation.metadata["safety_violation"] == "__import__"
+
+
 def test_does_not_flag_string_literal_with_dangerous_text():
     observation = _apply_safety_transform("print('import os')")
     assert observation.reward == 0.0
