@@ -4,10 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Minesweeper Environment - A simple test environment for HTTP server."""
+"""Minesweeper Environment - a grid-based puzzle game for OpenEnv."""
 
 from .client import MinesweeperEnv
-from .models import MinesweeperAction, MinesweeperObservation, GameStatus
+from .models import GameStatus, MinesweeperAction, MinesweeperObservation
 
-__all__ = ["MinesweeperAction", "MinesweeperObservation", "MinesweeperEnv", "GameStatus"]
+__all__ = ["GameStatus", "MinesweeperAction", "MinesweeperEnv", "MinesweeperObservation"]
 

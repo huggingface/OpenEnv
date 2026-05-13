@@ -42,13 +42,13 @@ finally:
 Build the Docker image from the project root:
 
 ```bash
-docker build -t minesweeper-env:latest -f src/envs/minesweeper_env/server/Dockerfile .
+docker build -t minesweeper-env:latest -f envs/minesweeper_env/server/Dockerfile envs/minesweeper_env
 ```
 
 Or use the build script:
 
 ```bash
-cd src/envs/minesweeper_env/server
+cd envs/minesweeper_env/server
 ./build_docker.sh latest
 ```
 

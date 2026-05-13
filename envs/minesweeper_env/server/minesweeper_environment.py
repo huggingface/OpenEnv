@@ -279,9 +279,12 @@ class MinesweeperEnvironment(Environment):
         """
         return self._state
 
-    def get_full_state(self) -> MinesweeperState:
+    def _get_full_state(self) -> MinesweeperState:
         """
-        Get the full internal state of the Minesweeper environment.
+        Get the full internal state of the environment (server-side only).
+
+        Exposes the mine layout and is intended for testing / introspection.
+        Never call this from a code path reachable by an agent.
 
         Returns:
             MinesweeperState representing the full internal state
