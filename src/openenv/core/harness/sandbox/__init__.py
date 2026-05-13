@@ -7,25 +7,52 @@
 """Sandbox backends for harness-driven rollouts.
 
 Provides the :class:`SandboxBackend` / :class:`SandboxHandle` protocols and
-concrete implementations. Any harness adapter can use any backend — the
+concrete implementations. Any harness adapter can use any backend -- the
 sandbox layer is orthogonal to the agent CLI choice.
 
-The ``e2b`` import is wrapped in ``try/except`` so this package loads cleanly
-in environments where ``e2b`` isn't installed (CI smoke tests, lint runs).
+Optional backend imports are wrapped in ``try/except`` so this package
+loads cleanly when dependencies aren't installed (CI smoke tests, lint).
 """
 
+from typing import Any, Literal
+
 from .base import BgJob, ExecResult, SandboxBackend, SandboxHandle
+from .docker_backend import DockerBgJob, DockerSandboxBackend, DockerSandboxHandle
 
 __all__ = [
     "BgJob",
+    "DockerBgJob",
+    "DockerSandboxBackend",
+    "DockerSandboxHandle",
     "ExecResult",
     "SandboxBackend",
     "SandboxHandle",
+    "create_sandbox_backend",
 ]
 
 try:
-    from .e2b_backend import E2BBgJob, E2BSandboxBackend, E2BSandboxHandle
+    from .e2b_backend import E2BBgJob, E2BSandboxBackend, E2BSandboxHandle  # noqa: F401
 
     __all__.extend(["E2BBgJob", "E2BSandboxBackend", "E2BSandboxHandle"])
 except ImportError:
-    pass  # e2b not installed — stubs live in envs/opencode_env/sandbox/__init__.py
+    pass  # e2b not installed
+
+
+def create_sandbox_backend(
+    backend: Literal["e2b", "docker"] = "e2b",
+    **kwargs: Any,
+) -> SandboxBackend:
+    """Create a sandbox backend by name.
+
+    For ``"e2b"``: works with both E2B cloud and CubeSandbox
+    (set ``E2B_API_URL``).
+
+    For ``"docker"``: local Docker, no external dependencies.
+    """
+    if backend == "e2b":
+        from .e2b_backend import E2BSandboxBackend
+
+        return E2BSandboxBackend(**kwargs)
+    elif backend == "docker":
+        return DockerSandboxBackend(**kwargs)
+    raise ValueError(f"Unknown sandbox backend: {backend!r}. Use 'e2b' or 'docker'.")

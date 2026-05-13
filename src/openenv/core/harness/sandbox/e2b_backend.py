@@ -21,8 +21,7 @@ from pathlib import PurePosixPath
 
 from e2b import Sandbox
 from e2b.sandbox_sync.commands.command_handle import CommandHandle
-
-from openenv.core.harness.sandbox.base import BgJob, ExecResult, SandboxBackend, SandboxHandle
+from openenv.core.harness.sandbox.base import BgJob, ExecResult, SandboxHandle
 
 
 class E2BBgJob:
@@ -53,9 +52,7 @@ class E2BBgJob:
     def wait(self, timeout: float | None = None) -> int:
         self._thread.join(timeout)
         if self._thread.is_alive():
-            raise TimeoutError(
-                f"Background command did not exit within {timeout}s"
-            )
+            raise TimeoutError(f"Background command did not exit within {timeout}s")
         if self._error is not None:
             # E2B raises CommandExitException on non-zero; treat as exit code.
             code = getattr(self._error, "exit_code", None)

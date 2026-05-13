@@ -17,7 +17,7 @@ Modal) as long as they satisfy the Protocols defined here.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 
 @dataclass
