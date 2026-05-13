@@ -41,7 +41,7 @@ class MCPConfigSpec:
     - ``"cli_flags"`` — the driver passes MCP configuration via CLI
       flags built by :attr:`CLIAgentSpec.build_command`.
     - ``"settings_file"`` — write into a global settings file (e.g.
-      Gemini's ``~/.gemini/settings.json``).
+      e.g. ``~/.config/agent/settings.json``).
     """
 
     method: Literal["config_file", "cli_flags", "settings_file"]

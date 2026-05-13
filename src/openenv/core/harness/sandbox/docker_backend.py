@@ -134,7 +134,18 @@ class DockerSandboxHandle:
         result = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=10)
         if result.returncode != 0:
             raise RuntimeError(f"Failed to start background command: {result.stderr}")
-        pid = int(result.stdout.strip().splitlines()[-1])
+        # Extract PID from the last numeric-only line (commands may print
+        # banners like "Database migration complete." before the PID).
+        pid_line = None
+        for line in reversed(result.stdout.strip().splitlines()):
+            if line.strip().isdigit():
+                pid_line = line.strip()
+                break
+        if pid_line is None:
+            raise RuntimeError(
+                f"Could not extract PID from start_bg output: {result.stdout!r}"
+            )
+        pid = int(pid_line)
 
         job = DockerBgJob(self._container_id, pid, poll_thread=None)  # type: ignore[arg-type]
         poll_thread = threading.Thread(

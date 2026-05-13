@@ -166,11 +166,23 @@ class CLIAgentSession(ResourceSession):
                 if artifact_spec.format == "json":
                     result[name] = json.loads(content)
                 elif artifact_spec.format == "jsonl":
-                    result[name] = [
-                        json.loads(line)
-                        for line in content.splitlines()
-                        if line.strip()
-                    ]
+                    # Parse valid JSON lines, skip non-JSON preamble
+                    # (e.g. opencode emits database migration messages
+                    # before the first JSON event).
+                    records = []
+                    for line in content.splitlines():
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            records.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            _log.debug(
+                                "Skipping non-JSON line in %s: %s",
+                                artifact_spec.path,
+                                line[:120],
+                            )
+                    result[name] = records
                 else:
                     result[name] = content
             except Exception:
@@ -468,7 +480,8 @@ class CLIAgentDriver:
                 home=home,
             )
             mcp_content = self.spec.build_mcp_config(self.spec, [], workdir)
-            sandbox.write_text(mcp_path, mcp_content)
+            if mcp_content:
+                sandbox.write_text(mcp_path, mcp_content)
 
     # Agent launch
 

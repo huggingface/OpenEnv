@@ -25,9 +25,6 @@ from . import register_agent
 from .base import AgentEvent, ArtifactSpec, CLIAgentSpec, MCPConfigSpec
 
 
-# Command / config / env builders
-
-
 def _build_opencode_command(
     spec: CLIAgentSpec,
     config: Any,
@@ -44,7 +41,7 @@ def _build_opencode_command(
 
     return (
         f'export PATH="$HOME/.opencode/bin:$PATH" && '
-        f"cd {workdir} && "
+        f"cd {workdir} && git init -q 2>/dev/null; "
         f'opencode run {format_flag} "$(cat {instruction_file})" '
         f"2>&1 | tee {log_file}"
     ).strip()
@@ -55,22 +52,54 @@ def _build_opencode_mcp_config(
     tools: list[Any],
     workdir: str,
 ) -> str:
-    """Build the ``opencode.json`` content for the MCP config file."""
+    """Build ``opencode.json`` content.
+
+    Returns an empty string so the driver skips writing this file.
+    The actual config is written via ``spec.files`` using
+    ``_build_opencode_config_file`` which has access to the rollout
+    config (base_url, api_key, model).
+    """
+    return ""
+
+
+def _build_opencode_config_file(task: Any, config: Any) -> str:
+    """Build the full ``opencode.json`` dynamically from config fields."""
+    base_url = (
+        config.base_url if hasattr(config, "base_url") else "http://127.0.0.1:7000/v1"
+    )
+    api_key = config.api_key if hasattr(config, "api_key") else "intercepted"
+    model = config.model if hasattr(config, "model") else "model"
+    timeout = (
+        int(config.agent_timeout_s * 1000)
+        if hasattr(config, "agent_timeout_s")
+        else 600000
+    )
+
+    # Split model into provider_name/model_id for the opencode config format.
+    # e.g. "zai-org/GLM-5.1:zai-org" becomes provider "hf", model_id as-is.
+    provider_name = "default"
+    model_id = model
+    if hasattr(config, "provider_name") and config.provider_name:
+        provider_name = config.provider_name
+
     return json.dumps(
         {
             "$schema": "https://opencode.ai/config.json",
-            "model": "intercepted/model",
+            "model": f"{provider_name}/{model_id}",
             "provider": {
-                "intercepted": {
+                provider_name: {
                     "npm": "@ai-sdk/openai-compatible",
-                    "name": "Intercepted",
+                    "name": provider_name.title(),
                     "options": {
-                        "baseURL": "http://127.0.0.1:7000/v1",
-                        "apiKey": "intercepted",
-                        "timeout": 600000,
+                        "baseURL": base_url,
+                        "apiKey": api_key,
+                        "timeout": timeout,
                     },
                     "models": {
-                        "model": {"name": "Intercepted Model"},
+                        model_id: {
+                            "name": model_id,
+                            "id": model_id,
+                        },
                     },
                 }
             },
@@ -107,20 +136,21 @@ def _parse_opencode_event(line: str) -> AgentEvent | None:
         return None
 
     event_type = data.get("type", "")
-    if event_type in ("assistant", "message"):
+    if event_type in ("assistant", "message", "text"):
         return AgentEvent(type="assistant", data=data, raw=line)
     elif event_type in ("tool_call", "tool_use"):
         return AgentEvent(type="tool_call", data=data, raw=line)
     elif event_type in ("tool_result", "tool_response"):
         return AgentEvent(type="tool_result", data=data, raw=line)
+    elif event_type in ("step_start",):
+        return AgentEvent(type="assistant", data=data, raw=line)
+    elif event_type in ("step_finish",):
+        return AgentEvent(type="done", data=data, raw=line)
     elif event_type == "error":
         return AgentEvent(type="error", data=data, raw=line)
     elif event_type in ("done", "complete", "end"):
         return AgentEvent(type="done", data=data, raw=line)
     return AgentEvent(type="assistant", data=data, raw=line)
-
-
-# File resolvers
 
 
 def _instruction_file_content(task: Any, config: Any) -> str:
@@ -131,9 +161,6 @@ def _system_prompt_content(task: Any, config: Any) -> str | None:
     if hasattr(config, "system_prompt") and config.system_prompt:
         return config.system_prompt
     return None
-
-
-# Spec definition
 
 
 OPENCODE_SPEC = CLIAgentSpec(
@@ -154,15 +181,16 @@ OPENCODE_SPEC = CLIAgentSpec(
     default_timeout_s=900.0,
     setup=(
         "set -e && "
+        "curl -fsSL https://opencode.ai/install | bash && "
         "mkdir -p /home/user/.config/opencode /home/user/logs/agent "
         "/home/user/logs/verifier /home/user/task /home/user/workdir && "
-        "curl -fsSL https://opencode.ai/install | bash && "
         'export PATH="$HOME/.opencode/bin:$PATH" && '
         "opencode --version"
     ),
     files={
         "/home/user/task/instruction.md": _instruction_file_content,
         "/home/user/task/system.md": _system_prompt_content,
+        "/home/user/.config/opencode/opencode.json": _build_opencode_config_file,
     },
     artifacts={
         "agent_log": ArtifactSpec(
@@ -181,10 +209,7 @@ OPENCODE_SPEC = CLIAgentSpec(
     build_env_vars=_build_opencode_env_vars,
 )
 
-
-# Auto-register on import
 register_agent(OPENCODE_SPEC)
-
 
 __all__ = [
     "OPENCODE_SPEC",
