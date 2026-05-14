@@ -7,7 +7,7 @@
 """Tests for coding_env safety transform false-positive handling."""
 
 from coding_env.models import CodeObservation
-from coding_env.server.transforms import CodeSafetyTransform
+from coding_env.server.transforms import CodeQualityTransform, CodeSafetyTransform
 
 
 def _apply_safety_transform(code: str) -> CodeObservation:
@@ -97,3 +97,23 @@ def test_does_not_flag_attribute_method_named_exec():
     )
     assert observation.reward == 0.0
     assert "safety_violation" not in observation.metadata
+
+
+def test_quality_transform_handles_ast_recursion_error(monkeypatch):
+    def raise_recursion_error(_code: str):
+        raise RecursionError("pathologically nested code")
+
+    monkeypatch.setattr("coding_env.server.transforms.ast.parse", raise_recursion_error)
+
+    transform = CodeQualityTransform(concise_bonus=0.0, syntax_penalty=-0.2)
+    observation = CodeObservation(
+        stdout="",
+        stderr="",
+        exit_code=0,
+        metadata={"last_code": "x = 1"},
+    )
+
+    transformed = transform(observation)
+
+    assert isinstance(transformed, CodeObservation)
+    assert transformed.reward == -0.2

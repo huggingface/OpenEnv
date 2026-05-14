@@ -74,7 +74,7 @@ class PythonCodeActEnv(Environment):
 
         # Initialize fresh state
         self._state = CodeState(
-            episode_id=episode_id or str(uuid.uuid4()),
+            episode_id=episode_id if episode_id is not None else str(uuid.uuid4()),
             step_count=0,
         )
         # Add last_exit_code to state

@@ -176,3 +176,13 @@ def test_reset_accepts_episode_id_override():
 
     assert env.state.episode_id == "episode-123"
     assert env.state.step_count == 0
+
+
+def test_reset_preserves_empty_episode_id_override():
+    """Test that reset() preserves any explicit non-None episode_id."""
+    env = PythonCodeActEnv()
+
+    env.reset(episode_id="")
+
+    assert env.state.episode_id == ""
+    assert env.state.step_count == 0

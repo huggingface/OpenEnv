@@ -108,7 +108,7 @@ class CodeQualityTransform(Transform):
             # Check syntax (redundant but useful for quality assessment)
             try:
                 ast.parse(code)
-            except SyntaxError:
+            except (SyntaxError, RecursionError, ValueError):
                 quality_score += self.syntax_penalty
 
         # Add to existing reward
