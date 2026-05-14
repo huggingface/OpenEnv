@@ -4,11 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Pydantic models for the deployed opencode_env HTTP server.
+"""Pydantic models for the deployed coding_agent_env HTTP server.
 
 The server exposes a single MCP tool ``run_rollout`` that takes a Task
 (instruction + setup commands + verify commands) plus an LLM endpoint
-config, runs one OpenCode rollout end-to-end inside an E2B sandbox, and
+config, runs one coding-agent rollout end-to-end inside an E2B sandbox, and
 returns a :class:`RolloutResult` JSON.
 """
 
@@ -80,8 +80,8 @@ class RolloutResult(BaseModel):
     error: str | None = None
 
 
-class OpenCodeState(State):
-    """Per-session env state across calls to one OpenCodeEnvironment instance.
+class CodingAgentState(State):
+    """Per-session env state across calls to one CodingAgentEnvironment instance.
 
     Each HTTP session gets its own env (``SUPPORTS_CONCURRENT_SESSIONS=True``
     on the server class), so this state is per-session.

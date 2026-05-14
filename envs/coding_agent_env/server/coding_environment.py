@@ -4,11 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""OpenCode MCP environment.
+"""Coding-agent MCP environment.
 
-Single MCP tool ``run_rollout`` that takes a uniform Task shape:
+Single MCP tool ``run_rollout`` with a uniform task shape:
 
-  - ``instruction``  — prompt for the agent
+  - ``instruction``  — prompt for the selected agent
   - ``setup``        — bash commands run BEFORE the agent (in the sandbox)
   - ``verify``       — bash commands run AFTER the agent
 
@@ -28,6 +28,7 @@ from typing import Any, Optional
 from uuid import uuid4
 
 from fastmcp import FastMCP
+from pydantic import BaseModel, Field
 
 try:
     from openenv.core.env_server.mcp_environment import MCPEnvironment
@@ -40,7 +41,7 @@ except ImportError:  # pragma: no cover
     from server.catalog import ENDPOINT_KINDS, resolve_endpoint  # type: ignore
 
 
-# One rollout (sandbox cold start + opencode install + opencode run +
+# One rollout (sandbox cold start + harness install + agent run +
 # verifier) typically takes 30-180s; can spike to ~600s under load. Override
 # OpenEnv's 30s MCP-tool default so the server doesn't cut us off.
 _RUN_ROLLOUT_TIMEOUT_S = 900.0
@@ -53,9 +54,27 @@ REWARD_FILE = f"{HOME}/logs/verifier/reward.txt"
 PROXY_LOG = f"{HOME}/logs/agent/proxy.log"
 AGENT_LOG = f"{HOME}/logs/agent/opencode.jsonl"
 VERIFY_TIMEOUT_S = 120
+_SUPPORTED_AGENTS = ("opencode", "pi")
+_AGENT_LOG_BY_AGENT: dict[str, str] = {
+    "opencode": f"{HOME}/logs/agent/opencode.jsonl",
+    "pi": f"{HOME}/logs/agent/pi.txt",
+}
 
 
-class OpenCodeEnvironment(MCPEnvironment):
+class _GenericAgentConfig(BaseModel):
+    """Minimal config shape for CLIAgentSessionFactory-backed agents."""
+
+    base_url: str
+    api_key: str
+    model: str
+    agent_timeout_s: float = 600.0
+    sandbox_home: str = HOME
+    provider: str | None = None
+    thinking: str | None = "off"
+    extra_env: dict[str, str] = Field(default_factory=dict)
+
+
+class CodingAgentEnvironment(MCPEnvironment):
     """Per-session environment exposing a single ``run_rollout`` MCP tool."""
 
     SUPPORTS_CONCURRENT_SESSIONS = True
@@ -65,33 +84,37 @@ class OpenCodeEnvironment(MCPEnvironment):
         try:
             from ..models import (
                 CommandResult,
-                OpenCodeState,
+                CodingAgentState,
                 RolloutResult,
                 RolloutTurn,
             )
         except ImportError:  # pragma: no cover
             from models import (  # type: ignore
                 CommandResult,
-                OpenCodeState,
+                CodingAgentState,
                 RolloutResult,
                 RolloutTurn,
             )
 
-        from opencode_env import (
+        from openenv.core.harness.agents import get_agent_spec
+        from openenv.core.harness.agents.cli_driver import CLIAgentSessionFactory
+        from coding_agent_env import (
             E2BSandboxBackend,
-            OpenCodeConfig,
-            OpenCodeSessionFactory,
-            OpenCodeTask,
+            CodingAgentConfig,
+            CodingAgentSessionFactory,
+            CodingAgentTask,
         )
 
         self._CommandResult = CommandResult
         self._RolloutResult = RolloutResult
         self._RolloutTurn = RolloutTurn
-        self._OpenCodeState = OpenCodeState
-        self._OpenCodeConfig = OpenCodeConfig
-        self._OpenCodeSessionFactory = OpenCodeSessionFactory
-        self._OpenCodeTask = OpenCodeTask
+        self._CodingAgentState = CodingAgentState
+        self._CodingAgentConfig = CodingAgentConfig
+        self._CodingAgentSessionFactory = CodingAgentSessionFactory
+        self._CodingAgentTask = CodingAgentTask
         self._E2BSandboxBackend = E2BSandboxBackend
+        self._CLIAgentSessionFactory = CLIAgentSessionFactory
+        self._get_agent_spec = get_agent_spec
 
         # Don't raise on missing E2B_API_KEY here — OpenEnv's web-interface
         # layer instantiates the env at import time for schema introspection,
@@ -99,12 +122,14 @@ class OpenCodeEnvironment(MCPEnvironment):
         # just exploring. The real check happens lazily in
         # ``_run_rollout_impl`` (any rollout without creds fails fast there
         # with a clear error in the result payload).
-        self._state = self._OpenCodeState(episode_id=str(uuid4()))
+        self._state = self._CodingAgentState(episode_id=str(uuid4()))
 
-        mcp = FastMCP("opencode_env")
+        mcp = FastMCP("coding_agent_env")
 
         @mcp.tool
         def run_rollout(
+            # Agent + endpoint.
+            agent: str = "opencode",
             # Endpoint — either a shorthand (resolved from env vars + catalog
             # defaults) OR explicit base_url+api_key+model. Explicit fields
             # always win over the catalog.
@@ -125,14 +150,17 @@ class OpenCodeEnvironment(MCPEnvironment):
             agent_timeout_s: float = 600.0,
             template: str = "",
         ) -> str:
-            """Run one OpenCode rollout end-to-end.
+            """Run one coding-agent rollout end-to-end.
+
+            ``agent`` selects the harness CLI to run inside the sandbox.
+            Currently supported: ``"opencode"``, ``"pi"``.
 
             ``endpoint`` is the shorthand selector (one of
             ``"vllm"`` / ``"openai"`` / ``"hf_router"``) — the server
             resolves base_url / api_key / model from env vars + catalog
             defaults. Pass any of those explicitly to override.
 
-            See ``opencode_env.client.OpenCodeEnv.run_rollout`` for full
+            See ``coding_agent_env.client.CodingAgentEnv.run_rollout`` for full
             arg docs. Returns a JSON-serialized ``RolloutResult``.
             """
             # Resolve via catalog when shorthand is provided.
@@ -149,6 +177,11 @@ class OpenCodeEnvironment(MCPEnvironment):
             if disable_thinking_resolved is None:
                 disable_thinking_resolved = False
 
+            agent = (agent or "opencode").strip()
+            if agent not in _SUPPORTED_AGENTS:
+                raise ValueError(
+                    f"unsupported agent {agent!r}; supported agents: {_SUPPORTED_AGENTS}"
+                )
             if not (base_url and api_key and model):
                 raise ValueError(
                     "must provide either ``endpoint`` (one of "
@@ -158,6 +191,7 @@ class OpenCodeEnvironment(MCPEnvironment):
                 raise ValueError("instruction is required")
 
             return self._run_rollout_impl(
+                agent=agent,
                 base_url=base_url,
                 api_key=api_key,
                 model=model,
@@ -183,13 +217,15 @@ class OpenCodeEnvironment(MCPEnvironment):
         episode_id: Optional[str] = None,
         **_: Any,
     ) -> Observation:
-        self._state = self._OpenCodeState(episode_id=episode_id or str(uuid4()))
+        self._state = self._CodingAgentState(episode_id=episode_id or str(uuid4()))
         return Observation(
             done=False,
             reward=None,
             metadata={
                 "status": "ready",
-                "message": ("opencode_env ready. Call run_rollout(...) with a task."),
+                "message": (
+                    "coding_agent_env ready. Call run_rollout(agent=..., ...) with a task."
+                ),
             },
         )
 
@@ -239,6 +275,7 @@ class OpenCodeEnvironment(MCPEnvironment):
     def _run_rollout_impl(
         self,
         *,
+        agent: str,
         base_url: str,
         api_key: str,
         model: str,
@@ -279,19 +316,18 @@ class OpenCodeEnvironment(MCPEnvironment):
             _emit("error: E2B_API_KEY missing on server")
             return result.model_dump_json()
 
-        _emit(f"resolving config (model={model}, mode={mode})")
+        _emit(f"resolving config (agent={agent}, model={model}, mode={mode})")
 
-        # Build OpenCodeConfig + factory. We keep the proxy in charge of
-        # ``model_override`` / ``logprobs`` / ``max_tokens``-cap injection.
-        config = self._OpenCodeConfig(
-            provider="openai_compatible",
-            base_url=base_url.rstrip("/"),
+        config = self._build_agent_config(
+            agent=agent,
+            mode=mode,
+            base_url=base_url,
             api_key=api_key,
             model=model,
             agent_timeout_s=agent_timeout_s,
-            proxy_disable_thinking=disable_thinking,
-            proxy_top_logprobs=top_logprobs,
-            proxy_max_tokens_cap=max_tokens_cap if max_tokens_cap > 0 else None,
+            disable_thinking=disable_thinking,
+            top_logprobs=top_logprobs,
+            max_tokens_cap=max_tokens_cap,
         )
 
         # Concatenate setup commands into a single ``set -e`` script and let
@@ -300,21 +336,19 @@ class OpenCodeEnvironment(MCPEnvironment):
         # each command in a wrapper that captures exit/stdout/stderr.
         # That way the primitive still aborts on setup failure AND we get
         # observability in the response.
-        instruction_payload = instruction
-        opencode_task = self._OpenCodeTask(
-            instruction=instruction_payload,
-            metadata={"task_id": task_id},
+        rollout_task = self._CodingAgentTask(
+            instruction=instruction,
+            metadata={"task_id": task_id, "agent": agent},
         )
 
-        backend_kwargs: dict[str, Any] = {}
-        if template:
-            backend_kwargs["template"] = template
-
-        factory = self._OpenCodeSessionFactory(
+        factory = self._build_session_factory(
+            agent=agent,
             config=config,
-            sandbox_backend=self._E2BSandboxBackend(**backend_kwargs),
             mode=mode,
-            verifier=None,
+            template=template,
+            disable_thinking=disable_thinking,
+            top_logprobs=top_logprobs,
+            max_tokens_cap=max_tokens_cap,
         )
 
         session = None
@@ -323,7 +357,7 @@ class OpenCodeEnvironment(MCPEnvironment):
                 f"creating E2B sandbox (template={template or 'default'}) — "
                 "this is the slow phase (~5–60s cold, ~5s with template)"
             )
-            session = factory.create(task=opencode_task)
+            session = factory.create(task=rollout_task)
             result.sandbox_id = session.sandbox.sandbox_id
             _emit(
                 f"sandbox ready: {result.sandbox_id} — agent started "
@@ -336,7 +370,7 @@ class OpenCodeEnvironment(MCPEnvironment):
             # we'd need to restructure. As a pragmatic compromise we run
             # setup IMMEDIATELY after create(), which races with the agent
             # for ~1-2s but is fine for typical pip/git/download work
-            # because opencode itself takes >=20s to make its first model
+            # because most agent CLIs take a while before their first model
             # call.
             for i, cmd in enumerate(setup, 1):
                 _emit(f"setup [{i}/{len(setup)}]: {cmd[:80]}")
@@ -352,7 +386,7 @@ class OpenCodeEnvironment(MCPEnvironment):
             # Block until the agent is done (or setup already failed).
             if result.error is None:
                 _emit(
-                    f"agent running — opencode CLI in sandbox "
+                    f"agent running — {agent} CLI in sandbox "
                     f"(timeout {int(agent_timeout_s)}s)"
                 )
                 try:
@@ -387,7 +421,7 @@ class OpenCodeEnvironment(MCPEnvironment):
             result.files, result.files_extra = self._collect_files(session.sandbox)
             result.proxy_turns = self._collect_proxy_turns(session)
             result.proxy_log_tail = self._safe_read(session.sandbox, PROXY_LOG)[-2000:]
-            result.agent_log_tail = self._safe_read(session.sandbox, AGENT_LOG)[-2000:]
+            result.agent_log_tail = self._collect_agent_log_tail(session, agent)
             _emit(
                 f"collected: {len(result.files)} file(s), "
                 f"{len(result.proxy_turns)} proxy turn(s), "
@@ -400,9 +434,7 @@ class OpenCodeEnvironment(MCPEnvironment):
                 result.proxy_log_tail = self._safe_read(session.sandbox, PROXY_LOG)[
                     -2000:
                 ]
-                result.agent_log_tail = self._safe_read(session.sandbox, AGENT_LOG)[
-                    -2000:
-                ]
+                result.agent_log_tail = self._collect_agent_log_tail(session, agent)
         finally:
             if session is not None:
                 try:
@@ -421,6 +453,104 @@ class OpenCodeEnvironment(MCPEnvironment):
         self._state.last_sandbox_id = result.sandbox_id or None
 
         return result.model_dump_json()
+
+    def _build_agent_config(
+        self,
+        *,
+        agent: str,
+        mode: str,
+        base_url: str,
+        api_key: str,
+        model: str,
+        agent_timeout_s: float,
+        disable_thinking: bool,
+        top_logprobs: int,
+        max_tokens_cap: int,
+    ) -> Any:
+        if agent == "opencode":
+            return self._CodingAgentConfig(
+                provider="openai_compatible",
+                base_url=base_url.rstrip("/"),
+                api_key=api_key,
+                model=model,
+                agent_timeout_s=agent_timeout_s,
+                proxy_disable_thinking=disable_thinking,
+                proxy_top_logprobs=top_logprobs,
+                proxy_max_tokens_cap=max_tokens_cap if max_tokens_cap > 0 else None,
+            )
+
+        provider = (
+            "openai" if mode == "transparent_proxy" else self._infer_pi_provider(base_url)
+        )
+        return _GenericAgentConfig(
+            base_url=base_url.rstrip("/"),
+            api_key=api_key,
+            model=model,
+            agent_timeout_s=agent_timeout_s,
+            provider=provider,
+            thinking="off" if disable_thinking else None,
+        )
+
+    def _build_session_factory(
+        self,
+        *,
+        agent: str,
+        config: Any,
+        mode: str,
+        template: str,
+        disable_thinking: bool,
+        top_logprobs: int,
+        max_tokens_cap: int,
+    ) -> Any:
+        backend_kwargs: dict[str, Any] = {}
+        if template:
+            backend_kwargs["template"] = template
+        backend = self._E2BSandboxBackend(**backend_kwargs)
+
+        if agent == "opencode":
+            return self._CodingAgentSessionFactory(
+                config=config,
+                sandbox_backend=backend,
+                mode=mode,
+                verifier=None,
+            )
+
+        spec = self._get_agent_spec(agent)
+        return self._CLIAgentSessionFactory(
+            spec=spec,
+            config=config,
+            sandbox_backend=backend,
+            mode=mode,
+            verifier=None,
+            proxy_disable_thinking=disable_thinking,
+            proxy_top_logprobs=top_logprobs,
+            proxy_max_tokens_cap=max_tokens_cap if max_tokens_cap > 0 else None,
+        )
+
+    @staticmethod
+    def _infer_pi_provider(base_url: str) -> str:
+        url = (base_url or "").lower()
+        if "router.huggingface.co" in url:
+            return "huggingface"
+        if "anthropic" in url:
+            return "anthropic"
+        if "googleapis.com" in url or "generativelanguage" in url:
+            return "gemini"
+        return "openai"
+
+    def _collect_agent_log_tail(self, session: Any, agent: str) -> str:
+        if hasattr(session, "collect_artifacts"):
+            try:
+                artifacts = session.collect_artifacts()
+                if isinstance(artifacts, dict) and "agent_log" in artifacts:
+                    val = artifacts["agent_log"]
+                    if isinstance(val, str):
+                        return val[-2000:]
+                    return json.dumps(val, default=str)[-2000:]
+            except Exception:
+                pass
+        path = _AGENT_LOG_BY_AGENT.get(agent, AGENT_LOG)
+        return self._safe_read(session.sandbox, path)[-2000:]
 
     # ── Helpers ────────────────────────────────────────────────────────────
 
@@ -471,18 +601,33 @@ class OpenCodeEnvironment(MCPEnvironment):
 
     def _collect_proxy_turns(self, session: Any) -> list[Any]:
         turns: list[Any] = []
-        proxy_trace_path = getattr(session, "_proxy_trace_path", None)
-        if not proxy_trace_path:
-            return turns
-        raw = self._safe_read(session.sandbox, proxy_trace_path)
-        for line in raw.splitlines():
-            line = line.strip()
-            if not line:
-                continue
+
+        records: list[dict[str, Any]] = []
+        if hasattr(session, "fetch_proxy_trace"):
             try:
-                rec = json.loads(line)
+                fetched = session.fetch_proxy_trace()
+                if isinstance(fetched, list):
+                    records = [r for r in fetched if isinstance(r, dict)]
             except Exception:
-                continue
+                records = []
+
+        if not records:
+            proxy_trace_path = getattr(session, "_proxy_trace_path", None)
+            if not proxy_trace_path:
+                return turns
+            raw = self._safe_read(session.sandbox, proxy_trace_path)
+            for line in raw.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    continue
+                if isinstance(rec, dict):
+                    records.append(rec)
+
+        for rec in records:
             response = rec.get("response") or {}
             turns.append(
                 self._RolloutTurn(
@@ -509,3 +654,4 @@ class OpenCodeEnvironment(MCPEnvironment):
             return sandbox.read_text(path) or ""
         except Exception:
             return ""
+

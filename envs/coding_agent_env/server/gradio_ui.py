@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Minimal Gradio UI for opencode_env.
+"""Minimal Gradio UI for coding_agent_env.
 
 Mounts under the standard OpenEnv ``/web`` path via the
 ``gradio_builder=`` callback documented at
@@ -32,14 +32,14 @@ import gradio as gr
 
 try:
     from .catalog import catalog_summary, ENDPOINT_KINDS, resolve_endpoint
-    from .opencode_environment import OpenCodeEnvironment
+    from .coding_environment import CodingAgentEnvironment
 except ImportError:  # pragma: no cover
     from server.catalog import (  # type: ignore
         catalog_summary,
         ENDPOINT_KINDS,
         resolve_endpoint,
     )
-    from server.opencode_environment import OpenCodeEnvironment  # type: ignore
+    from server.coding_environment import CodingAgentEnvironment  # type: ignore
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -190,8 +190,8 @@ def _logprobs_md(turns: list[dict[str, Any]]) -> str:
         toks = first["completion_tokens"][:10]
         lps = first.get("per_token_logps") or []
         lines.append(
-            f"\n**first productive turn (first 10 tokens)**\n\n"
-            f"```\n"
+            "\n**first productive turn (first 10 tokens)**\n\n"
+            "```\n"
             + "\n".join(
                 f"  {tok!r:<14}  {lp:+.3f}" if i < len(lps) else f"  {tok!r:<14}  -"
                 for i, (tok, lp) in enumerate(zip(toks, lps + [None] * len(toks)))
@@ -202,6 +202,7 @@ def _logprobs_md(turns: list[dict[str, Any]]) -> str:
 
 
 def _live_status_md(
+    agent: str,
     endpoint_kind: str,
     model: str,
     mode: str,
@@ -211,7 +212,7 @@ def _live_status_md(
     """Render a live phase log (latest at the bottom) with elapsed timestamps."""
     head = (
         f"### running…  `elapsed={elapsed_s:.1f}s`\n\n"
-        f"_endpoint=`{endpoint_kind}`  model=`{model}`  mode=`{mode}`_\n\n"
+        f"_agent=`{agent}`  endpoint=`{endpoint_kind}`  model=`{model}`  mode=`{mode}`_\n\n"
     )
     if not lines:
         body = "_(waiting for first phase update…)_"
@@ -255,7 +256,7 @@ def _catalog_banner() -> str:
 # ────────────────────────────────────────────────────────────────────────────
 
 
-def opencode_gradio_builder(
+def coding_agent_gradio_builder(
     web_manager,  # noqa: ARG001 (unused: we instantiate the env directly)
     action_fields,  # noqa: ARG001
     metadata,  # noqa: ARG001
@@ -263,16 +264,17 @@ def opencode_gradio_builder(
     title,
     quick_start_md,  # noqa: ARG001
 ) -> gr.Blocks:
-    """Build the opencode_env console.
+    """Build the coding_agent_env console.
 
     Compatible with ``create_app(..., gradio_builder=...)``. We ignore
-    ``web_manager`` and instantiate :class:`OpenCodeEnvironment` ourselves
-    inside the run handler — opencode_env's run_rollout doesn't need any
+    ``web_manager`` and instantiate :class:`CodingAgentEnvironment` ourselves
+    inside the run handler — coding_agent_env's run_rollout doesn't need any
     per-session state beyond the env's own bookkeeping, and instantiating
     is cheap (no sandbox is created until the tool fires).
     """
 
     def run(
+        agent: str,
         endpoint: str,
         model: str,
         base_url: str,
@@ -317,7 +319,7 @@ def opencode_gradio_builder(
         else:
             dt = None
 
-        env = OpenCodeEnvironment()
+        env = CodingAgentEnvironment()
 
         # The worker fires _run_rollout_impl in a background thread and
         # streams progress messages into a queue; this generator polls the
@@ -331,6 +333,7 @@ def opencode_gradio_builder(
         def _worker():
             try:
                 payload = env._run_rollout_impl(
+                    agent=agent,
                     base_url=resolved.base_url,
                     api_key=resolved.api_key,
                     model=resolved.model,
@@ -361,7 +364,7 @@ def opencode_gradio_builder(
 
         # First yield: announce we've started. Empty result panels.
         yield (
-            f"### running…\n\n_endpoint=`{resolved.kind}`  model=`{resolved.model}`  mode=`{mode}`_",
+            f"### running…\n\n_agent=`{agent}`  endpoint=`{resolved.kind}`  model=`{resolved.model}`  mode=`{mode}`_",
             [],
             [],
             "",
@@ -387,7 +390,12 @@ def opencode_gradio_builder(
             # Render the live status pane.
             elapsed = time.time() - t_start
             md = _live_status_md(
-                resolved.kind, resolved.model, mode, elapsed, status_lines
+                agent,
+                resolved.kind,
+                resolved.model,
+                mode,
+                elapsed,
+                status_lines,
             )
             yield (md, [], [], "", "", "", {})
 
@@ -409,6 +417,7 @@ def opencode_gradio_builder(
                 "",
                 "",
                 _live_status_md(
+                    agent,
                     resolved.kind,
                     resolved.model,
                     mode,
@@ -427,8 +436,9 @@ def opencode_gradio_builder(
             _files_md(result.get("files") or {}),
             _logprobs_md(result.get("proxy_turns") or []),
             (
-                f"### live phase log\n\n"
+                "### live phase log\n\n"
                 + _live_status_md(
+                    agent,
                     resolved.kind,
                     resolved.model,
                     mode,
@@ -445,17 +455,24 @@ def opencode_gradio_builder(
         p = PRESETS.get(name) or {"instruction": "", "setup": "", "verify": ""}
         return p["instruction"], p["setup"], p["verify"]
 
-    with gr.Blocks(title=title or "opencode_env") as app:
-        gr.Markdown(f"# {title or 'opencode_env'}")
+    with gr.Blocks(title=title or "coding_agent_env") as app:
+        gr.Markdown(f"# {title or 'coding_agent_env'}")
         gr.Markdown(
-            "Run one OpenCode rollout in an E2B sandbox against your chosen "
-            "LLM endpoint. Pick an endpoint, write the task as `(instruction, "
-            "setup, verify)`, and inspect the reward + per-token logprobs."
+            "Run one coding-agent rollout in an E2B sandbox against your chosen "
+            "LLM endpoint. Pick an agent + endpoint, write the task as "
+            "`(instruction, setup, verify)`, and inspect reward + per-token "
+            "logprobs."
         )
 
         gr.Markdown(_catalog_banner())
 
         with gr.Row():
+            agent = gr.Dropdown(
+                choices=["opencode", "pi"],
+                value="opencode",
+                label="Agent",
+                scale=1,
+            )
             endpoint = gr.Dropdown(
                 choices=list(ENDPOINT_KINDS),
                 value="openai",
@@ -481,7 +498,7 @@ def opencode_gradio_builder(
             )
 
         instruction = gr.Textbox(
-            label="Instruction (the prompt opencode runs)",
+            label="Instruction (the prompt the selected agent runs)",
             lines=4,
             value=PRESETS["binary_search"]["instruction"],
         )
@@ -567,6 +584,7 @@ def opencode_gradio_builder(
         run_btn.click(
             fn=run,
             inputs=[
+                agent,
                 endpoint,
                 model,
                 base_url,
@@ -593,3 +611,4 @@ def opencode_gradio_builder(
         )
 
     return app
+

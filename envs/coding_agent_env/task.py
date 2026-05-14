@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Task payload accepted by :class:`OpenCodeSessionFactory`."""
+"""Task payload accepted by :class:`CodingAgentSessionFactory`."""
 
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
-class OpenCodeTask(BaseModel):
-    """One task for an OpenCode rollout.
+class CodingAgentTask(BaseModel):
+    """One task for a coding-agent rollout.
 
     The primitive only needs ``instruction`` (the prompt handed to ``opencode
     run``). Callers may attach ``setup_shell`` (run once inside the sandbox
@@ -29,8 +29,8 @@ class OpenCodeTask(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
-    def coerce(cls, value: Any) -> "OpenCodeTask":
-        """Accept a bare string, a dict, or an existing ``OpenCodeTask``."""
+    def coerce(cls, value: Any) -> "CodingAgentTask":
+        """Accept a bare string, a dict, or an existing ``CodingAgentTask``."""
         if isinstance(value, cls):
             return value
         if isinstance(value, str):
@@ -38,6 +38,6 @@ class OpenCodeTask(BaseModel):
         if isinstance(value, dict):
             return cls(**value)
         raise TypeError(
-            f"Cannot coerce {type(value).__name__} to OpenCodeTask; "
-            "pass a str, dict, or OpenCodeTask."
+            f"Cannot coerce {type(value).__name__} to CodingAgentTask; "
+            "pass a str, dict, or CodingAgentTask."
         )

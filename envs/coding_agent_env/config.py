@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Configuration model for the OpenCode harness primitive."""
+"""Configuration model for the coding-agent harness primitive."""
 
 from __future__ import annotations
 
@@ -16,8 +16,8 @@ from pydantic import BaseModel, Field
 Provider = Literal["openai_compatible", "openai", "anthropic"]
 
 
-class OpenCodeConfig(BaseModel):
-    """All configuration required to launch one OpenCode rollout in a sandbox.
+class CodingAgentConfig(BaseModel):
+    """All configuration required to launch one coding-agent rollout in a sandbox.
 
     Field names are provider-agnostic. The primitive maps ``provider`` onto the
     correct ``opencode.json`` provider block (``@ai-sdk/openai-compatible``,

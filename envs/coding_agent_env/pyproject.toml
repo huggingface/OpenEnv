@@ -9,9 +9,9 @@ requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "openenv-opencode-env"
+name = "openenv-coding-agent-env"
 version = "0.1.0"
-description = "OpenCode coding-agent environment for OpenEnv — runs the OpenCode CLI in an E2B sandbox against any OpenAI-compatible LLM, optionally capturing per-token logprobs."
+description = "Coding-agent environment for OpenEnv — runs OpenCode/Pi harnesses in an E2B sandbox against OpenAI-compatible LLM endpoints, optionally capturing per-token logprobs."
 requires-python = ">=3.10"
 dependencies = [
     # Core OpenEnv (server + MCP). 0.3.0 ships the harness runtime.
@@ -40,17 +40,16 @@ dev = [
 
 [project.scripts]
 # Server entrypoint — enables ``uv run --project . server``.
-server = "opencode_env.server.app:main"
+server = "coding_agent_env.server.app:main"
 
 [tool.setuptools]
 include-package-data = true
 packages = [
-    "opencode_env",
-    "opencode_env.sandbox",
-    "opencode_env.server",
-    "opencode_env.tests",
+    "coding_agent_env",
+    "coding_agent_env.sandbox",
+    "coding_agent_env.server",
 ]
-package-dir = { "opencode_env" = ".", "opencode_env.sandbox" = "sandbox", "opencode_env.server" = "server", "opencode_env.tests" = "tests" }
+package-dir = { "coding_agent_env" = ".", "coding_agent_env.sandbox" = "sandbox", "coding_agent_env.server" = "server" }
 
 [tool.setuptools.package-data]
-opencode_env = ["**/*.md"]
+coding_agent_env = ["**/*.md"]

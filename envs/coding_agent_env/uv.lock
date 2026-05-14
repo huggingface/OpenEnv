@@ -1664,38 +1664,7 @@ wheels = [
 ]
 
 [[package]]
-name = "openenv-core"
-version = "0.2.3"
-source = { git = "https://github.com/adithya-s-k/OpenEnv.git?rev=opencode-harness#aabcdbb9d52aa62a842ec69472b2a1106acb831a" }
-dependencies = [
-    { name = "fastapi" },
-    { name = "fastmcp" },
-    { name = "gradio" },
-    { name = "httpx" },
-    { name = "huggingface-hub" },
-    { name = "openai" },
-    { name = "pydantic" },
-    { name = "pyyaml" },
-    { name = "requests" },
-    { name = "rich" },
-    { name = "tomli" },
-    { name = "tomli-w" },
-    { name = "typer" },
-    { name = "uvicorn" },
-    { name = "websockets" },
-]
-
-[package.optional-dependencies]
-core = [
-    { name = "fastapi" },
-    { name = "pydantic" },
-    { name = "requests" },
-    { name = "uvicorn" },
-    { name = "websockets" },
-]
-
-[[package]]
-name = "openenv-opencode-env"
+name = "openenv-coding-agent-env"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
@@ -1724,7 +1693,7 @@ requires-dist = [
     { name = "fastmcp", specifier = ">=2.0.0" },
     { name = "gradio", specifier = ">=6.0.0" },
     { name = "httpx", specifier = ">=0.27.0" },
-    { name = "openenv-core", extras = ["core"], git = "https://github.com/adithya-s-k/OpenEnv.git?rev=opencode-harness" },
+    { name = "openenv-core", extras = ["core"], specifier = ">=0.3.0" },
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.0" },
@@ -1733,6 +1702,41 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.24.0" },
 ]
 provides-extras = ["dev"]
+
+[[package]]
+name = "openenv-core"
+version = "0.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "fastmcp" },
+    { name = "gradio" },
+    { name = "httpx" },
+    { name = "huggingface-hub" },
+    { name = "openai" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "requests" },
+    { name = "rich" },
+    { name = "tomli" },
+    { name = "tomli-w" },
+    { name = "typer" },
+    { name = "uvicorn" },
+    { name = "websockets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ce/d6/3bebe8afb55fcc3ea9251c4c2dfbab2879e31089bc91a8fe9696e5ce019b/openenv_core-0.3.0.tar.gz", hash = "sha256:c7fee2035badab5be497eb6f4afb2cb417de000f82cc19afd72fb5ec332c431d", size = 164720, upload-time = "2026-05-11T11:37:57.274Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f8/f5/aafa43138589bfd5d369a8d02ea365aae9d6fe55ac0b3894368d6d69bd03/openenv_core-0.3.0-py3-none-any.whl", hash = "sha256:859e875c9d5211b157c30fb9abc681606fcf0bf1b6ffcdf404678992823a1df0", size = 194313, upload-time = "2026-05-11T11:37:55.537Z" },
+]
+
+[package.optional-dependencies]
+core = [
+    { name = "fastapi" },
+    { name = "pydantic" },
+    { name = "requests" },
+    { name = "uvicorn" },
+    { name = "websockets" },
+]
 
 [[package]]
 name = "opentelemetry-api"

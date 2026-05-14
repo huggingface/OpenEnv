@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Smoke tests for ``opencode_env``.
+"""Smoke tests for ``coding_agent_env``.
 
 The default suite runs in CI without any external dependencies (no E2B,
 no LLM, no network). It covers:
@@ -13,7 +13,7 @@ no LLM, no network). It covers:
   - The endpoint catalog (`vllm` / `openai` / `hf_router`) resolves
     explicit + env-var + default-value precedence correctly.
   - Pydantic models accept their expected shapes.
-  - The `OpenCodeTask` coercion helper handles str / dict / `OpenCodeTask`.
+  - The `CodingAgentTask` coercion helper handles str / dict / `CodingAgentTask`.
 
 A second class is marked ``@pytest.mark.integration`` and exercises the
 deployed Space end-to-end. It only runs when ``E2B_API_KEY`` and at least
@@ -45,15 +45,15 @@ if _ENVS_DIR not in sys.path:
 
 def test_public_api_imports() -> None:
     """Top-level package re-exports the documented surface."""
-    from opencode_env import (  # noqa: F401
+    from coding_agent_env import (  # noqa: F401
         CommandResult,
         E2BSandboxBackend,
-        OpenCodeConfig,
-        OpenCodeEnv,
-        OpenCodeSession,
-        OpenCodeSessionFactory,
-        OpenCodeState,
-        OpenCodeTask,
+        CodingAgentConfig,
+        CodingAgentEnv,
+        CodingAgentSession,
+        CodingAgentSessionFactory,
+        CodingAgentState,
+        CodingAgentTask,
         Provider,
         RolloutResult,
         RolloutTurn,
@@ -64,14 +64,14 @@ def test_public_api_imports() -> None:
 
 def test_server_modules_import() -> None:
     """Server-side modules (FastAPI app, MCP env, catalog) import cleanly."""
-    from opencode_env.server.app import app  # noqa: F401
-    from opencode_env.server.catalog import (  # noqa: F401
+    from coding_agent_env.server.app import app  # noqa: F401
+    from coding_agent_env.server.catalog import (  # noqa: F401
         catalog_summary,
         ENDPOINT_KINDS,
         resolve_endpoint,
     )
-    from opencode_env.server.opencode_environment import (  # noqa: F401
-        OpenCodeEnvironment,
+    from coding_agent_env.server.coding_environment import (  # noqa: F401
+        CodingAgentEnvironment,
     )
 
 
@@ -81,14 +81,14 @@ def test_server_modules_import() -> None:
 
 
 def test_catalog_kinds() -> None:
-    from opencode_env.server.catalog import ENDPOINT_KINDS
+    from coding_agent_env.server.catalog import ENDPOINT_KINDS
 
     assert ENDPOINT_KINDS == ("vllm", "openai", "hf_router")
 
 
 def test_resolve_endpoint_explicit_args_win(monkeypatch: pytest.MonkeyPatch) -> None:
     """Explicit args beat env vars beat catalog defaults."""
-    from opencode_env.server.catalog import resolve_endpoint
+    from coding_agent_env.server.catalog import resolve_endpoint
 
     monkeypatch.setenv("OPENAI_API_KEY", "from-env")
     r = resolve_endpoint(
@@ -107,7 +107,7 @@ def test_resolve_endpoint_explicit_args_win(monkeypatch: pytest.MonkeyPatch) -> 
 def test_resolve_endpoint_env_var_used_when_arg_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from opencode_env.server.catalog import resolve_endpoint
+    from coding_agent_env.server.catalog import resolve_endpoint
 
     monkeypatch.setenv("OPENAI_API_KEY", "key-from-env")
     monkeypatch.setenv("OPENAI_MODEL", "gpt-4o")
@@ -121,7 +121,7 @@ def test_resolve_endpoint_normalizes_v1_suffix(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Base URL gets ``/v1`` appended if missing, otherwise left alone."""
-    from opencode_env.server.catalog import resolve_endpoint
+    from coding_agent_env.server.catalog import resolve_endpoint
 
     monkeypatch.setenv("VLLM_URL", "https://my-vllm.example/")
     monkeypatch.setenv("VLLM_API_KEY", "x")
@@ -134,7 +134,7 @@ def test_resolve_endpoint_normalizes_v1_suffix(
 
 
 def test_resolve_endpoint_unknown_kind_raises() -> None:
-    from opencode_env.server.catalog import resolve_endpoint
+    from coding_agent_env.server.catalog import resolve_endpoint
 
     with pytest.raises(ValueError, match="unknown endpoint kind"):
         resolve_endpoint("bogus", base_url="x", api_key="y", model="z")
@@ -143,7 +143,7 @@ def test_resolve_endpoint_unknown_kind_raises() -> None:
 def test_resolve_endpoint_missing_creds_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from opencode_env.server.catalog import resolve_endpoint
+    from coding_agent_env.server.catalog import resolve_endpoint
 
     # Strip any inherited env vars.
     for k in ("OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL"):
@@ -153,7 +153,7 @@ def test_resolve_endpoint_missing_creds_raises(
 
 
 def test_catalog_summary_shape() -> None:
-    from opencode_env.server.catalog import catalog_summary
+    from coding_agent_env.server.catalog import catalog_summary
 
     summary = catalog_summary()
     assert {entry["kind"] for entry in summary} == {"vllm", "openai", "hf_router"}
@@ -166,13 +166,67 @@ def test_catalog_summary_shape() -> None:
         } <= entry.keys()
 
 
+def test_build_agent_config_opencode() -> None:
+    from coding_agent_env.server.coding_environment import CodingAgentEnvironment
+
+    env = CodingAgentEnvironment()
+    cfg = env._build_agent_config(
+        agent="opencode",
+        mode="transparent_proxy",
+        base_url="https://api.openai.com/v1",
+        api_key="sk-test",
+        model="gpt-4o-mini",
+        agent_timeout_s=123.0,
+        disable_thinking=True,
+        top_logprobs=7,
+        max_tokens_cap=2048,
+    )
+    assert isinstance(cfg, env._CodingAgentConfig)
+    assert cfg.proxy_disable_thinking is True
+    assert cfg.proxy_top_logprobs == 7
+    assert cfg.proxy_max_tokens_cap == 2048
+
+
+def test_build_agent_config_pi() -> None:
+    from coding_agent_env.server.coding_environment import CodingAgentEnvironment
+
+    env = CodingAgentEnvironment()
+    cfg = env._build_agent_config(
+        agent="pi",
+        mode="black_box",
+        base_url="https://router.huggingface.co/v1",
+        api_key="hf_xxx",
+        model="zai-org/GLM-5.1",
+        agent_timeout_s=180.0,
+        disable_thinking=True,
+        top_logprobs=5,
+        max_tokens_cap=4096,
+    )
+    assert cfg.provider == "huggingface"
+    assert cfg.thinking == "off"
+    assert cfg.model == "zai-org/GLM-5.1"
+
+    cfg_proxy = env._build_agent_config(
+        agent="pi",
+        mode="transparent_proxy",
+        base_url="https://router.huggingface.co/v1",
+        api_key="hf_xxx",
+        model="zai-org/GLM-5.1",
+        agent_timeout_s=180.0,
+        disable_thinking=False,
+        top_logprobs=5,
+        max_tokens_cap=4096,
+    )
+    assert cfg_proxy.provider == "openai"
+
+
 # ---------------------------------------------------------------------------
 # Models + task coercion
 # ---------------------------------------------------------------------------
 
 
 def test_rollout_result_serializes_round_trip() -> None:
-    from opencode_env import CommandResult, RolloutResult, RolloutTurn
+    from coding_agent_env import CommandResult, RolloutResult, RolloutTurn
 
     r = RolloutResult(
         task_id="t1",
@@ -201,40 +255,40 @@ def test_rollout_result_serializes_round_trip() -> None:
     assert rebuilt.proxy_turns[0].completion_tokens == ["hi"]
 
 
-def test_opencode_task_coerce_str() -> None:
-    from opencode_env import OpenCodeTask
+def test_coding_agent_task_coerce_str() -> None:
+    from coding_agent_env import CodingAgentTask
 
-    t = OpenCodeTask.coerce("write fizzbuzz.py")
+    t = CodingAgentTask.coerce("write fizzbuzz.py")
     assert t.instruction == "write fizzbuzz.py"
     assert t.setup_shell is None
     assert t.upload_files == {}
 
 
-def test_opencode_task_coerce_dict() -> None:
-    from opencode_env import OpenCodeTask
+def test_coding_agent_task_coerce_dict() -> None:
+    from coding_agent_env import CodingAgentTask
 
-    t = OpenCodeTask.coerce({"instruction": "x", "setup_shell": "pip install pandas"})
+    t = CodingAgentTask.coerce({"instruction": "x", "setup_shell": "pip install pandas"})
     assert t.instruction == "x"
     assert t.setup_shell == "pip install pandas"
 
 
-def test_opencode_task_coerce_existing_passthrough() -> None:
-    from opencode_env import OpenCodeTask
+def test_coding_agent_task_coerce_existing_passthrough() -> None:
+    from coding_agent_env import CodingAgentTask
 
-    src = OpenCodeTask(instruction="y")
-    assert OpenCodeTask.coerce(src) is src
+    src = CodingAgentTask(instruction="y")
+    assert CodingAgentTask.coerce(src) is src
 
 
-def test_opencode_task_coerce_rejects_unknown_type() -> None:
-    from opencode_env import OpenCodeTask
+def test_coding_agent_task_coerce_rejects_unknown_type() -> None:
+    from coding_agent_env import CodingAgentTask
 
     with pytest.raises(TypeError, match="Cannot coerce"):
-        OpenCodeTask.coerce(42)  # type: ignore[arg-type]
+        CodingAgentTask.coerce(42)  # type: ignore[arg-type]
 
 
 def test_start_proxy_keeps_upstream_key_out_of_command() -> None:
     """The proxy API key must be passed via env, not shell argv."""
-    from opencode_env import OpenCodeConfig, OpenCodeSessionFactory
+    from coding_agent_env import CodingAgentConfig, CodingAgentSessionFactory
 
     class FakeExecResult:
         exit_code = 0
@@ -278,13 +332,13 @@ def test_start_proxy_keeps_upstream_key_out_of_command() -> None:
 
     secret = "sk-test '$(leak)"
     model = "provider/model'; touch /tmp/pwn #"
-    config = OpenCodeConfig(
+    config = CodingAgentConfig(
         base_url="https://example.test/v1?x='y",
         api_key=secret,
         model=model,
     )
     sandbox = FakeSandbox()
-    factory = OpenCodeSessionFactory(
+    factory = CodingAgentSessionFactory(
         config=config,
         sandbox_backend=object(),  # unused by this protected-method test
         mode="transparent_proxy",
@@ -354,16 +408,16 @@ def test_run_rollout_e2e_via_deployed_space() -> None:
 
     import asyncio
 
-    from opencode_env import OpenCodeEnv
-    from opencode_env.client import _extract_text
-    from opencode_env.models import RolloutResult
+    from coding_agent_env import CodingAgentEnv
+    from coding_agent_env.client import _extract_text
+    from coding_agent_env.models import RolloutResult
 
     SPACE = os.environ.get(
-        "OPENCODE_ENV_SPACE", "https://adithyask-opencode-env.hf.space"
+        "CODING_AGENT_ENV_SPACE", "https://adithyask-coding-agent-env.hf.space"
     )
 
     async def _go() -> RolloutResult:
-        async with OpenCodeEnv(base_url=SPACE) as env:
+        async with CodingAgentEnv(base_url=SPACE) as env:
             await env.reset()
             raw = await env.call_tool(
                 "run_rollout",
@@ -382,7 +436,7 @@ def test_run_rollout_e2e_via_deployed_space() -> None:
                     "import binary_search; "
                     "assert binary_search.binary_search([1,2,3,4,5], 3) == 2; print('OK')\"",
                 ],
-                template="opencode-rl",
+                template="coding-agent-rl",
                 agent_timeout_s=600,
             )
             return RolloutResult.model_validate_json(_extract_text(raw))

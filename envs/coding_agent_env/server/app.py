@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""FastAPI app for the opencode_env MCP server.
+"""FastAPI app for the coding_agent_env MCP server.
 
 Mirrors the standard OpenEnv pattern (echo_env / repl_env / jupyter_agent)
 plus the custom Gradio UI mounted at ``/web`` per the
@@ -16,7 +16,7 @@ Usage::
     E2B_API_KEY=... uvicorn server.app:app --host 0.0.0.0 --port 8000
 
     # Docker:
-    docker run -p 8000:8000 -e E2B_API_KEY=... opencode-env
+    docker run -p 8000:8000 -e E2B_API_KEY=... coding-agent-env
 
     # HF Space: deploys via the root ``Dockerfile``.
 
@@ -58,13 +58,13 @@ try:
     from openenv.core.env_server.http_server import create_app
     from openenv.core.env_server.mcp_types import CallToolAction, CallToolObservation
 
-    from .gradio_ui import opencode_gradio_builder
-    from .opencode_environment import OpenCodeEnvironment
+    from .gradio_ui import coding_agent_gradio_builder
+    from .coding_environment import CodingAgentEnvironment
 except ImportError:  # pragma: no cover
     from openenv.core.env_server.http_server import create_app
     from openenv.core.env_server.mcp_types import CallToolAction, CallToolObservation
-    from server.gradio_ui import opencode_gradio_builder  # type: ignore
-    from server.opencode_environment import OpenCodeEnvironment  # type: ignore
+    from server.gradio_ui import coding_agent_gradio_builder  # type: ignore
+    from server.coding_environment import CodingAgentEnvironment  # type: ignore
 
 
 # Always expose the Gradio UI at /web. Set ENABLE_WEB_INTERFACE=false to
@@ -80,22 +80,22 @@ def _custom_gradio_builder(
     title,
     quick_start_md,
 ):
-    """Hand off to ``server.gradio_ui.opencode_gradio_builder``."""
-    return opencode_gradio_builder(
+    """Hand off to ``server.gradio_ui.coding_agent_gradio_builder``."""
+    return coding_agent_gradio_builder(
         web_manager,
         action_fields,
         metadata,
         is_chat_env,
-        title or "opencode_env",
+        title or "coding_agent_env",
         quick_start_md,
     )
 
 
 app = create_app(
-    OpenCodeEnvironment,
+    CodingAgentEnvironment,
     CallToolAction,
     CallToolObservation,
-    env_name="opencode_env",
+    env_name="coding_agent_env",
     max_concurrent_envs=int(os.getenv("MAX_CONCURRENT_ENVS", "4")),
     gradio_builder=_custom_gradio_builder,
 )

@@ -4,16 +4,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""OpenCode session factory + session — backed by CLIAgentDriver.
+"""Coding-agent session factory + session — backed by CLIAgentDriver.
 
-This module exposes :class:`OpenCodeSession` and
-:class:`OpenCodeSessionFactory` built on top of the generic
+This module exposes :class:`CodingAgentSession` and
+:class:`CodingAgentSessionFactory` built on top of the generic
 :class:`CLIAgentDriver` / :class:`CLIAgentSession` /
 :class:`CLIAgentSessionFactory` from ``openenv.core.harness.agents``.
 
-OpenCode-specific configuration (``opencode.json`` generation, provider
+Agent-specific (OpenCode spec) configuration (``opencode.json`` generation, provider
 mapping, tool enable/disable) is handled by
-:mod:`opencode_env.opencode_runtime` builders wired into the
+:mod:`coding_agent_env.opencode_runtime` builders wired into the
 :data:`OPENCODE_SPEC` via callable hooks.
 """
 
@@ -31,7 +31,7 @@ from openenv.core.harness.agents.cli_driver import (
 from openenv.core.harness.agents.opencode import OPENCODE_SPEC
 from openenv.core.harness.sandbox import BgJob, SandboxBackend, SandboxHandle
 
-from .config import OpenCodeConfig
+from .config import CodingAgentConfig
 from .opencode_runtime import (
     agent_log_path,
     build_env_vars,
@@ -42,7 +42,7 @@ from .opencode_runtime import (
     opencode_config_path,
     system_prompt_path,
 )
-from .task import OpenCodeTask
+from .task import CodingAgentTask
 
 
 # Inside-sandbox proxy paths (Mode B).
@@ -61,21 +61,19 @@ _PROXY_SOURCE_PATH = (
 )
 
 
-class OpenCodeSession(CLIAgentSession):
-    """One live OpenCode rollout inside a sandbox.
+class CodingAgentSession(CLIAgentSession):
+    """One live coding-agent rollout inside a sandbox.
 
-    Extends :class:`CLIAgentSession` with OpenCode-specific convenience
-    methods (``fetch_trace``, ``wait_for_completion`` with config-aware
-    timeout). Fully backward-compatible with code that used the old
-    ``OpenCodeSession`` API.
+    Extends :class:`CLIAgentSession` with Agent-specific (OpenCode spec) convenience
+    methods (``fetch_trace``, ``wait_for_completion`` with config-aware timeout).
     """
 
     def __init__(
         self,
         *,
         sandbox: SandboxHandle,
-        config: OpenCodeConfig,
-        task: OpenCodeTask,
+        config: CodingAgentConfig,
+        task: CodingAgentTask,
         verifier: Verifier | None = None,
         base_url_override: str | None = None,
         proxy_trace_path: str | None = None,
@@ -108,8 +106,7 @@ class OpenCodeSession(CLIAgentSession):
     def start_agent(self) -> None:
         """Launch ``opencode run`` as a background subprocess in the sandbox.
 
-        Provided for backward compatibility — the factory now starts the
-        agent during ``create()``, so calling this manually is a no-op
+        The factory starts the agent during ``create()``; this method is a no-op
         if the agent is already running.
         """
         if self._agent_bg_job is not None:
@@ -119,8 +116,8 @@ class OpenCodeSession(CLIAgentSession):
         self._agent_bg_job = self.sandbox.start_bg(cmd, envs=envs)
 
 
-class OpenCodeSessionFactory(ResourceSessionFactory):
-    """Produce isolated per-rollout :class:`OpenCodeSession` instances.
+class CodingAgentSessionFactory(ResourceSessionFactory):
+    """Produce isolated per-rollout :class:`CodingAgentSession` instances.
 
     The factory owns sandbox provisioning, opencode install, config injection,
     and (Mode B) proxy startup. Each :meth:`create` call returns a fresh
@@ -128,13 +125,13 @@ class OpenCodeSessionFactory(ResourceSessionFactory):
 
     Internally delegates to :class:`CLIAgentDriver` for the generic
     sandbox lifecycle (readiness probing, install retry, proxy startup).
-    OpenCode-specific config generation uses ``opencode_runtime`` builders.
+    Agent-specific (OpenCode spec) config generation uses ``opencode_runtime`` builders.
     """
 
     def __init__(
         self,
         *,
-        config: OpenCodeConfig,
+        config: CodingAgentConfig,
         sandbox_backend: SandboxBackend,
         mode: Literal["black_box", "transparent_proxy"] = "black_box",
         verifier: Verifier | None = None,
@@ -167,12 +164,12 @@ class OpenCodeSessionFactory(ResourceSessionFactory):
         task: Any,
         seed: int | None = None,
         episode_id: str | None = None,
-    ) -> OpenCodeSession:
+    ) -> CodingAgentSession:
         import logging
 
         _log = logging.getLogger(__name__)
 
-        oc_task = OpenCodeTask.coerce(task)
+        oc_task = CodingAgentTask.coerce(task)
         sandbox_timeout = int(self._config.agent_timeout_s) + 300
 
         _log.info(
@@ -213,7 +210,7 @@ class OpenCodeSessionFactory(ResourceSessionFactory):
             )
             _log.info("factory.create: proxy up at %s", base_url_override)
             # Rewrite opencode.json so opencode points at the proxy.
-            proxy_cfg = OpenCodeConfig(
+            proxy_cfg = CodingAgentConfig(
                 **{
                     **self._config.model_dump(),
                     "provider": "openai_compatible",
@@ -225,7 +222,7 @@ class OpenCodeSessionFactory(ResourceSessionFactory):
                 build_opencode_json(proxy_cfg),
             )
 
-        session = OpenCodeSession(
+        session = CodingAgentSession(
             sandbox=sandbox,
             config=self._config,
             task=oc_task,
@@ -244,7 +241,7 @@ class OpenCodeSessionFactory(ResourceSessionFactory):
     def _bootstrap_sandbox(
         self,
         sandbox: SandboxHandle,
-        task: OpenCodeTask,
+        task: CodingAgentTask,
     ) -> None:
         """Install opencode, write config + task files, run optional setup."""
 
@@ -310,8 +307,8 @@ class OpenCodeSessionFactory(ResourceSessionFactory):
 
 
 __all__ = [
-    "OpenCodeSession",
-    "OpenCodeSessionFactory",
-    "OpenCodeTask",
+    "CodingAgentSession",
+    "CodingAgentSessionFactory",
+    "CodingAgentTask",
     "Verifier",
 ]

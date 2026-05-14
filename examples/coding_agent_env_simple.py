@@ -5,18 +5,18 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""End-to-end opencode_env example: write binary_search.py and verify it.
+"""End-to-end coding_agent_env example: write binary_search.py and verify it.
 
-Hits the deployed HF Space ``AdithyaSK/opencode-env`` (override via
-``OPENCODE_ENV_SPACE`` env var to point at your own Space or a local
+Hits the deployed HF Space ``AdithyaSK/coding-agent-env`` (override via
+``CODING_AGENT_ENV_SPACE`` env var to point at your own Space or a local
 container). The single MCP tool ``run_rollout`` does:
 
-  1. Spawns a fresh E2B sandbox (using the prebaked ``opencode-rl``
+  1. Spawns a fresh E2B sandbox (using the prebaked ``coding-agent-rl``
      template — falls back to a cold install if the template isn't
      present in your E2B account).
   2. Bootstraps an in-sandbox FastAPI proxy that captures per-token
      logprobs (``mode="transparent_proxy"``).
-  3. Runs ``opencode run`` with the instruction.
+  3. Runs the selected harness CLI with the instruction.
   4. Executes the verify bash commands; reward = passed / total.
   5. Returns a ``RolloutResult`` with reward + per-turn logprobs +
      the file contents the agent produced.
@@ -29,7 +29,7 @@ Prerequisites
 
 Usage::
 
-    PYTHONPATH=src:envs uv run python examples/opencode_env_simple.py
+    PYTHONPATH=src:envs uv run python examples/coding_agent_env_simple.py
 
 Expected output (~20s with the prebaked template)::
 
@@ -49,12 +49,12 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "envs"))
 
-from opencode_env import OpenCodeEnv  # noqa: E402
-from opencode_env.client import _extract_text  # noqa: E402
-from opencode_env.models import RolloutResult  # noqa: E402
+from coding_agent_env import CodingAgentEnv  # noqa: E402
+from coding_agent_env.client import _extract_text  # noqa: E402
+from coding_agent_env.models import RolloutResult  # noqa: E402
 
 
-SPACE = os.environ.get("OPENCODE_ENV_SPACE", "https://adithyask-opencode-env.hf.space")
+SPACE = os.environ.get("CODING_AGENT_ENV_SPACE", "https://adithyask-coding-agent-env.hf.space")
 
 INSTRUCTION = (
     "Create a single Python file named `binary_search.py` in the current "
@@ -91,7 +91,7 @@ async def main() -> int:
     print(f"Instruction:     {INSTRUCTION.splitlines()[0]} ...")
     print()
 
-    async with OpenCodeEnv(base_url=SPACE) as env:
+    async with CodingAgentEnv(base_url=SPACE) as env:
         await env.reset()
         raw = await env.call_tool(
             "run_rollout",
@@ -101,7 +101,7 @@ async def main() -> int:
             instruction=INSTRUCTION,
             setup=[],  # no setup commands
             verify=VERIFY,
-            template="opencode-rl",  # prebaked E2B template
+            template="coding-agent-rl",  # prebaked E2B template
             task_id="binary_search_simple",
             agent_timeout_s=600,
         )

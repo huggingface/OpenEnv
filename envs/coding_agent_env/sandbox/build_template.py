@@ -25,10 +25,10 @@ The template ships:
 
 Usage::
 
-    .venv/bin/python envs/opencode_env/tests/build_e2b_template.py
-    # → builds (or rebuilds) ``opencode-rl`` template, prints template id
+    .venv/bin/python envs/coding_agent_env/sandbox/build_template.py
+    # → builds (or rebuilds) ``coding-agent-rl`` template, prints template id
 
-Then ``test_five_sorts_e2e.py`` will use it via ``--template opencode-rl``.
+Then rollout tests can use it via ``--template coding-agent-rl``.
 
 Requires ``E2B_API_KEY`` in the environment. First build is ~3-8 min;
 subsequent builds reuse the cache and can finish in <60s.
@@ -113,8 +113,8 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="build_e2b_template")
     p.add_argument(
         "--name",
-        default="opencode-rl",
-        help="Template name (default: opencode-rl).",
+        default="coding-agent-rl",
+        help="Template name (default: coding-agent-rl)."
     )
     p.add_argument(
         "--skip-cache",
@@ -123,7 +123,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = p.parse_args(argv)
 
-    _load_env(_REPO_ROOT / "envs" / "opencode_env" / "sandbox" / ".env")
+    _load_env(_REPO_ROOT / "envs" / "coding_agent_env" / "sandbox" / ".env")
     if not os.environ.get("E2B_API_KEY"):
         print("ERROR: E2B_API_KEY required.", file=sys.stderr)
         return 2
