@@ -16,7 +16,12 @@ from ..models import CodeObservation
 
 
 class CodeSafetyTransform(Transform):
-    """Evaluates code safety and assigns penalties for dangerous patterns."""
+    """
+    Assign penalties for obviously unsafe coding patterns.
+
+    This is a reward heuristic, not a security sandbox. Container isolation is
+    the security boundary; this transform only shapes rewards for common cases.
+    """
 
     def __init__(self, penalty: float = -1.0):
         self.penalty = penalty

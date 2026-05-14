@@ -12,7 +12,7 @@ Python code actions using PyExecutor.
 """
 
 import uuid
-from typing import Optional
+from typing import Any, Optional
 
 from openenv.core.env_server.interfaces import Action, Environment, Observation
 
@@ -55,13 +55,23 @@ class PythonCodeActEnv(Environment):
         self,
         seed: Optional[int] = None,
         episode_id: Optional[str] = None,
+        **kwargs: Any,
     ) -> Observation:
         """
         Reset environment and start fresh execution session.
 
+        Args:
+            seed: Accepted for API compatibility. This deterministic executor
+                has no random state to seed.
+            episode_id: Optional episode identifier override.
+            **kwargs: Forward-compatible reset parameters accepted by the base
+                Environment API but unused by this environment.
+
         Returns:
             Initial observation with empty stdout/stderr and exit_code=0
         """
+        del seed, kwargs
+
         # Initialize fresh state
         self._state = CodeState(
             episode_id=episode_id or str(uuid.uuid4()),
