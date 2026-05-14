@@ -29,6 +29,24 @@ def test_blocks_real_dangerous_import():
     assert "safety_violation" in observation.metadata
 
 
+def test_blocks_subprocess_import():
+    observation = _apply_safety_transform("import subprocess")
+    assert observation.reward == -1.0
+    assert observation.metadata["safety_violation"] == "import subprocess"
+
+
+def test_blocks_from_subprocess_import():
+    observation = _apply_safety_transform("from subprocess import run")
+    assert observation.reward == -1.0
+    assert observation.metadata["safety_violation"] == "import subprocess"
+
+
+def test_blocks_from_os_path_import():
+    observation = _apply_safety_transform("from os.path import join")
+    assert observation.reward == -1.0
+    assert observation.metadata["safety_violation"] == "import os"
+
+
 def test_blocks_builtin_open_call():
     observation = _apply_safety_transform(
         "with open('f.txt') as f:\n    data = f.read()"
