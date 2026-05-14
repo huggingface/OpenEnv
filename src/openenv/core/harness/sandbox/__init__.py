@@ -37,9 +37,16 @@ try:
 except ImportError:
     pass  # e2b not installed
 
+try:
+    from .hf_backend import HFBgJob, HFSandboxBackend, HFSandboxHandle  # noqa: F401
+
+    __all__.extend(["HFBgJob", "HFSandboxBackend", "HFSandboxHandle"])
+except ImportError:
+    pass  # hf-sandbox not installed
+
 
 def create_sandbox_backend(
-    backend: Literal["e2b", "docker"] = "e2b",
+    backend: Literal["e2b", "docker", "hf"] = "e2b",
     **kwargs: Any,
 ) -> SandboxBackend:
     """Create a sandbox backend by name.
@@ -48,6 +55,8 @@ def create_sandbox_backend(
     (set ``E2B_API_URL``).
 
     For ``"docker"``: local Docker, no external dependencies.
+
+    For ``"hf"``: Hugging Face Jobs via ``hf-sandbox``.
     """
     if backend == "e2b":
         from .e2b_backend import E2BSandboxBackend
@@ -55,4 +64,10 @@ def create_sandbox_backend(
         return E2BSandboxBackend(**kwargs)
     elif backend == "docker":
         return DockerSandboxBackend(**kwargs)
-    raise ValueError(f"Unknown sandbox backend: {backend!r}. Use 'e2b' or 'docker'.")
+    elif backend == "hf":
+        from .hf_backend import HFSandboxBackend
+
+        return HFSandboxBackend(**kwargs)
+    raise ValueError(
+        f"Unknown sandbox backend: {backend!r}. Use 'e2b', 'docker', or 'hf'."
+    )
