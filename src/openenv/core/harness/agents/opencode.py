@@ -8,7 +8,7 @@
 
 Expresses the OpenCode harness as a purely declarative :class:`CLIAgentSpec`.
 All builders (command construction, config generation, env var resolution)
-are self-contained with no imports from ``envs/opencode_env/``.
+are self-contained with no imports from any environment package.
 
 Registered on import::
 

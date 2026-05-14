@@ -52,7 +52,7 @@ _PROXY_LOG_PATH = "/home/user/logs/agent/proxy.log"
 # already have it baked in.
 _PROXY_SOURCE_PATH = Path(__file__).resolve().parents[1] / "sandbox" / "interception.py"
 
-# Verifier type — same as opencode_env's Verifier alias
+# Verifier type — callable that checks the agent's work and returns a result
 Verifier = Callable[..., VerifyResult]
 
 

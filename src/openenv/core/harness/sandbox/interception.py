@@ -511,7 +511,7 @@ class InterceptionProxy:
 
     Used by unit tests and by any in-process driver that wants a short-lived
     proxy on the local machine. Inside a sandbox we invoke :func:`serve`
-    directly via ``python -m opencode_env.interception``.
+    directly via ``python -m openenv.core.harness.sandbox.interception``.
     """
 
     def __init__(self, cfg: ProxyConfig) -> None:
@@ -602,7 +602,7 @@ def read_trace(path: str | os.PathLike) -> list[dict[str, Any]]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="opencode_env.interception")
+    parser = argparse.ArgumentParser(prog="openenv.core.harness.sandbox.interception")
     parser.add_argument("--upstream-url", required=True)
     parser.add_argument(
         "--upstream-api-key",

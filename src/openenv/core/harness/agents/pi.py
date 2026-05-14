@@ -132,6 +132,8 @@ PI_SPEC = CLIAgentSpec(
     },
     env={
         "HF_TOKEN": "{api_key}",
+        "OPENAI_API_KEY": "{api_key}",
+        "OPENAI_BASE_URL": "{base_url}",
         "PI_SKIP_VERSION_CHECK": "1",
         "PI_TELEMETRY": "0",
     },
