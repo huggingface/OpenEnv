@@ -22,16 +22,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
+from openenv.core.harness.sandbox.base import ExecResult, SandboxHandle
 
 
-# Fake sandbox infrastructure (mirrors test_opencode_env.py pattern)
-
-
-@dataclass
-class FakeExecResult:
-    exit_code: int = 0
-    stdout: str = "ok"
-    stderr: str = ""
+# Fake sandbox infrastructure (mirrors test_coding_agent_env.py pattern)
 
 
 @dataclass
@@ -75,24 +69,24 @@ class FakeSandbox:
         envs: dict[str, str] | None = None,
         cwd: str | None = None,
         timeout: float | None = 60,
-    ) -> FakeExecResult:
+    ) -> ExecResult:
         self.executed.append(cmd)
         if cmd == "echo ok":
-            return FakeExecResult(exit_code=0, stdout="ok")
+            return ExecResult(exit_code=0, stdout="ok", stderr="")
         # install check — only standalone version-check commands (short, just
         # binary + --version) should be treated as install probes. Multi-part
         # setup scripts that happen to end with --version should succeed.
         if "--version" in cmd and len(cmd) < 80 and "&&" not in cmd:
             if self._install_check_succeeds:
-                return FakeExecResult(exit_code=0, stdout="1.0.0")
-            return FakeExecResult(exit_code=127, stderr="not found")
+                return ExecResult(exit_code=0, stdout="1.0.0", stderr="")
+            return ExecResult(exit_code=127, stdout="", stderr="not found")
         # healthz check
         if "healthz" in cmd:
             if self._healthz_succeeds:
-                return FakeExecResult(exit_code=0, stdout='{"status":"ok"}')
-            return FakeExecResult(exit_code=7, stderr="connection refused")
+                return ExecResult(exit_code=0, stdout='{"status":"ok"}', stderr="")
+            return ExecResult(exit_code=7, stdout="", stderr="connection refused")
         # All other commands succeed
-        return FakeExecResult(exit_code=0, stdout="")
+        return ExecResult(exit_code=0, stdout="", stderr="")
 
     def start_bg(
         self,
@@ -138,7 +132,7 @@ class FakeSandboxBackend:
         timeout_s: int = 900,
         envs: dict[str, str] | None = None,
         metadata: dict[str, str] | None = None,
-    ) -> FakeSandbox:
+    ) -> SandboxHandle:
         sbx = FakeSandbox(
             install_check_succeeds=self._install_check_succeeds,
             healthz_succeeds=self._healthz_succeeds,
@@ -252,7 +246,9 @@ class TestAgentSpecProtocols:
             parse_events=lambda line: None,
         )
         assert spec.name == "full-agent"
+        assert spec.artifacts is not None
         assert len(spec.artifacts) == 2
+        assert spec.files is not None
         assert callable(spec.files["/dynamic.txt"])
 
 
@@ -355,14 +351,14 @@ class TestAgentRegistry:
 # PR 2.3: CLIAgentDriver / CLIAgentSession / CLIAgentSessionFactory
 
 
-def _make_test_spec(**overrides: Any) -> Any:
+def _make_test_spec(**overrides: Any):
     from openenv.core.harness.agents.base import (
         ArtifactSpec,
         CLIAgentSpec,
         MCPConfigSpec,
     )
 
-    defaults = dict(
+    defaults: dict[str, Any] = dict(
         name="test-agent",
         install_check_cmd=["test-agent", "--version"],
         base_command=["test-agent", "run", "--json"],
@@ -428,6 +424,7 @@ class TestCLIAgentDriver:
         assert "test-agent run" in bg_cmd
 
         # Verify env vars were resolved
+        assert bg_envs is not None
         assert bg_envs["API_KEY"] == "sk-test-key"
         assert bg_envs["BASE_URL"] == "https://api.example.com/v1"
         assert bg_envs["MODEL"] == "test-model"
@@ -491,6 +488,7 @@ class TestCLIAgentDriver:
 
         # Agent env should point at proxy
         agent_cmd, agent_envs = sbx.bg_commands[1]
+        assert agent_envs is not None
         assert agent_envs["BASE_URL"] == "http://127.0.0.1:7000/v1"
 
         session.close()
@@ -819,6 +817,7 @@ class TestOpenCodeSpec:
         assert OPENCODE_SPEC.supports_logprob_proxy is True
         assert OPENCODE_SPEC.default_timeout_s == 900.0
         assert OPENCODE_SPEC.mcp_config.method == "config_file"
+        assert OPENCODE_SPEC.mcp_config.path_template is not None
         assert "{home}" in OPENCODE_SPEC.mcp_config.path_template
         assert OPENCODE_SPEC.artifacts is not None
         assert "agent_log" in OPENCODE_SPEC.artifacts
@@ -832,6 +831,7 @@ class TestOpenCodeSpec:
             sandbox_home: str = "/home/user"
             run_format: str = "json"
 
+        assert OPENCODE_SPEC.build_command is not None
         cmd = OPENCODE_SPEC.build_command(
             OPENCODE_SPEC,
             OcConfig(),
@@ -845,18 +845,20 @@ class TestOpenCodeSpec:
     def test_build_mcp_config(self):
         from openenv.core.harness.agents.opencode import OPENCODE_SPEC
 
+        assert OPENCODE_SPEC.build_mcp_config is not None
         config_str = OPENCODE_SPEC.build_mcp_config(
             OPENCODE_SPEC,
             [],
             "/home/user/workdir",
         )
-        config = json.loads(config_str)
-        assert "$schema" in config
-        assert "provider" in config
+        # OpenCode returns empty string because the config is written
+        # via spec.files using _build_opencode_config_file instead.
+        assert config_str == ""
 
     def test_parse_events_assistant(self):
         from openenv.core.harness.agents.opencode import OPENCODE_SPEC
 
+        assert OPENCODE_SPEC.parse_events is not None
         line = json.dumps({"type": "assistant", "content": "hello"})
         event = OPENCODE_SPEC.parse_events(line)
         assert event is not None
@@ -865,6 +867,7 @@ class TestOpenCodeSpec:
     def test_parse_events_tool_call(self):
         from openenv.core.harness.agents.opencode import OPENCODE_SPEC
 
+        assert OPENCODE_SPEC.parse_events is not None
         line = json.dumps({"type": "tool_call", "name": "bash", "args": {}})
         event = OPENCODE_SPEC.parse_events(line)
         assert event is not None
@@ -873,6 +876,7 @@ class TestOpenCodeSpec:
     def test_parse_events_error(self):
         from openenv.core.harness.agents.opencode import OPENCODE_SPEC
 
+        assert OPENCODE_SPEC.parse_events is not None
         line = json.dumps({"type": "error", "message": "boom"})
         event = OPENCODE_SPEC.parse_events(line)
         assert event is not None
@@ -881,6 +885,7 @@ class TestOpenCodeSpec:
     def test_parse_events_done(self):
         from openenv.core.harness.agents.opencode import OPENCODE_SPEC
 
+        assert OPENCODE_SPEC.parse_events is not None
         line = json.dumps({"type": "done"})
         event = OPENCODE_SPEC.parse_events(line)
         assert event is not None
@@ -889,6 +894,7 @@ class TestOpenCodeSpec:
     def test_parse_events_invalid_json(self):
         from openenv.core.harness.agents.opencode import OPENCODE_SPEC
 
+        assert OPENCODE_SPEC.parse_events is not None
         assert OPENCODE_SPEC.parse_events("not json") is None
         assert OPENCODE_SPEC.parse_events("") is None
 
@@ -897,6 +903,7 @@ class TestOpenCodeSpec:
 
         config = FakeConfig()
         config.extra_env = {"EXTRA": "val"}
+        assert OPENCODE_SPEC.build_env_vars is not None
         envs = OPENCODE_SPEC.build_env_vars(OPENCODE_SPEC, config)
         assert envs["OPENAI_BASE_URL"] == "https://api.example.com/v1"
         assert envs["OPENAI_API_KEY"] == "sk-test-key"
@@ -908,6 +915,7 @@ class TestOpenCodeSpec:
 
         task = FakeTask(instruction="Build a REST API")
         config = FakeConfig()
+        assert OPENCODE_SPEC.files is not None
         instruction_fn = OPENCODE_SPEC.files["/home/user/task/instruction.md"]
         assert callable(instruction_fn)
         assert instruction_fn(task, config) == "Build a REST API"
@@ -917,6 +925,7 @@ class TestOpenCodeSpec:
 
         task = FakeTask()
         config = FakeConfig()
+        assert OPENCODE_SPEC.files is not None
         system_fn = OPENCODE_SPEC.files["/home/user/task/system.md"]
         assert callable(system_fn)
         # No system prompt on FakeConfig → returns None
