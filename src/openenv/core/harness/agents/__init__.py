@@ -28,6 +28,7 @@ from .base import (
     CLIAgentSpec,
     MCPConfigSpec,
 )
+from .interception_server import deliver_response, InterceptionServer
 
 # Registry
 
@@ -104,4 +105,7 @@ __all__ = [
     "ArtifactSpec",
     "CLIAgentSpec",
     "MCPConfigSpec",
+    # Interception gate
+    "InterceptionServer",
+    "deliver_response",
 ]
