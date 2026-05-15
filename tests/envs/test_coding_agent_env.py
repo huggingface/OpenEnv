@@ -24,7 +24,6 @@ one endpoint credential are present and pytest is invoked with
 from __future__ import annotations
 
 import os
-import shlex
 import sys
 
 import pytest
@@ -172,7 +171,7 @@ def test_build_agent_config_opencode() -> None:
     env = CodingAgentEnvironment()
     cfg = env._build_agent_config(
         agent="opencode",
-        mode="transparent_proxy",
+        mode="black_box",
         base_url="https://api.openai.com/v1",
         api_key="sk-test",
         model="gpt-4o-mini",
@@ -182,9 +181,8 @@ def test_build_agent_config_opencode() -> None:
         max_tokens_cap=2048,
     )
     assert isinstance(cfg, env._CodingAgentConfig)
-    assert cfg.proxy_disable_thinking is True
-    assert cfg.proxy_top_logprobs == 7
-    assert cfg.proxy_max_tokens_cap == 2048
+    assert cfg.model == "gpt-4o-mini"
+    assert cfg.agent_timeout_s == 123.0
 
 
 def test_build_agent_config_pi() -> None:
@@ -206,9 +204,9 @@ def test_build_agent_config_pi() -> None:
     assert cfg.thinking == "off"
     assert cfg.model == "zai-org/GLM-5.1"
 
-    cfg_proxy = env._build_agent_config(
+    cfg_gate = env._build_agent_config(
         agent="pi",
-        mode="transparent_proxy",
+        mode="interception_gate",
         base_url="https://router.huggingface.co/v1",
         api_key="hf_xxx",
         model="zai-org/GLM-5.1",
@@ -217,7 +215,7 @@ def test_build_agent_config_pi() -> None:
         top_logprobs=5,
         max_tokens_cap=4096,
     )
-    assert cfg_proxy.provider == "openai"
+    assert cfg_gate.provider == "huggingface"
 
 
 # ---------------------------------------------------------------------------
@@ -234,7 +232,7 @@ def test_rollout_result_serializes_round_trip() -> None:
         reward=0.75,
         agent_exit_code=0,
         wall_s=12.5,
-        mode="transparent_proxy",
+        mode="black_box",
         setup_results=[CommandResult(cmd="pip install pandas", exit_code=0)],
         verify_results=[CommandResult(cmd="pytest", exit_code=1, stderr="boom")],
         proxy_turns=[
@@ -286,105 +284,6 @@ def test_coding_agent_task_coerce_rejects_unknown_type() -> None:
 
     with pytest.raises(TypeError, match="Cannot coerce"):
         CodingAgentTask.coerce(42)  # type: ignore[arg-type]
-
-
-def test_start_proxy_keeps_upstream_key_out_of_command() -> None:
-    """The proxy API key must be passed via env, not shell argv."""
-    from coding_agent_env import CodingAgentConfig, CodingAgentSessionFactory
-
-    class FakeExecResult:
-        exit_code = 0
-        stdout = "ok"
-        stderr = ""
-
-    class FakeBgJob:
-        def wait(self, timeout: float | None = None) -> int:
-            return 0
-
-        def kill(self) -> None:
-            pass
-
-    class FakeSandbox:
-        sandbox_id = "fake-sandbox"
-
-        def __init__(self) -> None:
-            self.started_cmd: str | None = None
-            self.started_envs: dict[str, str] | None = None
-            self.written: dict[str, str] = {}
-
-        def exec(self, *args, **kwargs) -> FakeExecResult:
-            return FakeExecResult()
-
-        def start_bg(self, cmd: str, *, envs=None, cwd=None) -> FakeBgJob:
-            self.started_cmd = cmd
-            self.started_envs = envs
-            return FakeBgJob()
-
-        def write_text(self, path: str, content: str) -> None:
-            self.written[path] = content
-
-        def read_text(self, path: str) -> str:
-            return ""
-
-        def exists(self, path: str) -> bool:
-            return path in self.written
-
-        def kill(self) -> None:
-            pass
-
-    secret = "sk-test '$(leak)"
-    model = "provider/model'; touch /tmp/pwn #"
-    config = CodingAgentConfig(
-        base_url="https://example.test/v1?x='y",
-        api_key=secret,
-        model=model,
-    )
-    sandbox = FakeSandbox()
-    factory = CodingAgentSessionFactory(
-        config=config,
-        sandbox_backend=object(),  # unused by this protected-method test
-        mode="transparent_proxy",
-    )
-
-    # _start_proxy delegates to CLIAgentDriver._start_proxy which runs the
-    # proxy inside the sandbox. The driver handles dep install + source upload.
-    factory._start_proxy(sandbox)
-
-    assert sandbox.started_cmd is not None
-    assert sandbox.started_envs == {"OPENCODE_UPSTREAM_API_KEY": secret}
-    assert secret not in sandbox.started_cmd
-    assert "--upstream-api-key" not in sandbox.started_cmd
-
-    argv = shlex.split(sandbox.started_cmd.split("&&", 1)[1].split(">", 1)[0].strip())
-    assert argv[argv.index("--upstream-url") + 1] == config.base_url
-    assert argv[argv.index("--model-override") + 1] == model
-
-
-def test_interception_cli_reads_upstream_key_from_env(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from openenv.core.harness.sandbox import interception
-
-    captured = {}
-
-    def fake_serve(cfg) -> None:
-        captured["cfg"] = cfg
-
-    monkeypatch.setattr(interception, "serve", fake_serve)
-    monkeypatch.setenv("OPENCODE_UPSTREAM_API_KEY", "sk-from-env")
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "interception.py",
-            "--upstream-url",
-            "https://example.test/v1",
-        ],
-    )
-
-    interception.main()
-
-    assert captured["cfg"].upstream_api_key == "sk-from-env"
 
 
 # ---------------------------------------------------------------------------
@@ -447,7 +346,8 @@ def test_run_rollout_e2e_via_deployed_space() -> None:
     assert result.reward == 1.0, (
         f"expected reward=1.0 got {result.reward}: {result.error}"
     )
-    assert result.proxy_turns, "expected at least one captured LLM turn"
+    # proxy_turns is now always empty — logprob capture is trainer-owned
+    # via interception_gate mode, not captured by the environment.
     assert any(f.endswith("/binary_search.py") for f in result.files), (
         f"expected binary_search.py in workdir, got {list(result.files)}"
     )

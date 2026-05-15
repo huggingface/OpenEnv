@@ -207,7 +207,6 @@ class TestAgentSpecProtocols:
             mcp_config=MCPConfigSpec(method="cli_flags"),
         )
         assert spec.name == "test-agent"
-        assert spec.supports_logprob_proxy is True
         assert spec.default_timeout_s == 600.0
         assert spec.setup is None
         assert spec.files is None
@@ -229,7 +228,6 @@ class TestAgentSpecProtocols:
             mcp_config=MCPConfigSpec(
                 method="config_file", path_template="{workdir}/mcp.json"
             ),
-            supports_logprob_proxy=True,
             default_timeout_s=900.0,
             setup="npm install -g full-agent",
             files={
@@ -457,41 +455,16 @@ class TestCLIAgentDriver:
         assert not any("apt-get install" in cmd for cmd in sbx.executed)
         session.close()
 
-    def test_create_session_with_proxy(self):
+    def test_create_session_interception_gate_requires_server(self):
         from openenv.core.harness.agents.cli_driver import CLIAgentDriver
 
         spec = _make_test_spec()
-        backend = FakeSandboxBackend()
-        driver = CLIAgentDriver(
-            spec=spec,
-            sandbox_backend=backend,
-            mode="transparent_proxy",
-        )
-
-        session = driver.create_session(
-            task=FakeTask(),
-            config=FakeConfig(),
-        )
-
-        sbx = backend.created[0]
-
-        # Proxy source should have been uploaded
-        assert "/home/user/proxy/interception.py" in sbx.written
-        assert "/home/user/proxy/__init__.py" in sbx.written
-
-        # Proxy should have been started as bg (before agent)
-        # and agent as second bg
-        assert len(sbx.bg_commands) == 2
-        proxy_cmd, proxy_envs = sbx.bg_commands[0]
-        assert "interception.py" in proxy_cmd
-        assert proxy_envs == {"OPENCODE_UPSTREAM_API_KEY": "sk-test-key"}
-
-        # Agent env should point at proxy
-        agent_cmd, agent_envs = sbx.bg_commands[1]
-        assert agent_envs is not None
-        assert agent_envs["BASE_URL"] == "http://127.0.0.1:7000/v1"
-
-        session.close()
+        with pytest.raises(ValueError, match="InterceptionServer"):
+            CLIAgentDriver(
+                spec=spec,
+                sandbox_backend=FakeSandboxBackend(),
+                mode="interception_gate",
+            )
 
     def test_create_session_uploads_task_files(self):
         from openenv.core.harness.agents.cli_driver import CLIAgentDriver
@@ -679,49 +652,12 @@ class TestCLIAgentSession:
         with pytest.raises(FileNotFoundError):
             session.collect_artifacts()
 
-    def test_fetch_proxy_trace_black_box(self):
-        from openenv.core.harness.agents.cli_driver import CLIAgentSession
-
-        spec = _make_test_spec()
-        session = CLIAgentSession(
-            spec=spec,
-            sandbox=FakeSandbox(),
-            task=FakeTask(),
-            config=FakeConfig(),
-            proxy_trace_path=None,
-        )
-        assert session.fetch_proxy_trace() == []
-
-    def test_fetch_proxy_trace_with_data(self):
-        from openenv.core.harness.agents.cli_driver import CLIAgentSession
-
-        spec = _make_test_spec()
-        sbx = FakeSandbox()
-        trace_path = "/logs/proxy_trace.jsonl"
-        sbx.written[trace_path] = (
-            json.dumps({"turn": 1, "latency_s": 0.5})
-            + "\n"
-            + json.dumps({"turn": 2, "latency_s": 0.3})
-            + "\n"
-        )
-        session = CLIAgentSession(
-            spec=spec,
-            sandbox=sbx,
-            task=FakeTask(),
-            config=FakeConfig(),
-            proxy_trace_path=trace_path,
-        )
-        trace = session.fetch_proxy_trace()
-        assert len(trace) == 2
-        assert trace[0]["turn"] == 1
-
     def test_close_kills_sandbox_and_jobs(self):
         from openenv.core.harness.agents.cli_driver import CLIAgentSession
 
         spec = _make_test_spec()
         sbx = FakeSandbox()
         agent_job = FakeBgJob()
-        proxy_job = FakeBgJob()
 
         session = CLIAgentSession(
             spec=spec,
@@ -729,12 +665,10 @@ class TestCLIAgentSession:
             task=FakeTask(),
             config=FakeConfig(),
             agent_bg_job=agent_job,
-            proxy_bg_job=proxy_job,
         )
         session.close()
         assert sbx._killed
         assert session._agent_bg_job is None
-        assert session._proxy_bg_job is None
 
 
 class TestCLIAgentSessionFactory:
@@ -814,7 +748,6 @@ class TestOpenCodeSpec:
             "/home/user/.opencode/bin/opencode",
             "--version",
         ]
-        assert OPENCODE_SPEC.supports_logprob_proxy is True
         assert OPENCODE_SPEC.default_timeout_s == 900.0
         assert OPENCODE_SPEC.mcp_config.method == "config_file"
         assert OPENCODE_SPEC.mcp_config.path_template is not None
