@@ -458,8 +458,6 @@ class CLIAgentDriver:
                 last_stdout = r.stdout or ""
                 last_stderr = r.stderr or ""
                 last_exit = r.exit_code
-                if last_stderr.strip():
-                    break
             except Exception as exc:
                 last_stderr = f"{type(exc).__name__}: {exc}"
                 last_exit = -1

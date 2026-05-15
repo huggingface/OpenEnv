@@ -98,12 +98,14 @@ class CodingAgentEnvironment(MCPEnvironment):
 
         from openenv.core.harness.agents import get_agent_spec
         from openenv.core.harness.agents.cli_driver import CLIAgentSessionFactory
-        from coding_agent_env import (
-            E2BSandboxBackend,
-            CodingAgentConfig,
-            CodingAgentSessionFactory,
-            CodingAgentTask,
-        )
+        from coding_agent_env.config import CodingAgentConfig
+        from coding_agent_env.harness import CodingAgentSessionFactory
+        from coding_agent_env.task import CodingAgentTask
+
+        try:
+            from openenv.core.harness.sandbox import E2BSandboxBackend
+        except ImportError:
+            E2BSandboxBackend = None  # type: ignore[assignment,misc]
 
         self._CommandResult = CommandResult
         self._RolloutResult = RolloutResult
@@ -330,14 +332,18 @@ class CodingAgentEnvironment(MCPEnvironment):
             max_tokens_cap=max_tokens_cap,
         )
 
-        # Concatenate setup commands into a single ``set -e`` script and let
-        # the primitive run it as ``task.setup_shell`` before the agent
-        # starts. The per-command tracking happens here too — we re-run
-        # each command in a wrapper that captures exit/stdout/stderr.
-        # That way the primitive still aborts on setup failure AND we get
-        # observability in the response.
+        # Concatenate setup commands into a single ``set -e`` script so the
+        # primitive runs them inside _bootstrap_sandbox BEFORE the agent
+        # starts. This avoids the race where the agent's first tool call
+        # depends on files or packages that setup is still installing.
+        setup_shell: str | None = None
+        if setup:
+            # ``set -e`` makes the script abort on the first failing command.
+            setup_shell = "set -e\n" + "\n".join(setup)
+
         rollout_task = self._CodingAgentTask(
             instruction=instruction,
+            setup_shell=setup_shell,
             metadata={"task_id": task_id, "agent": agent},
         )
 
@@ -361,23 +367,21 @@ class CodingAgentEnvironment(MCPEnvironment):
             result.sandbox_id = session.sandbox.sandbox_id
             _emit(f"sandbox ready: {result.sandbox_id} — agent started (mode={mode})")
 
-            # Run setup commands one at a time, *before* the agent starts.
-            # The factory has already started the agent in start_agent()
-            # during create(); to keep the order "setup → agent → verify"
-            # we'd need to restructure. As a pragmatic compromise we run
-            # setup IMMEDIATELY after create(), which races with the agent
-            # for ~1-2s but is fine for typical pip/git/download work
-            # because most agent CLIs take a while before their first model
-            # call.
+            # Re-run setup commands individually for per-command
+            # observability in the response. The commands already ran
+            # atomically via setup_shell above, so these re-runs are
+            # idempotent — they exist only to populate
+            # result.setup_results with per-command exit/stdout/stderr.
             for i, cmd in enumerate(setup, 1):
-                _emit(f"setup [{i}/{len(setup)}]: {cmd[:80]}")
                 cr = self._exec_command(session.sandbox, cmd)
                 result.setup_results.append(cr)
                 if cr.exit_code != 0:
+                    # Should not happen — setup_shell already succeeded
+                    # during bootstrap, but record it for diagnostics.
                     result.error = (
-                        f"setup command failed (exit {cr.exit_code}): {cmd[:120]}"
+                        f"setup replay failed (exit {cr.exit_code}): {cmd[:120]}"
                     )
-                    _emit(f"setup FAILED at [{i}]: exit={cr.exit_code}")
+                    _emit(f"setup replay FAILED at [{i}]: exit={cr.exit_code}")
                     break
 
             # Block until the agent is done (or setup already failed).
