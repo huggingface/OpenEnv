@@ -163,7 +163,9 @@ class HFSandboxHandle:
 
         pid = _parse_pid(result.stdout)
         if pid is None:
-            raise RuntimeError(f"Could not extract PID from start_bg output: {result.stdout!r}")
+            raise RuntimeError(
+                f"Could not extract PID from start_bg output: {result.stdout!r}"
+            )
 
         job = HFBgJob(self, pid=pid, marker_path=marker_path)
         self._bg_jobs.append(job)
@@ -174,7 +176,9 @@ class HFSandboxHandle:
         if parent not in ("", "/"):
             r = self.exec(f"mkdir -p {_shell_quote(parent)}", timeout=10)
             if r.exit_code != 0:
-                raise RuntimeError(f"Failed to create parent directory {parent!r}: {r.stderr}")
+                raise RuntimeError(
+                    f"Failed to create parent directory {parent!r}: {r.stderr}"
+                )
         self._sbx.write_file(path, content)
 
     def read_text(self, path: str) -> str:

@@ -55,7 +55,9 @@ class ChatState(State):
     """State of the ChatEnvironment containing message history."""
 
     history_messages: list[Message] = Field(default_factory=list)
-    history_tokens: list[list[int]] = Field(default_factory=list)  # Same len as messages
+    history_tokens: list[list[int]] = Field(
+        default_factory=list
+    )  # Same len as messages
 
 
 class ChatObservation(Observation):

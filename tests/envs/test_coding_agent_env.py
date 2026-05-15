@@ -46,14 +46,14 @@ if _ENVS_DIR not in sys.path:
 def test_public_api_imports() -> None:
     """Top-level package re-exports the documented surface."""
     from coding_agent_env import (  # noqa: F401
-        CommandResult,
-        E2BSandboxBackend,
         CodingAgentConfig,
         CodingAgentEnv,
         CodingAgentSession,
         CodingAgentSessionFactory,
         CodingAgentState,
         CodingAgentTask,
+        CommandResult,
+        E2BSandboxBackend,
         Provider,
         RolloutResult,
         RolloutTurn,
@@ -267,7 +267,9 @@ def test_coding_agent_task_coerce_str() -> None:
 def test_coding_agent_task_coerce_dict() -> None:
     from coding_agent_env import CodingAgentTask
 
-    t = CodingAgentTask.coerce({"instruction": "x", "setup_shell": "pip install pandas"})
+    t = CodingAgentTask.coerce(
+        {"instruction": "x", "setup_shell": "pip install pandas"}
+    )
     assert t.instruction == "x"
     assert t.setup_shell == "pip install pandas"
 

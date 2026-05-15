@@ -114,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--name",
         default="coding-agent-rl",
-        help="Template name (default: coding-agent-rl)."
+        help="Template name (default: coding-agent-rl).",
     )
     p.add_argument(
         "--skip-cache",

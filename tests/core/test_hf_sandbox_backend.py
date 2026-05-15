@@ -210,8 +210,8 @@ class TestHFSandboxBackend:
     def test_factory_creates_hf_backend(self, monkeypatch):
         _install_fake_hf_sandbox(monkeypatch)
 
-        import openenv.core.harness.sandbox.hf_backend as hf_backend
         import openenv.core.harness.sandbox as sandbox_pkg
+        import openenv.core.harness.sandbox.hf_backend as hf_backend
 
         importlib.reload(hf_backend)
         importlib.reload(sandbox_pkg)

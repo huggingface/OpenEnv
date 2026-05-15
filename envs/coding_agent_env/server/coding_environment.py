@@ -480,7 +480,9 @@ class CodingAgentEnvironment(MCPEnvironment):
             )
 
         provider = (
-            "openai" if mode == "transparent_proxy" else self._infer_pi_provider(base_url)
+            "openai"
+            if mode == "transparent_proxy"
+            else self._infer_pi_provider(base_url)
         )
         return _GenericAgentConfig(
             base_url=base_url.rstrip("/"),
@@ -654,4 +656,3 @@ class CodingAgentEnvironment(MCPEnvironment):
             return sandbox.read_text(path) or ""
         except Exception:
             return ""
-

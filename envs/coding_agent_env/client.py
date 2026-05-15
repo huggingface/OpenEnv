@@ -169,4 +169,3 @@ def _extract_text(result: Any) -> str:
             return text
 
     return str(result)
-

@@ -611,4 +611,3 @@ def coding_agent_gradio_builder(
         )
 
     return app
-
