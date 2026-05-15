@@ -174,9 +174,6 @@ class CLIAgentSpec:
     mcp_config: MCPConfigSpec
     """How MCP tool configuration is injected."""
 
-    supports_logprob_proxy: bool = True
-    """Whether this agent can be routed through the interception proxy."""
-
     default_timeout_s: float = 600.0
     """Default per-rollout timeout in seconds."""
 

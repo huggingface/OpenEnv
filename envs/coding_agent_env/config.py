@@ -51,19 +51,6 @@ class CodingAgentConfig(BaseModel):
     # ``/home/user``. Override when using a root-privileged backend (Docker).
     sandbox_home: str = "/home/user"
 
-    # --- Transparent-proxy tuning --------------------------------------------
-    # Cap ``max_tokens`` / ``max_completion_tokens`` on forwarded requests.
-    # OpenCode defaults to a very large number (~32000) which exceeds some
-    # provider limits (e.g. gpt-4o-mini = 16384). Only used in
-    # ``mode="transparent_proxy"``. ``None`` disables the cap.
-    proxy_max_tokens_cap: int | None = 16384
-    # Per-turn top-k logprobs the proxy requests from the upstream.
-    proxy_top_logprobs: int = 5
-    # Disable reasoning/thinking mode for Qwen3 / Qwen3.5 models. Proxy sets
-    # ``extra_body.chat_template_kwargs.enable_thinking=false`` on forwarded
-    # requests. Ignored by providers that don't support the field.
-    proxy_disable_thinking: bool = False
-
 
 _PROVIDER_NPM = {
     "openai_compatible": "@ai-sdk/openai-compatible",

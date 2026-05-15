@@ -177,7 +177,6 @@ OPENCODE_SPEC = CLIAgentSpec(
         method="config_file",
         path_template="{home}/.config/opencode/opencode.json",
     ),
-    supports_logprob_proxy=True,
     default_timeout_s=900.0,
     setup=(
         "set -e && "
