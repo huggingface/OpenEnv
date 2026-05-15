@@ -59,7 +59,7 @@ class RolloutResult(BaseModel):
     reward: float | None = None
     agent_exit_code: int | None = None
     wall_s: float = 0.0
-    mode: str = "transparent_proxy"
+    mode: str = "black_box"
 
     # Per-step results
     setup_results: list[CommandResult] = Field(default_factory=list)

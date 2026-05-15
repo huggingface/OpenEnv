@@ -63,7 +63,7 @@ class CodingAgentEnv(MCPToolClient):
         verify: list[str] | None = None,
         # Bookkeeping / tunables
         task_id: str = "",
-        mode: str = "transparent_proxy",
+        mode: str = "black_box",
         disable_thinking: bool | None = None,
         max_tokens_cap: int = 4096,
         top_logprobs: int = 5,
@@ -87,8 +87,9 @@ class CodingAgentEnv(MCPToolClient):
                 Reward = ``passed_count / total`` unless any command writes a
                 float to ``/home/user/logs/verifier/reward.txt`` (override).
             task_id: Echoed back in the result for traceability.
-            mode: ``"transparent_proxy"`` (captures per-token logprobs via
-                an in-sandbox FastAPI proxy) or ``"black_box"`` (no proxy).
+            mode: ``"black_box"`` (agent talks directly to the LLM) or
+                ``"interception_gate"`` (LLM calls routed to trainer-side
+                InterceptionServer for trainer-owned generation).
             disable_thinking: Inject
                 ``chat_template_kwargs.enable_thinking=false`` on forwarded
                 requests. Needed for Qwen3.5 vLLM; harmless on Instruct

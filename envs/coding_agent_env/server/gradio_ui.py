@@ -158,7 +158,7 @@ def _command_rows(items: list[dict[str, Any]]) -> list[list[str]]:
 
 def _logprobs_md(turns: list[dict[str, Any]]) -> str:
     if not turns:
-        return "_No proxy turns captured._\n\nThis is normal in `black_box` mode. In `transparent_proxy` mode, an empty list usually means the agent never made an LLM call (check the agent log)."
+        return "_No proxy turns captured._\n\nLogprob capture is handled by the training loop via `interception_gate` mode."
     n = len(turns)
     productive = sum(1 for t in turns if t.get("completion_tokens"))
     total_toks = sum(len(t.get("completion_tokens") or []) for t in turns)
@@ -523,8 +523,8 @@ def coding_agent_gradio_builder(
         with gr.Accordion("Tunables", open=False):
             with gr.Row():
                 mode = gr.Dropdown(
-                    choices=["transparent_proxy", "black_box"],
-                    value="transparent_proxy",
+                    choices=["black_box", "interception_gate"],
+                    value="black_box",
                     label="mode",
                 )
                 disable_thinking = gr.Dropdown(

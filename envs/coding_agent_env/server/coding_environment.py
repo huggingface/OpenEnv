@@ -143,7 +143,7 @@ class CodingAgentEnvironment(MCPEnvironment):
             verify: Optional[list[str]] = None,
             # Bookkeeping / tunables
             task_id: str = "",
-            mode: str = "transparent_proxy",
+            mode: str = "black_box",
             disable_thinking: Optional[bool] = None,
             max_tokens_cap: int = 4096,
             top_logprobs: int = 5,
@@ -359,10 +359,7 @@ class CodingAgentEnvironment(MCPEnvironment):
             )
             session = factory.create(task=rollout_task)
             result.sandbox_id = session.sandbox.sandbox_id
-            _emit(
-                f"sandbox ready: {result.sandbox_id} — agent started "
-                f"({'proxy on :7000, logprobs capturing' if mode == 'transparent_proxy' else 'direct LLM, no logprobs'})"
-            )
+            _emit(f"sandbox ready: {result.sandbox_id} — agent started (mode={mode})")
 
             # Run setup commands one at a time, *before* the agent starts.
             # The factory has already started the agent in start_agent()
@@ -474,16 +471,9 @@ class CodingAgentEnvironment(MCPEnvironment):
                 api_key=api_key,
                 model=model,
                 agent_timeout_s=agent_timeout_s,
-                proxy_disable_thinking=disable_thinking,
-                proxy_top_logprobs=top_logprobs,
-                proxy_max_tokens_cap=max_tokens_cap if max_tokens_cap > 0 else None,
             )
 
-        provider = (
-            "openai"
-            if mode == "transparent_proxy"
-            else self._infer_pi_provider(base_url)
-        )
+        provider = self._infer_pi_provider(base_url)
         return _GenericAgentConfig(
             base_url=base_url.rstrip("/"),
             api_key=api_key,
@@ -524,9 +514,6 @@ class CodingAgentEnvironment(MCPEnvironment):
             sandbox_backend=backend,
             mode=mode,
             verifier=None,
-            proxy_disable_thinking=disable_thinking,
-            proxy_top_logprobs=top_logprobs,
-            proxy_max_tokens_cap=max_tokens_cap if max_tokens_cap > 0 else None,
         )
 
     @staticmethod
@@ -602,53 +589,8 @@ class CodingAgentEnvironment(MCPEnvironment):
         return files, extras
 
     def _collect_proxy_turns(self, session: Any) -> list[Any]:
-        turns: list[Any] = []
-
-        records: list[dict[str, Any]] = []
-        if hasattr(session, "fetch_proxy_trace"):
-            try:
-                fetched = session.fetch_proxy_trace()
-                if isinstance(fetched, list):
-                    records = [r for r in fetched if isinstance(r, dict)]
-            except Exception:
-                records = []
-
-        if not records:
-            proxy_trace_path = getattr(session, "_proxy_trace_path", None)
-            if not proxy_trace_path:
-                return turns
-            raw = self._safe_read(session.sandbox, proxy_trace_path)
-            for line in raw.splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    rec = json.loads(line)
-                except Exception:
-                    continue
-                if isinstance(rec, dict):
-                    records.append(rec)
-
-        for rec in records:
-            response = rec.get("response") or {}
-            turns.append(
-                self._RolloutTurn(
-                    turn=int(rec.get("turn") or 0),
-                    finish_reason=rec.get("finish_reason"),
-                    completion_tokens=list(rec.get("completion_tokens") or []),
-                    completion_token_ids=list(rec.get("completion_token_ids") or []),
-                    per_token_logps=[
-                        float(x)
-                        for x in (rec.get("per_token_logps") or [])
-                        if x is not None
-                    ],
-                    latency_s=float(rec.get("latency_s") or 0.0),
-                    timestamp=float(rec.get("timestamp") or 0.0),
-                    upstream_status=response.get("upstream_status"),
-                    upstream_error=response.get("upstream_error"),
-                )
-            )
-        return turns
+        """Logprob capture is now owned by the training loop via interception_gate."""
+        return []
 
     @staticmethod
     def _safe_read(sandbox: Any, path: str) -> str:
