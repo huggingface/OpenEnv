@@ -184,11 +184,6 @@ class CodingAgentEnvironment(MCPEnvironment):
                 raise ValueError(
                     f"unsupported agent {agent!r}; supported agents: {_SUPPORTED_AGENTS}"
                 )
-            if mode not in {"black_box", "interception_gate"}:
-                raise ValueError(
-                    "unsupported mode {!r}; supported modes: ('black_box', "
-                    "'interception_gate')".format(mode)
-                )
             if not (base_url and api_key and model):
                 raise ValueError(
                     "must provide either ``endpoint`` (one of "
@@ -307,12 +302,6 @@ class CodingAgentEnvironment(MCPEnvironment):
                     progress_cb(msg)
                 except Exception:
                     pass
-
-        if mode not in {"black_box", "interception_gate"}:
-            raise ValueError(
-                "unsupported mode {!r}; supported modes: ('black_box', "
-                "'interception_gate')".format(mode)
-            )
 
         result = self._RolloutResult(task_id=task_id, mode=mode)
         t0 = time.time()

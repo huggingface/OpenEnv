@@ -165,29 +165,6 @@ def test_catalog_summary_shape() -> None:
         } <= entry.keys()
 
 
-def test_run_rollout_rejects_unknown_mode() -> None:
-    from coding_agent_env.server.coding_environment import CodingAgentEnvironment
-
-    env = CodingAgentEnvironment()
-    with pytest.raises(ValueError, match="unsupported mode"):
-        env._run_rollout_impl(
-            agent="opencode",
-            base_url="https://api.openai.com/v1",
-            api_key="sk-test",
-            model="gpt-4o-mini",
-            instruction="hello",
-            setup=[],
-            verify=[],
-            task_id="",
-            mode="legacy_proxy",
-            disable_thinking=False,
-            max_tokens_cap=1024,
-            top_logprobs=5,
-            agent_timeout_s=30.0,
-            template="",
-        )
-
-
 def test_build_agent_config_opencode() -> None:
     from coding_agent_env.server.coding_environment import CodingAgentEnvironment
 
