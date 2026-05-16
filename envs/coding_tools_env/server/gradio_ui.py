@@ -105,9 +105,7 @@ def _extract_tool_error(result: dict[str, Any]) -> bool:
 
 def _format_status(state: dict[str, Any]) -> str:
     if not state:
-        return (
-            "**No active session.** Configure setup/verify and click *Reset sandbox*."
-        )
+        return "**No active session.** Configure setup/verify and click *Reset sandbox*."
     sandbox_id = state.get("sandbox_id") or "—"
     step_count = state.get("step_count", 0)
     submitted = state.get("submitted", False)
@@ -229,9 +227,9 @@ def coding_tools_ui_builder(
                         label="edits (JSON array)",
                         language="json",
                         value=(
-                            "[\n"
+                            '[\n'
                             '  {"old_string": "TODO", "new_string": "DONE", "replace_all": false}\n'
-                            "]"
+                            ']'
                         ),
                         lines=8,
                     )
@@ -262,10 +260,10 @@ def coding_tools_ui_builder(
                         label="todos (JSON array)",
                         language="json",
                         value=(
-                            "[\n"
+                            '[\n'
                             '  {"id":"1","content":"Inspect files",'
                             '"status":"in_progress","priority":"high"}\n'
-                            "]"
+                            ']'
                         ),
                         lines=8,
                     )
@@ -339,33 +337,23 @@ def coding_tools_ui_builder(
             return [help_md, *updates]
 
         tool_dropdown.change(
-            on_tool_change,
-            inputs=[tool_dropdown],
-            outputs=[tool_help, *group_components],
+            on_tool_change, inputs=[tool_dropdown], outputs=[tool_help, *group_components]
         )
 
         # ───────── Result rendering helper ─────────
-        def render_result(
-            tool: str, raw: dict[str, Any]
-        ) -> tuple[str, str, str, str, str, list[list[str]]]:
+        def render_result(tool: str, raw: dict[str, Any]) -> tuple[str, str, str, str, str, list[list[str]]]:
             text = _extract_tool_text(raw)
-            is_error = (
-                _extract_tool_error(raw)
-                or text.startswith("ERROR:")
-                or text.startswith("Error:")
-            )
+            is_error = _extract_tool_error(raw) or text.startswith("ERROR:") or text.startswith("Error:")
             badge = "❌ error" if is_error else "✅ ok"
             status_line = f"**{tool}** — {badge}"
             state = state_payload()
             return (
-                status_line,  # output_status
-                text,  # output_view
-                json.dumps(raw, indent=2),  # raw_response
-                _format_status(
-                    state
-                ),  # state_summary (top + summary panel — same content)
+                status_line,                       # output_status
+                text,                              # output_view
+                json.dumps(raw, indent=2),         # raw_response
+                _format_status(state),             # state_summary (top + summary panel — same content)
                 json.dumps(state, indent=2, default=str),  # state_json
-                _format_history(state),  # history_table
+                _format_history(state),            # history_table
             )
 
         # ───────── Session handlers ─────────
@@ -410,33 +398,21 @@ def coding_tools_ui_builder(
         async def on_run(
             tool: str,
             # bash
-            bash_command: str,
-            bash_timeout: float,
+            bash_command: str, bash_timeout: float,
             # read
-            read_path: str,
-            read_offset: float | None,
-            read_limit: float | None,
+            read_path: str, read_offset: float | None, read_limit: float | None,
             # write
-            write_path: str,
-            write_content: str,
+            write_path: str, write_content: str,
             # edit
-            edit_path: str,
-            edit_old: str,
-            edit_new: str,
-            edit_replace_all: bool,
+            edit_path: str, edit_old: str, edit_new: str, edit_replace_all: bool,
             # multi_edit
-            multi_edit_path: str,
-            multi_edit_json: str,
+            multi_edit_path: str, multi_edit_json: str,
             # glob
-            glob_pattern: str,
-            glob_path: str,
+            glob_pattern: str, glob_path: str,
             # grep
-            grep_pattern: str,
-            grep_path: str,
-            grep_include: str,
+            grep_pattern: str, grep_path: str, grep_include: str,
             # ls
-            ls_path: str,
-            ls_ignore: str,
+            ls_path: str, ls_ignore: str,
             # todo_write
             todo_json: str,
         ):
@@ -517,26 +493,14 @@ def coding_tools_ui_builder(
         # ───────── Wire up events ─────────
         all_inputs = [
             tool_dropdown,
-            bash_command,
-            bash_timeout,
-            read_path,
-            read_offset,
-            read_limit,
-            write_path,
-            write_content,
-            edit_path,
-            edit_old,
-            edit_new,
-            edit_replace_all,
-            multi_edit_path,
-            multi_edit_json,
-            glob_pattern,
-            glob_path,
-            grep_pattern,
-            grep_path,
-            grep_include,
-            ls_path,
-            ls_ignore,
+            bash_command, bash_timeout,
+            read_path, read_offset, read_limit,
+            write_path, write_content,
+            edit_path, edit_old, edit_new, edit_replace_all,
+            multi_edit_path, multi_edit_json,
+            glob_pattern, glob_path,
+            grep_pattern, grep_path, grep_include,
+            ls_path, ls_ignore,
             todo_json,
         ]
         all_outputs = [

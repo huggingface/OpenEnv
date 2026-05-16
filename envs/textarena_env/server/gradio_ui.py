@@ -71,9 +71,7 @@ def _sudoku_demo_html() -> str:
         for col in range(9):
             value = givens.get((row, col), "")
             border_right = "3px solid #0f172a" if col in {2, 5} else "1px solid #94a3b8"
-            border_bottom = (
-                "3px solid #0f172a" if row in {2, 5} else "1px solid #94a3b8"
-            )
+            border_bottom = "3px solid #0f172a" if row in {2, 5} else "1px solid #94a3b8"
             background = "#e2e8f0" if value else "#ffffff"
             cells.append(
                 f"""
@@ -84,7 +82,7 @@ def _sudoku_demo_html() -> str:
   align-items: center;
   justify-content: center;
   font-size: 1.1rem;
-  font-weight: {"700" if value else "400"};
+  font-weight: {'700' if value else '400'};
   color: #0f172a;
   background: {background};
   border-right: {border_right};
@@ -107,7 +105,7 @@ def _sudoku_demo_html() -> str:
     border: 3px solid #0f172a;
     background: #ffffff;
   ">
-    {"".join(cells)}
+    {''.join(cells)}
   </div>
   <p style="margin-top: 16px; color: #475569; font-size: 0.95rem; line-height: 1.45;">
     Use the <strong>Playground</strong> tab to reset the game and submit moves in the

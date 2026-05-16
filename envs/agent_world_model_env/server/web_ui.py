@@ -21,7 +21,9 @@ from .config import DEFAULT_REWARD_CONFIG
 
 
 # Keep in sync with DEFAULT_REWARD_CONFIG in config.py.
-_DEFAULT_REWARD_JSON = json.dumps(DEFAULT_REWARD_CONFIG, indent=2)
+_DEFAULT_REWARD_JSON = json.dumps(
+    DEFAULT_REWARD_CONFIG, indent=2
+)
 
 
 def _format_obs_md(payload: dict | None) -> str:

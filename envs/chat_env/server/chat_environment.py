@@ -90,9 +90,7 @@ class ChatEnvironment(Environment):
     def _tokenize_conversation(self, conversation: list[Message]) -> list[int]:
         """Tokenize a conversation with a chat-template fallback for base tokenizers."""
         try:
-            tokens = self.tokenizer.apply_chat_template(
-                conversation=conversation, tokenize=True
-            )
+            tokens = self.tokenizer.apply_chat_template(conversation=conversation, tokenize=True)
         except Exception:
             # Some tokenizers (e.g. gpt2) do not define `chat_template`.
             fallback_text = "".join(
