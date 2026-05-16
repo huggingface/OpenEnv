@@ -77,7 +77,6 @@ _RUN_ROLLOUT_TIMEOUT_S = 2400.0
 # Per-task images have the repo pre-cloned at /testbed.
 TESTBED = "/testbed"
 HOME = "/home/user"
-REWARD_FILE = f"{HOME}/logs/verifier/reward.txt"
 EVAL_LOG_FILE = f"{HOME}/logs/verifier/eval.log"
 EVAL_SCRIPT_PATH = f"{HOME}/swe_eval.sh"
 FINAL_ANSWER_FILE = f"{HOME}/logs/agent/final_answer.txt"
@@ -539,9 +538,6 @@ class SWEEnvironment(MCPEnvironment):
 
                 os.unlink(tmp_log)
 
-            # Write reward to sandbox for the answer extension to find.
-            sandbox.write_text(REWARD_FILE, str(result.reward))
-
             return result
 
         except Exception as exc:
@@ -559,10 +555,6 @@ class SWEEnvironment(MCPEnvironment):
             cr = self._exec_command(sandbox, cmd, cwd=TESTBED)
             if cr.exit_code == 0:
                 verify_passed += 1
-
-        override = self._read_reward(sandbox)
-        if override is not None:
-            return override, override == 1.0
 
         if task.verify:
             ratio = verify_passed / len(task.verify)
@@ -730,16 +722,6 @@ class SWEEnvironment(MCPEnvironment):
                 stderr=f"{type(exc).__name__}: {exc}",
                 duration_s=round(time.time() - t, 3),
             )
-
-    def _read_reward(self, sandbox: Any) -> float | None:
-        """Read explicit reward override from the sandbox."""
-        raw = self._safe_read(sandbox, REWARD_FILE).strip()
-        if not raw:
-            return None
-        try:
-            return float(raw)
-        except ValueError:
-            return None
 
     def _collect_files(self, sandbox: Any) -> tuple[dict[str, str], list[str]]:
         """Collect modified files from the workspace."""
