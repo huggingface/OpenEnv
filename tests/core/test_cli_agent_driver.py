@@ -156,6 +156,7 @@ class FakeConfig:
     model: str = "test-model"
     agent_timeout_s: float = 300.0
     sandbox_home: str = "/home/user"
+    workdir: str | None = None
     extra_env: dict[str, str] = field(default_factory=dict)
 
 
@@ -437,6 +438,20 @@ class TestCLIAgentDriver:
 
         session.close()
         assert sbx._killed
+
+    def test_create_session_honors_configured_workdir_for_mcp_file(self):
+        from openenv.core.harness.agents.cli_driver import CLIAgentDriver
+
+        spec = _make_test_spec()
+        backend = FakeSandboxBackend()
+        driver = CLIAgentDriver(spec=spec, sandbox_backend=backend, mode="black_box")
+
+        config = FakeConfig(workdir="/testbed")
+        session = driver.create_session(task=FakeTask(), config=config)
+
+        sbx = backend.created[0]
+        assert "/testbed/mcp.json" in sbx.written
+        session.close()
 
     def test_create_session_skips_install_when_prebaked(self):
         from openenv.core.harness.agents.cli_driver import CLIAgentDriver
@@ -1037,6 +1052,26 @@ class TestPiSpec:
         assert "cd '/home/user with space/workdir'" in cmd
         assert "-p @'/home/user with space/task/instruction.txt'" in cmd
         assert "tee '/home/user with space/logs/agent/pi.txt'" in cmd
+
+    def test_build_command_uses_config_workdir_when_present(self):
+        from openenv.core.harness.agents.pi import PI_SPEC
+
+        @dataclass
+        class PiConfig:
+            sandbox_home: str = "/home/user"
+            workdir: str = "/testbed"
+            provider: str = "openai"
+            model: str = "model/name"
+            thinking: str = "off"
+
+        assert PI_SPEC.build_command is not None
+        cmd = PI_SPEC.build_command(
+            PI_SPEC,
+            PiConfig(),
+            FakeTask(instruction="Write hello.py"),
+            None,
+        )
+        assert "cd /testbed" in cmd
 
 
 # Env var resolution

@@ -49,7 +49,11 @@ def _build_command(
     home = config.sandbox_home if hasattr(config, "sandbox_home") else "/home/user"
     instruction_file = f"{home}/task/instruction.txt"
     log_file = f"{home}/logs/agent/pi.txt"
-    workdir = f"{home}/workdir"
+    workdir = (
+        config.workdir
+        if hasattr(config, "workdir") and getattr(config, "workdir")
+        else f"{home}/workdir"
+    )
 
     provider = ""
     if hasattr(config, "provider") and config.provider:

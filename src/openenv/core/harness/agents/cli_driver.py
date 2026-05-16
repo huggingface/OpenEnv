@@ -428,13 +428,13 @@ class CLIAgentDriver:
             self.spec.mcp_config.method == "config_file"
             and self.spec.mcp_config.path_template
         ):
-            workdir = (
-                config.sandbox_home + "/workdir"
-                if hasattr(config, "sandbox_home")
-                else "/home/user/workdir"
-            )
             home = (
                 config.sandbox_home if hasattr(config, "sandbox_home") else "/home/user"
+            )
+            workdir = (
+                config.workdir
+                if hasattr(config, "workdir") and getattr(config, "workdir")
+                else f"{home}/workdir"
             )
             mcp_path = self.spec.mcp_config.path_template.format(
                 workdir=workdir, home=home
