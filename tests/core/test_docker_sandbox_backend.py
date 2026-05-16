@@ -289,13 +289,13 @@ class TestDockerSandboxBackendIntegration:
             sandbox.kill()
 
     def test_satisfies_sandbox_handle_protocol(self):
-        from openenv.core.harness.sandbox import SandboxBackend
+        from openenv.core.harness.sandbox import SandboxHandle
         from openenv.core.harness.sandbox.docker_backend import DockerSandboxBackend
 
         backend = DockerSandboxBackend(image="ubuntu:22.04")
         sandbox = backend.create(timeout_s=60)
         try:
-            assert isinstance(sandbox, SandboxBackend) or hasattr(sandbox, "exec")
+            assert isinstance(sandbox, SandboxHandle)
             assert hasattr(sandbox, "sandbox_id")
             assert hasattr(sandbox, "exec")
             assert hasattr(sandbox, "start_bg")

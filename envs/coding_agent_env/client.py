@@ -25,7 +25,7 @@ Example::
             verify=["python /home/user/test.py"],
             task_id="binary_search_v1",
         )
-        print(result.reward, len(result.proxy_turns))
+        print(result.reward)
 """
 
 from __future__ import annotations
@@ -95,15 +95,14 @@ class CodingAgentEnv(MCPToolClient):
                 requests. Needed for Qwen3.5 vLLM; harmless on Instruct
                 variants; rejected by OpenAI direct.
             max_tokens_cap: Clamp on per-turn ``max_tokens``.
-            top_logprobs: Top-k logprobs requested upstream. HF Router caps
-                at 5; OpenAI accepts up to 20; vLLM is unbounded.
+            top_logprobs: Reserved for trainer-owned interception workflows.
             agent_timeout_s: Hard wall-clock budget for one agent run.
             template: E2B template name (e.g. ``"coding-agent-rl"``). Empty
                 string uses the default (slow) base image.
 
         Returns:
-            A :class:`RolloutResult` with reward, per-turn logprobs, file
-            outputs, setup/verify results, and diagnostic tails.
+            A :class:`RolloutResult` with reward, file outputs,
+            setup/verify results, and diagnostic tails.
         """
         raw = self.call_tool(
             "run_rollout",

@@ -31,6 +31,7 @@ import time
 import uuid
 from pathlib import PurePosixPath
 
+from openenv.core.harness.sandbox._util import shell_quote
 from openenv.core.harness.sandbox.base import BgJob, ExecResult
 
 _log = logging.getLogger(__name__)
@@ -45,12 +46,14 @@ class DockerBgJob:
     """
 
     def __init__(
-        self, container_id: str, pid: int, poll_thread: threading.Thread
+        self,
+        container_id: str,
+        pid: int,
+        poll_thread: threading.Thread | None = None,
     ) -> None:
         self._container_id = container_id
         self._pid = pid
         self._exit_code: int | None = None
-        self._error: BaseException | None = None
         self._done = threading.Event()
         self._poll_thread = poll_thread
 
@@ -63,8 +66,6 @@ class DockerBgJob:
             raise TimeoutError(
                 f"Background command (pid={self._pid}) did not exit within {timeout}s"
             )
-        if self._error is not None:
-            raise self._error
         return self._exit_code if self._exit_code is not None else 0
 
     def kill(self) -> None:
@@ -127,8 +128,8 @@ class DockerSandboxHandle:
         envs: dict[str, str] | None = None,
         cwd: str | None = None,
     ) -> BgJob:
-        marker = f"/tmp/.bg_{uuid.uuid4().hex[:8]}"
-        wrapped = f"bash -c {_shell_quote(cmd + f'; echo $? > {marker}')} &\necho $!"
+        marker = f"/tmp/.bg_{uuid.uuid4().hex}"
+        wrapped = f"bash -c {shell_quote(cmd + f'; echo $? > {marker}')} &\necho $!"
         docker_cmd = self._build_exec_cmd(envs=envs, cwd=cwd)
         docker_cmd.extend(["bash", "-c", wrapped])
         result = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=10)
@@ -147,7 +148,7 @@ class DockerSandboxHandle:
             )
         pid = int(pid_line)
 
-        job = DockerBgJob(self._container_id, pid, poll_thread=None)  # type: ignore[arg-type]
+        job = DockerBgJob(self._container_id, pid)
         poll_thread = threading.Thread(
             target=self._poll_bg_job,
             args=(job, marker),
@@ -174,7 +175,7 @@ class DockerSandboxHandle:
                 self._container_id,
                 "bash",
                 "-c",
-                f"cat > {_shell_quote(path)}",
+                f"cat > {shell_quote(path)}",
             ],
             input=content.encode(),
             capture_output=True,
@@ -233,6 +234,7 @@ class DockerSandboxHandle:
         return cmd
 
     def _poll_bg_job(self, job: DockerBgJob, marker: str) -> None:
+        consecutive_failures = 0
         while not job._done.is_set():
             try:
                 result = subprocess.run(
@@ -245,22 +247,38 @@ class DockerSandboxHandle:
                     job._exit_code = int(result.stdout.strip())
                     job._done.set()
                     return
+                if "No such container" in (result.stderr or ""):
+                    job._exit_code = 1
+                    job._done.set()
+                    return
             except Exception:
-                pass
+                consecutive_failures += 1
+            else:
+                consecutive_failures = 0
 
             # Also check if PID is gone (crash without writing marker).
             try:
                 check = subprocess.run(
                     ["docker", "exec", self._container_id, "kill", "-0", str(job._pid)],
                     capture_output=True,
+                    text=True,
                     timeout=5,
                 )
                 if check.returncode != 0:
                     job._exit_code = 1
                     job._done.set()
                     return
+                if "No such container" in (check.stderr or ""):
+                    job._exit_code = 1
+                    job._done.set()
+                    return
             except Exception:
-                pass
+                consecutive_failures += 1
+
+            if consecutive_failures >= 10:
+                job._exit_code = 1
+                job._done.set()
+                return
 
             time.sleep(0.5)
 
@@ -332,8 +350,3 @@ class DockerSandboxBackend:
             "Docker sandbox created: %s (image=%s)", container_id[:12], self._image
         )
         return DockerSandboxHandle(container_id, user=self._user)
-
-
-def _shell_quote(s: str) -> str:
-    """Single-quote a string for shell, escaping embedded single quotes."""
-    return "'" + s.replace("'", "'\\''") + "'"

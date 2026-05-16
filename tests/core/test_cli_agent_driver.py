@@ -483,6 +483,52 @@ class TestCLIAgentDriver:
         assert sbx.written["/extra/data.json"] == '{"key": "value"}'
         session.close()
 
+    def test_opencode_black_box_api_key_stays_out_of_command_argv(self):
+        from openenv.core.harness.agents.cli_driver import CLIAgentDriver
+        from openenv.core.harness.agents.opencode import OPENCODE_SPEC
+
+        secret = "sk-test '$(leak)"
+        config = FakeConfig(api_key=secret)
+        backend = FakeSandboxBackend()
+        driver = CLIAgentDriver(
+            spec=OPENCODE_SPEC,
+            sandbox_backend=backend,
+            mode="black_box",
+        )
+
+        session = driver.create_session(task=FakeTask(), config=config)
+        sbx = backend.created[0]
+        cmd, envs = sbx.bg_commands[-1]
+        assert secret not in cmd
+        assert envs is not None
+        assert envs["OPENAI_API_KEY"] == secret
+        session.close()
+
+    def test_opencode_interception_gate_uses_server_secret_not_user_key(self):
+        from openenv.core.harness.agents.cli_driver import CLIAgentDriver
+        from openenv.core.harness.agents.interception_server import InterceptionServer
+        from openenv.core.harness.agents.opencode import OPENCODE_SPEC
+
+        secret = "sk-test '$(leak)"
+        config = FakeConfig(api_key=secret)
+        backend = FakeSandboxBackend()
+        server = InterceptionServer(port=0, secret="gate-secret")
+        driver = CLIAgentDriver(
+            spec=OPENCODE_SPEC,
+            sandbox_backend=backend,
+            mode="interception_gate",
+            interception_server=server,
+            interception_base_url="http://127.0.0.1:8765",
+        )
+
+        session = driver.create_session(task=FakeTask(), config=config)
+        sbx = backend.created[0]
+        cmd, envs = sbx.bg_commands[-1]
+        assert secret not in cmd
+        assert envs is not None
+        assert envs["OPENAI_API_KEY"] == "gate-secret"
+        session.close()
+
     def test_create_session_runs_task_setup_shell(self):
         from openenv.core.harness.agents.cli_driver import CLIAgentDriver
 
@@ -670,6 +716,32 @@ class TestCLIAgentSession:
         assert sbx._killed
         assert session._agent_bg_job is None
 
+    @pytest.mark.asyncio
+    async def test_next_request_handles_missing_intercept_without_keyerror(self):
+        import asyncio
+
+        from openenv.core.harness.agents.cli_driver import CLIAgentSession
+        from openenv.core.harness.agents.interception_server import InterceptionServer
+
+        spec = _make_test_spec()
+        sbx = FakeSandbox()
+        queue: asyncio.Queue[str] = asyncio.Queue()
+        await queue.put("req_missing")
+
+        session = CLIAgentSession(
+            spec=spec,
+            sandbox=sbx,
+            task=FakeTask(),
+            config=FakeConfig(),
+            agent_bg_job=FakeBgJob(),
+            interception_server=InterceptionServer(secret="s"),
+            interception_rollout_id="rollout-1",
+            interception_queue=queue,
+        )
+
+        # Missing request IDs can happen if unregister_rollout races with queue.get().
+        assert await session.next_request(timeout_s=0.2) is None
+
 
 class TestCLIAgentSessionFactory:
     """Tests for the ResourceSessionFactory wrapper."""
@@ -774,6 +846,25 @@ class TestOpenCodeSpec:
         assert "opencode run" in cmd
         assert "--format json" in cmd
         assert "/home/user/task/instruction.md" in cmd
+
+    def test_build_command_quotes_paths(self):
+        from openenv.core.harness.agents.opencode import OPENCODE_SPEC
+
+        @dataclass
+        class OcConfig:
+            sandbox_home: str = "/home/user with space"
+            run_format: str = "json"
+
+        assert OPENCODE_SPEC.build_command is not None
+        cmd = OPENCODE_SPEC.build_command(
+            OPENCODE_SPEC,
+            OcConfig(),
+            FakeTask(instruction="Write hello.py"),
+            None,
+        )
+        assert "cd '/home/user with space/workdir'" in cmd
+        assert "cat '/home/user with space/task/instruction.md'" in cmd
+        assert "tee '/home/user with space/logs/agent/opencode.jsonl'" in cmd
 
     def test_build_mcp_config(self):
         from openenv.core.harness.agents.opencode import OPENCODE_SPEC
@@ -886,6 +977,29 @@ class TestOpenCodeSpec:
         assert sbx.written.get("/home/user/task/instruction.md") == "Hello"
 
         session.close()
+
+
+class TestPiSpec:
+    def test_build_command_quotes_paths(self):
+        from openenv.core.harness.agents.pi import PI_SPEC
+
+        @dataclass
+        class PiConfig:
+            sandbox_home: str = "/home/user with space"
+            provider: str = "openai"
+            model: str = "model/name"
+            thinking: str = "off"
+
+        assert PI_SPEC.build_command is not None
+        cmd = PI_SPEC.build_command(
+            PI_SPEC,
+            PiConfig(),
+            FakeTask(instruction="Write hello.py"),
+            None,
+        )
+        assert "cd '/home/user with space/workdir'" in cmd
+        assert "-p @'/home/user with space/task/instruction.txt'" in cmd
+        assert "tee '/home/user with space/logs/agent/pi.txt'" in cmd
 
 
 # Env var resolution

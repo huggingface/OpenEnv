@@ -165,6 +165,29 @@ def test_catalog_summary_shape() -> None:
         } <= entry.keys()
 
 
+def test_run_rollout_rejects_unknown_mode() -> None:
+    from coding_agent_env.server.coding_environment import CodingAgentEnvironment
+
+    env = CodingAgentEnvironment()
+    with pytest.raises(ValueError, match="unsupported mode"):
+        env._run_rollout_impl(
+            agent="opencode",
+            base_url="https://api.openai.com/v1",
+            api_key="sk-test",
+            model="gpt-4o-mini",
+            instruction="hello",
+            setup=[],
+            verify=[],
+            task_id="",
+            mode="legacy_proxy",
+            disable_thinking=False,
+            max_tokens_cap=1024,
+            top_logprobs=5,
+            agent_timeout_s=30.0,
+            template="",
+        )
+
+
 def test_build_agent_config_opencode() -> None:
     from coding_agent_env.server.coding_environment import CodingAgentEnvironment
 
@@ -216,6 +239,35 @@ def test_build_agent_config_pi() -> None:
         max_tokens_cap=4096,
     )
     assert cfg_gate.provider == "huggingface"
+
+
+def test_build_session_factory_requires_e2b_dependency() -> None:
+    from coding_agent_env.server.coding_environment import CodingAgentEnvironment
+
+    env = CodingAgentEnvironment()
+    env._E2BSandboxBackend = None
+    cfg = env._build_agent_config(
+        agent="pi",
+        mode="black_box",
+        base_url="https://router.huggingface.co/v1",
+        api_key="hf_xxx",
+        model="zai-org/GLM-5.1",
+        agent_timeout_s=180.0,
+        disable_thinking=False,
+        top_logprobs=5,
+        max_tokens_cap=4096,
+    )
+
+    with pytest.raises(RuntimeError, match="E2BSandboxBackend unavailable"):
+        env._build_session_factory(
+            agent="pi",
+            config=cfg,
+            mode="black_box",
+            template="",
+            disable_thinking=False,
+            top_logprobs=5,
+            max_tokens_cap=4096,
+        )
 
 
 # ---------------------------------------------------------------------------

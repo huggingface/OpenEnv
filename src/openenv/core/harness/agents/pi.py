@@ -61,12 +61,16 @@ def _build_command(
     if hasattr(config, "thinking") and config.thinking:
         thinking = f" --thinking {shlex.quote(config.thinking)}"
 
+    workdir_q = shlex.quote(workdir)
+    instruction_q = shlex.quote(instruction_file)
+    log_q = shlex.quote(log_file)
+
     return (
-        f"cd {workdir} && git init -q 2>/dev/null; "
+        f"cd {workdir_q} && git init -q 2>/dev/null; "
         f"pi --no-session --no-context-files"
         f"{provider}{model}{thinking}"
-        f" -p @{instruction_file}"
-        f" 2>&1 | tee {log_file}"
+        f" -p @{instruction_q}"
+        f" 2>&1 | tee {log_q}"
     )
 
 

@@ -20,6 +20,7 @@ from threading import Event
 from typing import Any
 
 from hf_sandbox import Sandbox
+from openenv.core.harness.sandbox._util import shell_quote
 from openenv.core.harness.sandbox.base import BgJob, ExecResult, SandboxHandle
 
 _ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -67,7 +68,7 @@ class HFBgJob:
                 )
 
             marker = self._sandbox.exec(
-                f"cat {_shell_quote(self._marker_path)}",
+                f"cat {shell_quote(self._marker_path)}",
                 timeout=10,
             )
             if marker.exit_code == 0 and marker.stdout.strip():
@@ -152,8 +153,8 @@ class HFSandboxHandle:
         cwd: str | None = None,
     ) -> BgJob:
         marker_path = f"/tmp/.openenv_bg_{uuid.uuid4().hex[:12]}.exit"
-        wrapped = f"{cmd}; rc=$?; echo $rc > {_shell_quote(marker_path)}"
-        launch_cmd = f"nohup bash -lc {_shell_quote(wrapped)} >/dev/null 2>&1 & echo $!"
+        wrapped = f"{cmd}; rc=$?; echo $rc > {shell_quote(marker_path)}"
+        launch_cmd = f"nohup bash -lc {shell_quote(wrapped)} >/dev/null 2>&1 & echo $!"
 
         result = self.exec(launch_cmd, envs=envs, cwd=cwd, timeout=30)
         if result.exit_code != 0:
@@ -174,7 +175,7 @@ class HFSandboxHandle:
     def write_text(self, path: str, content: str) -> None:
         parent = str(PurePosixPath(path).parent)
         if parent not in ("", "/"):
-            r = self.exec(f"mkdir -p {_shell_quote(parent)}", timeout=10)
+            r = self.exec(f"mkdir -p {shell_quote(parent)}", timeout=10)
             if r.exit_code != 0:
                 raise RuntimeError(
                     f"Failed to create parent directory {parent!r}: {r.stderr}"
@@ -185,7 +186,7 @@ class HFSandboxHandle:
         return str(self._sbx.read_file(path, text=True))
 
     def exists(self, path: str) -> bool:
-        r = self.exec(f"test -e {_shell_quote(path)}", timeout=10)
+        r = self.exec(f"test -e {shell_quote(path)}", timeout=10)
         return r.exit_code == 0
 
     def kill(self) -> None:
@@ -250,8 +251,8 @@ class HFSandboxBackend:
 
         assert last_error is not None
         raise HFSandboxCreateError(
-            f"Failed to create HF sandbox after {self._create_retries} attempts: "
-            f"{last_error}"
+            f"Failed to create HF sandbox after {self._create_retries} attempts "
+            f"({type(last_error).__name__})."
         ) from last_error
 
 
@@ -262,7 +263,7 @@ def _with_env_prefix(cmd: str, envs: dict[str, str]) -> str:
     for key, value in envs.items():
         if not _ENV_KEY_RE.match(key):
             raise ValueError(f"Invalid environment variable name: {key!r}")
-        parts.append(f"export {key}={_shell_quote(str(value))};")
+        parts.append(f"export {key}={shell_quote(str(value))};")
     return " ".join(parts) + f" {cmd}"
 
 
@@ -294,11 +295,6 @@ def _parse_exit_code(raw: str, *, default: int) -> int:
         return int(raw.splitlines()[-1].strip())
     except Exception:
         return default
-
-
-def _shell_quote(s: str) -> str:
-    """Single-quote a string for shell, escaping embedded single quotes."""
-    return "'" + s.replace("'", "'\\''") + "'"
 
 
 __all__ = [

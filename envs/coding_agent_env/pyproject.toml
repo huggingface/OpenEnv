@@ -11,7 +11,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "openenv-coding-agent-env"
 version = "0.1.0"
-description = "Coding-agent environment for OpenEnv — runs OpenCode/Pi harnesses in an E2B sandbox against OpenAI-compatible LLM endpoints, optionally capturing per-token logprobs."
+description = "Coding-agent environment for OpenEnv — runs OpenCode/Pi harnesses in an E2B sandbox against OpenAI-compatible LLM endpoints."
 requires-python = ">=3.10"
 dependencies = [
     # Core OpenEnv (server + MCP). 0.3.0 ships the harness runtime.
@@ -26,7 +26,7 @@ dependencies = [
     # behavior drift on Space rebuilds.
     "gradio>=6.0.0",
 
-    # OpenCode harness primitive — sandbox + proxy + agent driver
+    # OpenCode harness primitive — sandbox + agent driver
     "httpx>=0.27.0",
     "e2b>=1.0.0",
 ]

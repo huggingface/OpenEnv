@@ -19,6 +19,7 @@ Registered on import::
 from __future__ import annotations
 
 import json
+import shlex
 from typing import Any
 
 from . import register_agent
@@ -39,11 +40,15 @@ def _build_opencode_command(
     log_file = f"{home}/logs/agent/opencode.jsonl"
     workdir = f"{home}/workdir"
 
+    workdir_q = shlex.quote(workdir)
+    instruction_q = shlex.quote(instruction_file)
+    log_q = shlex.quote(log_file)
+
     return (
         f'export PATH="$HOME/.opencode/bin:$PATH" && '
-        f"cd {workdir} && git init -q 2>/dev/null; "
-        f'opencode run {format_flag} "$(cat {instruction_file})" '
-        f"2>&1 | tee {log_file}"
+        f"cd {workdir_q} && git init -q 2>/dev/null; "
+        f'opencode run {format_flag} "$(cat {instruction_q})" '
+        f"2>&1 | tee {log_q}"
     ).strip()
 
 

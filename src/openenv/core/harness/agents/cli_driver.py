@@ -21,7 +21,6 @@ import asyncio
 import json
 import logging
 import shlex
-import threading
 import time
 import uuid
 from typing import Any, Callable, Literal
@@ -117,11 +116,14 @@ class CLIAgentSession(ResourceSession):
 
     def wait_for_completion(self, timeout_s: float | None = None) -> int:
         """Block until the agent exits, returning its exit code."""
-        budget = timeout_s if timeout_s is not None else self.spec.default_timeout_s
-        if hasattr(self.config, "agent_timeout_s"):
-            budget = timeout_s if timeout_s is not None else self.config.agent_timeout_s
         if self._agent_bg_job is None:
             raise RuntimeError("Agent not started.")
+        default_timeout = (
+            self.config.agent_timeout_s
+            if hasattr(self.config, "agent_timeout_s")
+            else self.spec.default_timeout_s
+        )
+        budget = timeout_s if timeout_s is not None else default_timeout
         return self._agent_bg_job.wait(timeout=budget)
 
     def collect_artifacts(self) -> dict[str, Any]:
@@ -189,17 +191,19 @@ class CLIAgentSession(ResourceSession):
                     self._interception_queue.get(),
                     timeout=min(remaining, 1.0),
                 )
-                return server.intercepts[request_id]
+                intercept = server.get_intercept(request_id)
+                if intercept is not None:
+                    return intercept
             except asyncio.TimeoutError:
-                if self._agent_bg_job is not None:
-                    done_event = getattr(self._agent_bg_job, "_done", None)
-                    if (
-                        done_event is not None
-                        and isinstance(done_event, threading.Event)
-                        and done_event.is_set()
-                    ):
-                        return None
-                continue
+                pass
+
+            if self._agent_bg_job is not None:
+                try:
+                    self._agent_bg_job.wait(timeout=0)
+                    return None
+                except TimeoutError:
+                    pass
+            continue
 
     async def deliver(
         self, intercept: dict[str, Any], response_dict: dict[str, Any]
@@ -240,6 +244,14 @@ class CLIAgentDriver:
         self._setup_timeout_s = setup_timeout_s
         self._interception_server = interception_server
         self._interception_base_url = interception_base_url
+
+    def bootstrap_sandbox(self, sandbox: SandboxHandle, task: Any, config: Any) -> None:
+        """Public bootstrap hook used by external wrappers.
+
+        Runs readiness checks, optional install, file upload, MCP config write,
+        and task setup shell execution.
+        """
+        self._bootstrap_sandbox(sandbox, task, config)
 
     def create_session(
         self,

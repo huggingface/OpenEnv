@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 
 class RolloutTurn(BaseModel):
-    """One intercepted LLM turn captured by the in-sandbox proxy (Mode B)."""
+    """One intercepted LLM turn shape (trainer-owned in interception_gate mode)."""
 
     turn: int
     finish_reason: str | None = None
@@ -45,11 +45,7 @@ class CommandResult(BaseModel):
 
 
 class RolloutResult(BaseModel):
-    """Full payload returned from one ``run_rollout`` invocation.
-
-    The trainer (or any client) decodes this from the MCP tool result JSON
-    and feeds ``proxy_turns`` + ``reward`` into GRPO.
-    """
+    """Full payload returned from one ``run_rollout`` invocation."""
 
     # Identifiers
     task_id: str = ""
@@ -65,7 +61,8 @@ class RolloutResult(BaseModel):
     setup_results: list[CommandResult] = Field(default_factory=list)
     verify_results: list[CommandResult] = Field(default_factory=list)
 
-    # Per-turn LLM trajectory (empty in black_box mode)
+    # Per-turn LLM trajectory placeholder. Capture is trainer-owned in
+    # interception_gate mode; environment currently leaves this empty.
     proxy_turns: list[RolloutTurn] = Field(default_factory=list)
 
     # Filesystem the agent produced (path -> contents, truncated)
