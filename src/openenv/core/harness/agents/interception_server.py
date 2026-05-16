@@ -56,7 +56,7 @@ import secrets
 import threading
 import time
 import uuid
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from aiohttp import web
 
@@ -65,6 +65,8 @@ _log = logging.getLogger(__name__)
 
 _KEEPALIVE_INTERVAL_S = 3.0
 _MAX_REQUEST_BODY = 16 * 1024 * 1024
+
+ToolHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 
 
 class InterceptionServer:
@@ -99,6 +101,10 @@ class InterceptionServer:
             app.router.add_post(
                 "/rollout/{rollout_id}/v1/chat/completions",
                 self._handle_chat_completions,
+            )
+            app.router.add_post(
+                "/rollout/{rollout_id}/v1/tools/{tool_name}",
+                self._handle_tool_call,
             )
             app.router.add_get("/health", self._handle_health)
             runner = web.AppRunner(app)
@@ -155,6 +161,8 @@ class InterceptionServer:
             self.active_rollouts[rollout_id] = {
                 "request_id_queue": queue,
                 "state": state,
+                "tool_handlers": {},
+                "tool_defs": {},
             }
         return queue
 
@@ -185,6 +193,74 @@ class InterceptionServer:
         with self._state_lock:
             return self.intercepts.get(request_id)
 
+    def register_tool_handler(
+        self,
+        rollout_id: str,
+        tool_name: str,
+        handler: ToolHandler,
+        *,
+        tool_definition: dict[str, Any] | None = None,
+    ) -> None:
+        """Register a host-side tool handler for a rollout.
+
+        The handler is called by ``POST /rollout/{rollout_id}/v1/tools/{tool_name}``
+        with a JSON payload containing ``arguments``.
+
+        Optionally provide ``tool_definition`` (OpenAI tool schema). Registered
+        schemas are injected into intercepted chat-completion requests for the
+        rollout when the incoming request does not already include the tool.
+        """
+        with self._state_lock:
+            context = self.active_rollouts.get(rollout_id)
+            if context is None:
+                raise KeyError(f"rollout not found: {rollout_id}")
+            handlers: dict[str, ToolHandler] = context["tool_handlers"]
+            handlers[tool_name] = handler
+            if tool_definition is not None:
+                tool_defs: dict[str, dict[str, Any]] = context["tool_defs"]
+                tool_defs[tool_name] = tool_definition
+
+    def unregister_tool_handler(self, rollout_id: str, tool_name: str) -> None:
+        with self._state_lock:
+            context = self.active_rollouts.get(rollout_id)
+            if context is None:
+                return
+            handlers: dict[str, ToolHandler] = context.get("tool_handlers", {})
+            handlers.pop(tool_name, None)
+            tool_defs: dict[str, dict[str, Any]] = context.get("tool_defs", {})
+            tool_defs.pop(tool_name, None)
+
+    @staticmethod
+    def _tool_name(tool: dict[str, Any]) -> str | None:
+        if not isinstance(tool, dict):
+            return None
+        function = tool.get("function")
+        if not isinstance(function, dict):
+            return None
+        name = function.get("name")
+        return name if isinstance(name, str) and name else None
+
+    def _merge_rollout_tools(
+        self,
+        tools: Any,
+        tool_defs: dict[str, dict[str, Any]],
+    ) -> list[dict[str, Any]] | None:
+        merged: list[dict[str, Any]] = []
+        if isinstance(tools, list):
+            for tool in tools:
+                if isinstance(tool, dict):
+                    merged.append(tool)
+
+        existing = {
+            name for item in merged if (name := self._tool_name(item)) is not None
+        }
+        for name, tool in tool_defs.items():
+            if name in existing:
+                continue
+            merged.append(tool)
+
+        return merged or None
+
     def _authorized(self, request: web.Request) -> bool:
         auth = request.headers.get("Authorization", "")
         api_key = request.headers.get("x-api-key", "")
@@ -194,6 +270,59 @@ class InterceptionServer:
 
     async def _handle_health(self, request: web.Request) -> web.Response:
         return web.json_response({"status": "ok"})
+
+    async def _handle_tool_call(self, request: web.Request) -> web.Response:
+        if not self._authorized(request):
+            return web.json_response({"error": "Unauthorized"}, status=401)
+
+        rollout_id = request.match_info["rollout_id"]
+        tool_name = request.match_info["tool_name"]
+        with self._state_lock:
+            context = self.active_rollouts.get(rollout_id)
+            if context is None:
+                return web.json_response({"error": "rollout not found"}, status=404)
+            handlers: dict[str, ToolHandler] = context.get("tool_handlers", {})
+            handler = handlers.get(tool_name)
+            if handler is None:
+                return web.json_response({"error": "tool not found"}, status=404)
+
+        try:
+            body = await request.json()
+        except Exception as exc:
+            return web.json_response({"error": f"invalid JSON: {exc}"}, status=400)
+
+        arguments_raw: Any
+        if isinstance(body, dict) and "arguments" in body:
+            arguments_raw = body.get("arguments")
+        else:
+            arguments_raw = body
+
+        if arguments_raw is None:
+            arguments = {}
+        elif isinstance(arguments_raw, dict):
+            arguments = arguments_raw
+        else:
+            return web.json_response(
+                {"error": "tool arguments must be a JSON object"},
+                status=400,
+            )
+
+        try:
+            response = await handler(arguments)
+        except Exception:
+            _log.exception(
+                "tool handler failed (rollout=%s, tool=%s)",
+                rollout_id,
+                tool_name,
+            )
+            return web.json_response({"error": "tool execution failed"}, status=500)
+
+        if not isinstance(response, dict):
+            return web.json_response(
+                {"error": "tool handler must return a JSON object"},
+                status=500,
+            )
+        return web.json_response(response)
 
     async def _handle_chat_completions(
         self, request: web.Request
@@ -211,6 +340,11 @@ class InterceptionServer:
             body = await request.json()
         except Exception as exc:
             return web.json_response({"error": f"invalid JSON: {exc}"}, status=400)
+
+        tool_defs: dict[str, dict[str, Any]] = dict(context.get("tool_defs", {}))
+        merged_tools = self._merge_rollout_tools(body.get("tools"), tool_defs)
+        if merged_tools is not None:
+            body["tools"] = merged_tools
 
         is_streaming = bool(body.get("stream"))
         request_id = f"req_{uuid.uuid4().hex[:8]}"

@@ -36,12 +36,29 @@ from openenv.core.harness import (
 from openenv.core.harness.sandbox import BgJob, SandboxBackend, SandboxHandle
 
 from .base import CLIAgentSpec
-from .interception_server import deliver_response, InterceptionServer
+from .interception_server import (
+    deliver_response,
+    InterceptionServer,
+    ToolHandler,
+)
 
 
 _log = logging.getLogger(__name__)
 
 Verifier = Callable[..., VerifyResult]
+
+
+class _ConfigOverrideView:
+    """Read-only attribute view with optional overrides."""
+
+    def __init__(self, base: Any, **overrides: Any) -> None:
+        self._base = base
+        self._overrides = overrides
+
+    def __getattr__(self, name: str) -> Any:
+        if name in self._overrides:
+            return self._overrides[name]
+        return getattr(self._base, name)
 
 
 class CLIAgentSession(ResourceSession):
@@ -210,6 +227,25 @@ class CLIAgentSession(ResourceSession):
     ) -> None:
         """Return a trainer-generated response to the waiting agent."""
         await deliver_response(intercept, response_dict)
+
+    def register_tool_handler(
+        self,
+        tool_name: str,
+        handler: ToolHandler,
+        *,
+        tool_definition: dict[str, Any] | None = None,
+    ) -> None:
+        """Register a host-side interception tool for this rollout."""
+        if self._interception_server is None or self._interception_rollout_id is None:
+            raise RuntimeError(
+                "register_tool_handler() is only available in interception_gate mode."
+            )
+        self._interception_server.register_tool_handler(
+            self._interception_rollout_id,
+            tool_name,
+            handler,
+            tool_definition=tool_definition,
+        )
 
 
 class CLIAgentDriver:
@@ -415,8 +451,23 @@ class CLIAgentDriver:
         *,
         base_url_override: str | None = None,
     ) -> BgJob:
+        command_config = config
+        if (
+            self.mode == "interception_gate"
+            and self._interception_server is not None
+            and self.spec.name == "pi"
+            and base_url_override
+        ):
+            self._write_pi_models_config(
+                sandbox,
+                config,
+                rollout_url=base_url_override,
+                api_key=self._interception_server.secret,
+            )
+            command_config = _ConfigOverrideView(config, provider="openenv")
+
         if self.spec.build_command is not None:
-            cmd = self.spec.build_command(self.spec, config, task, None)
+            cmd = self.spec.build_command(self.spec, command_config, task, None)
         else:
             cmd = " ".join(shlex.quote(c) for c in self.spec.base_command)
         envs = self._resolve_env_vars(config, base_url_override=base_url_override)
@@ -424,6 +475,36 @@ class CLIAgentDriver:
             envs["OPENAI_API_KEY"] = self._interception_server.secret
             envs["ANTHROPIC_API_KEY"] = self._interception_server.secret
         return sandbox.start_bg(cmd, envs=envs)
+
+    def _write_pi_models_config(
+        self,
+        sandbox: SandboxHandle,
+        config: Any,
+        *,
+        rollout_url: str,
+        api_key: str,
+    ) -> None:
+        home = config.sandbox_home if hasattr(config, "sandbox_home") else "/home/user"
+        model = config.model if hasattr(config, "model") else "model"
+        content = json.dumps(
+            {
+                "providers": {
+                    "openenv": {
+                        "baseUrl": rollout_url,
+                        "api": "openai-completions",
+                        "apiKey": api_key,
+                        "compat": {
+                            "supportsDeveloperRole": False,
+                            "supportsReasoningEffort": False,
+                        },
+                        "models": [{"id": model, "reasoning": False}],
+                    }
+                }
+            },
+            indent=2,
+        )
+        for path in {f"{home}/.pi/agent/models.json", "/root/.pi/agent/models.json"}:
+            sandbox.write_text(path, content)
 
     def _resolve_env_vars(
         self,

@@ -529,6 +529,43 @@ class TestCLIAgentDriver:
         assert envs["OPENAI_API_KEY"] == "gate-secret"
         session.close()
 
+    def test_pi_interception_gate_writes_models_json_and_uses_openenv_provider(self):
+        from openenv.core.harness.agents.cli_driver import CLIAgentDriver
+        from openenv.core.harness.agents.interception_server import InterceptionServer
+        from openenv.core.harness.agents.pi import PI_SPEC
+
+        backend = FakeSandboxBackend()
+        server = InterceptionServer(port=0, secret="gate-secret")
+        driver = CLIAgentDriver(
+            spec=PI_SPEC,
+            sandbox_backend=backend,
+            mode="interception_gate",
+            interception_server=server,
+            interception_base_url="http://127.0.0.1:8765",
+        )
+
+        session = driver.create_session(task=FakeTask(), config=FakeConfig())
+        sbx = backend.created[0]
+
+        # Command should force the custom provider backed by models.json.
+        cmd, _envs = sbx.bg_commands[-1]
+        assert "--provider openenv" in cmd
+
+        home_models = "/home/user/.pi/agent/models.json"
+        root_models = "/root/.pi/agent/models.json"
+        assert home_models in sbx.written
+        assert root_models in sbx.written
+
+        cfg = json.loads(sbx.written[home_models])
+        provider = cfg["providers"]["openenv"]
+        assert provider["api"] == "openai-completions"
+        assert provider["apiKey"] == "gate-secret"
+        assert provider["models"][0]["id"] == "test-model"
+        assert "/rollout/" in provider["baseUrl"]
+        assert provider["baseUrl"].endswith("/v1")
+
+        session.close()
+
     def test_create_session_runs_task_setup_shell(self):
         from openenv.core.harness.agents.cli_driver import CLIAgentDriver
 
