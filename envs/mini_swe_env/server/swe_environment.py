@@ -4,19 +4,22 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""SWE environment implementation.
+"""SWE environment implementation (v2 — SWE-Gym + swebench grading).
 
-Single MCP tool ``run_swe_rollout`` with the ``SWETask`` shape:
+Single MCP tool ``run_swe_rollout`` with the ``SWEGymTask`` shape:
 
-  - ``instance_id``  — SWE-bench Lite instance identifier
-  - ``repo``         — GitHub ``org/repo`` to clone
-  - ``base_commit``  — commit to reset the repo to
-  - ``instruction``  — problem statement for the agent
-  - ``setup``        — bash commands run BEFORE the agent
-  - ``verify``       — bash commands run AFTER the agent
+  - ``instance_id``  — SWE-Gym instance identifier
+  - ``repo``         — GitHub ``org/repo``
+  - ``base_commit``  — commit hash in per-task Docker image
+  - ``problem_statement`` — agent instruction (problem text)
 
-Reward = ``passed_verify_commands / total`` unless a verify command writes
-a float to ``/home/user/logs/verifier/reward.txt`` (override).
+**Reward** is binary via ``swebench.harness.grading``:
+  - ``1.0`` if resolved (all FAIL_TO_PASS pass, all PASS_TO_PASS still pass)
+  - ``0.0`` otherwise
+
+**Per-task Docker images** from SWE-Gym (``xingyaoww/...``): the repo is
+pre-cloned at ``/testbed`` with all dependencies installed.  No git clone
+or dependency install at runtime.
 
 The ``terminal`` tool is delivered via an in-sandbox MCP server
 (:mod:`sandbox_mcp_server`) started before the agent launches.
@@ -25,6 +28,7 @@ The ``terminal`` tool is delivered via an in-sandbox MCP server
 from __future__ import annotations
 
 import json
+import logging
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -36,19 +40,46 @@ try:
     from openenv.core.env_server.mcp_environment import MCPEnvironment
     from openenv.core.env_server.types import Action, Observation
 
-    from ..models import SWECommandResult, SWERolloutResult, SWEState, SWETask, validate_swe_task
+    from ..grading import GradeResult, grade_from_log, make_eval_script
+    from ..models import (
+        SWECommandResult,
+        SWEGymTask,
+        SWERolloutResult,
+        SWEState,
+        SWETask,
+        validate_swe_task,
+    )
+    from ..task_loader_swegym import (
+        get_instance_image,
+        validate_swegym_task,
+    )
 except ImportError:  # pragma: no cover
-    from models import SWECommandResult, SWERolloutResult, SWEState, SWETask, validate_swe_task  # type: ignore
+    from grading import GradeResult, grade_from_log, make_eval_script  # type: ignore
+    from models import (  # type: ignore
+        SWECommandResult,
+        SWEGymTask,
+        SWERolloutResult,
+        SWEState,
+        SWETask,
+        validate_swe_task,
+    )
+    from openenv.core.env_server.mcp_environment import MCPEnvironment
+    from openenv.core.env_server.types import Action, Observation
+    from task_loader_swegym import get_instance_image, validate_swegym_task  # type: ignore
 
+_log = logging.getLogger(__name__)
 
 # Long timeout for the single MCP tool (sandbox cold-start + agent run +
 # verify can take 10-30 min for real SWE tasks).
 _RUN_ROLLOUT_TIMEOUT_S = 2400.0
 
-# Sandbox filesystem layout.
+# Sandbox filesystem layout — SWE-Gym convention.
+# Per-task images have the repo pre-cloned at /testbed.
+TESTBED = "/testbed"
 HOME = "/home/user"
-WORKDIR = f"{HOME}/workdir"
 REWARD_FILE = f"{HOME}/logs/verifier/reward.txt"
+EVAL_LOG_FILE = f"{HOME}/logs/verifier/eval.log"
+EVAL_SCRIPT_PATH = f"{HOME}/swe_eval.sh"
 FINAL_ANSWER_FILE = f"{HOME}/logs/agent/final_answer.txt"
 DONE_MARKER = f"{HOME}/logs/agent/.done"
 MCP_CONFIG_PATH = f"{HOME}/.swe_mcp_config.json"
@@ -68,7 +99,13 @@ _AGENT_LOG_PATHS: dict[str, str] = {
 
 
 class SWEEnvironment(MCPEnvironment):
-    """Per-session SWE environment exposing ``run_swe_rollout`` MCP tool."""
+    """Per-session SWE environment exposing ``run_swe_rollout`` MCP tool.
+
+    Updated for SWE-Gym:
+      - Per-task Docker images (no git clone needed).
+      - Binary reward via ``swebench.harness.grading``.
+      - Working directory is ``/testbed``.
+    """
 
     SUPPORTS_CONCURRENT_SESSIONS = True
 
@@ -85,7 +122,7 @@ class SWEEnvironment(MCPEnvironment):
 
         @mcp.tool
         def run_swe_rollout(
-            # Task fields (match SWETask shape).
+            # Task fields (match SWEGymTask / SWETask shape).
             instance_id: str = "",
             repo: str = "",
             base_commit: str = "",
@@ -108,8 +145,8 @@ class SWEEnvironment(MCPEnvironment):
             """Run one SWE rollout end-to-end.
 
             Pass either individual fields (instance_id, repo, ...) or a
-            complete SWETask as ``task_json``.  Returns a JSON-serialized
-            ``SWERolloutResult``.
+            complete SWETask/SWEGymTask as ``task_json``.  Returns a
+            JSON-serialized ``SWERolloutResult``.
             """
             return self._run_swe_rollout_impl(
                 instance_id=instance_id,
@@ -257,20 +294,21 @@ class SWEEnvironment(MCPEnvironment):
         sandbox = None
         session = None
         try:
-            backend = self._create_backend(
-                sandbox_backend, sandbox_image or task.sandbox_image
-            )
+            # Use per-task image if available (SWE-Gym convention).
+            image = sandbox_image or task.sandbox_image
+            backend = self._create_backend(sandbox_backend, image)
             sandbox = backend.create(
                 timeout_s=int(agent_timeout_s) + 600,
             )
             result.sandbox_id = sandbox.sandbox_id
 
-            # ── Stage repo ────────────────────────────────────────────
-            self._stage_repo(sandbox, task)
+            # ── Stage repo (only if not using a per-task image) ───────
+            if not image:
+                self._stage_repo(sandbox, task)
 
             # ── Run setup commands ────────────────────────────────────
             for cmd in task.setup:
-                cr = self._exec_command(sandbox, cmd, cwd=WORKDIR)
+                cr = self._exec_command(sandbox, cmd, cwd=TESTBED)
                 result.setup_results.append(cr)
                 if cr.exit_code != 0:
                     result.error = f"Setup failed (exit {cr.exit_code}): {cmd[:120]}"
@@ -294,8 +332,6 @@ class SWEEnvironment(MCPEnvironment):
             )
             rollout_task = self._build_agent_task(task)
 
-            # Use the already-created sandbox rather than creating a new one.
-            # We build the session manually using the driver's helpers.
             from openenv.core.harness.agents.cli_driver import CLIAgentDriver
 
             driver = CLIAgentDriver(
@@ -303,7 +339,6 @@ class SWEEnvironment(MCPEnvironment):
                 sandbox_backend=backend,
                 mode="black_box",
             )
-            # Agent install + file upload (instruction, mcp config, etc.)
             driver._bootstrap_sandbox(sandbox, rollout_task, config)
             agent_bg = driver._start_agent(sandbox, rollout_task, config)
 
@@ -325,22 +360,16 @@ class SWEEnvironment(MCPEnvironment):
             except TimeoutError as exc:
                 result.error = f"Agent timeout: {exc}"
 
-            # ── Verify ────────────────────────────────────────────────
-            verify_passed = 0
-            for cmd in task.verify:
-                cr = self._exec_command(sandbox, cmd, cwd=WORKDIR)
-                result.verify_results.append(cr)
-                if cr.exit_code == 0:
-                    verify_passed += 1
-
-            # ── Reward ────────────────────────────────────────────────
-            override = self._read_reward(sandbox)
-            if override is not None:
-                result.reward = override
-            elif task.verify:
-                result.reward = verify_passed / len(task.verify)
+            # ── Grade submission ──────────────────────────────────────
+            grade_result = self._grade_submission(sandbox, task)
+            if grade_result is not None:
+                result.reward = grade_result.reward
+                result.resolved = grade_result.resolved
             else:
-                result.reward = None
+                # Fallback: legacy verify commands
+                result.reward, result.resolved = self._legacy_verify(
+                    sandbox, task
+                )
 
             # ── Collect artifacts ──────────────────────────────────────
             result.files, result.files_extra = self._collect_files(sandbox)
@@ -397,6 +426,12 @@ class SWEEnvironment(MCPEnvironment):
         if task_json:
             try:
                 raw = json.loads(task_json)
+                # Try SWEGymTask first — it has richer metadata.
+                if "problem_statement" in raw and "patch" in raw:
+                    gym_task = SWEGymTask(**raw)
+                    validate_swegym_task(gym_task)
+                    return gym_task.to_swe_task()
+                # Fall back to SWETask.
                 task = SWETask(**raw)
                 validate_swe_task(task)
                 return task
@@ -412,6 +447,9 @@ class SWEEnvironment(MCPEnvironment):
         if not instance_id:
             instance_id = f"manual::{repo}::{base_commit[:12]}"
 
+        # Derive per-task image.
+        image = get_instance_image(instance_id) if instance_id else None
+
         try:
             task = SWETask(
                 task_id=task_id or f"swegym::{instance_id}",
@@ -423,11 +461,114 @@ class SWEEnvironment(MCPEnvironment):
                 setup=setup,
                 verify=verify,
                 timeout_s=timeout_s,
+                sandbox_image=image,
             )
             validate_swe_task(task)
             return task
         except Exception as exc:
             return f"Task validation failed: {exc}"
+
+    # ── Grading ────────────────────────────────────────────────────────────
+
+    def _grade_submission(
+        self,
+        sandbox: Any,
+        task: SWETask,
+    ) -> GradeResult | None:
+        """Run swebench grading if task metadata contains SWE-Gym fields.
+
+        Returns GradeResult on success, None if task lacks metadata for
+        swebench grading (falls back to legacy verify).
+        """
+        metadata = task.metadata
+        if not metadata:
+            return None
+
+        # Need SWE-Gym fields for proper grading.
+        required_keys = {"patch", "test_patch", "FAIL_TO_PASS", "version"}
+        if not required_keys.issubset(metadata.keys()):
+            return None
+
+        try:
+            gym_task = SWEGymTask(
+                instance_id=task.instance_id,
+                repo=task.repo,
+                base_commit=task.base_commit,
+                problem_statement=task.instruction,
+                version=str(metadata["version"]),
+                patch=str(metadata["patch"]),
+                test_patch=str(metadata["test_patch"]),
+                FAIL_TO_PASS=list(metadata["FAIL_TO_PASS"]),
+                PASS_TO_PASS=list(metadata.get("PASS_TO_PASS", [])),
+                hints_text=str(metadata.get("hints_text", "")),
+                created_at=str(metadata.get("created_at", "")),
+                timeout_s=task.timeout_s,
+            )
+        except Exception as exc:
+            _log.warning("Could not reconstruct SWEGymTask for grading: %s", exc)
+            return None
+
+        try:
+            # Deploy eval script and run it.
+            eval_script = make_eval_script(gym_task)
+            sandbox.write_text(EVAL_SCRIPT_PATH, eval_script)
+            sandbox.exec(f"chmod +x {EVAL_SCRIPT_PATH}", timeout=5)
+
+            r = sandbox.exec(
+                f"bash {EVAL_SCRIPT_PATH} 2>&1 | tee {EVAL_LOG_FILE}",
+                cwd=TESTBED,
+                timeout=VERIFY_TIMEOUT_S,
+            )
+
+            # Grade from log file.
+            # We need the log file on the host, so read it from sandbox.
+            log_content = sandbox.read_text(EVAL_LOG_FILE)
+
+            import tempfile
+
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".log", delete=False, prefix="swe_grade_"
+            ) as f:
+                f.write(log_content)
+                tmp_log = f.name
+
+            try:
+                result = grade_from_log(gym_task, tmp_log)
+            finally:
+                import os
+
+                os.unlink(tmp_log)
+
+            # Write reward to sandbox for the answer extension to find.
+            sandbox.write_text(REWARD_FILE, str(result.reward))
+
+            return result
+
+        except Exception as exc:
+            _log.warning("swebench grading failed, falling back: %s", exc)
+            return None
+
+    def _legacy_verify(
+        self,
+        sandbox: Any,
+        task: SWETask,
+    ) -> tuple[float | None, bool | None]:
+        """Legacy verify: run verify commands, compute pass ratio."""
+        verify_passed = 0
+        for cmd in task.verify:
+            cr = self._exec_command(sandbox, cmd, cwd=TESTBED)
+            if cr.exit_code == 0:
+                verify_passed += 1
+
+        override = self._read_reward(sandbox)
+        if override is not None:
+            return override, override == 1.0
+
+        if task.verify:
+            ratio = verify_passed / len(task.verify)
+            return ratio, ratio == 1.0
+
+        return None, None
 
     # ── Sandbox helpers ────────────────────────────────────────────────────
 
@@ -441,13 +582,16 @@ class SWEEnvironment(MCPEnvironment):
         return create_sandbox_backend(backend_name, **kwargs)
 
     def _stage_repo(self, sandbox: Any, task: SWETask) -> None:
-        """Clone the repo and reset to base_commit in the sandbox."""
-        sandbox.exec(f"mkdir -p {WORKDIR}", timeout=10)
+        """Clone the repo and reset to base_commit in the sandbox.
 
-        # Clone repo
+        Only used when there is no per-task Docker image.  SWE-Gym
+        per-task images already have the repo at ``/testbed``.
+        """
+        sandbox.exec(f"mkdir -p {TESTBED}", timeout=10)
+
         clone_url = f"https://github.com/{task.repo}.git"
         r = sandbox.exec(
-            f"git clone --quiet {clone_url} {WORKDIR}",
+            f"git clone --quiet {clone_url} {TESTBED}",
             timeout=SETUP_TIMEOUT_S,
         )
         if r.exit_code != 0:
@@ -455,10 +599,9 @@ class SWEEnvironment(MCPEnvironment):
                 f"git clone failed (exit {r.exit_code}): {r.stderr[:500]}"
             )
 
-        # Reset to base commit
         r = sandbox.exec(
             f"git checkout --quiet {task.base_commit}",
-            cwd=WORKDIR,
+            cwd=TESTBED,
             timeout=60,
         )
         if r.exit_code != 0:
@@ -468,14 +611,12 @@ class SWEEnvironment(MCPEnvironment):
 
     def _deploy_mcp_server(self, sandbox: Any, task: SWETask) -> None:
         """Write the MCP server script and config into the sandbox, then start it."""
-        # Write the MCP server script
         mcp_source = _SANDBOX_MCP_SERVER_SOURCE.read_text()
         sandbox.write_text(MCP_SERVER_PATH, mcp_source)
 
-        # Write the config
         mcp_config = json.dumps(
             {
-                "workspace": WORKDIR,
+                "workspace": TESTBED,
                 "verify_commands": list(task.verify),
                 "timeout_per_command_s": VERIFY_TIMEOUT_S,
                 "output_limit": 16_000,
@@ -485,19 +626,16 @@ class SWEEnvironment(MCPEnvironment):
         )
         sandbox.write_text(MCP_CONFIG_PATH, mcp_config)
 
-        # Ensure log dirs exist
         sandbox.exec(
             f"mkdir -p {HOME}/logs/verifier {HOME}/logs/agent",
             timeout=10,
         )
 
-        # Start the MCP server as a background process
         sandbox.start_bg(
             f"python3 {MCP_SERVER_PATH}",
             envs={"SWE_MCP_CONFIG": MCP_CONFIG_PATH},
         )
 
-        # Wait for server to be ready
         for attempt in range(10):
             r = sandbox.exec(
                 f"curl -sf http://127.0.0.1:{MCP_PORT}/health 2>/dev/null || echo FAIL",
@@ -605,9 +743,8 @@ class SWEEnvironment(MCPEnvironment):
 
     def _collect_files(self, sandbox: Any) -> tuple[dict[str, str], list[str]]:
         """Collect modified files from the workspace."""
-        # Use git diff to find changed files (more relevant than a blind find)
         listing = sandbox.exec(
-            f"cd {WORKDIR} && git diff --name-only HEAD 2>/dev/null | head -32",
+            f"cd {TESTBED} && git diff --name-only HEAD 2>/dev/null | head -32",
             timeout=10,
         )
         files: dict[str, str] = {}
@@ -616,7 +753,7 @@ class SWEEnvironment(MCPEnvironment):
             rel_path = line.strip()
             if not rel_path:
                 continue
-            full_path = f"{WORKDIR}/{rel_path}"
+            full_path = f"{TESTBED}/{rel_path}"
             try:
                 content = sandbox.read_text(full_path)
                 if len(content) <= 16_000:

@@ -7,15 +7,17 @@
 """Data models for the mini_swe_env.
 
 Contains:
-  - ``SWETask`` — frozen dataclass representing one SWE task (repo, commit,
-    instruction, etc.).  Shared by the environment server, harness, and
-    client layers.
+  - ``SWEGymTask`` — frozen dataclass mirroring the SWE-Gym HF dataset
+    schema (``instance_id``, ``repo``, ``patch``, ``test_patch``, etc.).
+  - ``SWETask`` — internal task shape shared across environment, harness,
+    and client layers.  ``SWEGymTask.to_swe_task()`` converts between them.
   - ``SWERolloutResult`` / ``SWECommandResult`` / ``SWEState`` — Pydantic
     models for the server's MCP tool.
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -24,10 +26,88 @@ from pydantic import BaseModel, Field
 
 
 DEFAULT_TIMEOUT_S = 1800
+SWEGYM_SOURCE = "swegym"
+
+
+# ── SWEGymTask (matches HF dataset schema) ────────────────────────────────
 
 
 class SWETaskValidationError(ValueError):
     """Raised when a task fails schema validation."""
+
+
+@dataclass(frozen=True)
+class SWEGymTask:
+    """One SWE-Gym task, mirroring the HuggingFace dataset columns.
+
+    Fields correspond 1:1 to the ``SWE-Gym/SWE-Gym`` dataset:
+      ``instance_id``, ``repo``, ``base_commit``, ``problem_statement``,
+      ``version``, ``patch`` (ground-truth), ``test_patch``,
+      ``FAIL_TO_PASS``, ``PASS_TO_PASS``, ``hints_text``, ``created_at``.
+
+    The ``timeout_s`` field is not in the dataset; it is set by the loader.
+    """
+
+    instance_id: str
+    repo: str
+    base_commit: str
+    problem_statement: str
+    version: str
+    patch: str
+    test_patch: str
+    FAIL_TO_PASS: list[str]
+    PASS_TO_PASS: list[str]
+    hints_text: str = ""
+    created_at: str = ""
+    timeout_s: int = DEFAULT_TIMEOUT_S
+
+    # ── Derived helpers ────────────────────────────────────────────────
+
+    @property
+    def instance_image(self) -> str:
+        """Docker image name for this task (SWE-Gym convention).
+
+        Uses the ``xingyaoww/`` namespace with ``sweb.eval.x86_64.`` prefix.
+        Doubles underscores are replaced per SWE-bench convention.
+        """
+        sanitised = self.instance_id.lower().replace("__", "_1776_")
+        return f"xingyaoww/sweb.eval.x86_64.{sanitised}:latest"
+
+    def to_swe_task(self) -> SWETask:
+        """Convert to the internal ``SWETask`` used by the harness.
+
+        The ``verify`` list is left empty because Phase 3 uses
+        ``swebench.harness.grading`` for reward, not shell commands.
+        The ``instruction`` is the ``problem_statement``.
+        """
+        return SWETask(
+            task_id=f"{SWEGYM_SOURCE}::{self.instance_id}",
+            source=SWEGYM_SOURCE,
+            instance_id=self.instance_id,
+            repo=self.repo,
+            base_commit=self.base_commit,
+            instruction=self.problem_statement,
+            setup=[],
+            verify=[],  # grading via swebench, not shell commands
+            timeout_s=self.timeout_s,
+            sandbox_image=self.instance_image,
+            metadata={
+                "version": self.version,
+                "patch": self.patch,
+                "test_patch": self.test_patch,
+                "FAIL_TO_PASS": list(self.FAIL_TO_PASS),
+                "PASS_TO_PASS": list(self.PASS_TO_PASS),
+                "hints_text": self.hints_text,
+                "created_at": self.created_at,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a plain dictionary."""
+        return asdict(self)
+
+
+# ── SWETask (internal task shape) ──────────────────────────────────────────
 
 
 @dataclass(frozen=True)
@@ -81,12 +161,6 @@ def validate_swe_task(task: SWETask) -> None:
 
     if not isinstance(task.verify, list):
         errors.append("verify must be a list[str]")
-    elif not task.verify:
-        errors.append("verify must contain at least one command")
-    else:
-        for idx, command in enumerate(task.verify):
-            if not isinstance(command, str) or not command.strip():
-                errors.append(f"verify[{idx}] must be a non-empty string")
 
     if not isinstance(task.timeout_s, int) or task.timeout_s <= 0:
         errors.append("timeout_s must be a positive int")
@@ -117,6 +191,9 @@ def coerce_swe_task(value: SWETask | dict[str, Any]) -> SWETask:
     return task
 
 
+# ── Pydantic models (server payloads) ─────────────────────────────────────
+
+
 class SWECommandResult(BaseModel):
     """Outcome of one shell command in setup or verify."""
 
@@ -139,8 +216,9 @@ class SWERolloutResult(BaseModel):
     instance_id: str = ""
     sandbox_id: str = ""
 
-    # Scalars
+    # Scalars — binary reward (1.0 resolved, 0.0 not resolved)
     reward: float | None = None
+    resolved: bool | None = None
     agent_exit_code: int | None = None
     wall_s: float = 0.0
 
