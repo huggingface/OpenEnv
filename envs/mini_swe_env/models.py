@@ -68,9 +68,10 @@ class SWEGymTask:
         """Docker image name for this task (SWE-Gym convention).
 
         Uses the ``xingyaoww/`` namespace with ``sweb.eval.x86_64.`` prefix.
-        Doubles underscores are replaced per SWE-bench convention.
+        Double underscores are replaced with ``_s_`` per SWE-Gym convention
+        (matching ``env-swe-gym/swegym.py``).
         """
-        sanitised = self.instance_id.lower().replace("__", "_1776_")
+        sanitised = self.instance_id.lower().replace("__", "_s_")
         return f"xingyaoww/sweb.eval.x86_64.{sanitised}:latest"
 
     def to_swe_task(self) -> SWETask:

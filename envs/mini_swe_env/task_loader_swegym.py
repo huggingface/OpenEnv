@@ -177,7 +177,7 @@ def get_instance_image(instance_id: str) -> str:
       ``xingyaoww/sweb.eval.x86_64.<sanitised_instance_id>:latest``
     where ``__`` in the instance id is replaced with ``_1776_``.
     """
-    sanitised = instance_id.lower().replace("__", "_1776_")
+    sanitised = instance_id.lower().replace("__", "_s_")
     return f"xingyaoww/sweb.eval.x86_64.{sanitised}:latest"
 
 

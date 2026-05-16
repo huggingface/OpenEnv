@@ -4,12 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""SWE harness session and session factory (v2 — Pi answer extension).
+"""SWE harness session and session factory.
 
 Integrates ``mini_swe_env`` with the ``CLIAgentDriver`` / ``ResourceSession``
 harness infrastructure.  Pi runs in the sandbox with its built-in tools
-(bash, edit, write, read, grep, find, ls) plus one extension-registered
-tool: ``answer``.
+(bash, edit, write, read, grep, find, ls) plus one host-side tool:
+``answer``.
 
 Session lifecycle::
 
@@ -27,30 +27,20 @@ Session lifecycle::
     print(vr.env_reward)   # 1.0 or 0.0 (binary)
     session.close()
 
-**Reward integrity**: The authoritative reward is computed **host-side**
-by ``SWESession.verify()``, which extracts the agent's diff from the
-sandbox, runs the swebench eval script in the sandbox, downloads the
-test log, and grades it on the host via
-``swebench.harness.grading.get_eval_report()``.  No ``reward.txt`` is
-used — the agent cannot influence the training reward.
+**Reward architecture**: The ``answer`` tool is a **host-side tool**
+routed through the InterceptionServer's tool routing layer (``/vf/tools``).
+When the agent calls ``answer()``, the request goes to the host, which
+runs swebench grading (revert test files → apply test_patch → run eval →
+grade via ``get_eval_report``), and returns the result to the agent.
+This is the same result ``verify()`` returns — one grading path, no
+in-sandbox grading infrastructure.
 
-The in-sandbox ``answer`` extension gives the agent a fast feedback
-signal ("Resolved: true/false") but this is purely informational and
-not used for the training reward.
+This matches SWE-Gym's architecture where ``answer`` is server-side code
+on the OpenReward platform.
 
-The factory handles:
-  1. Sandbox creation (per-task Docker image, /testbed ready)
-  2. Deploy Pi ``answer`` extension (swe-answer.ts + swe-grade.sh)
-  3. Deploy eval script (from swebench via ``make_eval_script``)
-  4. Deploy test patch file
-  5. Run task setup commands
-  6. Agent bootstrap + launch
-  7. Interception gate rollout registration (when mode="interception_gate")
-
-The session handles:
-  - ``verify()`` — host-side grading via swebench, returns binary VerifyResult
-  - ``initial_messages()`` — instruction prompt
-  - Interception gate: ``next_request()`` / ``deliver()``
+**Requires core changes** — see ``CORE_CHANGES.md`` for the
+InterceptionServer tool routing, models.json, workdir, and Docker
+host-IP changes needed in ``openenv.core``.
 """
 
 from __future__ import annotations
@@ -82,22 +72,56 @@ _log = logging.getLogger(__name__)
 
 HOME = "/home/user"
 TESTBED = "/testbed"
-EVAL_LOG_FILE = f"{HOME}/logs/verifier/eval.log"
-
-# Extension + grading script paths in sandbox.
-EXTENSION_DIR = f"{HOME}/.pi/agent/extensions"
-EXTENSION_PATH = f"{EXTENSION_DIR}/swe-answer.ts"
-GRADE_SCRIPT_PATH = f"{HOME}/swe-grade.sh"
-EVAL_SCRIPT_PATH = f"{HOME}/swe_eval.sh"
-TEST_PATCH_PATH = f"{HOME}/swe_test.patch"
 
 VERIFY_TIMEOUT_S = 300
 SETUP_TIMEOUT_S = 600
 
-# Source files for the answer extension and grading script.
-_EXTENSIONS_DIR = Path(__file__).parent / "extensions"
-_SWE_ANSWER_TS = _EXTENSIONS_DIR / "swe-answer.ts"
-_SWE_GRADE_SH = _EXTENSIONS_DIR / "swe-grade.sh"
+
+# ── SWE instruction template ──────────────────────────────────────────────
+
+_SWE_INSTRUCTION_TEMPLATE = """<pr_description>
+Consider the following PR description:
+{problem_statement}
+</pr_description>
+
+<instructions>
+# Task Instructions
+
+## Overview
+You're a software engineer working on a codebase at /testbed.
+Your task is to fix the issue described in the PR description above
+by making changes to the source code (non-test files).
+
+## Important Boundaries
+- MODIFY: Regular source code files in /testbed
+- DO NOT MODIFY: Tests, configuration files (pyproject.toml, setup.cfg, etc.)
+
+## Recommended Workflow
+1. Analyze the codebase by finding and reading relevant files
+2. Create a script to reproduce the issue
+3. Edit the source code to resolve the issue
+4. Verify your fix works by running your script again
+5. Test edge cases to ensure your fix is robust
+
+## Submitting Your Answer
+When you've completed your work and verified your fix, call the `answer`
+tool to submit your solution for grading. This runs the test suite and
+returns whether the issue is resolved.
+
+You cannot continue working after submitting — make sure your fix is
+tested before calling `answer`.
+</instructions>"""
+
+
+def _wrap_instruction(problem_statement: str) -> str:
+    """Wrap a problem statement with SWE-Gym-style task instructions.
+
+    Tells the agent about the workflow, boundaries, and crucially
+    about the ``answer`` tool for submission.
+    """
+    return _SWE_INSTRUCTION_TEMPLATE.format(
+        problem_statement=problem_statement,
+    )
 
 
 @dataclass
@@ -130,13 +154,15 @@ class SWESession(CLIAgentSession):
     """Per-rollout session with SWE-specific verify and reward logic.
 
     Extends :class:`CLIAgentSession` with:
-    - ``verify()`` that grades host-side via ``swebench.harness.grading``
-      (never trusts in-sandbox files for reward).
+    - ``verify()`` — returns the reward produced by the host-side
+      ``answer`` tool (stored by the InterceptionServer tool handler).
     - Falls back to running verify commands for legacy tasks.
     - SWE task metadata.
 
-    **Reward integrity**: The training reward is always computed on the
-    host.  The agent cannot influence it by writing files in the sandbox.
+    **Reward architecture**: The ``answer`` tool runs host-side via
+    the InterceptionServer's ``/vf/tools`` routing.  ``verify()`` simply
+    returns the reward already computed during the rollout.  There is
+    no separate grading step.
     """
 
     def __init__(
@@ -149,10 +175,15 @@ class SWESession(CLIAgentSession):
         super().__init__(**kwargs)
         self._swe_task = swe_task
         self._verify_timeout_s = verify_timeout_s
+        self._answer_reward: float | None = None  # set by host-side answer tool
 
     @property
     def swe_task(self) -> SWETask:
         return self._swe_task
+
+    def set_answer_reward(self, reward: float) -> None:
+        """Called by the host-side answer tool handler to store the reward."""
+        self._answer_reward = reward
 
     def initial_messages(self) -> list[Message]:
         """Return the SWE instruction as the initial prompt."""
@@ -163,39 +194,26 @@ class SWESession(CLIAgentSession):
         transcript: list[Message],
         final_state: Any | None = None,
     ) -> VerifyResult:
-        """Compute the training reward host-side.
+        """Return the reward computed by the host-side ``answer`` tool.
 
-        For SWE-Gym tasks (metadata has ``test_patch``, ``FAIL_TO_PASS``,
-        etc.), the flow is:
+        If the agent called ``answer()`` during the rollout, the
+        InterceptionServer's tool handler already computed the reward
+        and stored it via ``set_answer_reward()``.
 
-        1. Revert any test files the agent may have modified back to
-           ``base_commit`` (anti-reward-hacking).
-        2. Apply the task's ``test_patch`` in the sandbox.
-        3. Run the eval script in the sandbox, capturing the log.
-        4. Revert the ``test_patch``.
-        5. Download the log to the host.
-        6. Grade on the host via ``swebench.harness.grading.get_eval_report()``.
-
-        For legacy tasks with shell ``verify`` commands, falls back to
-        running them and computing pass ratio.
-
-        If neither path applies, reward defaults to 0.0.
+        If the agent never called ``answer()`` (timeout, crash),
+        falls back to verify commands (legacy) or defaults to 0.0.
         """
-        # 1. Try host-side swebench grading (primary path).
-        grade_result = self._host_side_grade()
-        if grade_result is not None:
+        # 1. Primary: reward from host-side answer tool.
+        if self._answer_reward is not None:
             return VerifyResult(
-                env_reward=grade_result.reward,
+                env_reward=self._answer_reward,
                 done=True,
                 metrics={
                     "instance_id": self._swe_task.instance_id,
-                    "reward_source": "host_swebench",
-                    "resolved": grade_result.resolved,
-                    "patch_applied": grade_result.patch_applied,
+                    "reward_source": "host_answer_tool",
                 },
                 artifacts={
                     "task_id": self._swe_task.task_id,
-                    "tests_status": grade_result.tests_status,
                 },
             )
 
@@ -244,131 +262,18 @@ class SWESession(CLIAgentSession):
                 },
             )
 
-        # 3. No grading source available.
+        # 3. No reward source — agent didn't call answer, no verify cmds.
         return VerifyResult(
             env_reward=0.0,
             done=True,
             metrics={
                 "instance_id": self._swe_task.instance_id,
-                "reward_source": "default_no_grading",
+                "reward_source": "default_no_answer",
             },
             artifacts={
                 "task_id": self._swe_task.task_id,
             },
         )
-
-    def _host_side_grade(self) -> Any:
-        """Run swebench grading host-side.
-
-        Returns a :class:`GradeResult` or ``None`` if the task lacks
-        SWE-Gym metadata.
-        """
-        metadata = self._swe_task.metadata
-        if not metadata:
-            return None
-
-        required_keys = {"patch", "test_patch", "FAIL_TO_PASS", "version"}
-        if not required_keys.issubset(metadata.keys()):
-            return None
-
-        try:
-            from .grading import grade_from_test_output
-            from .models import SWEGymTask
-
-            gym_task = SWEGymTask(
-                instance_id=self._swe_task.instance_id,
-                repo=self._swe_task.repo,
-                base_commit=self._swe_task.base_commit,
-                problem_statement=self._swe_task.instruction,
-                version=str(metadata["version"]),
-                patch=str(metadata["patch"]),
-                test_patch=str(metadata["test_patch"]),
-                FAIL_TO_PASS=list(metadata["FAIL_TO_PASS"]),
-                PASS_TO_PASS=list(metadata.get("PASS_TO_PASS", [])),
-                hints_text=str(metadata.get("hints_text", "")),
-                created_at=str(metadata.get("created_at", "")),
-                timeout_s=self._swe_task.timeout_s,
-            )
-        except Exception as exc:
-            _log.warning("Could not reconstruct SWEGymTask: %s", exc)
-            return None
-
-        try:
-            # Step 1: Revert test files to base_commit (anti-reward-hacking).
-            self._revert_test_files(gym_task)
-
-            # Step 2: Apply the known-good test_patch.
-            self.sandbox.exec(
-                f"cd {TESTBED} && git apply --allow-empty {TEST_PATCH_PATH}",
-                timeout=30,
-            )
-
-            # Step 3: Run the eval script, capturing output.
-            r = self.sandbox.exec(
-                f"bash {EVAL_SCRIPT_PATH} 2>&1",
-                cwd=TESTBED,
-                timeout=self._verify_timeout_s,
-            )
-            test_output = (r.stdout or "") + "\n" + (r.stderr or "")
-
-            # Step 4: Revert the test_patch.
-            self.sandbox.exec(
-                f"cd {TESTBED} && git apply --allow-empty -R {TEST_PATCH_PATH}",
-                timeout=30,
-            )
-
-            # Step 5: Extract agent's patch for the grading report.
-            diff_r = self.sandbox.exec(
-                f"cd {TESTBED} && git diff HEAD",
-                timeout=30,
-            )
-            model_patch = diff_r.stdout or ""
-
-            # Step 6: Grade on host.
-            # Prepend patch-applied marker expected by swebench grading.
-            test_output = f">>>>> Applied Patch (pred)\n{test_output}"
-            return grade_from_test_output(
-                gym_task,
-                test_output,
-                model_patch=model_patch if model_patch.strip() else None,
-            )
-
-        except Exception as exc:
-            _log.warning("Host-side grading failed: %s", exc)
-            return None
-
-    def _revert_test_files(self, gym_task: SWEGymTask) -> None:
-        """Revert any test files the agent may have modified.
-
-        Uses ``git checkout <base_commit> -- <path>`` for each file in
-        the test_patch, then removes any new test files the agent added.
-        This prevents reward hacking by weakening test assertions.
-        """
-        test_patch = gym_task.test_patch
-        if not test_patch:
-            return
-
-        # Parse file paths from the test patch.
-        modified_files: list[str] = []
-        for line in test_patch.splitlines():
-            if line.startswith("+++ b/"):
-                path = line[6:]
-                modified_files.append(path)
-            elif line.startswith("--- a/"):
-                path = line[6:]
-                if path != "/dev/null":
-                    modified_files.append(path)
-
-        if not modified_files:
-            return
-
-        # Revert each test file to base_commit.
-        base = gym_task.base_commit
-        for path in set(modified_files):
-            self.sandbox.exec(
-                f"cd {TESTBED} && git checkout {base} -- {path} 2>/dev/null || true",
-                timeout=10,
-            )
 
 
 # ── Tool-call parsing (kept for backward compatibility) ────────────────────
@@ -429,12 +334,11 @@ def parse_terminal_call(text: str) -> dict[str, Any] | None:
 
 
 class SWESessionFactory(ResourceSessionFactory):
-    """Creates isolated SWE sessions with Pi answer extension.
+    """Creates isolated SWE sessions.
 
-    Deploys the ``answer`` tool extension + grading script into each
-    sandbox so Pi gets fast feedback on its submission.  The
-    authoritative training reward is computed host-side by
-    ``SWESession.verify()``.
+    The ``answer`` tool is registered as a host-side tool on the
+    InterceptionServer (via ``/vf/tools``).  No in-sandbox grading
+    scripts or extensions are deployed.
 
     Compatible with :func:`build_harness_rollout_func`.
     """
@@ -489,7 +393,7 @@ class SWESessionFactory(ResourceSessionFactory):
         seed: int | None = None,
         episode_id: str | None = None,
     ) -> SWESession:
-        """Create one SWE session with answer extension deployed.
+        """Create one SWE session.
 
         ``task`` can be an ``SWETask``, ``SWEGymTask``, or a dict.
         """
@@ -509,14 +413,12 @@ class SWESessionFactory(ResourceSessionFactory):
                 if episode_id
                 else {"instance_id": swe_task.instance_id}
             ),
-            image=swe_task.sandbox_image,
         )
 
         try:
             if not swe_task.sandbox_image:
                 self._stage_repo(sandbox, swe_task)
 
-            self._deploy_answer_extension(sandbox, swe_task)
             self._run_setup(sandbox, swe_task)
 
             agent_task = self._build_agent_task(swe_task)
@@ -584,83 +486,6 @@ class SWESessionFactory(ResourceSessionFactory):
                 f"git checkout failed (exit {r.exit_code}): {r.stderr[:500]}"
             )
 
-    def _deploy_answer_extension(
-        self, sandbox: SandboxHandle, task: SWETask
-    ) -> None:
-        """Deploy the Pi answer extension and grading infrastructure.
-
-        Writes into the sandbox:
-          - swe-answer.ts  → ~/.pi/agent/extensions/  (Pi auto-discovers)
-          - swe-grade.sh   → ~/swe-grade.sh
-          - swe_eval.sh    → ~/swe_eval.sh   (from swebench, if available)
-          - swe_test.patch → ~/swe_test.patch (test patch, if available)
-        """
-        sandbox.exec(
-            f"mkdir -p {EXTENSION_DIR} {HOME}/logs/verifier {HOME}/logs/agent",
-            timeout=10,
-        )
-
-        sandbox.write_text(EXTENSION_PATH, _SWE_ANSWER_TS.read_text())
-
-        sandbox.write_text(GRADE_SCRIPT_PATH, _SWE_GRADE_SH.read_text())
-        sandbox.exec(f"chmod +x {GRADE_SCRIPT_PATH}", timeout=5)
-
-        test_patch = task.metadata.get("test_patch", "")
-        if test_patch:
-            sandbox.write_text(TEST_PATCH_PATH, test_patch)
-
-        eval_script = self._generate_eval_script(task)
-        if eval_script:
-            sandbox.write_text(EVAL_SCRIPT_PATH, eval_script)
-            sandbox.exec(f"chmod +x {EVAL_SCRIPT_PATH}", timeout=5)
-
-        # Set environment variables for the grading script.
-        env_file = f"{HOME}/.swe_env"
-        env_content = "\n".join([
-            f"export SWE_INSTANCE_ID={_shell_quote(task.instance_id)}",
-            f"export SWE_TESTBED={TESTBED}",
-            f"export SWE_TEST_PATCH={TEST_PATCH_PATH}",
-            f"export SWE_EVAL_SCRIPT={EVAL_SCRIPT_PATH}",
-            f"export SWE_LOG_FILE={EVAL_LOG_FILE}",
-            f"export SWE_GRADE_SCRIPT={GRADE_SCRIPT_PATH}",
-        ])
-        sandbox.write_text(env_file, env_content)
-
-        sandbox.exec(
-            f'echo "source {env_file}" >> {HOME}/.bashrc',
-            timeout=5,
-        )
-
-    def _generate_eval_script(self, task: SWETask) -> str | None:
-        """Try to generate a swebench eval script for this task."""
-        metadata = task.metadata
-        required_keys = {"patch", "test_patch", "FAIL_TO_PASS", "version"}
-        if not metadata or not required_keys.issubset(metadata.keys()):
-            return None
-
-        try:
-            from .grading import make_eval_script
-            from .models import SWEGymTask
-
-            gym_task = SWEGymTask(
-                instance_id=task.instance_id,
-                repo=task.repo,
-                base_commit=task.base_commit,
-                problem_statement=task.instruction,
-                version=str(metadata["version"]),
-                patch=str(metadata["patch"]),
-                test_patch=str(metadata["test_patch"]),
-                FAIL_TO_PASS=list(metadata["FAIL_TO_PASS"]),
-                PASS_TO_PASS=list(metadata.get("PASS_TO_PASS", [])),
-                hints_text=str(metadata.get("hints_text", "")),
-                created_at=str(metadata.get("created_at", "")),
-                timeout_s=task.timeout_s,
-            )
-            return make_eval_script(gym_task)
-        except Exception as exc:
-            _log.debug("Could not generate eval script: %s", exc)
-            return None
-
     def _run_setup(self, sandbox: SandboxHandle, task: SWETask) -> None:
         """Run task setup commands in the workspace."""
         for cmd in task.setup:
@@ -672,9 +497,13 @@ class SWESessionFactory(ResourceSessionFactory):
                 )
 
     def _build_agent_task(self, swe_task: SWETask) -> _SWEAgentTask:
-        """Convert SWETask into the shape CLIAgentDriver expects."""
+        """Convert SWETask into the shape CLIAgentDriver expects.
+
+        Wraps the raw problem statement with SWE-Gym-style instructions
+        that tell the agent about the ``answer`` tool.
+        """
         return _SWEAgentTask(
-            instruction=swe_task.instruction,
+            instruction=_wrap_instruction(swe_task.instruction),
             setup_shell=None,
             metadata={
                 "task_id": swe_task.task_id,
@@ -684,23 +513,12 @@ class SWESessionFactory(ResourceSessionFactory):
         )
 
 
-def _shell_quote(s: str) -> str:
-    """Simple shell quoting for env var values."""
-    return "'" + s.replace("'", "'\\''") + "'"
-
-
 __all__ = [
     "SWEAgentConfig",
     "SWESession",
     "SWESessionFactory",
+    "_wrap_instruction",
     "parse_terminal_call",
-    # Filesystem constants (useful for tests).
-    "EVAL_LOG_FILE",
-    "EVAL_SCRIPT_PATH",
-    "EXTENSION_DIR",
-    "EXTENSION_PATH",
-    "GRADE_SCRIPT_PATH",
     "HOME",
-    "TEST_PATCH_PATH",
     "TESTBED",
 ]
