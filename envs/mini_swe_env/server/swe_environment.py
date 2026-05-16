@@ -36,13 +36,9 @@ try:
     from openenv.core.env_server.mcp_environment import MCPEnvironment
     from openenv.core.env_server.types import Action, Observation
 
-    from ..models import SWECommandResult, SWERolloutResult, SWEState
-    from ..task_loader_swebench_lite import SWETask, validate_swe_task
+    from ..models import SWECommandResult, SWERolloutResult, SWEState, SWETask, validate_swe_task
 except ImportError:  # pragma: no cover
-    from models import SWECommandResult, SWERolloutResult, SWEState  # type: ignore
-    from openenv.core.env_server.mcp_environment import MCPEnvironment
-    from openenv.core.env_server.types import Action, Observation
-    from task_loader_swebench_lite import SWETask, validate_swe_task  # type: ignore
+    from models import SWECommandResult, SWERolloutResult, SWEState, SWETask, validate_swe_task  # type: ignore
 
 
 # Long timeout for the single MCP tool (sandbox cold-start + agent run +
@@ -418,8 +414,8 @@ class SWEEnvironment(MCPEnvironment):
 
         try:
             task = SWETask(
-                task_id=task_id or f"swebench_lite::{instance_id}",
-                source="swebench_lite",
+                task_id=task_id or f"swegym::{instance_id}",
+                source="swegym",
                 instance_id=instance_id,
                 repo=repo,
                 base_commit=base_commit,

@@ -1,6 +1,6 @@
 # Mini SWE Environment
 
-A training environment for SWE-bench Lite tasks using OpenEnv.
+A training environment for SWE tasks using OpenEnv.
 
 ## Overview
 
@@ -75,27 +75,6 @@ with MiniSWEEnv(base_url="http://localhost:8000") as env:
     print(f"Files changed: {list(result.files.keys())}")
 ```
 
-### From a Task File
-
-```python
-from mini_swe_env import MiniSWEEnv, load_task_file
-import json
-
-tasks = load_task_file("examples/mini_swe_env/tasks/mini_swe_train.jsonl")
-
-with MiniSWEEnv(base_url="http://localhost:8000") as env:
-    env.reset()
-    for task in tasks:
-        result = env.run_swe_rollout(
-            task_json=json.dumps(task.to_dict()),
-            agent="pi",
-            base_url="https://api.openai.com/v1",
-            api_key="sk-...",
-            model="gpt-4o-mini",
-        )
-        print(f"{task.instance_id}: reward={result.reward}")
-```
-
 ### Running the Server
 
 ```bash
@@ -112,8 +91,8 @@ PYTHONPATH=src:envs python -m mini_swe_env.server.app
 @dataclass
 class SWETask:
     task_id: str              # Unique identifier
-    source: str               # "swebench_lite"
-    instance_id: str          # SWE-bench instance id
+    source: str               # Task source identifier
+    instance_id: str          # SWE-bench / SWE-Gym instance id
     repo: str                 # "org/repo"
     base_commit: str          # Git commit hash
     instruction: str          # Problem statement
@@ -150,9 +129,9 @@ Returns: `{"reward": 0.75, "verify_results": [...], "done": true}`
 
 | File | Purpose |
 |------|---------|
-| `task_loader_swebench_lite.py` | SWE-bench Lite → SWETask adapter |
-| `models.py` | Pydantic models (SWERolloutResult, SWEState) |
+| `models.py` | SWETask dataclass + Pydantic models (SWERolloutResult, SWEState) |
 | `server/swe_environment.py` | Main environment (MCPEnvironment) |
 | `server/sandbox_mcp_server.py` | In-sandbox terminal tool server |
 | `server/app.py` | FastAPI application |
 | `client.py` | Typed MiniSWEEnv client |
+| `harness.py` | SWESession + SWESessionFactory for agent harness |
