@@ -465,6 +465,32 @@ def _has_main_guard_call(app_content: str) -> bool:
     return False
 
 
+def _dockerfile_installs_openenv_core(env_path: Path) -> bool:
+    """Return True when a Docker deployment installs OpenEnv outside pyproject."""
+    for dockerfile_path in (
+        env_path / "server" / "Dockerfile",
+        env_path / "Dockerfile",
+    ):
+        if not dockerfile_path.exists():
+            continue
+
+        try:
+            dockerfile = dockerfile_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+
+        for line in dockerfile.splitlines():
+            stripped = line.strip().lower()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if "openenv-core" in stripped:
+                return True
+            if "git+https://github.com/meta-pytorch/openenv" in stripped:
+                return True
+
+    return False
+
+
 def validate_multi_mode_deployment(env_path: Path) -> tuple[bool, list[str]]:
     """
     Validate that an environment is ready for multi-mode deployment.
@@ -518,8 +544,9 @@ def validate_multi_mode_deployment(env_path: Path) -> tuple[bool, list[str]]:
         dep.startswith("openenv") and not dep.startswith("openenv-core") for dep in deps
     )
     has_legacy_core = any(dep.startswith("openenv-core") for dep in deps)
+    has_dockerfile_core = _dockerfile_installs_openenv_core(env_path)
 
-    if not (has_openenv or has_legacy_core):
+    if not (has_openenv or has_legacy_core or has_dockerfile_core):
         issues.append(
             "Missing required dependency: openenv-core>=0.2.0 (or openenv>=0.2.0)"
         )

@@ -1,11 +1,5 @@
 # Environment Anatomy
 
-:::{note}
-Coming Soon
-    This page is under construction.
-
-A deep dive
-
 A deep dive into the structure of OpenEnv environments.
 
 ## Components
@@ -50,48 +44,68 @@ spec_version: 1
 
 ## Models (Pydantic)
 
-```python
-from pydantic import BaseModel
+Custom `Action`, `Observation`, and `State` types subclass the base classes from `openenv.core.env_server.types` — not `pydantic.BaseModel` directly. The base `Observation` already carries `done` and `reward` fields, which `step()` populates; `Action` and `State` add metadata plumbing used by the server.
 
-class MyAction(BaseModel):
+```python
+from openenv.core.env_server.types import Action, Observation, State
+
+
+class MyAction(Action):
     command: str
     args: list[str] = []
 
-class MyObservation(BaseModel):
+
+class MyObservation(Observation):
     output: str
     success: bool
 
-class MyState(BaseModel):
+
+class MyState(State):
     history: list[str] = []
 ```
 
 ## Environment Class
 
+Environments subclass the abstract `Environment[ActT, ObsT, StateT]` base and implement `reset`, `step`, and the `state` property. Reward and termination are carried on the returned observation — they are **not** a tuple return value.
+
 ```python
-from openenv.core import Environment
+from openenv.core.env_server.interfaces import Environment
+
 
 class MyEnvironment(Environment[MyAction, MyObservation, MyState]):
-    def reset(self) -> MyObservation:
+    def reset(self, seed=None, episode_id=None, **kwargs) -> MyObservation:
         ...
 
-    def step(self, action: MyAction) -> tuple[MyObservation, float, bool]:
+    def step(self, action: MyAction, timeout_s=None, **kwargs) -> MyObservation:
         ...
 
-    def get_state(self) -> MyState:
+    @property
+    def state(self) -> MyState:
         ...
 ```
 
 ## Server (FastAPI)
 
-```python
-from fastapi import FastAPI
-from openenv.server import create_server
+Use `create_app` from `openenv.core.env_server` to wrap the environment as a FastAPI application. Pass the environment **class** (used as a factory so each WebSocket session gets its own instance) along with the action and observation types:
 
-app = create_server(MyEnvironment)
+```python
+from openenv.core.env_server import create_app
+
+app = create_app(
+    MyEnvironment,
+    MyAction,
+    MyObservation,
+    env_name="my_env",
+)
 ```
+
+This is what the environment's `server/app.py` entry point typically does — see `envs/echo_env/server/app.py` for a minimal real example.
+
+## Rewards via the Rubric
+
+Rewards are computed **inside the environment**, not by external code. The base `Environment` accepts an optional `rubric` on `__init__` — pass it to `super().__init__(rubric=...)`, call `self._reset_rubric()` from `reset`, and `self._apply_rubric(action, observation)` from `step` (or `_apply_rubric_async` from `step_async`). The [Rubrics tutorial](../tutorials/rubrics.md) covers the composable API end-to-end.
 
 ## Next Steps
 
 - [Deployment](deployment.md) - Deploy your environment
 - [Your First Environment](first-environment.md) - Build step by step
-:::

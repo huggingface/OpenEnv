@@ -1520,6 +1520,10 @@ def create_app(
     max_concurrent_envs: Optional[int] = None,
     concurrency_config: Optional[ConcurrencyConfig] = None,
     gradio_builder: Optional[Callable[..., Any]] = None,
+    custom_tab_name: str = "Custom",
+    custom_tab_primary: bool = False,
+    show_default_tab: bool = True,
+    title_override: Optional[str] = None,
 ) -> FastAPI:
     """
     Create a FastAPI application with or without web interface.
@@ -1540,6 +1544,16 @@ def create_app(
             Signature: (web_manager, action_fields, metadata, is_chat_env, title,
             quick_start_md) -> gr.Blocks. When None, the default Gradio app is used.
             See docs/customizing-web-ui.md.
+        custom_tab_name: Label for the env-specific tab when ``gradio_builder``
+            is provided. Defaults to ``"Custom"``.
+        custom_tab_primary: When True, the env-specific tab is active first; the
+            auto-generated Playground becomes secondary. Use when the custom tab
+            is the real interaction surface for the env.
+        show_default_tab: When False, mount the env's ``gradio_builder`` output
+            alone (no auto-generated Playground, no tab chrome). Only meaningful
+            when ``gradio_builder`` is provided.
+        title_override: If set, used as the Gradio app title instead of the
+            default ``"OpenEnv Agentic Environment: {name}"``.
 
     Returns:
         FastAPI application instance with or without web interface and README integration
@@ -1564,6 +1578,10 @@ def create_app(
             max_concurrent_envs,
             concurrency_config,
             gradio_builder=gradio_builder,
+            custom_tab_name=custom_tab_name,
+            custom_tab_primary=custom_tab_primary,
+            show_default_tab=show_default_tab,
+            title_override=title_override,
         )
     else:
         # Use standard FastAPI app without web interface

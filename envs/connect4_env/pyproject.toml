@@ -28,6 +28,9 @@ dev = [
     "pytest-cov>=4.0.0",
 ]
 
+[project.scripts]
+server = "connect4_env.server.app:main"
+
 [tool.setuptools]
 include-package-data = true
 packages = ["connect4_env", "connect4_env.server"]

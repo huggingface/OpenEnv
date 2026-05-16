@@ -73,6 +73,38 @@ for episode in range(1000):
 env.close()
 ```
 
+## Harness Sessions for TRL
+
+If you want BrowserGym to participate in a tool-driven harness instead of a
+hand-written `env.reset()` / `env.step()` loop, use the BrowserGym session
+factory:
+
+```python
+from browsergym_env import BrowserGymEnv
+from browsergym_env.harness import BrowserGymSessionFactory
+from openenv.core.harness import (
+    HarnessRunLimits,
+    MCPHarnessAdapter,
+    build_harness_rollout_func,
+)
+
+session_factory = BrowserGymSessionFactory(
+    client_factory=lambda: BrowserGymEnv(base_url="https://openenv-browsergym-env.hf.space"),
+)
+
+rollout_func = build_harness_rollout_func(
+    session_factory=session_factory,
+    harness_adapter=MCPHarnessAdapter(),
+    model_step_builder=...,  # trainer-owned model sampling
+    limits=HarnessRunLimits(max_turns=10),
+)
+```
+
+BrowserGym exposes `click`, `fill`, `send_keys`, `scroll`, and `noop` as MCP-style
+tools while still translating them back into the underlying `BrowserGymAction`
+strings. See [examples/browsergym_harness.py](https://github.com/meta-pytorch/OpenEnv/blob/main/examples/browsergym_harness.py)
+for a full TRL-oriented example.
+
 ### Available Tasks by Benchmark
 
 #### MiniWoB++ Tasks (Training - 100+ tasks)

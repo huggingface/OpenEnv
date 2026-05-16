@@ -49,6 +49,48 @@ Secure sandbox with filesystem access and evaluation hooks for executing generat
 ```
 ````
 
+````{grid-item-card} Jupyter
+:class-card: sd-border-1
+
+Notebook-style coding environment backed by E2B with setup/verify hooks and a web UI for interactive runs.
+
++++
+```{button-link} environments/jupyter.html
+:color: primary
+:outline:
+
+{octicon}`file;1em` Docs
+```
+````
+
+````{grid-item-card} Terminus
+:class-card: sd-border-1
+
+Terminal-first coding environment with high-contrast shell output and session controls for execute/verify/close flows.
+
++++
+```{button-link} environments/terminus.html
+:color: primary
+:outline:
+
+{octicon}`file;1em` Docs
+```
+````
+
+````{grid-item-card} Coding Tools
+:class-card: sd-border-1
+
+SETA-style multi-tool coding environment with shell, file editing, search, todos, and submit verification.
+
++++
+```{button-link} environments/coding_tools.html
+:color: primary
+:outline:
+
+{octicon}`file;1em` Docs
+```
+````
+
 ````{grid-item-card} Chat
 :class-card: sd-border-1
 
@@ -507,6 +549,20 @@ AgentWorldModel-1K — 1,000 synthetic MCP tool-use environments with 10,000 tas
 ```
 ````
 
+````{grid-item-card} Opencode
+:class-card: sd-border-1
+
+`opencode_env` runs the OpenCode coding agent inside an isolated E2B sandbox against any OpenAI-compatible LLM endpoint, optionally capturing per-token logpr...
+
++++
+```{button-link} environments/opencode.html
+:color: primary
+:outline:
+
+{octicon}`file;1em` Docs
+```
+````
+
 `````
 
 ```{tip}
@@ -546,6 +602,9 @@ A suite of 400 environments that procedurally generate reasoning problems for LM
 
 environments/echo
 environments/coding
+environments/jupyter
+environments/terminus
+environments/coding_tools
 environments/chat
 environments/atari
 environments/openspiel
@@ -574,4 +633,5 @@ environments/tbench2
 environments/unity
 environments/wildfire
 environments/agent_world_model
+environments/opencode
 ```

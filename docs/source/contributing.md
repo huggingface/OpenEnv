@@ -1,3 +1,7 @@
+---
+orphan: true
+---
+
 # Contributing to OpenEnv
 
 We welcome contributions from the community! OpenEnv is an open-source project and we're excited to have you join us.
@@ -66,10 +70,10 @@ ruff check .
 - Add type hints
 - Write tests for new functionality
 
-## Community
+## Coordination
 
-- [Discord](https://discord.gg/YsTYBh6PD9) - Chat with the community
-- [GitHub Discussions](https://github.com/meta-pytorch/OpenEnv/discussions) - Ask questions
+Use the [OpenEnv repository](https://github.com/meta-pytorch/OpenEnv) to file
+issues, discuss substantial changes, and submit pull requests.
 
 ## License
 
