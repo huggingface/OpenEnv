@@ -213,6 +213,7 @@ class TestAgentSpecProtocols:
         assert spec.files is None
         assert spec.artifacts is None
         assert spec.env is None
+        assert spec.extension_dir_template is None
         assert spec.build_command is None
 
     def test_cli_agent_spec_full(self):
@@ -451,6 +452,21 @@ class TestCLIAgentDriver:
 
         sbx = backend.created[0]
         assert "/testbed/mcp.json" in sbx.written
+        session.close()
+
+    def test_create_session_creates_extension_dir_when_spec_declares_one(self):
+        from openenv.core.harness.agents.cli_driver import CLIAgentDriver
+
+        spec = _make_test_spec(extension_dir_template="{home}/.agent/extensions")
+        backend = FakeSandboxBackend()
+        driver = CLIAgentDriver(spec=spec, sandbox_backend=backend, mode="black_box")
+
+        session = driver.create_session(task=FakeTask(), config=FakeConfig())
+        sbx = backend.created[0]
+        assert any(
+            cmd.startswith("mkdir -p /home/user/.agent/extensions")
+            for cmd in sbx.executed
+        )
         session.close()
 
     def test_create_session_skips_install_when_prebaked(self):
@@ -1072,6 +1088,11 @@ class TestPiSpec:
             None,
         )
         assert "cd /testbed" in cmd
+
+    def test_spec_declares_extension_dir_template(self):
+        from openenv.core.harness.agents.pi import PI_SPEC
+
+        assert PI_SPEC.extension_dir_template == "{home}/.pi/agent/extensions"
 
 
 # Env var resolution

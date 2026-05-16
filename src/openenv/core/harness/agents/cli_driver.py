@@ -352,6 +352,7 @@ class CLIAgentDriver:
         self._wait_for_sandbox_ready(sandbox)
         if not self._agent_already_installed(sandbox):
             self._install_agent(sandbox)
+        self._ensure_extension_dir(sandbox, config)
         self._upload_files(sandbox, task, config)
         self._write_mcp_config(sandbox, config)
         setup_shell = task.setup_shell if hasattr(task, "setup_shell") else None
@@ -404,6 +405,31 @@ class CLIAgentDriver:
                 attempts=3,
                 backoff_s=3.0,
                 label=f"{self.spec.name} install",
+            )
+
+    def _resolve_sandbox_home(self, sandbox: SandboxHandle, config: Any) -> str:
+        configured = getattr(config, "sandbox_home", None)
+        if isinstance(configured, str) and configured.strip():
+            return configured
+        try:
+            result = sandbox.exec('printf %s "$HOME"', timeout=5)
+            candidate = (result.stdout or "").strip()
+            if result.exit_code == 0 and candidate:
+                return candidate
+        except Exception:
+            pass
+        return "/home/user"
+
+    def _ensure_extension_dir(self, sandbox: SandboxHandle, config: Any) -> None:
+        template = self.spec.extension_dir_template
+        if not template:
+            return
+        home = self._resolve_sandbox_home(sandbox, config)
+        extension_dir = template.format(home=home)
+        result = sandbox.exec(f"mkdir -p {shlex.quote(extension_dir)}", timeout=10)
+        if result.exit_code != 0:
+            raise RuntimeError(
+                f"failed to create extension dir {extension_dir!r}: {result.stderr}"
             )
 
     def _upload_files(self, sandbox: SandboxHandle, task: Any, config: Any) -> None:

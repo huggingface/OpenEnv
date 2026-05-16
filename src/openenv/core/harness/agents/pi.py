@@ -144,6 +144,7 @@ PI_SPEC = CLIAgentSpec(
         "PI_SKIP_VERSION_CHECK": "1",
         "PI_TELEMETRY": "0",
     },
+    extension_dir_template="{home}/.pi/agent/extensions",
     build_command=_build_command,
     build_mcp_config=_build_mcp_config,
     parse_events=_parse_events,
