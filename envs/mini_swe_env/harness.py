@@ -30,8 +30,9 @@ Session lifecycle::
 **Reward architecture**: The ``answer`` tool is a **host-side tool**
 routed through the InterceptionServer's tool routing layer (``/vf/tools``).
 When the agent calls ``answer()``, the request goes to the host, which
-runs swebench grading (revert test files → apply test_patch → run eval →
-grade via ``get_eval_report``), and returns the result to the agent.
+runs SWE-Gym-native grading (revert test files → apply test_patch → run
+explicit FAIL_TO_PASS/PASS_TO_PASS tests), and returns the result to the
+agent.
 This is the same result ``verify()`` returns — one grading path, no
 in-sandbox grading infrastructure.
 
@@ -48,10 +49,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import shlex
 import time
 import uuid
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Literal
 
 from openenv.core.harness import Message, ResourceSessionFactory, VerifyResult
@@ -63,6 +64,7 @@ from openenv.core.harness.agents.cli_driver import (
 from openenv.core.harness.agents.interception_server import InterceptionServer
 from openenv.core.harness.sandbox import SandboxBackend, SandboxHandle
 
+from .grading import grade_from_case_results
 from .models import SWEGymTask, SWETask, coerce_swe_task, validate_swe_task
 
 
@@ -75,6 +77,19 @@ TESTBED = "/testbed"
 
 VERIFY_TIMEOUT_S = 300
 SETUP_TIMEOUT_S = 600
+
+_ANSWER_TOOL_DEFINITION = {
+    "type": "function",
+    "function": {
+        "name": "answer",
+        "description": "Submit your final answer for SWE grading.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+    },
+}
 
 
 # ── SWE instruction template ──────────────────────────────────────────────
@@ -133,6 +148,7 @@ class SWEAgentConfig:
     model: str = ""
     agent_timeout_s: float = 600.0
     sandbox_home: str = HOME
+    workdir: str = TESTBED
     provider: str = ""
     thinking: str = "off"
 
@@ -180,6 +196,10 @@ class SWESession(CLIAgentSession):
     @property
     def swe_task(self) -> SWETask:
         return self._swe_task
+
+    @property
+    def answer_reward(self) -> float | None:
+        return self._answer_reward
 
     def set_answer_reward(self, reward: float) -> None:
         """Called by the host-side answer tool handler to store the reward."""
@@ -368,7 +388,6 @@ class SWESessionFactory(ResourceSessionFactory):
                     "interception_gate mode requires interception_base_url."
                 )
 
-        self._agent_name = agent
         self._config = config
         self._backend = sandbox_backend
         self._mode = mode
@@ -413,6 +432,7 @@ class SWESessionFactory(ResourceSessionFactory):
                 if episode_id
                 else {"instance_id": swe_task.instance_id}
             ),
+            image=swe_task.sandbox_image,
         )
 
         try:
@@ -448,7 +468,7 @@ class SWESessionFactory(ResourceSessionFactory):
             sandbox, agent_task, self._config, base_url_override=base_url_override
         )
 
-        return SWESession(
+        session = SWESession(
             swe_task=swe_task,
             verify_timeout_s=self._verify_timeout_s,
             spec=self._spec,
@@ -461,6 +481,11 @@ class SWESessionFactory(ResourceSessionFactory):
             interception_rollout_id=interception_rollout_id,
             interception_queue=interception_queue,
         )
+
+        if self._mode == "interception_gate":
+            self._register_answer_tool(session)
+
+        return session
 
     # ── Bootstrap helpers ──────────────────────────────────────────────────
 
@@ -511,6 +536,208 @@ class SWESessionFactory(ResourceSessionFactory):
                 "repo": swe_task.repo,
             },
         )
+
+    def _register_answer_tool(self, session: SWESession) -> None:
+        """Register the host-side ``answer`` tool for one interception rollout."""
+
+        async def _answer_handler(arguments: dict[str, Any]) -> dict[str, Any]:
+            del arguments
+
+            if session.answer_reward is not None:
+                resolved = session.answer_reward >= 1.0
+                return {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"✅ Resolved: {str(resolved).lower()}",
+                        }
+                    ]
+                }
+
+            reward, resolved = await asyncio.to_thread(
+                self._grade_answer_submission,
+                session.sandbox,
+                session.swe_task,
+            )
+            session.set_answer_reward(reward)
+            return {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": f"✅ Resolved: {str(resolved).lower()}",
+                    }
+                ]
+            }
+
+        session.register_tool_handler(
+            "answer",
+            _answer_handler,
+            tool_definition=_ANSWER_TOOL_DEFINITION,
+        )
+
+    def _grade_answer_submission(
+        self,
+        sandbox: SandboxHandle,
+        swe_task: SWETask,
+    ) -> tuple[float, bool]:
+        """Compute answer-tool reward on host and return ``(reward, resolved)``."""
+        try:
+            metadata = swe_task.metadata or {}
+            required = {"version", "patch", "test_patch", "FAIL_TO_PASS"}
+            if required.issubset(metadata):
+                return self._grade_with_swegym_metadata(sandbox, swe_task)
+            return self._grade_with_verify_commands(sandbox, swe_task)
+        except Exception:
+            _log.exception("answer-tool grading failed for %s", swe_task.instance_id)
+            return 0.0, False
+
+    def _grade_with_swegym_metadata(
+        self,
+        sandbox: SandboxHandle,
+        swe_task: SWETask,
+    ) -> tuple[float, bool]:
+        """Grade SWE-Gym tasks directly from FAIL/PASS test-case outcomes."""
+        metadata = swe_task.metadata
+        assert metadata is not None
+
+        gym_task = SWEGymTask(
+            instance_id=swe_task.instance_id,
+            repo=swe_task.repo,
+            base_commit=swe_task.base_commit,
+            problem_statement=swe_task.instruction,
+            version=str(metadata["version"]),
+            patch=str(metadata["patch"]),
+            test_patch=str(metadata["test_patch"]),
+            FAIL_TO_PASS=[str(t) for t in metadata["FAIL_TO_PASS"]],
+            PASS_TO_PASS=[str(t) for t in metadata.get("PASS_TO_PASS", [])],
+            hints_text=str(metadata.get("hints_text", "")),
+            created_at=str(metadata.get("created_at", "")),
+            timeout_s=swe_task.timeout_s,
+        )
+
+        touched_files = self._extract_paths_from_test_patch(gym_task.test_patch)
+        self._revert_test_files(
+            sandbox,
+            base_commit=swe_task.base_commit,
+            paths=touched_files,
+            strict=True,
+        )
+
+        self._apply_test_patch(sandbox, gym_task.test_patch)
+        case_results = self._run_swegym_case_tests(sandbox, gym_task)
+        grade = grade_from_case_results(gym_task, case_results)
+
+        # Best-effort cleanup in case grading was interrupted.
+        self._revert_test_files(
+            sandbox,
+            base_commit=swe_task.base_commit,
+            paths=touched_files,
+            strict=False,
+        )
+
+        return float(grade.reward), bool(grade.resolved)
+
+    def _apply_test_patch(self, sandbox: SandboxHandle, test_patch: str) -> None:
+        patch_path = f"{HOME}/.openenv_swe_test_patch.diff"
+        sandbox.write_text(patch_path, test_patch)
+        result = sandbox.exec(
+            f"git apply --whitespace=nowarn {shlex.quote(patch_path)}",
+            cwd=TESTBED,
+            timeout=30,
+        )
+        if result.exit_code != 0:
+            raise RuntimeError(
+                "failed to apply SWE-Gym test_patch: "
+                f"{(result.stderr or result.stdout or '').strip()}"
+            )
+
+    def _run_swegym_case_tests(
+        self,
+        sandbox: SandboxHandle,
+        gym_task: SWEGymTask,
+    ) -> dict[str, bool]:
+        cases: list[str] = []
+        seen: set[str] = set()
+        for case in [*gym_task.FAIL_TO_PASS, *gym_task.PASS_TO_PASS]:
+            if case in seen:
+                continue
+            seen.add(case)
+            cases.append(case)
+
+        results: dict[str, bool] = {}
+        for case in cases:
+            cmd = f"python -m pytest -q --maxfail=1 {shlex.quote(case)}"
+            run = sandbox.exec(cmd, cwd=TESTBED, timeout=self._verify_timeout_s)
+            results[case] = run.exit_code == 0
+        return results
+
+    def _grade_with_verify_commands(
+        self,
+        sandbox: SandboxHandle,
+        swe_task: SWETask,
+    ) -> tuple[float, bool]:
+        """Legacy fallback for non-SWE-Gym tasks."""
+        if not swe_task.verify:
+            return 0.0, False
+        passed = 0
+        for cmd in swe_task.verify:
+            r = sandbox.exec(cmd, cwd=TESTBED, timeout=self._verify_timeout_s)
+            if r.exit_code == 0:
+                passed += 1
+        reward = passed / len(swe_task.verify)
+        return reward, reward >= 1.0
+
+    @staticmethod
+    def _extract_paths_from_test_patch(test_patch: str) -> list[str]:
+        paths: list[str] = []
+        for line in (test_patch or "").splitlines():
+            if not line.startswith("+++ b/"):
+                continue
+            path = line[len("+++ b/") :].strip()
+            if not path or path == "/dev/null":
+                continue
+            paths.append(path)
+        return sorted(set(paths))
+
+    def _revert_test_files(
+        self,
+        sandbox: SandboxHandle,
+        *,
+        base_commit: str,
+        paths: list[str],
+        strict: bool,
+    ) -> None:
+        if not paths:
+            return
+
+        failures: list[str] = []
+        for path in paths:
+            has_file = sandbox.exec(
+                f"git cat-file -e {shlex.quote(f'{base_commit}:{path}')}",
+                cwd=TESTBED,
+                timeout=10,
+            )
+            if has_file.exit_code == 0:
+                cmd = (
+                    "git checkout --quiet "
+                    f"{shlex.quote(base_commit)} -- {shlex.quote(path)}"
+                )
+            else:
+                cmd = f"rm -f -- {shlex.quote(path)}"
+
+            result = sandbox.exec(cmd, cwd=TESTBED, timeout=20)
+            if result.exit_code != 0:
+                failures.append(
+                    f"{path}: {(result.stderr or result.stdout or '').strip()}"
+                )
+
+        if not failures:
+            return
+
+        msg = "failed to revert test files before/after grading: " + "; ".join(failures)
+        if strict:
+            raise RuntimeError(msg)
+        _log.warning(msg)
 
 
 __all__ = [

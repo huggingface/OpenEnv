@@ -17,7 +17,6 @@ Contains:
 
 from __future__ import annotations
 
-import json
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -77,8 +76,8 @@ class SWEGymTask:
     def to_swe_task(self) -> SWETask:
         """Convert to the internal ``SWETask`` used by the harness.
 
-        The ``verify`` list is left empty because Phase 3 uses
-        ``swebench.harness.grading`` for reward, not shell commands.
+        The ``verify`` list is left empty because grading uses
+        SWE-Gym FAIL_TO_PASS/PASS_TO_PASS case outcomes, not shell commands.
         The ``instruction`` is the ``problem_statement``.
         """
         return SWETask(
@@ -89,7 +88,7 @@ class SWEGymTask:
             base_commit=self.base_commit,
             instruction=self.problem_statement,
             setup=[],
-            verify=[],  # grading via swebench, not shell commands
+            verify=[],  # grading via SWE-Gym case outcomes, not shell commands
             timeout_s=self.timeout_s,
             sandbox_image=self.instance_image,
             metadata={

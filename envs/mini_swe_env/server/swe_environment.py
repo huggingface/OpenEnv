@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""SWE environment implementation (v2 — SWE-Gym + swebench grading).
+"""SWE environment implementation (v2 — SWE-Gym-native grading).
 
 Single MCP tool ``run_swe_rollout`` with the ``SWEGymTask`` shape:
 
@@ -13,7 +13,7 @@ Single MCP tool ``run_swe_rollout`` with the ``SWEGymTask`` shape:
   - ``base_commit``  — commit hash in per-task Docker image
   - ``problem_statement`` — agent instruction (problem text)
 
-**Reward** is binary via ``swebench.harness.grading``:
+**Reward** is binary via SWE-Gym test-case outcomes:
   - ``1.0`` if resolved (all FAIL_TO_PASS pass, all PASS_TO_PASS still pass)
   - ``0.0`` otherwise
 
@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shlex
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -40,7 +41,7 @@ try:
     from openenv.core.env_server.mcp_environment import MCPEnvironment
     from openenv.core.env_server.types import Action, Observation
 
-    from ..grading import GradeResult, grade_from_log, make_eval_script
+    from ..grading import GradeResult, grade_from_case_results
     from ..models import (
         SWECommandResult,
         SWEGymTask,
@@ -54,7 +55,7 @@ try:
         validate_swegym_task,
     )
 except ImportError:  # pragma: no cover
-    from grading import GradeResult, grade_from_log, make_eval_script  # type: ignore
+    from grading import GradeResult, grade_from_case_results  # type: ignore
     from models import (  # type: ignore
         SWECommandResult,
         SWEGymTask,
@@ -77,10 +78,6 @@ _RUN_ROLLOUT_TIMEOUT_S = 2400.0
 # Per-task images have the repo pre-cloned at /testbed.
 TESTBED = "/testbed"
 HOME = "/home/user"
-EVAL_LOG_FILE = f"{HOME}/logs/verifier/eval.log"
-EVAL_SCRIPT_PATH = f"{HOME}/swe_eval.sh"
-FINAL_ANSWER_FILE = f"{HOME}/logs/agent/final_answer.txt"
-DONE_MARKER = f"{HOME}/logs/agent/.done"
 MCP_CONFIG_PATH = f"{HOME}/.swe_mcp_config.json"
 MCP_SERVER_PATH = f"{HOME}/.swe_mcp_server.py"
 MCP_PORT = 8765
@@ -102,7 +99,7 @@ class SWEEnvironment(MCPEnvironment):
 
     Updated for SWE-Gym:
       - Per-task Docker images (no git clone needed).
-      - Binary reward via ``swebench.harness.grading``.
+      - Binary reward via SWE-Gym case outcomes.
       - Working directory is ``/testbed``.
     """
 
@@ -474,16 +471,11 @@ class SWEEnvironment(MCPEnvironment):
         sandbox: Any,
         task: SWETask,
     ) -> GradeResult | None:
-        """Run swebench grading if task metadata contains SWE-Gym fields.
-
-        Returns GradeResult on success, None if task lacks metadata for
-        swebench grading (falls back to legacy verify).
-        """
+        """Run SWE-Gym-native grading when metadata includes test lists."""
         metadata = task.metadata
         if not metadata:
             return None
 
-        # Need SWE-Gym fields for proper grading.
         required_keys = {"patch", "test_patch", "FAIL_TO_PASS", "version"}
         if not required_keys.issubset(metadata.keys()):
             return None
@@ -507,42 +499,107 @@ class SWEEnvironment(MCPEnvironment):
             _log.warning("Could not reconstruct SWEGymTask for grading: %s", exc)
             return None
 
+        touched_files = self._extract_paths_from_test_patch(gym_task.test_patch)
         try:
-            # Deploy eval script and run it.
-            eval_script = make_eval_script(gym_task)
-            sandbox.write_text(EVAL_SCRIPT_PATH, eval_script)
-            sandbox.exec(f"chmod +x {EVAL_SCRIPT_PATH}", timeout=5)
+            self._revert_test_files(
+                sandbox,
+                base_commit=task.base_commit,
+                paths=touched_files,
+                strict=True,
+            )
+            self._apply_test_patch(sandbox, gym_task.test_patch)
+            case_results = self._run_swegym_case_tests(sandbox, gym_task)
+            return grade_from_case_results(gym_task, case_results)
+        except Exception as exc:
+            _log.warning("SWE-Gym grading failed, falling back: %s", exc)
+            return None
+        finally:
+            self._revert_test_files(
+                sandbox,
+                base_commit=task.base_commit,
+                paths=touched_files,
+                strict=False,
+            )
 
+    def _apply_test_patch(self, sandbox: Any, test_patch: str) -> None:
+        patch_path = f"{HOME}/.openenv_swe_test_patch.diff"
+        sandbox.write_text(patch_path, test_patch)
+        r = sandbox.exec(
+            f"git apply --whitespace=nowarn {shlex.quote(patch_path)}",
+            cwd=TESTBED,
+            timeout=30,
+        )
+        if r.exit_code != 0:
+            raise RuntimeError((r.stderr or r.stdout or "").strip())
+
+    def _run_swegym_case_tests(
+        self,
+        sandbox: Any,
+        task: SWEGymTask,
+    ) -> dict[str, bool]:
+        cases: list[str] = []
+        seen: set[str] = set()
+        for case in [*task.FAIL_TO_PASS, *task.PASS_TO_PASS]:
+            if case in seen:
+                continue
+            seen.add(case)
+            cases.append(case)
+
+        results: dict[str, bool] = {}
+        for case in cases:
             r = sandbox.exec(
-                f"bash {EVAL_SCRIPT_PATH} 2>&1 | tee {EVAL_LOG_FILE}",
+                f"python -m pytest -q --maxfail=1 {shlex.quote(case)}",
                 cwd=TESTBED,
                 timeout=VERIFY_TIMEOUT_S,
             )
+            results[case] = r.exit_code == 0
+        return results
 
-            # Grade from log file.
-            # We need the log file on the host, so read it from sandbox.
-            log_content = sandbox.read_text(EVAL_LOG_FILE)
+    @staticmethod
+    def _extract_paths_from_test_patch(test_patch: str) -> list[str]:
+        paths: list[str] = []
+        for line in (test_patch or "").splitlines():
+            if not line.startswith("+++ b/"):
+                continue
+            path = line[len("+++ b/") :].strip()
+            if not path or path == "/dev/null":
+                continue
+            paths.append(path)
+        return sorted(set(paths))
 
-            import tempfile
+    def _revert_test_files(
+        self,
+        sandbox: Any,
+        *,
+        base_commit: str,
+        paths: list[str],
+        strict: bool,
+    ) -> None:
+        if not paths:
+            return
 
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".log", delete=False, prefix="swe_grade_"
-            ) as f:
-                f.write(log_content)
-                tmp_log = f.name
+        failures: list[str] = []
+        for path in paths:
+            has_file = sandbox.exec(
+                f"git cat-file -e {shlex.quote(f'{base_commit}:{path}')}",
+                cwd=TESTBED,
+                timeout=10,
+            )
+            if has_file.exit_code == 0:
+                cmd = (
+                    "git checkout --quiet "
+                    f"{shlex.quote(base_commit)} -- {shlex.quote(path)}"
+                )
+            else:
+                cmd = f"rm -f -- {shlex.quote(path)}"
+            result = sandbox.exec(cmd, cwd=TESTBED, timeout=20)
+            if result.exit_code != 0:
+                failures.append(
+                    f"{path}: {(result.stderr or result.stdout or '').strip()}"
+                )
 
-            try:
-                result = grade_from_log(gym_task, tmp_log)
-            finally:
-                import os
-
-                os.unlink(tmp_log)
-
-            return result
-
-        except Exception as exc:
-            _log.warning("swebench grading failed, falling back: %s", exc)
-            return None
+        if failures and strict:
+            raise RuntimeError("; ".join(failures))
 
     def _legacy_verify(
         self,

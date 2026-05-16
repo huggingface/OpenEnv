@@ -8,7 +8,7 @@ Exports:
         load_swegym_tasks, validate_swegym_task, get_instance_image, ...
 
     Grading:
-        grade_from_log, grade_from_test_output, make_eval_script, GradeResult
+        grade_from_case_results, GradeResult
 
     Environment + client:
         SWEEnvironment, MiniSWEEnv, SWERolloutResult, ...
@@ -37,9 +37,7 @@ from .task_loader_swegym import (
 from .grading import (
     GradeResult,
     GradingError,
-    grade_from_log,
-    grade_from_test_output,
-    make_eval_script,
+    grade_from_case_results,
 )
 
 from .client import MiniSWEEnv
@@ -61,9 +59,7 @@ __all__ = [
     # Grading
     "GradeResult",
     "GradingError",
-    "grade_from_log",
-    "grade_from_test_output",
-    "make_eval_script",
+    "grade_from_case_results",
     # Server models
     "MiniSWEEnv",
     "SWECommandResult",
