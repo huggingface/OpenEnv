@@ -218,6 +218,35 @@ def test_build_agent_config_pi() -> None:
     assert cfg_gate.provider == "huggingface"
 
 
+def test_build_session_factory_requires_e2b_dependency() -> None:
+    from coding_agent_env.server.coding_environment import CodingAgentEnvironment
+
+    env = CodingAgentEnvironment()
+    env._E2BSandboxBackend = None
+    cfg = env._build_agent_config(
+        agent="pi",
+        mode="black_box",
+        base_url="https://router.huggingface.co/v1",
+        api_key="hf_xxx",
+        model="zai-org/GLM-5.1",
+        agent_timeout_s=180.0,
+        disable_thinking=False,
+        top_logprobs=5,
+        max_tokens_cap=4096,
+    )
+
+    with pytest.raises(RuntimeError, match="E2BSandboxBackend unavailable"):
+        env._build_session_factory(
+            agent="pi",
+            config=cfg,
+            mode="black_box",
+            template="",
+            disable_thinking=False,
+            top_logprobs=5,
+            max_tokens_cap=4096,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Models + task coercion
 # ---------------------------------------------------------------------------

@@ -36,7 +36,9 @@ Usage — training loop::
 
     while True:
         request_id = await asyncio.wait_for(queue.get(), timeout=...)
-        intercept = server.intercepts[request_id]
+        intercept = server.get_intercept(request_id)
+        if intercept is None:
+            continue
         response = await vllm.generate(intercept["messages"], ...)
         await deliver_response(intercept, response)
 
@@ -51,9 +53,10 @@ import hmac
 import json
 import logging
 import secrets
+import threading
 import time
 import uuid
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from aiohttp import web
 
@@ -63,6 +66,8 @@ _log = logging.getLogger(__name__)
 _KEEPALIVE_INTERVAL_S = 3.0
 _MAX_REQUEST_BODY = 16 * 1024 * 1024
 
+ToolHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
+
 
 class InterceptionServer:
     """Async HTTP server that gates every LLM call from sandboxed agents.
@@ -71,13 +76,20 @@ class InterceptionServer:
     identified by a ``rollout_id`` in the URL path.
     """
 
-    def __init__(self, port: int = 0, secret: str | None = None) -> None:
+    def __init__(
+        self,
+        port: int = 0,
+        secret: str | None = None,
+        host: str = "127.0.0.1",
+    ) -> None:
         self.port = port
+        self.host = host
         self.secret = secret or secrets.token_urlsafe(32)
         self._app: web.Application | None = None
         self._runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
         self._lock = asyncio.Lock()
+        self._state_lock = threading.RLock()
         self.active_rollouts: dict[str, dict[str, Any]] = {}
         self.intercepts: dict[str, dict[str, Any]] = {}
 
@@ -90,10 +102,16 @@ class InterceptionServer:
                 "/rollout/{rollout_id}/v1/chat/completions",
                 self._handle_chat_completions,
             )
+            app.router.add_post(
+                "/rollout/{rollout_id}/v1/tools/{tool_name}",
+                self._handle_tool_call,
+            )
             app.router.add_get("/health", self._handle_health)
             runner = web.AppRunner(app)
             await runner.setup()
-            site = web.TCPSite(runner, "0.0.0.0", self.port)
+            if self.host == "0.0.0.0":
+                _log.warning("InterceptionServer exposed on all interfaces (0.0.0.0).")
+            site = web.TCPSite(runner, self.host, self.port)
             await site.start()
             if self.port == 0:
                 server = getattr(site, "_server", None)
@@ -111,7 +129,11 @@ class InterceptionServer:
         async with self._lock:
             if self._runner is None:
                 return
-            for intercept in list(self.intercepts.values()):
+            with self._state_lock:
+                intercepts = list(self.intercepts.values())
+                self.intercepts.clear()
+                self.active_rollouts.clear()
+            for intercept in intercepts:
                 fut: asyncio.Future | None = intercept.get("response_future")
                 if fut and not fut.done():
                     fut.cancel()
@@ -121,8 +143,6 @@ class InterceptionServer:
                         cq.put_nowait(None)
                     except asyncio.QueueFull:
                         pass
-            self.intercepts.clear()
-            self.active_rollouts.clear()
             try:
                 await self._runner.cleanup()
             except RuntimeError:
@@ -137,27 +157,109 @@ class InterceptionServer:
         state: dict[str, Any] | None = None,
     ) -> asyncio.Queue:
         queue: asyncio.Queue = asyncio.Queue()
-        self.active_rollouts[rollout_id] = {
-            "request_id_queue": queue,
-            "state": state,
-        }
+        with self._state_lock:
+            self.active_rollouts[rollout_id] = {
+                "request_id_queue": queue,
+                "state": state,
+                "tool_handlers": {},
+                "tool_defs": {},
+            }
         return queue
 
     def unregister_rollout(self, rollout_id: str) -> None:
-        for request_id in list(self.intercepts):
-            intercept = self.intercepts.get(request_id)
-            if intercept and intercept.get("rollout_id") == rollout_id:
-                fut: asyncio.Future | None = intercept.get("response_future")
-                if fut and not fut.done():
-                    fut.cancel()
-                cq: asyncio.Queue | None = intercept.get("chunk_queue")
-                if cq is not None:
-                    try:
-                        cq.put_nowait(None)
-                    except asyncio.QueueFull:
-                        pass
+        with self._state_lock:
+            matching_ids = [
+                request_id
+                for request_id, intercept in self.intercepts.items()
+                if intercept.get("rollout_id") == rollout_id
+            ]
+            matching_intercepts = [self.intercepts[i] for i in matching_ids]
+            for request_id in matching_ids:
                 del self.intercepts[request_id]
-        self.active_rollouts.pop(rollout_id, None)
+            self.active_rollouts.pop(rollout_id, None)
+
+        for intercept in matching_intercepts:
+            fut: asyncio.Future | None = intercept.get("response_future")
+            if fut and not fut.done():
+                fut.cancel()
+            cq: asyncio.Queue | None = intercept.get("chunk_queue")
+            if cq is not None:
+                try:
+                    cq.put_nowait(None)
+                except asyncio.QueueFull:
+                    pass
+
+    def get_intercept(self, request_id: str) -> dict[str, Any] | None:
+        with self._state_lock:
+            return self.intercepts.get(request_id)
+
+    def register_tool_handler(
+        self,
+        rollout_id: str,
+        tool_name: str,
+        handler: ToolHandler,
+        *,
+        tool_definition: dict[str, Any] | None = None,
+    ) -> None:
+        """Register a host-side tool handler for a rollout.
+
+        The handler is called by ``POST /rollout/{rollout_id}/v1/tools/{tool_name}``
+        with a JSON payload containing ``arguments``.
+
+        Optionally provide ``tool_definition`` (OpenAI tool schema). Registered
+        schemas are injected into intercepted chat-completion requests for the
+        rollout when the incoming request does not already include the tool.
+        """
+        with self._state_lock:
+            context = self.active_rollouts.get(rollout_id)
+            if context is None:
+                raise KeyError(f"rollout not found: {rollout_id}")
+            handlers: dict[str, ToolHandler] = context["tool_handlers"]
+            handlers[tool_name] = handler
+            if tool_definition is not None:
+                tool_defs: dict[str, dict[str, Any]] = context["tool_defs"]
+                tool_defs[tool_name] = tool_definition
+
+    def unregister_tool_handler(self, rollout_id: str, tool_name: str) -> None:
+        with self._state_lock:
+            context = self.active_rollouts.get(rollout_id)
+            if context is None:
+                return
+            handlers: dict[str, ToolHandler] = context.get("tool_handlers", {})
+            handlers.pop(tool_name, None)
+            tool_defs: dict[str, dict[str, Any]] = context.get("tool_defs", {})
+            tool_defs.pop(tool_name, None)
+
+    @staticmethod
+    def _tool_name(tool: dict[str, Any]) -> str | None:
+        if not isinstance(tool, dict):
+            return None
+        function = tool.get("function")
+        if not isinstance(function, dict):
+            return None
+        name = function.get("name")
+        return name if isinstance(name, str) and name else None
+
+    def _merge_rollout_tools(
+        self,
+        tools: Any,
+        tool_defs: dict[str, dict[str, Any]],
+    ) -> list[dict[str, Any]] | None:
+        merged: list[dict[str, Any]] = []
+        if isinstance(tools, list):
+            for tool in tools:
+                if isinstance(tool, dict):
+                    merged.append(tool)
+
+        existing = {
+            name for item in merged if (name := self._tool_name(item)) is not None
+        }
+        for name, tool in tool_defs.items():
+            if name in existing:
+                continue
+            merged.append(tool)
+
+        return merged or None
 
     def _authorized(self, request: web.Request) -> bool:
         auth = request.headers.get("Authorization", "")
@@ -169,6 +271,59 @@ class InterceptionServer:
     async def _handle_health(self, request: web.Request) -> web.Response:
         return web.json_response({"status": "ok"})
 
+    async def _handle_tool_call(self, request: web.Request) -> web.Response:
+        if not self._authorized(request):
+            return web.json_response({"error": "Unauthorized"}, status=401)
+
+        rollout_id = request.match_info["rollout_id"]
+        tool_name = request.match_info["tool_name"]
+        with self._state_lock:
+            context = self.active_rollouts.get(rollout_id)
+            if context is None:
+                return web.json_response({"error": "rollout not found"}, status=404)
+            handlers: dict[str, ToolHandler] = context.get("tool_handlers", {})
+            handler = handlers.get(tool_name)
+            if handler is None:
+                return web.json_response({"error": "tool not found"}, status=404)
+
+        try:
+            body = await request.json()
+        except Exception as exc:
+            return web.json_response({"error": f"invalid JSON: {exc}"}, status=400)
+
+        arguments_raw: Any
+        if isinstance(body, dict) and "arguments" in body:
+            arguments_raw = body.get("arguments")
+        else:
+            arguments_raw = body
+
+        if arguments_raw is None:
+            arguments = {}
+        elif isinstance(arguments_raw, dict):
+            arguments = arguments_raw
+        else:
+            return web.json_response(
+                {"error": "tool arguments must be a JSON object"},
+                status=400,
+            )
+
+        try:
+            response = await handler(arguments)
+        except Exception:
+            _log.exception(
+                "tool handler failed (rollout=%s, tool=%s)",
+                rollout_id,
+                tool_name,
+            )
+            return web.json_response({"error": "tool execution failed"}, status=500)
+
+        if not isinstance(response, dict):
+            return web.json_response(
+                {"error": "tool handler must return a JSON object"},
+                status=500,
+            )
+        return web.json_response(response)
+
     async def _handle_chat_completions(
         self, request: web.Request
     ) -> web.StreamResponse | web.Response:
@@ -176,7 +331,8 @@ class InterceptionServer:
             return web.json_response({"error": "Unauthorized"}, status=401)
 
         rollout_id = request.match_info["rollout_id"]
-        context = self.active_rollouts.get(rollout_id)
+        with self._state_lock:
+            context = self.active_rollouts.get(rollout_id)
         if not context:
             return web.json_response({"error": "rollout not found"}, status=404)
 
@@ -184,6 +340,11 @@ class InterceptionServer:
             body = await request.json()
         except Exception as exc:
             return web.json_response({"error": f"invalid JSON: {exc}"}, status=400)
+
+        tool_defs: dict[str, dict[str, Any]] = dict(context.get("tool_defs", {}))
+        merged_tools = self._merge_rollout_tools(body.get("tools"), tool_defs)
+        if merged_tools is not None:
+            body["tools"] = merged_tools
 
         is_streaming = bool(body.get("stream"))
         request_id = f"req_{uuid.uuid4().hex[:8]}"
@@ -197,11 +358,16 @@ class InterceptionServer:
             "tools": body.get("tools"),
             "stream": is_streaming,
             "chunk_queue": chunk_queue,
-            "response_future": asyncio.get_event_loop().create_future(),
+            "response_future": asyncio.get_running_loop().create_future(),
             "body": body,
         }
-        self.intercepts[request_id] = intercept
-        await context["request_id_queue"].put(request_id)
+        with self._state_lock:
+            context = self.active_rollouts.get(rollout_id)
+            if context is None:
+                return web.json_response({"error": "rollout not found"}, status=404)
+            self.intercepts[request_id] = intercept
+            request_queue: asyncio.Queue = context["request_id_queue"]
+        await request_queue.put(request_id)
 
         if is_streaming:
             return await self._stream_response(request, intercept)
@@ -210,8 +376,12 @@ class InterceptionServer:
             response_dict = await intercept["response_future"]
         except asyncio.CancelledError:
             return web.json_response({"error": "rollout cancelled"}, status=499)
-        except Exception as exc:
-            return web.json_response({"error": str(exc)}, status=500)
+        except Exception:
+            _log.exception("interception request %s failed", request_id)
+            return web.json_response({"error": "internal error"}, status=500)
+        finally:
+            with self._state_lock:
+                self.intercepts.pop(request_id, None)
 
         return web.json_response(response_dict)
 
@@ -249,6 +419,13 @@ class InterceptionServer:
         finally:
             if get_task and not get_task.done():
                 get_task.cancel()
+            fut: asyncio.Future | None = intercept.get("response_future")
+            if fut and not fut.done():
+                fut.cancel()
+            request_id = intercept.get("request_id")
+            if isinstance(request_id, str):
+                with self._state_lock:
+                    self.intercepts.pop(request_id, None)
         try:
             await resp.write_eof()
         except Exception:

@@ -14,12 +14,9 @@ container). The single MCP tool ``run_rollout`` does:
   1. Spawns a fresh E2B sandbox (using the prebaked ``coding-agent-rl``
      template — falls back to a cold install if the template isn't
      present in your E2B account).
-  2. Bootstraps an in-sandbox FastAPI proxy that captures per-token
-     logprobs (``mode="transparent_proxy"``).
-  3. Runs the selected harness CLI with the instruction.
-  4. Executes the verify bash commands; reward = passed / total.
-  5. Returns a ``RolloutResult`` with reward + per-turn logprobs +
-     the file contents the agent produced.
+  2. Runs the selected harness CLI with the instruction.
+  3. Executes the verify bash commands; reward = passed / total.
+  4. Returns a ``RolloutResult`` with reward + produced file contents.
 
 Prerequisites
 -------------
@@ -34,7 +31,6 @@ Usage::
 Expected output (~20s with the prebaked template)::
 
     reward: 1.0
-    turns:  3
     files:  ['/home/user/workdir/binary_search.py', ...]
     wall:   19.8 s
 """
@@ -54,7 +50,9 @@ from coding_agent_env.client import _extract_text  # noqa: E402
 from coding_agent_env.models import RolloutResult  # noqa: E402
 
 
-SPACE = os.environ.get("CODING_AGENT_ENV_SPACE", "https://adithyask-coding-agent-env.hf.space")
+SPACE = os.environ.get(
+    "CODING_AGENT_ENV_SPACE", "https://adithyask-coding-agent-env.hf.space"
+)
 
 INSTRUCTION = (
     "Create a single Python file named `binary_search.py` in the current "
@@ -109,24 +107,12 @@ async def main() -> int:
 
     print("--- result ---")
     print(f"reward:    {result.reward}")
-    print(f"turns:     {len(result.proxy_turns)}")
-    print(f"tokens:    {sum(len(t.completion_tokens) for t in result.proxy_turns)}")
     print(f"sandbox:   {result.sandbox_id}")
     print(f"wall_s:    {result.wall_s}")
     print(f"files:     {sorted(result.files)}")
     print(f"verify:    {[(v.cmd[:40], v.exit_code) for v in result.verify_results]}")
     if result.error:
         print(f"error:     {result.error}")
-
-    if result.proxy_turns:
-        first = next((t for t in result.proxy_turns if t.completion_tokens), None)
-        if first:
-            print()
-            print("--- first productive turn (first 8 tokens with logprobs) ---")
-            toks = first.completion_tokens[:8]
-            lps = first.per_token_logps[:8]
-            for tok, lp in zip(toks, lps):
-                print(f"  {tok!r:<14}  {lp:+.3f}")
 
     return 0 if result.reward == 1.0 else 1
 

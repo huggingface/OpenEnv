@@ -150,6 +150,11 @@ def _install_fake_hf_sandbox(monkeypatch) -> None:
     monkeypatch.setitem(sys.modules, "hf_sandbox", fake_module)
 
 
+@pytest.fixture(autouse=True)
+def _reset_fake_hf_calls() -> None:
+    _FakeSandboxAPI.calls.clear()
+
+
 class TestHFSandboxBackend:
     def test_exported_from_package(self, monkeypatch):
         _install_fake_hf_sandbox(monkeypatch)
@@ -167,7 +172,6 @@ class TestHFSandboxBackend:
         _install_fake_hf_sandbox(monkeypatch)
         importlib.reload(hf_backend)
 
-        _FakeSandboxAPI.calls.clear()
         monkeypatch.setattr(hf_backend, "Sandbox", _FakeSandboxAPI)
 
         backend = hf_backend.HFSandboxBackend(

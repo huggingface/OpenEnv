@@ -15,8 +15,8 @@ Single MCP tool ``run_rollout`` with a uniform task shape:
 Reward = ``passed_verify_commands / total`` unless a verify command writes
 a float to ``/home/user/logs/verifier/reward.txt`` (override).
 
-Returns a JSON-serialized :class:`RolloutResult` with reward + per-turn
-logprobs (Mode B) + setup/verify command results + file outputs.
+Returns a JSON-serialized :class:`RolloutResult` with reward,
+setup/verify command results, and file outputs.
 """
 
 from __future__ import annotations
@@ -347,18 +347,17 @@ class CodingAgentEnvironment(MCPEnvironment):
             metadata={"task_id": task_id, "agent": agent},
         )
 
-        factory = self._build_session_factory(
-            agent=agent,
-            config=config,
-            mode=mode,
-            template=template,
-            disable_thinking=disable_thinking,
-            top_logprobs=top_logprobs,
-            max_tokens_cap=max_tokens_cap,
-        )
-
         session = None
         try:
+            factory = self._build_session_factory(
+                agent=agent,
+                config=config,
+                mode=mode,
+                template=template,
+                disable_thinking=disable_thinking,
+                top_logprobs=top_logprobs,
+                max_tokens_cap=max_tokens_cap,
+            )
             _emit(
                 f"creating E2B sandbox (template={template or 'default'}) — "
                 "this is the slow phase (~5–60s cold, ~5s with template)"
@@ -367,24 +366,22 @@ class CodingAgentEnvironment(MCPEnvironment):
             result.sandbox_id = session.sandbox.sandbox_id
             _emit(f"sandbox ready: {result.sandbox_id} — agent started (mode={mode})")
 
-            # Re-run setup commands individually for per-command
-            # observability in the response. The commands already ran
-            # atomically via setup_shell above, so these re-runs are
-            # idempotent — they exist only to populate
-            # result.setup_results with per-command exit/stdout/stderr.
-            for i, cmd in enumerate(setup, 1):
-                cr = self._exec_command(session.sandbox, cmd)
-                result.setup_results.append(cr)
-                if cr.exit_code != 0:
-                    # Should not happen — setup_shell already succeeded
-                    # during bootstrap, but record it for diagnostics.
-                    result.error = (
-                        f"setup replay failed (exit {cr.exit_code}): {cmd[:120]}"
+            # setup commands already ran atomically during sandbox bootstrap.
+            # Avoid re-running them here because many setup scripts are not
+            # idempotent (e.g., migrations, one-shot installs, destructive prep).
+            # We still surface per-command bookkeeping for callers.
+            for cmd in setup:
+                result.setup_results.append(
+                    self._CommandResult(
+                        cmd=cmd,
+                        exit_code=0,
+                        stdout="executed during bootstrap",
+                        stderr="",
+                        duration_s=0.0,
                     )
-                    _emit(f"setup replay FAILED at [{i}]: exit={cr.exit_code}")
-                    break
+                )
 
-            # Block until the agent is done (or setup already failed).
+            # Block until the agent is done.
             if result.error is None:
                 _emit(
                     f"agent running — {agent} CLI in sandbox "
@@ -498,6 +495,11 @@ class CodingAgentEnvironment(MCPEnvironment):
         top_logprobs: int,
         max_tokens_cap: int,
     ) -> Any:
+        if self._E2BSandboxBackend is None:
+            raise RuntimeError(
+                "E2BSandboxBackend unavailable: install optional dependency 'e2b'."
+            )
+
         backend_kwargs: dict[str, Any] = {}
         if template:
             backend_kwargs["template"] = template

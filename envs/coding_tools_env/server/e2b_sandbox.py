@@ -94,11 +94,7 @@ class E2BSandbox:
     def write_file(self, file_path: str, content: str) -> ToolResult:
         try:
             self._sbx.files.write(file_path, content.encode("utf-8"))
-            return ToolResult(
-                ok=True,
-                output="write ok",
-                metadata={"bytes": len(content.encode("utf-8"))},
-            )
+            return ToolResult(ok=True, output="write ok", metadata={"bytes": len(content.encode("utf-8"))})
         except Exception as exc:
             return ToolResult(ok=False, error=f"write failed: {exc}")
 
@@ -115,9 +111,7 @@ class E2BSandbox:
         if result is None:
             return ToolResult(ok=False, error=_format_error(execution))
         matches = result.get("matches", [])
-        return ToolResult(
-            ok=True, output="\n".join(matches), metadata={"matches": matches}
-        )
+        return ToolResult(ok=True, output="\n".join(matches), metadata={"matches": matches})
 
     def list_dir(self, path: str = ".", ignore: list[str] | None = None) -> ToolResult:
         ignore = ignore or []
@@ -143,15 +137,10 @@ class E2BSandbox:
         if not result.get("ok", False):
             return ToolResult(ok=False, error=str(result.get("error", "ls failed")))
         items = result.get("items", [])
-        lines = [
-            f"{'[dir]' if item['is_dir'] else '[file]'} {item['name']}"
-            for item in items
-        ]
+        lines = [f"{'[dir]' if item['is_dir'] else '[file]'} {item['name']}" for item in items]
         return ToolResult(ok=True, output="\n".join(lines), metadata={"items": items})
 
-    def grep(
-        self, pattern: str, path: str | None = None, include: str | None = None
-    ) -> ToolResult:
+    def grep(self, pattern: str, path: str | None = None, include: str | None = None) -> ToolResult:
         root = path or "."
         code = (
             "from pathlib import Path\n"
@@ -184,9 +173,7 @@ class E2BSandbox:
         if not result.get("ok", False):
             return ToolResult(ok=False, error=str(result.get("error", "grep failed")))
         matches = result.get("matches", [])
-        return ToolResult(
-            ok=True, output="\n".join(matches), metadata={"matches": matches}
-        )
+        return ToolResult(ok=True, output="\n".join(matches), metadata={"matches": matches})
 
     def kill(self) -> None:
         try:

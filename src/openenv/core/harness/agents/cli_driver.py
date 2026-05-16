@@ -21,7 +21,6 @@ import asyncio
 import json
 import logging
 import shlex
-import threading
 import time
 import uuid
 from typing import Any, Callable, Literal
@@ -37,12 +36,29 @@ from openenv.core.harness import (
 from openenv.core.harness.sandbox import BgJob, SandboxBackend, SandboxHandle
 
 from .base import CLIAgentSpec
-from .interception_server import deliver_response, InterceptionServer
+from .interception_server import (
+    deliver_response,
+    InterceptionServer,
+    ToolHandler,
+)
 
 
 _log = logging.getLogger(__name__)
 
 Verifier = Callable[..., VerifyResult]
+
+
+class _ConfigOverrideView:
+    """Read-only attribute view with optional overrides."""
+
+    def __init__(self, base: Any, **overrides: Any) -> None:
+        self._base = base
+        self._overrides = overrides
+
+    def __getattr__(self, name: str) -> Any:
+        if name in self._overrides:
+            return self._overrides[name]
+        return getattr(self._base, name)
 
 
 class CLIAgentSession(ResourceSession):
@@ -117,11 +133,14 @@ class CLIAgentSession(ResourceSession):
 
     def wait_for_completion(self, timeout_s: float | None = None) -> int:
         """Block until the agent exits, returning its exit code."""
-        budget = timeout_s if timeout_s is not None else self.spec.default_timeout_s
-        if hasattr(self.config, "agent_timeout_s"):
-            budget = timeout_s if timeout_s is not None else self.config.agent_timeout_s
         if self._agent_bg_job is None:
             raise RuntimeError("Agent not started.")
+        default_timeout = (
+            self.config.agent_timeout_s
+            if hasattr(self.config, "agent_timeout_s")
+            else self.spec.default_timeout_s
+        )
+        budget = timeout_s if timeout_s is not None else default_timeout
         return self._agent_bg_job.wait(timeout=budget)
 
     def collect_artifacts(self) -> dict[str, Any]:
@@ -189,23 +208,44 @@ class CLIAgentSession(ResourceSession):
                     self._interception_queue.get(),
                     timeout=min(remaining, 1.0),
                 )
-                return server.intercepts[request_id]
+                intercept = server.get_intercept(request_id)
+                if intercept is not None:
+                    return intercept
             except asyncio.TimeoutError:
-                if self._agent_bg_job is not None:
-                    done_event = getattr(self._agent_bg_job, "_done", None)
-                    if (
-                        done_event is not None
-                        and isinstance(done_event, threading.Event)
-                        and done_event.is_set()
-                    ):
-                        return None
-                continue
+                pass
+
+            if self._agent_bg_job is not None:
+                try:
+                    self._agent_bg_job.wait(timeout=0)
+                    return None
+                except TimeoutError:
+                    pass
+            continue
 
     async def deliver(
         self, intercept: dict[str, Any], response_dict: dict[str, Any]
     ) -> None:
         """Return a trainer-generated response to the waiting agent."""
         await deliver_response(intercept, response_dict)
+
+    def register_tool_handler(
+        self,
+        tool_name: str,
+        handler: ToolHandler,
+        *,
+        tool_definition: dict[str, Any] | None = None,
+    ) -> None:
+        """Register a host-side interception tool for this rollout."""
+        if self._interception_server is None or self._interception_rollout_id is None:
+            raise RuntimeError(
+                "register_tool_handler() is only available in interception_gate mode."
+            )
+        self._interception_server.register_tool_handler(
+            self._interception_rollout_id,
+            tool_name,
+            handler,
+            tool_definition=tool_definition,
+        )
 
 
 class CLIAgentDriver:
@@ -240,6 +280,14 @@ class CLIAgentDriver:
         self._setup_timeout_s = setup_timeout_s
         self._interception_server = interception_server
         self._interception_base_url = interception_base_url
+
+    def bootstrap_sandbox(self, sandbox: SandboxHandle, task: Any, config: Any) -> None:
+        """Public bootstrap hook used by external wrappers.
+
+        Runs readiness checks, optional install, file upload, MCP config write,
+        and task setup shell execution.
+        """
+        self._bootstrap_sandbox(sandbox, task, config)
 
     def create_session(
         self,
@@ -304,6 +352,7 @@ class CLIAgentDriver:
         self._wait_for_sandbox_ready(sandbox)
         if not self._agent_already_installed(sandbox):
             self._install_agent(sandbox)
+        self._ensure_extension_dir(sandbox, config)
         self._upload_files(sandbox, task, config)
         self._write_mcp_config(sandbox, config)
         setup_shell = task.setup_shell if hasattr(task, "setup_shell") else None
@@ -358,6 +407,31 @@ class CLIAgentDriver:
                 label=f"{self.spec.name} install",
             )
 
+    def _resolve_sandbox_home(self, sandbox: SandboxHandle, config: Any) -> str:
+        configured = getattr(config, "sandbox_home", None)
+        if isinstance(configured, str) and configured.strip():
+            return configured
+        try:
+            result = sandbox.exec('printf %s "$HOME"', timeout=5)
+            candidate = (result.stdout or "").strip()
+            if result.exit_code == 0 and candidate:
+                return candidate
+        except Exception:
+            pass
+        return "/home/user"
+
+    def _ensure_extension_dir(self, sandbox: SandboxHandle, config: Any) -> None:
+        template = self.spec.extension_dir_template
+        if not template:
+            return
+        home = self._resolve_sandbox_home(sandbox, config)
+        extension_dir = template.format(home=home)
+        result = sandbox.exec(f"mkdir -p {shlex.quote(extension_dir)}", timeout=10)
+        if result.exit_code != 0:
+            raise RuntimeError(
+                f"failed to create extension dir {extension_dir!r}: {result.stderr}"
+            )
+
     def _upload_files(self, sandbox: SandboxHandle, task: Any, config: Any) -> None:
         if not self.spec.files:
             return
@@ -380,13 +454,13 @@ class CLIAgentDriver:
             self.spec.mcp_config.method == "config_file"
             and self.spec.mcp_config.path_template
         ):
-            workdir = (
-                config.sandbox_home + "/workdir"
-                if hasattr(config, "sandbox_home")
-                else "/home/user/workdir"
-            )
             home = (
                 config.sandbox_home if hasattr(config, "sandbox_home") else "/home/user"
+            )
+            workdir = (
+                config.workdir
+                if hasattr(config, "workdir") and getattr(config, "workdir")
+                else f"{home}/workdir"
             )
             mcp_path = self.spec.mcp_config.path_template.format(
                 workdir=workdir, home=home
@@ -403,8 +477,23 @@ class CLIAgentDriver:
         *,
         base_url_override: str | None = None,
     ) -> BgJob:
+        command_config = config
+        if (
+            self.mode == "interception_gate"
+            and self._interception_server is not None
+            and self.spec.name == "pi"
+            and base_url_override
+        ):
+            self._write_pi_models_config(
+                sandbox,
+                config,
+                rollout_url=base_url_override,
+                api_key=self._interception_server.secret,
+            )
+            command_config = _ConfigOverrideView(config, provider="openenv")
+
         if self.spec.build_command is not None:
-            cmd = self.spec.build_command(self.spec, config, task, None)
+            cmd = self.spec.build_command(self.spec, command_config, task, None)
         else:
             cmd = " ".join(shlex.quote(c) for c in self.spec.base_command)
         envs = self._resolve_env_vars(config, base_url_override=base_url_override)
@@ -412,6 +501,36 @@ class CLIAgentDriver:
             envs["OPENAI_API_KEY"] = self._interception_server.secret
             envs["ANTHROPIC_API_KEY"] = self._interception_server.secret
         return sandbox.start_bg(cmd, envs=envs)
+
+    def _write_pi_models_config(
+        self,
+        sandbox: SandboxHandle,
+        config: Any,
+        *,
+        rollout_url: str,
+        api_key: str,
+    ) -> None:
+        home = config.sandbox_home if hasattr(config, "sandbox_home") else "/home/user"
+        model = config.model if hasattr(config, "model") else "model"
+        content = json.dumps(
+            {
+                "providers": {
+                    "openenv": {
+                        "baseUrl": rollout_url,
+                        "api": "openai-completions",
+                        "apiKey": api_key,
+                        "compat": {
+                            "supportsDeveloperRole": False,
+                            "supportsReasoningEffort": False,
+                        },
+                        "models": [{"id": model, "reasoning": False}],
+                    }
+                }
+            },
+            indent=2,
+        )
+        for path in {f"{home}/.pi/agent/models.json", "/root/.pi/agent/models.json"}:
+            sandbox.write_text(path, content)
 
     def _resolve_env_vars(
         self,

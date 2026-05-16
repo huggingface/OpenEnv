@@ -206,6 +206,14 @@ class CLIAgentSpec:
     resolved from the rollout config at runtime.
     """
 
+    extension_dir_template: str | None = None
+    """Optional extension install directory template.
+
+    Receives ``{home}`` substitution at runtime (e.g.
+    ``"{home}/.pi/agent/extensions"``). Drivers may use this to create
+    extension directories in the correct sandbox user home.
+    """
+
     build_command: Callable[..., str] | None = None
     """``(spec, config, task, mcp_config_path) -> str``
 

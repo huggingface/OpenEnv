@@ -156,6 +156,7 @@ class FakeConfig:
     model: str = "test-model"
     agent_timeout_s: float = 300.0
     sandbox_home: str = "/home/user"
+    workdir: str | None = None
     extra_env: dict[str, str] = field(default_factory=dict)
 
 
@@ -212,6 +213,7 @@ class TestAgentSpecProtocols:
         assert spec.files is None
         assert spec.artifacts is None
         assert spec.env is None
+        assert spec.extension_dir_template is None
         assert spec.build_command is None
 
     def test_cli_agent_spec_full(self):
@@ -438,6 +440,35 @@ class TestCLIAgentDriver:
         session.close()
         assert sbx._killed
 
+    def test_create_session_honors_configured_workdir_for_mcp_file(self):
+        from openenv.core.harness.agents.cli_driver import CLIAgentDriver
+
+        spec = _make_test_spec()
+        backend = FakeSandboxBackend()
+        driver = CLIAgentDriver(spec=spec, sandbox_backend=backend, mode="black_box")
+
+        config = FakeConfig(workdir="/testbed")
+        session = driver.create_session(task=FakeTask(), config=config)
+
+        sbx = backend.created[0]
+        assert "/testbed/mcp.json" in sbx.written
+        session.close()
+
+    def test_create_session_creates_extension_dir_when_spec_declares_one(self):
+        from openenv.core.harness.agents.cli_driver import CLIAgentDriver
+
+        spec = _make_test_spec(extension_dir_template="{home}/.agent/extensions")
+        backend = FakeSandboxBackend()
+        driver = CLIAgentDriver(spec=spec, sandbox_backend=backend, mode="black_box")
+
+        session = driver.create_session(task=FakeTask(), config=FakeConfig())
+        sbx = backend.created[0]
+        assert any(
+            cmd.startswith("mkdir -p /home/user/.agent/extensions")
+            for cmd in sbx.executed
+        )
+        session.close()
+
     def test_create_session_skips_install_when_prebaked(self):
         from openenv.core.harness.agents.cli_driver import CLIAgentDriver
 
@@ -481,6 +512,89 @@ class TestCLIAgentDriver:
 
         sbx = backend.created[0]
         assert sbx.written["/extra/data.json"] == '{"key": "value"}'
+        session.close()
+
+    def test_opencode_black_box_api_key_stays_out_of_command_argv(self):
+        from openenv.core.harness.agents.cli_driver import CLIAgentDriver
+        from openenv.core.harness.agents.opencode import OPENCODE_SPEC
+
+        secret = "sk-test '$(leak)"
+        config = FakeConfig(api_key=secret)
+        backend = FakeSandboxBackend()
+        driver = CLIAgentDriver(
+            spec=OPENCODE_SPEC,
+            sandbox_backend=backend,
+            mode="black_box",
+        )
+
+        session = driver.create_session(task=FakeTask(), config=config)
+        sbx = backend.created[0]
+        cmd, envs = sbx.bg_commands[-1]
+        assert secret not in cmd
+        assert envs is not None
+        assert envs["OPENAI_API_KEY"] == secret
+        session.close()
+
+    def test_opencode_interception_gate_uses_server_secret_not_user_key(self):
+        from openenv.core.harness.agents.cli_driver import CLIAgentDriver
+        from openenv.core.harness.agents.interception_server import InterceptionServer
+        from openenv.core.harness.agents.opencode import OPENCODE_SPEC
+
+        secret = "sk-test '$(leak)"
+        config = FakeConfig(api_key=secret)
+        backend = FakeSandboxBackend()
+        server = InterceptionServer(port=0, secret="gate-secret")
+        driver = CLIAgentDriver(
+            spec=OPENCODE_SPEC,
+            sandbox_backend=backend,
+            mode="interception_gate",
+            interception_server=server,
+            interception_base_url="http://127.0.0.1:8765",
+        )
+
+        session = driver.create_session(task=FakeTask(), config=config)
+        sbx = backend.created[0]
+        cmd, envs = sbx.bg_commands[-1]
+        assert secret not in cmd
+        assert envs is not None
+        assert envs["OPENAI_API_KEY"] == "gate-secret"
+        session.close()
+
+    def test_pi_interception_gate_writes_models_json_and_uses_openenv_provider(self):
+        from openenv.core.harness.agents.cli_driver import CLIAgentDriver
+        from openenv.core.harness.agents.interception_server import InterceptionServer
+        from openenv.core.harness.agents.pi import PI_SPEC
+
+        backend = FakeSandboxBackend()
+        server = InterceptionServer(port=0, secret="gate-secret")
+        driver = CLIAgentDriver(
+            spec=PI_SPEC,
+            sandbox_backend=backend,
+            mode="interception_gate",
+            interception_server=server,
+            interception_base_url="http://127.0.0.1:8765",
+        )
+
+        session = driver.create_session(task=FakeTask(), config=FakeConfig())
+        sbx = backend.created[0]
+
+        # Command should force the custom provider backed by models.json.
+        cmd, _envs = sbx.bg_commands[-1]
+        assert "--provider openenv" in cmd
+
+        home_models = "/home/user/.pi/agent/models.json"
+        root_models = "/root/.pi/agent/models.json"
+        assert home_models in sbx.written
+        assert root_models in sbx.written
+
+        cfg = json.loads(sbx.written[home_models])
+        provider = cfg["providers"]["openenv"]
+        assert provider["api"] == "openai-completions"
+        assert provider["apiKey"] == "gate-secret"
+        assert provider["models"][0]["id"] == "test-model"
+        assert "/rollout/" in provider["baseUrl"]
+        assert provider["baseUrl"].endswith("/v1")
+
         session.close()
 
     def test_create_session_runs_task_setup_shell(self):
@@ -670,6 +784,32 @@ class TestCLIAgentSession:
         assert sbx._killed
         assert session._agent_bg_job is None
 
+    @pytest.mark.asyncio
+    async def test_next_request_handles_missing_intercept_without_keyerror(self):
+        import asyncio
+
+        from openenv.core.harness.agents.cli_driver import CLIAgentSession
+        from openenv.core.harness.agents.interception_server import InterceptionServer
+
+        spec = _make_test_spec()
+        sbx = FakeSandbox()
+        queue: asyncio.Queue[str] = asyncio.Queue()
+        await queue.put("req_missing")
+
+        session = CLIAgentSession(
+            spec=spec,
+            sandbox=sbx,
+            task=FakeTask(),
+            config=FakeConfig(),
+            agent_bg_job=FakeBgJob(),
+            interception_server=InterceptionServer(secret="s"),
+            interception_rollout_id="rollout-1",
+            interception_queue=queue,
+        )
+
+        # Missing request IDs can happen if unregister_rollout races with queue.get().
+        assert await session.next_request(timeout_s=0.2) is None
+
 
 class TestCLIAgentSessionFactory:
     """Tests for the ResourceSessionFactory wrapper."""
@@ -774,6 +914,25 @@ class TestOpenCodeSpec:
         assert "opencode run" in cmd
         assert "--format json" in cmd
         assert "/home/user/task/instruction.md" in cmd
+
+    def test_build_command_quotes_paths(self):
+        from openenv.core.harness.agents.opencode import OPENCODE_SPEC
+
+        @dataclass
+        class OcConfig:
+            sandbox_home: str = "/home/user with space"
+            run_format: str = "json"
+
+        assert OPENCODE_SPEC.build_command is not None
+        cmd = OPENCODE_SPEC.build_command(
+            OPENCODE_SPEC,
+            OcConfig(),
+            FakeTask(instruction="Write hello.py"),
+            None,
+        )
+        assert "cd '/home/user with space/workdir'" in cmd
+        assert "cat '/home/user with space/task/instruction.md'" in cmd
+        assert "tee '/home/user with space/logs/agent/opencode.jsonl'" in cmd
 
     def test_build_mcp_config(self):
         from openenv.core.harness.agents.opencode import OPENCODE_SPEC
@@ -886,6 +1045,54 @@ class TestOpenCodeSpec:
         assert sbx.written.get("/home/user/task/instruction.md") == "Hello"
 
         session.close()
+
+
+class TestPiSpec:
+    def test_build_command_quotes_paths(self):
+        from openenv.core.harness.agents.pi import PI_SPEC
+
+        @dataclass
+        class PiConfig:
+            sandbox_home: str = "/home/user with space"
+            provider: str = "openai"
+            model: str = "model/name"
+            thinking: str = "off"
+
+        assert PI_SPEC.build_command is not None
+        cmd = PI_SPEC.build_command(
+            PI_SPEC,
+            PiConfig(),
+            FakeTask(instruction="Write hello.py"),
+            None,
+        )
+        assert "cd '/home/user with space/workdir'" in cmd
+        assert "-p @'/home/user with space/task/instruction.txt'" in cmd
+        assert "tee '/home/user with space/logs/agent/pi.txt'" in cmd
+
+    def test_build_command_uses_config_workdir_when_present(self):
+        from openenv.core.harness.agents.pi import PI_SPEC
+
+        @dataclass
+        class PiConfig:
+            sandbox_home: str = "/home/user"
+            workdir: str = "/testbed"
+            provider: str = "openai"
+            model: str = "model/name"
+            thinking: str = "off"
+
+        assert PI_SPEC.build_command is not None
+        cmd = PI_SPEC.build_command(
+            PI_SPEC,
+            PiConfig(),
+            FakeTask(instruction="Write hello.py"),
+            None,
+        )
+        assert "cd /testbed" in cmd
+
+    def test_spec_declares_extension_dir_template(self):
+        from openenv.core.harness.agents.pi import PI_SPEC
+
+        assert PI_SPEC.extension_dir_template == "{home}/.pi/agent/extensions"
 
 
 # Env var resolution

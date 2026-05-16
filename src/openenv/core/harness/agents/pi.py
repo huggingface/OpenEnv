@@ -49,7 +49,11 @@ def _build_command(
     home = config.sandbox_home if hasattr(config, "sandbox_home") else "/home/user"
     instruction_file = f"{home}/task/instruction.txt"
     log_file = f"{home}/logs/agent/pi.txt"
-    workdir = f"{home}/workdir"
+    workdir = (
+        config.workdir
+        if hasattr(config, "workdir") and getattr(config, "workdir")
+        else f"{home}/workdir"
+    )
 
     provider = ""
     if hasattr(config, "provider") and config.provider:
@@ -61,12 +65,16 @@ def _build_command(
     if hasattr(config, "thinking") and config.thinking:
         thinking = f" --thinking {shlex.quote(config.thinking)}"
 
+    workdir_q = shlex.quote(workdir)
+    instruction_q = shlex.quote(instruction_file)
+    log_q = shlex.quote(log_file)
+
     return (
-        f"cd {workdir} && git init -q 2>/dev/null; "
+        f"cd {workdir_q} && git init -q 2>/dev/null; "
         f"pi --no-session --no-context-files"
         f"{provider}{model}{thinking}"
-        f" -p @{instruction_file}"
-        f" 2>&1 | tee {log_file}"
+        f" -p @{instruction_q}"
+        f" 2>&1 | tee {log_q}"
     )
 
 
@@ -136,6 +144,7 @@ PI_SPEC = CLIAgentSpec(
         "PI_SKIP_VERSION_CHECK": "1",
         "PI_TELEMETRY": "0",
     },
+    extension_dir_template="{home}/.pi/agent/extensions",
     build_command=_build_command,
     build_mcp_config=_build_mcp_config,
     parse_events=_parse_events,

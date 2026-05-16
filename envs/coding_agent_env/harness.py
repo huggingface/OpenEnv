@@ -24,12 +24,7 @@ from .config import CodingAgentConfig
 from .opencode_runtime import (
     agent_log_path,
     build_env_vars,
-    build_install_cmd,
-    build_opencode_json,
     build_run_cmd,
-    instruction_path,
-    opencode_config_path,
-    system_prompt_path,
 )
 from .task import CodingAgentTask
 
@@ -87,10 +82,7 @@ class CodingAgentSessionFactory(ResourceSessionFactory):
             raise ValueError(f"Unknown mode: {mode!r}")
         self._config = config
         self._backend = sandbox_backend
-        self._mode = mode
         self._verifier = verifier
-        self._install_timeout_s = install_timeout_s
-        self._setup_timeout_s = setup_timeout_s
         self._driver = CLIAgentDriver(
             spec=OPENCODE_SPEC,
             sandbox_backend=sandbox_backend,
@@ -111,6 +103,16 @@ class CodingAgentSessionFactory(ResourceSessionFactory):
 
         _log = logging.getLogger(__name__)
         oc_task = CodingAgentTask.coerce(task)
+        setup_parts: list[str] = []
+        if self._config.extra_setup_shell:
+            setup_parts.append(self._config.extra_setup_shell)
+        if oc_task.setup_shell:
+            setup_parts.append(oc_task.setup_shell)
+        if setup_parts:
+            oc_task = oc_task.model_copy(
+                update={"setup_shell": "set -e\n" + "\n".join(setup_parts)}
+            )
+
         sandbox_timeout = int(self._config.agent_timeout_s) + 300
         sandbox = self._backend.create(
             timeout_s=sandbox_timeout,
@@ -132,41 +134,7 @@ class CodingAgentSessionFactory(ResourceSessionFactory):
         return session
 
     def _bootstrap_sandbox(self, sandbox: SandboxHandle, task: CodingAgentTask) -> None:
-        self._driver._wait_for_sandbox_ready(sandbox)
-        if not self._driver._agent_already_installed(sandbox):
-            self._driver._exec_with_retry(
-                sandbox,
-                build_install_cmd(self._config),
-                timeout=self._install_timeout_s,
-                attempts=3,
-                backoff_s=3.0,
-                label="opencode install",
-            )
-        sandbox.write_text(
-            opencode_config_path(self._config), build_opencode_json(self._config)
-        )
-        sandbox.write_text(instruction_path(self._config), task.instruction)
-        if self._config.system_prompt:
-            sandbox.write_text(
-                system_prompt_path(self._config), self._config.system_prompt
-            )
-        for remote_path, content in task.upload_files.items():
-            sandbox.write_text(remote_path, content)
-        if self._config.extra_setup_shell:
-            self._driver._exec_with_retry(
-                sandbox,
-                self._config.extra_setup_shell,
-                timeout=self._setup_timeout_s,
-                attempts=2,
-                backoff_s=2.0,
-                label="extra_setup_shell",
-            )
-        if task.setup_shell:
-            r = sandbox.exec(task.setup_shell, timeout=self._setup_timeout_s)
-            if r.exit_code != 0:
-                raise RuntimeError(
-                    f"task.setup_shell failed ({r.exit_code}): {r.stderr}"
-                )
+        self._driver.bootstrap_sandbox(sandbox, task, self._config)
 
 
 __all__ = [

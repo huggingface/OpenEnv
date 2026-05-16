@@ -183,10 +183,7 @@ class TerminusEnvironment(MCPEnvironment):
     ) -> Observation:
         self._state.step_count += 1
         obs = super().step(action, timeout_s=timeout_s, **kwargs)
-        if (
-            self._state.submitted_answer is not None
-            and self._state.last_reward is not None
-        ):
+        if self._state.submitted_answer is not None and self._state.last_reward is not None:
             obs.done = True
             obs.reward = self._state.last_reward
         return obs
@@ -199,10 +196,7 @@ class TerminusEnvironment(MCPEnvironment):
     ) -> Observation:
         self._state.step_count += 1
         obs = await super().step_async(action, timeout_s=timeout_s, **kwargs)
-        if (
-            self._state.submitted_answer is not None
-            and self._state.last_reward is not None
-        ):
+        if self._state.submitted_answer is not None and self._state.last_reward is not None:
             obs.done = True
             obs.reward = self._state.last_reward
         return obs

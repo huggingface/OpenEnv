@@ -45,28 +45,16 @@ class CodingToolsEnvironment(MCPEnvironment):
                 return "Error: environment not reset. Call reset() first."
             timeout_value = 30 if timeout is None else float(timeout)
             result = self._sandbox.run_shell(command, timeout_s=timeout_value)
-            self._record(
-                "bash", result.ok, result.output, result.error, result.metadata
-            )
-            return (
-                result.output
-                if result.ok
-                else f"ERROR: {result.error}\n{result.output}".strip()
-            )
+            self._record("bash", result.ok, result.output, result.error, result.metadata)
+            return result.output if result.ok else f"ERROR: {result.error}\n{result.output}".strip()
 
         @mcp.tool
-        def read(
-            file_path: str, offset: int | None = None, limit: int | None = None
-        ) -> str:
+        def read(file_path: str, offset: int | None = None, limit: int | None = None) -> str:
             """Read file contents using computer instance."""
             if not self._sandbox:
                 return "Error: environment not reset. Call reset() first."
-            result = self._sandbox.read_file(
-                file_path=file_path, offset=offset, limit=limit
-            )
-            self._record(
-                "read", result.ok, result.output, result.error, result.metadata
-            )
+            result = self._sandbox.read_file(file_path=file_path, offset=offset, limit=limit)
+            self._record("read", result.ok, result.output, result.error, result.metadata)
             return result.output if result.ok else f"ERROR: {result.error}"
 
         @mcp.tool
@@ -75,9 +63,7 @@ class CodingToolsEnvironment(MCPEnvironment):
             if not self._sandbox:
                 return "Error: environment not reset. Call reset() first."
             result = self._sandbox.write_file(file_path=file_path, content=content)
-            self._record(
-                "write", result.ok, result.output, result.error, result.metadata
-            )
+            self._record("write", result.ok, result.output, result.error, result.metadata)
             return result.output if result.ok else f"ERROR: {result.error}"
 
         @mcp.tool
@@ -102,14 +88,10 @@ class CodingToolsEnvironment(MCPEnvironment):
                 updated = original.replace(old_string, new_string)
             else:
                 updated = original.replace(old_string, new_string, 1)
-            write_result = self._sandbox.write_file(
-                file_path=file_path, content=updated
-            )
+            write_result = self._sandbox.write_file(file_path=file_path, content=updated)
             ok = write_result.ok
             msg = "edit ok" if ok else ""
-            self._record(
-                "edit", ok, msg, write_result.error, {"replace_all": replace_all}
-            )
+            self._record("edit", ok, msg, write_result.error, {"replace_all": replace_all})
             return msg if ok else f"ERROR: {write_result.error}"
 
         @mcp.tool
@@ -147,11 +129,7 @@ class CodingToolsEnvironment(MCPEnvironment):
                 write_result.error,
                 {"applied": applied},
             )
-            return (
-                f"applied {applied} edits"
-                if write_result.ok
-                else f"ERROR: {write_result.error}"
-            )
+            return f"applied {applied} edits" if write_result.ok else f"ERROR: {write_result.error}"
 
         @mcp.tool
         def glob(pattern: str, path: str | None = None) -> str:
@@ -159,27 +137,17 @@ class CodingToolsEnvironment(MCPEnvironment):
             if not self._sandbox:
                 return "Error: environment not reset. Call reset() first."
             result = self._sandbox.glob_files(pattern=pattern, path=path)
-            self._record(
-                "glob", result.ok, result.output, result.error, result.metadata
-            )
+            self._record("glob", result.ok, result.output, result.error, result.metadata)
             return result.output if result.ok else f"ERROR: {result.error}"
 
         @mcp.tool
-        def grep(
-            pattern: str, path: str | None = None, include: str | None = None
-        ) -> str:
+        def grep(pattern: str, path: str | None = None, include: str | None = None) -> str:
             """Search for patterns in files."""
             if not self._sandbox:
                 return "Error: environment not reset. Call reset() first."
             result = self._sandbox.grep(pattern=pattern, path=path, include=include)
-            self._record(
-                "grep", result.ok, result.output, result.error, result.metadata
-            )
-            return (
-                result.output
-                if result.ok
-                else f"ERROR: {result.error}\n{result.output}".strip()
-            )
+            self._record("grep", result.ok, result.output, result.error, result.metadata)
+            return result.output if result.ok else f"ERROR: {result.error}\n{result.output}".strip()
 
         @mcp.tool
         def ls(path: str = ".", ignore: list[str] | None = None) -> str:
@@ -209,9 +177,7 @@ class CodingToolsEnvironment(MCPEnvironment):
                     self._record("todo_write", False, "", msg, None)
                     return msg
             self._state.todos = validated
-            self._record(
-                "todo_write", True, f"stored {len(validated)} todos", None, None
-            )
+            self._record("todo_write", True, f"stored {len(validated)} todos", None, None)
             return f"stored {len(validated)} todos"
 
         @mcp.tool
@@ -315,8 +281,7 @@ class CodingToolsEnvironment(MCPEnvironment):
                             "sandbox_id": self._state.sandbox_id,
                             "message": "Setup command failed.",
                             "setup_results": [
-                                entry.model_dump()
-                                for entry in self._state.setup_results
+                                entry.model_dump() for entry in self._state.setup_results
                             ],
                         },
                     )

@@ -9,7 +9,7 @@ app_port: 8000
 base_path: /web
 tags:
   - openenv
-short_description: Multi-harness coding-agent env (OpenCode + Pi) in E2B with logprob capture
+short_description: Multi-harness coding-agent env (OpenCode + Pi) in E2B
 ---
 
 # Coding Agent Environment for OpenEnv
@@ -17,13 +17,13 @@ short_description: Multi-harness coding-agent env (OpenCode + Pi) in E2B with lo
 `coding_agent_env` runs coding-agent harnesses (currently
 [OpenCode](https://opencode.ai) and [Pi](https://github.com/badlogic/pi-mono))
 inside an isolated [E2B](https://e2b.dev) sandbox against any OpenAI-compatible
-LLM endpoint, optionally capturing per-token logprobs for GRPO training.
+LLM endpoint with optional trainer-owned interception for RL training.
 
 **🚀 Try it live**: [`AdithyaSK/coding-agent-env`](https://huggingface.co/spaces/AdithyaSK/coding-agent-env)
 
 The deployed Space exposes:
 
-- **Web UI** at [`/web`](https://adithyask-coding-agent-env.hf.space/web) — pick endpoint, write task, hit Run, watch live phase log + reward + logprobs.
+- **Web UI** at [`/web`](https://adithyask-coding-agent-env.hf.space/web) — pick endpoint, write task, hit Run, watch live phase log + reward.
 - **MCP tool API** at [`/mcp`](https://adithyask-coding-agent-env.hf.space/mcp) — programmatic `run_rollout` calls.
 - **OpenAPI docs** at [`/docs`](https://adithyask-coding-agent-env.hf.space/docs).
 - **Health** at [`/health`](https://adithyask-coding-agent-env.hf.space/health).
@@ -83,7 +83,6 @@ async def main():
         result = RolloutResult.model_validate_json(_extract_text(raw))
 
         print("reward:", result.reward)
-        print("turns:", len(result.proxy_turns))
         print("files:", list(result.files.keys()))
         print("wall:", result.wall_s, "s")
 
@@ -95,7 +94,6 @@ Expected output (~20s with the prebaked template):
 
 ```
 reward: 1.0
-turns: 3
 files: ['/home/user/workdir/binary_search.py', ...]
 wall: 19.8 s
 ```
@@ -134,11 +132,10 @@ factory = CodingAgentSessionFactory(
         model="gpt-4o-mini",
     ),
     sandbox_backend=E2BSandboxBackend(),
-    mode="transparent_proxy",                   # captures per-token logprobs
+    mode="interception_gate",                  # trainer-owned interception mode
 )
 session = factory.create(task=CodingAgentTask(instruction="..."))
 session.wait_for_completion()
-turns = session.fetch_proxy_trace()             # per-turn (tokens, logprobs)
 session.close()
 ```
 
@@ -195,23 +192,23 @@ directly.
 | `setup` | `list[str]` | `[]` | Bash commands run **before** the agent. |
 | `verify` | `list[str]` | `[]` | Bash commands run **after** the agent. |
 | `task_id` | `str` | `""` | Echoed back in result. |
-| `mode` | `str` | `"transparent_proxy"` | Or `"black_box"` (no logprobs). |
+| `mode` | `str` | `"black_box"` | Or `"interception_gate"` for trainer-owned generation. |
 | `disable_thinking` | `bool \| None` | `None` (catalog default) | Inject `chat_template_kwargs.enable_thinking=false`. |
 | `max_tokens_cap` | `int` | `4096` | Per-turn `max_tokens` clamp. |
-| `top_logprobs` | `int` | `5` | HF Router cap is 5; OpenAI 0–20; vLLM unbounded. |
+| `top_logprobs` | `int` | `5` | Reserved for trainer-owned interception workflows. |
 | `agent_timeout_s` | `float` | `600.0` | Hard wall budget for the selected harness. |
 | `template` | `str` | `""` | E2B template name; `"coding-agent-rl"` skips ~2 min of install per rollout. |
 
 Returns `RolloutResult` JSON with: `reward`, `setup_results[]`,
-`verify_results[]`, `proxy_turns[]`, `files{}`, `agent_log_tail`,
+`verify_results[]`, `files{}`, `agent_log_tail`,
 `proxy_log_tail`, `wall_s`, `agent_exit_code`, `sandbox_id`, `error`.
 
 ## Two Operating Modes
 
 | Mode | What it does | Best for |
 |---|---|---|
-| **`transparent_proxy`** (default) | In-sandbox proxy at `localhost:7000` forwards harness LLM calls to `base_url`, injects `logprobs=true`, captures per-turn `(messages, completion_tokens, logprobs)` to `proxy_trace.jsonl`. | GRPO / RL training, observability, top-k distillation. |
-| **`black_box`** | No proxy. The selected harness talks straight to `base_url`. | Smoke tests, eval, SFT data collection. |
+| **`black_box`** (default) | The selected harness talks directly to `base_url`. | Smoke tests, eval, SFT data collection. |
+| **`interception_gate`** | Agent calls are routed through trainer-host interception endpoints. Trainer owns forward pass + trajectory capture. | RL training with trainer-owned generation. |
 
 ## Environment Variables
 
@@ -230,21 +227,17 @@ sibling `.env` file; on HF Spaces, set them as **Space secrets**.
 | **OpenAI endpoint** | | |
 | `OPENAI_API_KEY` | required for `endpoint="openai"` | Standard OpenAI key. |
 | `OPENAI_BASE_URL` | no | Defaults to `https://api.openai.com/v1`. |
-| `OPENAI_MODEL` | no | Defaults to `gpt-4o-mini` (gpt-5.x and o-series refuse logprobs). |
+| `OPENAI_MODEL` | no | Defaults to `gpt-4o-mini`. |
 | **HF Router endpoint** | | |
 | `HF_ROUTER_API_KEY` | required for `endpoint="hf_router"` | HF user token. |
 | `HF_ROUTER_BASE_URL` | no | Defaults to `https://router.huggingface.co/v1`. |
 | `HF_ROUTER_MODEL` | no | Defaults to `Qwen/Qwen3-4B-Instruct-2507:nscale`. |
 
-Pick `provider:` suffixes that actually return logprobs:
-**Together / Nscale / Scaleway / SambaNova / Cerebras**. Avoid Novita /
-Hyperbolic / Featherless (silent drop) and Groq (HTTP 400).
 
 ## Pre-baked E2B Template
 
 The first rollout in a fresh E2B sandbox spends ~2 min installing
-harness tooling and the proxy's Python deps. Build a one-time template that
-ships those pre-installed:
+harness tooling. Build a one-time template that ships those pre-installed:
 
 ```bash
 .venv/bin/python envs/coding_agent_env/sandbox/build_template.py
@@ -290,7 +283,8 @@ src/openenv/core/harness/sandbox/
 ├── base.py                         # SandboxBackend / SandboxHandle protocols
 ├── e2b_backend.py                  # E2B implementation
 ├── docker_backend.py               # local Docker backend
-└── interception.py                 # in-sandbox FastAPI proxy (logprob capture)
+├── hf_backend.py                   # HF sandbox backend
+└── _util.py                        # shared sandbox shell utilities
 ```
 
 ## References
@@ -299,4 +293,4 @@ src/openenv/core/harness/sandbox/
 - [OpenCode CLI](https://opencode.ai/docs/cli/)
 - [Pi](https://github.com/badlogic/pi-mono)
 - [E2B Python SDK](https://e2b.dev/docs)
-- [HF Inference Providers logprob matrix](../../../DOCS/HF/hf_inference_providers_logprobs.md)
+
