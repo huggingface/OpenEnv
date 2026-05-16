@@ -228,9 +228,10 @@ class HFSandboxBackend:
         timeout_s: int = 900,
         envs: dict[str, str] | None = None,
         metadata: dict[str, str] | None = None,
+        image: str | None = None,
     ) -> SandboxHandle:
         # `hf-sandbox` does not support metadata at create-time yet.
-        del metadata
+        del metadata, image
 
         timeout = self._timeout or _format_timeout(timeout_s)
         last_error: Exception | None = None

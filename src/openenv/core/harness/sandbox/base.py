@@ -96,5 +96,10 @@ class SandboxBackend(Protocol):
         timeout_s: int = 900,
         envs: dict[str, str] | None = None,
         metadata: dict[str, str] | None = None,
+        image: str | None = None,
     ) -> SandboxHandle:
-        """Create and return a new, ready-to-use sandbox."""
+        """Create and return a new, ready-to-use sandbox.
+
+        ``image`` is backend-specific and may be ignored by providers that do
+        not support per-sandbox image selection.
+        """

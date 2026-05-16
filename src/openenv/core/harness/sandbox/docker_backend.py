@@ -299,8 +299,15 @@ class DockerSandboxBackend:
         user: str | None = None,
     ) -> None:
         self._image = image
-        self._docker_args = docker_args or []
+        self._docker_args = list(docker_args or [])
         self._user = user
+
+        # Linux Docker Engine does not auto-resolve host.docker.internal
+        # unless we explicitly map it.
+        if "host.docker.internal:host-gateway" not in self._docker_args:
+            self._docker_args.extend(
+                ["--add-host", "host.docker.internal:host-gateway"]
+            )
 
         try:
             subprocess.run(
@@ -324,6 +331,7 @@ class DockerSandboxBackend:
         timeout_s: int = 900,
         envs: dict[str, str] | None = None,
         metadata: dict[str, str] | None = None,
+        image: str | None = None,
     ) -> DockerSandboxHandle:
         cmd = [
             "docker",
@@ -338,7 +346,8 @@ class DockerSandboxBackend:
         for k, v in (envs or {}).items():
             cmd.extend(["-e", f"{k}={v}"])
         cmd.extend(self._docker_args)
-        cmd.extend([self._image, "sleep", str(timeout_s)])
+        effective_image = image or self._image
+        cmd.extend([effective_image, "sleep", str(timeout_s)])
 
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if result.returncode != 0:
@@ -347,6 +356,8 @@ class DockerSandboxBackend:
             )
         container_id = result.stdout.strip()
         _log.info(
-            "Docker sandbox created: %s (image=%s)", container_id[:12], self._image
+            "Docker sandbox created: %s (image=%s)",
+            container_id[:12],
+            effective_image,
         )
         return DockerSandboxHandle(container_id, user=self._user)

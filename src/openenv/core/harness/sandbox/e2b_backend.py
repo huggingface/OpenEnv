@@ -184,7 +184,9 @@ class E2BSandboxBackend:
         timeout_s: int = 900,
         envs: dict[str, str] | None = None,
         metadata: dict[str, str] | None = None,
+        image: str | None = None,
     ) -> SandboxHandle:
+        del image
         sbx = Sandbox.create(
             template=self._template,
             timeout=timeout_s,

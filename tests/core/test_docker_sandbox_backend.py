@@ -69,6 +69,37 @@ class TestDockerSandboxBackendUnit:
         with pytest.raises(ValueError, match="Unknown sandbox backend"):
             create_sandbox_backend("bogus")  # type: ignore[arg-type]
 
+    def test_create_adds_host_gateway_and_supports_image_override(self, monkeypatch):
+        import openenv.core.harness.sandbox.docker_backend as docker_backend
+
+        calls: list[list[str]] = []
+
+        def _fake_run(cmd, *args, **kwargs):
+            calls.append(list(cmd))
+            if cmd[:2] == ["docker", "version"]:
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+            if cmd[:2] == ["docker", "run"]:
+                return subprocess.CompletedProcess(
+                    cmd,
+                    0,
+                    "1234567890abcdef\n",
+                    "",
+                )
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        monkeypatch.setattr(docker_backend.subprocess, "run", _fake_run)
+
+        backend = docker_backend.DockerSandboxBackend(image="base:latest")
+        handle = backend.create(image="override:latest")
+        assert handle.sandbox_id == "1234567890ab"
+
+        run_cmds = [cmd for cmd in calls if cmd[:2] == ["docker", "run"]]
+        assert len(run_cmds) == 1
+        run_cmd = run_cmds[0]
+        assert "--add-host" in run_cmd
+        assert "host.docker.internal:host-gateway" in run_cmd
+        assert "override:latest" in run_cmd
+
     @pytest.mark.skipif(_DOCKER_AVAILABLE, reason="Only test error when Docker missing")
     def test_backend_raises_without_docker(self):
         from openenv.core.harness.sandbox.docker_backend import DockerSandboxBackend
