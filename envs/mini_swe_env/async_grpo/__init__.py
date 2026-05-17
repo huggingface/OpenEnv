@@ -1,24 +1,27 @@
-"""Async GRPO training for Mini SWE on HF Spaces.
+"""Async GRPO training for Mini SWE with Pi agent.
 
-This package provides:
+Architecture: Pi runs in an HF Sandbox, its LLM calls are intercepted
+by :class:`SWEAsyncControlPlane`, and :class:`SWERolloutWorker` forwards
+them to vLLM ``/v1/completions`` to get exact token IDs and logprobs.
 
-- :class:`SWEToolEnv` — TRL ``environment_factory``-compatible environment
-  with ``bash()`` and ``answer()`` tools backed by an HF/Docker sandbox.
-- :func:`swe_reward` — Reward function that parses grading results from
-  completion messages.
-
-These plug directly into TRL's ``AsyncGRPOTrainer`` (or ``GRPOTrainer``).
-No custom rollout worker, interception server, or control plane needed —
-TRL handles tokenization, generation, logprobs, token IDs, weight sync,
-and sample assembly.
+The worker implements TRL's ``RolloutWorkerProtocol`` and plugs into
+``AsyncGRPOTrainer(rollout_worker=...)``.
 """
 
-from .swe_tool_env import (
-    SWEToolEnv,
-    swe_reward,
+from .control_plane import (
+    SWEAsyncControlPlane,
+    SWEAsyncControlPlaneConfig,
+)
+from .rollout_worker import (
+    RolloutSample,
+    SWERolloutWorker,
+    WorkerConfig,
 )
 
 __all__ = [
-    "SWEToolEnv",
-    "swe_reward",
+    "RolloutSample",
+    "SWEAsyncControlPlane",
+    "SWEAsyncControlPlaneConfig",
+    "SWERolloutWorker",
+    "WorkerConfig",
 ]
