@@ -8,6 +8,10 @@ Architecture:
 vLLM runs on a separate GPU.  The trainer, interception server, and rollout
 worker share a process on the training GPU.
 
+The InterceptionServer runs in a background thread with its own asyncio
+event loop so it stays alive while the synchronous trainer.train() runs
+on the main thread.
+
 Prerequisites:
     CUDA_VISIBLE_DEVICES=0 vllm serve Qwen/Qwen3-1.7B \\
         --tensor-parallel-size 1 --max-model-len 4096
@@ -27,7 +31,9 @@ import json
 import logging
 import os
 import sys
+import threading
 from pathlib import Path
+from typing import Any
 
 _root = Path(__file__).resolve().parent.parent.parent
 for _p in (_root / "src", _root / "envs"):
@@ -52,6 +58,54 @@ from openenv.core.harness.sandbox import create_sandbox_backend  # noqa: E402
 
 
 _log = logging.getLogger("swe-async-grpo")
+
+
+# ── InterceptionServer background thread ──────────────────────────
+
+
+def _run_event_loop(loop: asyncio.AbstractEventLoop) -> None:
+    """Run an asyncio event loop forever in the current thread."""
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+
+def start_interception_server(
+    control_plane: SWEAsyncControlPlane,
+) -> tuple[asyncio.AbstractEventLoop, threading.Thread]:
+    """Start the InterceptionServer in a daemon thread.
+
+    Returns the event loop and the thread so the caller can shut it down.
+    The aiohttp server runs on this loop and stays alive as long as the
+    thread is running.
+    """
+    loop = asyncio.new_event_loop()
+    # Start the server on the new loop.
+    future = asyncio.run_coroutine_threadsafe(control_plane.start(), loop)
+    # The loop must be running for the coroutine to execute.
+    thread = threading.Thread(target=_run_event_loop, args=(loop,), daemon=True,
+                              name="interception-server")
+    thread.start()
+    # Wait for start() to complete.
+    future.result(timeout=30)
+    return loop, thread
+
+
+def stop_interception_server(
+    control_plane: SWEAsyncControlPlane,
+    loop: asyncio.AbstractEventLoop,
+    thread: threading.Thread,
+) -> None:
+    """Shut down the InterceptionServer and its event loop."""
+    future = asyncio.run_coroutine_threadsafe(control_plane.stop(), loop)
+    try:
+        future.result(timeout=10)
+    except Exception:
+        pass
+    loop.call_soon_threadsafe(loop.stop)
+    thread.join(timeout=5)
+
+
+# ── CLI ────────────────────────────────────────────────────────────
 
 
 def _args() -> argparse.Namespace:
@@ -103,10 +157,11 @@ def main() -> int:
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # ── Interception control plane ────────────────────────────────
+    # ── Interception control plane (background thread) ────────────
     control_cfg = SWEAsyncControlPlaneConfig.from_env()
     control_plane = SWEAsyncControlPlane(config=control_cfg)
-    asyncio.run(control_plane.start())
+    server_loop, server_thread = start_interception_server(control_plane)
+    _log.info("InterceptionServer running in background thread")
 
     try:
         # ── Session factory (Pi in sandbox) ───────────────────────
@@ -140,7 +195,7 @@ def main() -> int:
         )
 
         # ── Trainer ───────────────────────────────────────────────
-        def _noop_reward(**kwargs: Any) -> list[float]:  # noqa: ANN401
+        def _noop_reward(**kwargs: Any) -> list[float]:
             """Unused — rewards come from rollout_worker.advantage."""
             prompts = kwargs.get("prompts", [])
             return [0.0] * len(prompts)
@@ -152,7 +207,7 @@ def main() -> int:
             processing_class=tokenizer,
             rollout_worker=worker,
             args=AsyncGRPOConfig(
-                output_dir="outputs/swe_async_grpo",
+                output_dir=os.path.join(os.environ.get("HOME", "/tmp"), "outputs/swe_async_grpo"),
                 vllm_server_base_url=vllm_url,
                 vllm_server_timeout=2400.0,
                 max_completion_length=2048,
@@ -177,9 +232,8 @@ def main() -> int:
         _log.info("done: step=%s", getattr(trainer.state, "global_step", "?"))
         return 0
     finally:
-        asyncio.run(control_plane.stop())
+        stop_interception_server(control_plane, server_loop, server_thread)
 
 
 if __name__ == "__main__":
-    from typing import Any  # noqa: E402
     raise SystemExit(main())
