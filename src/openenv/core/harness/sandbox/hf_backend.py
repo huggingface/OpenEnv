@@ -231,15 +231,16 @@ class HFSandboxBackend:
         image: str | None = None,
     ) -> SandboxHandle:
         # `hf-sandbox` does not support metadata at create-time yet.
-        del metadata, image
+        del metadata
 
         timeout = self._timeout or _format_timeout(timeout_s)
+        effective_image = image or self._image
         last_error: Exception | None = None
 
         for attempt in range(self._create_retries):
             try:
                 sbx = Sandbox.create(
-                    image=self._image,
+                    image=effective_image,
                     flavor=self._flavor,
                     timeout=timeout,
                     forward_hf_token=self._forward_hf_token,

@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""SWE environment implementation (v2 — SWE-Gym-native grading).
+"""SWE environment implementation with SWE-Gym-native grading.
 
 Single MCP tool ``run_swe_rollout`` with the ``SWEGymTask`` shape:
 
@@ -298,9 +298,9 @@ class SWEEnvironment(MCPEnvironment):
             )
             result.sandbox_id = sandbox.sandbox_id
 
-            # ── Stage repo (only if not using a per-task image) ───────
+            # ── Prepare repo (only if not using a per-task image) ─────
             if not image:
-                self._stage_repo(sandbox, task)
+                self._prepare_repo(sandbox, task)
 
             # ── Run setup commands ────────────────────────────────────
             for cmd in task.setup:
@@ -630,7 +630,7 @@ class SWEEnvironment(MCPEnvironment):
             kwargs["image"] = image
         return create_sandbox_backend(backend_name, **kwargs)
 
-    def _stage_repo(self, sandbox: Any, task: SWETask) -> None:
+    def _prepare_repo(self, sandbox: Any, task: SWETask) -> None:
         """Clone the repo and reset to base_commit in the sandbox.
 
         Only used when there is no per-task Docker image.  SWE-Gym

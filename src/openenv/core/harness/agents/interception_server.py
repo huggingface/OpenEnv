@@ -164,6 +164,12 @@ class InterceptionServer:
                 "tool_handlers": {},
                 "tool_defs": {},
             }
+            active = len(self.active_rollouts)
+        _log.info(
+            "interception_rollout_registered rollout_id=%s active_rollouts=%d",
+            rollout_id,
+            active,
+        )
         return queue
 
     def unregister_rollout(self, rollout_id: str) -> None:
@@ -176,7 +182,9 @@ class InterceptionServer:
             matching_intercepts = [self.intercepts[i] for i in matching_ids]
             for request_id in matching_ids:
                 del self.intercepts[request_id]
-            self.active_rollouts.pop(rollout_id, None)
+            removed = self.active_rollouts.pop(rollout_id, None) is not None
+            active = len(self.active_rollouts)
+            pending = len(self.intercepts)
 
         for intercept in matching_intercepts:
             fut: asyncio.Future | None = intercept.get("response_future")
@@ -189,9 +197,26 @@ class InterceptionServer:
                 except asyncio.QueueFull:
                     pass
 
+        _log.info(
+            "interception_rollout_unregistered rollout_id=%s removed=%s "
+            "active_rollouts=%d pending_intercepts=%d",
+            rollout_id,
+            removed,
+            active,
+            pending,
+        )
+
     def get_intercept(self, request_id: str) -> dict[str, Any] | None:
         with self._state_lock:
             return self.intercepts.get(request_id)
+
+    def stats(self) -> dict[str, int]:
+        """Return lightweight runtime counters for health/debug views."""
+        with self._state_lock:
+            return {
+                "active_rollouts": len(self.active_rollouts),
+                "pending_intercepts": len(self.intercepts),
+            }
 
     def register_tool_handler(
         self,
@@ -269,7 +294,7 @@ class InterceptionServer:
         ) or hmac.compare_digest(api_key, self.secret)
 
     async def _handle_health(self, request: web.Request) -> web.Response:
-        return web.json_response({"status": "ok"})
+        return web.json_response({"status": "ok", **self.stats()})
 
     async def _handle_tool_call(self, request: web.Request) -> web.Response:
         if not self._authorized(request):

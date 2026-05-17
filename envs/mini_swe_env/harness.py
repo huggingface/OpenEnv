@@ -60,6 +60,7 @@ from openenv.core.harness.agents import get_agent_spec
 from openenv.core.harness.agents.cli_driver import (
     CLIAgentDriver,
     CLIAgentSession,
+    build_interception_rollout_url,
 )
 from openenv.core.harness.agents.interception_server import InterceptionServer
 from openenv.core.harness.sandbox import SandboxBackend, SandboxHandle
@@ -437,7 +438,7 @@ class SWESessionFactory(ResourceSessionFactory):
 
         try:
             if not swe_task.sandbox_image:
-                self._stage_repo(sandbox, swe_task)
+                self._prepare_repo(sandbox, swe_task)
 
             self._run_setup(sandbox, swe_task)
 
@@ -459,8 +460,9 @@ class SWESessionFactory(ResourceSessionFactory):
             rollout_id = episode_id or f"rollout_{uuid.uuid4().hex[:8]}"
             interception_rollout_id = rollout_id
             interception_queue = self._interception_server.register_rollout(rollout_id)
-            base_url_override = (
-                f"{self._interception_base_url.rstrip('/')}/rollout/{rollout_id}/v1"
+            base_url_override = build_interception_rollout_url(
+                self._interception_base_url,
+                rollout_id,
             )
 
         agent_task = self._build_agent_task(swe_task)
@@ -489,7 +491,7 @@ class SWESessionFactory(ResourceSessionFactory):
 
     # ── Bootstrap helpers ──────────────────────────────────────────────────
 
-    def _stage_repo(self, sandbox: SandboxHandle, task: SWETask) -> None:
+    def _prepare_repo(self, sandbox: SandboxHandle, task: SWETask) -> None:
         """Clone the repo and reset to base_commit."""
         sandbox.exec(f"mkdir -p {TESTBED}", timeout=10)
         clone_url = f"https://github.com/{task.repo}.git"

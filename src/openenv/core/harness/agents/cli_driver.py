@@ -48,6 +48,11 @@ _log = logging.getLogger(__name__)
 Verifier = Callable[..., VerifyResult]
 
 
+def build_interception_rollout_url(base_url: str, rollout_id: str) -> str:
+    """Build OpenAI-compatible interception endpoint for one rollout."""
+    return f"{base_url.rstrip('/')}/rollout/{rollout_id}/v1"
+
+
 class _ConfigOverrideView:
     """Read-only attribute view with optional overrides."""
 
@@ -325,8 +330,9 @@ class CLIAgentDriver:
             rollout_id = episode_id or f"rollout_{uuid.uuid4().hex[:8]}"
             interception_rollout_id = rollout_id
             interception_queue = self._interception_server.register_rollout(rollout_id)
-            base_url_override = (
-                f"{self._interception_base_url.rstrip('/')}/rollout/{rollout_id}/v1"
+            base_url_override = build_interception_rollout_url(
+                self._interception_base_url,
+                rollout_id,
             )
 
         agent_bg_job = self._start_agent(
@@ -631,4 +637,10 @@ class CLIAgentSessionFactory(ResourceSessionFactory):
         )
 
 
-__all__ = ["CLIAgentDriver", "CLIAgentSession", "CLIAgentSessionFactory", "Verifier"]
+__all__ = [
+    "CLIAgentDriver",
+    "CLIAgentSession",
+    "CLIAgentSessionFactory",
+    "Verifier",
+    "build_interception_rollout_url",
+]
