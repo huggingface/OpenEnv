@@ -88,7 +88,7 @@ SWE_LLM_BASE_URL=https://api.openai.com/v1 \
 SWE_LLM_API_KEY=... \
 SWE_LLM_MODEL=gpt-4o-mini \
 PYTHONPATH=src:envs python examples/mini_swe_env/run_swe_sample.py \
-  --task-variant lite --task-index 0 --assert-host-answer
+  --task-variant lite --task-index 16 --assert-host-answer
 ```
 
 Notes:

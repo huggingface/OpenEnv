@@ -50,11 +50,20 @@ logging.basicConfig(
 )
 _log = logging.getLogger("swe-e2e")
 
+# Known easy SWE-Gym Lite task that has repeatedly produced reward=1.0
+# in local end-to-end validation with qwen-3.6-27b.
+DEFAULT_TASK_INDEX = 16  # getmoto__moto-5699
+
 
 def _arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Run one real SWE interception rollout")
     p.add_argument("--task-variant", default="lite", choices=["lite", "full"])
-    p.add_argument("--task-index", type=int, default=0)
+    p.add_argument(
+        "--task-index",
+        type=int,
+        default=DEFAULT_TASK_INDEX,
+        help=f"Task index in variant split (default: {DEFAULT_TASK_INDEX}, getmoto__moto-5699)",
+    )
     p.add_argument("--sandbox-backend", default="docker", choices=["docker", "e2b", "hf"])
     p.add_argument("--interception-port", type=int, default=9090)
     p.add_argument("--interception-host", default="0.0.0.0")
