@@ -11,9 +11,21 @@ from .control_plane import (
     SWEAsyncControlPlaneConfig,
     build_hf_space_base_url,
 )
+from .rollout_worker import (
+    SWEAsyncRolloutSample,
+    SWEAsyncRolloutWorker,
+    SWEAsyncRolloutWorkerConfig,
+    build_answer_tool_invoker,
+    build_openai_chat_forwarder,
+)
 
 __all__ = [
     "SWEAsyncControlPlane",
     "SWEAsyncControlPlaneConfig",
+    "SWEAsyncRolloutSample",
+    "SWEAsyncRolloutWorker",
+    "SWEAsyncRolloutWorkerConfig",
+    "build_answer_tool_invoker",
     "build_hf_space_base_url",
+    "build_openai_chat_forwarder",
 ]
