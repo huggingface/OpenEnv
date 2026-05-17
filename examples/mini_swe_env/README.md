@@ -12,7 +12,7 @@ using the OpenEnv harness infrastructure.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  train_swe_grpo.py                                          │
+│  train_swe_async_grpo.py                                    │
 │                                                             │
 │  1. Load SWE-Gym tasks from HuggingFace                     │
 │  2. Start InterceptionServer on trainer host                 │
@@ -23,7 +23,7 @@ using the OpenEnv harness infrastructure.
 │     d. Delivers response back to Pi                         │
 │     e. Repeat until Pi exits or calls answer()              │
 │     f. session.verify() → host-side SWE-Gym grading         │
-│  4. Compute GRPO advantages and update policy               │
+│  4. AsyncGRPOTrainer consumes queue + updates policy        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -44,44 +44,13 @@ The agent **cannot** influence the training reward.  The in-sandbox
 
 | File | Purpose |
 |------|---------|
-| `config.py` | All training knobs (`SWETrainingConfig`) |
-| `smoke_swe.py` | Single-task smoke test (3 modes) |
 | `run_swe_sample.py` | Real end-to-end interception rollout with a live LLM |
-| `train_swe_grpo.py` | GRPO training loop (reference impl) |
+| `train_swe_async_grpo.py` | AsyncGRPO trainer entrypoint wired to SWE custom rollout worker |
+| `envs/mini_swe_env/async_grpo/` | Control plane, worker, and trainer wiring modules |
 
 ## Quick Start
 
-### 1. Dry Run (no sandbox needed)
-
-Validates config and task loading:
-
-```bash
-PYTHONPATH=src:envs python examples/mini_swe_env/smoke_swe.py --dry-run
-```
-
-### 2. Smoke Test — Interception Gate (no LLM needed)
-
-Spins up InterceptionServer, creates a real sandbox, and auto-responds
-to prove the full pipeline works:
-
-```bash
-PYTHONPATH=src:envs python examples/mini_swe_env/smoke_swe.py --interception
-```
-
-Requires Docker and the per-task SWE-Gym image to be pullable.
-
-### 3. Smoke Test — Black Box (requires LLM endpoint)
-
-Pi talks directly to an LLM endpoint:
-
-```bash
-SWE_BASE_URL=http://localhost:8000/v1 \
-SWE_API_KEY=test \
-SWE_MODEL=qwen3-8b \
-PYTHONPATH=src:envs python examples/mini_swe_env/smoke_swe.py
-```
-
-### 4. Real end-to-end run (live LLM)
+### 1. Real end-to-end interception rollout (live LLM)
 
 ```bash
 SWE_LLM_BASE_URL=https://api.openai.com/v1 \
@@ -97,42 +66,41 @@ Notes:
 - If `--assert-host-answer` is set, the script fails unless reward comes from
   the host-side `answer` tool path (`reward_source=host_answer_tool`).
 
-### 5. GRPO Training (reference)
+### 2. AsyncGRPO training (Track D wiring)
 
 ```bash
-PYTHONPATH=src:envs python examples/mini_swe_env/train_swe_grpo.py --smoke
+SWE_ASYNC_MODEL=Qwen/Qwen3-8B \
+SWE_LLM_BASE_URL=http://127.0.0.1:8000/v1 \
+SWE_LLM_API_KEY=test \
+SWE_LLM_MODEL=Qwen/Qwen3-8B \
+INTERCEPTION_AUTH_TOKEN=... \
+INTERCEPTION_BASE_URL=https://<space-url>.hf.space \
+PYTHONPATH=src:envs uv run python examples/mini_swe_env/train_swe_async_grpo.py \
+  --task-variant lite --max-tasks 1 --sandbox-backend hf --max-steps 2
 ```
 
-For full training, adjust `config.py` or use environment variables:
-
-```bash
-SWE_TASK_VARIANT=lite \
-SWE_MODEL=Qwen/Qwen3-32B \
-SWE_GRPO_BATCH_SIZE=4 \
-SWE_SANDBOX_BACKEND=docker \
-PYTHONPATH=src:envs python examples/mini_swe_env/train_swe_grpo.py
-```
+Notes:
+- Use separate GPUs for vLLM and trainer, per TRL async docs.
+- `INTERCEPTION_BASE_URL` must be reachable from HF sandboxes.
 
 ## Configuration
 
-All settings are in `config.py` (`SWETrainingConfig`).  Override via
-`SWE_*` environment variables:
+Main env vars for `train_swe_async_grpo.py`:
 
 | Env Variable | Default | Description |
 |-------------|---------|-------------|
-| `SWE_TASK_VARIANT` | `lite` | `"lite"` (230) or `"full"` (2,438 tasks) |
-| `SWE_MODEL` | `Qwen/Qwen3-8B` | HuggingFace model id |
-| `SWE_BASE_URL` | *(empty)* | LLM endpoint (black-box mode) |
-| `SWE_API_KEY` | *(empty)* | LLM bearer token |
-| `SWE_SANDBOX_BACKEND` | `docker` | `"docker"`, `"e2b"`, or `"hf"` |
-| `SWE_INTERCEPTION_PORT` | `9090` | InterceptionServer port |
-| `SWE_INTERCEPTION_BASE_URL` | auto | URL reachable from sandbox |
-| `SWE_AGENT_TIMEOUT` | `1800` | Agent timeout (seconds) |
-| `SWE_MAX_TURNS` | `30` | Max agent turns per rollout |
-| `SWE_GRPO_BATCH_SIZE` | `4` | Tasks per GRPO batch |
-| `SWE_GRPO_LR` | `1e-6` | Learning rate |
-| `SWE_GRPO_BETA` | `0.04` | KL penalty |
-| `SWE_MAX_TASKS` | *(all)* | Cap tasks for debugging |
+| `SWE_ASYNC_MODEL` | *(required)* | Policy model id for `AsyncGRPOTrainer`. |
+| `SWE_LLM_BASE_URL` | *(required)* | OpenAI-compatible generation endpoint (typically vLLM `/v1`). |
+| `SWE_LLM_API_KEY` | *(required)* | Bearer token for the generation endpoint. |
+| `SWE_LLM_MODEL` | *(required)* | Model id exposed by the generation endpoint. |
+| `INTERCEPTION_AUTH_TOKEN` | *(required)* | Auth token for interception server + sandbox client wiring. |
+| `INTERCEPTION_BASE_URL` | *(required for remote sandboxes)* | Public URL reachable from HF/E2B sandboxes. |
+| `SWE_ASYNC_MAX_STALENESS` | `2` | Async sample staleness bound. |
+| `SWE_ASYNC_WEIGHT_SYNC_STEPS` | `1` | Weight sync interval. |
+| `SWE_ASYNC_MAX_INFLIGHT_TASKS` | `2` | Inflight rollout concurrency. |
+| `SWE_ASYNC_QUEUE_MAXSIZE` | `64` | Rollout queue size cap. |
+| `SWE_ASYNC_MAX_STEPS` | `10` | Trainer step budget (override with CLI `--max-steps`). |
+| `HF_TOKEN` | *(optional)* | Needed when calling private Space URLs from trainer-side answer bridge. |
 
 ## Sandbox Connectivity
 
@@ -140,8 +108,8 @@ The InterceptionServer runs on the trainer host.  The sandbox must be
 able to reach it:
 
 - **Docker (same host)**: Automatic — uses `http://host.docker.internal:<port>`
-- **Remote sandbox (E2B, HF)**: You must provide a tunnel URL via
-  `SWE_INTERCEPTION_BASE_URL`.  Options: [bore](https://github.com/ekzhang/bore),
+- **Remote sandbox (E2B, HF)**: You must provide a tunnel/public URL via
+  `INTERCEPTION_BASE_URL`. Options: [bore](https://github.com/ekzhang/bore),
   [ngrok](https://ngrok.com/), [frp](https://github.com/fatedier/frp),
   or a public IP.
 

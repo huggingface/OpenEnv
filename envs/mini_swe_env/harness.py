@@ -193,6 +193,9 @@ class SWESession(CLIAgentSession):
         self._swe_task = swe_task
         self._verify_timeout_s = verify_timeout_s
         self._answer_reward: float | None = None  # set by host-side answer tool
+        self._answer_reward_source: str | None = None
+        self._answer_called = False
+        self._answer_bridged = False
 
     @property
     def swe_task(self) -> SWETask:
@@ -202,9 +205,33 @@ class SWESession(CLIAgentSession):
     def answer_reward(self) -> float | None:
         return self._answer_reward
 
-    def set_answer_reward(self, reward: float) -> None:
+    @property
+    def answer_reward_source(self) -> str | None:
+        return self._answer_reward_source
+
+    @property
+    def answer_called(self) -> bool:
+        return self._answer_called
+
+    @property
+    def answer_bridged(self) -> bool:
+        return self._answer_bridged
+
+    def mark_answer_called(self) -> None:
+        self._answer_called = True
+
+    def mark_answer_bridged(self) -> None:
+        self._answer_bridged = True
+
+    def set_answer_reward(
+        self,
+        reward: float,
+        *,
+        source: str = "host_answer_tool",
+    ) -> None:
         """Called by the host-side answer tool handler to store the reward."""
         self._answer_reward = reward
+        self._answer_reward_source = source
 
     def initial_messages(self) -> list[Message]:
         """Return the SWE instruction as the initial prompt."""
@@ -231,14 +258,33 @@ class SWESession(CLIAgentSession):
                 done=True,
                 metrics={
                     "instance_id": self._swe_task.instance_id,
-                    "reward_source": "host_answer_tool",
+                    "reward_source": self._answer_reward_source
+                    or "host_answer_tool",
+                    "answer_called": self._answer_called,
+                    "answer_bridged": self._answer_bridged,
                 },
                 artifacts={
                     "task_id": self._swe_task.task_id,
                 },
             )
 
-        # 2. Fallback: run verify commands (legacy tasks with shell commands).
+        # 2. Guardrail: answer was attempted but host-side reward not recorded.
+        if self._answer_called:
+            return VerifyResult(
+                env_reward=0.0,
+                done=True,
+                metrics={
+                    "instance_id": self._swe_task.instance_id,
+                    "reward_source": "answer_called_missing_host_reward",
+                    "answer_called": True,
+                    "answer_bridged": self._answer_bridged,
+                },
+                artifacts={
+                    "task_id": self._swe_task.task_id,
+                },
+            )
+
+        # 3. Fallback: run verify commands (legacy tasks with shell commands).
         if self._swe_task.verify:
             passed = 0
             verify_details: list[dict[str, Any]] = []
@@ -276,6 +322,8 @@ class SWESession(CLIAgentSession):
                     "verify_total": len(self._swe_task.verify),
                     "instance_id": self._swe_task.instance_id,
                     "reward_source": "verify_commands",
+                    "answer_called": False,
+                    "answer_bridged": False,
                 },
                 artifacts={
                     "verify_details": verify_details,
@@ -283,13 +331,15 @@ class SWESession(CLIAgentSession):
                 },
             )
 
-        # 3. No reward source — agent didn't call answer, no verify cmds.
+        # 4. No reward source — agent didn't call answer, no verify cmds.
         return VerifyResult(
             env_reward=0.0,
             done=True,
             metrics={
                 "instance_id": self._swe_task.instance_id,
                 "reward_source": "default_no_answer",
+                "answer_called": False,
+                "answer_bridged": False,
             },
             artifacts={
                 "task_id": self._swe_task.task_id,
@@ -545,6 +595,9 @@ class SWESessionFactory(ResourceSessionFactory):
         async def _answer_handler(arguments: dict[str, Any]) -> dict[str, Any]:
             del arguments
 
+            session.mark_answer_called()
+            session.mark_answer_bridged()
+
             if session.answer_reward is not None:
                 resolved = session.answer_reward >= 1.0
                 return {
@@ -561,7 +614,7 @@ class SWESessionFactory(ResourceSessionFactory):
                 session.sandbox,
                 session.swe_task,
             )
-            session.set_answer_reward(reward)
+            session.set_answer_reward(reward, source="host_answer_tool")
             return {
                 "content": [
                     {
