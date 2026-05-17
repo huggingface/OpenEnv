@@ -166,7 +166,9 @@ def main() -> int:
                 weight_sync_steps=1,
                 max_inflight_tasks=2,
                 logging_steps=1,
-                report_to=[],
+                report_to="trackio",
+                run_name=f"swe-grpo-{model.split('/')[-1]}",
+                trackio_space_id=os.environ.get("TRACKIO_SPACE_ID", "").strip() or None,
             ),
         )
 
