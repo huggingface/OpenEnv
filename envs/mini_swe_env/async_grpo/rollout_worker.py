@@ -280,13 +280,11 @@ class SWERolloutWorker:
                 advantage=reward,
                 model_version=self._model_ver(),
                 metrics={
-                    **metrics,
                     "reward": reward,
-                    "instance_id": task.instance_id,
-                    "turns": turns,
-                    "answer_called": answer_called,
+                    "turns": float(turns),
+                    "answer_called": float(answer_called),
                     "wall_s": round(time.time() - t0, 3),
-                    "n_tokens": len(all_ids),
+                    "n_tokens": float(len(all_ids)),
                 },
             )
         finally:

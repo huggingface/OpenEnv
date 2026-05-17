@@ -1,0 +1,34 @@
+---
+title: SWE Async GRPO Training
+emoji: 🔧
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+suggested_hardware: a10g-largex2
+startup_duration_timeout: 30m
+preload_from_hub:
+  - Qwen/Qwen3-1.7B
+---
+
+# SWE Async GRPO Training
+
+Trains a language model on SWE-Gym tasks using TRL's AsyncGRPOTrainer
+with Pi as the coding agent.
+
+**Architecture**: Pi runs in HF Sandboxes, its LLM calls are intercepted
+and forwarded to a co-located vLLM server for generation with exact
+token IDs and logprobs. The trainer runs GRPO updates on a second GPU.
+
+See `SWE_ASYNC_GRPO_SPACE_DEPLOYMENT.md` in the repo for full details.
+
+## Required Secrets
+
+Set these in the Space Settings tab:
+
+| Secret | Description |
+|--------|-------------|
+| `HF_TOKEN` | HF token for sandbox creation and model downloads |
+| `INTERCEPTION_AUTH_TOKEN` | Shared auth token for Pi ↔ InterceptionServer |
+| `SWE_MODEL` | Model ID to serve and train (e.g. `Qwen/Qwen3-1.7B`) |
+| `TRACKIO_SPACE_ID` | Trackio dashboard Space for metrics (e.g. `user/swe-grpo-dashboard`) |
