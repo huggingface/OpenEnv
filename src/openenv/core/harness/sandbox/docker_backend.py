@@ -162,12 +162,17 @@ class DockerSandboxHandle:
     def write_text(self, path: str, content: str) -> None:
         parent = str(PurePosixPath(path).parent)
         if parent not in ("", "/"):
-            subprocess.run(
+            mkdir_result = subprocess.run(
                 ["docker", "exec", self._container_id, "mkdir", "-p", parent],
                 capture_output=True,
                 timeout=10,
             )
-        subprocess.run(
+            if mkdir_result.returncode != 0:
+                raise RuntimeError(
+                    f"Failed to create directory {parent!r} in container "
+                    f"{self._container_id}: {mkdir_result.stderr.decode(errors='replace')}"
+                )
+        write_result = subprocess.run(
             [
                 "docker",
                 "exec",
@@ -181,6 +186,11 @@ class DockerSandboxHandle:
             capture_output=True,
             timeout=30,
         )
+        if write_result.returncode != 0:
+            raise RuntimeError(
+                f"Failed to write file {path!r} in container "
+                f"{self._container_id}: {write_result.stderr.decode(errors='replace')}"
+            )
 
     def read_text(self, path: str) -> str:
         result = subprocess.run(

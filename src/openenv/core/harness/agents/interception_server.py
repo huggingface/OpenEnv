@@ -458,9 +458,7 @@ class InterceptionServer:
         return resp
 
 
-def _resolve_future_threadsafe(
-    future: asyncio.Future, value: Any
-) -> None:
+def _resolve_future_threadsafe(future: asyncio.Future, value: Any) -> None:
     """Set a future's result from any thread.
 
     ``asyncio.Future`` is not thread-safe: calling ``set_result`` from a
@@ -482,18 +480,13 @@ def _resolve_future_threadsafe(
         loop.call_soon_threadsafe(future.set_result, value)
 
 
-def _put_queue_threadsafe(
-    q: asyncio.Queue, item: Any
-) -> None:
+def _put_queue_threadsafe(q: asyncio.Queue, item: Any) -> None:
     """Put an item on an asyncio.Queue from any thread."""
     loop = getattr(q, "_loop", None)
     if loop is None:
-        # Fallback: try put_nowait which is simpler.
-        try:
-            q.put_nowait(item)
-            return
-        except asyncio.QueueFull:
-            pass
+        # Fallback: put_nowait which is simpler. Let QueueFull propagate —
+        # silently dropping items would cause hard-to-debug streaming issues.
+        q.put_nowait(item)
         return
     try:
         running = asyncio.get_running_loop()

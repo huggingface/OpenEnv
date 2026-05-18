@@ -35,10 +35,15 @@ class RolloutTurn(BaseModel):
 
 
 class CommandResult(BaseModel):
-    """Outcome of one bash command in setup/verify."""
+    """Outcome of one bash command in setup/verify.
+
+    When ``exit_code`` is ``None``, the command ran during sandbox bootstrap
+    and its individual exit code was not captured (bootstrap succeeds or fails
+    atomically).
+    """
 
     cmd: str
-    exit_code: int
+    exit_code: int | None = None
     stdout: str = ""
     stderr: str = ""
     duration_s: float = 0.0
