@@ -81,7 +81,7 @@ async def test_interception_server_non_stream_roundtrip_cleans_intercept() -> No
                     },
                 )
             )
-            request_id = await asyncio.wait_for(queue.get(), timeout=1.0)
+            request_id = await asyncio.to_thread(queue.get, timeout=1.0)
             intercept = server.get_intercept(request_id)
             assert intercept is not None
 
@@ -129,7 +129,7 @@ async def test_interception_server_unregister_rollout_cancels_pending_request() 
                     },
                 )
             )
-            _request_id = await asyncio.wait_for(queue.get(), timeout=1.0)
+            _request_id = await asyncio.to_thread(queue.get, timeout=1.0)
             server.unregister_rollout("r1")
 
             resp = await request_task
@@ -216,7 +216,7 @@ async def test_interception_server_injects_registered_tool_defs_into_intercept()
                     },
                 )
             )
-            request_id = await asyncio.wait_for(queue.get(), timeout=1.0)
+            request_id = await asyncio.to_thread(queue.get, timeout=1.0)
             intercept = server.get_intercept(request_id)
             assert intercept is not None
             tool_names = {

@@ -31,11 +31,11 @@ Usage — training loop::
     # Docker: base_url = f"http://host.docker.internal:{server.port}"
     # Remote: base_url = your_tunnel_or_public_url
 
-    queue = server.register_rollout(rollout_id)
+    request_queue = server.register_rollout(rollout_id)
     # Agent runs with OPENAI_BASE_URL = f"{base_url}/rollout/{rollout_id}/v1"
 
     while True:
-        request_id = await asyncio.wait_for(queue.get(), timeout=...)
+        request_id = await asyncio.to_thread(request_queue.get, timeout=...)
         intercept = server.get_intercept(request_id)
         if intercept is None:
             continue
@@ -52,6 +52,7 @@ import asyncio
 import hmac
 import json
 import logging
+import queue as _queue_mod
 import secrets
 import threading
 import time
@@ -157,11 +158,11 @@ class InterceptionServer:
         self,
         rollout_id: str,
         state: dict[str, Any] | None = None,
-    ) -> asyncio.Queue:
-        queue: asyncio.Queue = asyncio.Queue()
+    ) -> _queue_mod.Queue[str]:
+        request_queue: _queue_mod.Queue[str] = _queue_mod.Queue()
         with self._state_lock:
             self.active_rollouts[rollout_id] = {
-                "request_id_queue": queue,
+                "request_id_queue": request_queue,
                 "state": state,
                 "tool_handlers": {},
                 "tool_defs": {},
@@ -172,7 +173,7 @@ class InterceptionServer:
             rollout_id,
             active,
         )
-        return queue
+        return request_queue
 
     def unregister_rollout(self, rollout_id: str) -> None:
         with self._state_lock:
@@ -393,8 +394,8 @@ class InterceptionServer:
             if context is None:
                 return web.json_response({"error": "rollout not found"}, status=404)
             self.intercepts[request_id] = intercept
-            request_queue: asyncio.Queue = context["request_id_queue"]
-        await request_queue.put(request_id)
+            request_queue: _queue_mod.Queue[str] = context["request_id_queue"]
+        request_queue.put_nowait(request_id)
 
         if is_streaming:
             return await self._stream_response(request, intercept)
