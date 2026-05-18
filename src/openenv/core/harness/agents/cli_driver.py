@@ -529,7 +529,10 @@ class CLIAgentDriver:
             },
             indent=2,
         )
-        for path in {f"{home}/.pi/agent/models.json", "/root/.pi/agent/models.json"}:
+        paths = {f"{home}/.pi/agent/models.json"}
+        if home == "/root":
+            paths.add("/root/.pi/agent/models.json")
+        for path in paths:
             sandbox.write_text(path, content)
 
     def _resolve_env_vars(

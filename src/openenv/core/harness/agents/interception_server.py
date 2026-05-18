@@ -85,6 +85,8 @@ class InterceptionServer:
         self.port = port
         self.host = host
         self.secret = secret or secrets.token_urlsafe(32)
+        if not self.secret.strip():
+            raise ValueError("InterceptionServer secret must not be blank.")
         self._app: web.Application | None = None
         self._runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
