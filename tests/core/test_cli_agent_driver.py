@@ -583,13 +583,14 @@ class TestCLIAgentDriver:
         sbx = backend.created[0]
 
         # Command should force the custom provider backed by models.json.
-        cmd, _envs = sbx.bg_commands[-1]
+        cmd, envs = sbx.bg_commands[-1]
         assert "--provider openenv" in cmd
+        assert envs is not None
+        assert envs["PI_CODING_AGENT_DIR"] == "/home/user/.pi/agent"
 
         home_models = "/home/user/.pi/agent/models.json"
         root_models = "/root/.pi/agent/models.json"
         assert home_models in sbx.written
-        # /root/ path is only written when sandbox_home == "/root"
         assert root_models not in sbx.written
 
         cfg = json.loads(sbx.written[home_models])
@@ -599,6 +600,33 @@ class TestCLIAgentDriver:
         assert provider["models"][0]["id"] == "test-model"
         assert "/rollout/" in provider["baseUrl"]
         assert provider["baseUrl"].endswith("/v1")
+
+        session.close()
+
+    def test_pi_interception_gate_uses_explicit_pi_config_dir(self):
+        from openenv.core.harness.agents.cli_driver import CLIAgentDriver
+        from openenv.core.harness.agents.interception_server import InterceptionServer
+        from openenv.core.harness.agents.pi import PI_SPEC
+
+        backend = FakeSandboxBackend()
+        server = InterceptionServer(port=0, secret="gate-secret")
+        driver = CLIAgentDriver(
+            spec=PI_SPEC,
+            sandbox_backend=backend,
+            mode="interception_gate",
+            interception_server=server,
+            interception_base_url="http://127.0.0.1:8765",
+        )
+
+        config = FakeConfig(sandbox_home="/custom/home")
+        session = driver.create_session(task=FakeTask(), config=config)
+        sbx = backend.created[0]
+
+        _cmd, envs = sbx.bg_commands[-1]
+        assert envs is not None
+        assert envs["PI_CODING_AGENT_DIR"] == "/custom/home/.pi/agent"
+        assert "/custom/home/.pi/agent/models.json" in sbx.written
+        assert "/root/.pi/agent/models.json" not in sbx.written
 
         session.close()
 

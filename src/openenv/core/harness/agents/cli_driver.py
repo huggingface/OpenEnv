@@ -494,6 +494,10 @@ class CLIAgentDriver:
         else:
             cmd = " ".join(shlex.quote(c) for c in self.spec.base_command)
         envs = self._resolve_env_vars(config, base_url_override=base_url_override)
+        if self.spec.name == "pi":
+            home = self._resolve_sandbox_home(sandbox, config)
+            # Make pi config discovery independent of the runtime user's $HOME.
+            envs["PI_CODING_AGENT_DIR"] = f"{home}/.pi/agent"
         if self.mode == "interception_gate" and self._interception_server is not None:
             envs["OPENAI_API_KEY"] = self._interception_server.secret
             envs["ANTHROPIC_API_KEY"] = self._interception_server.secret
@@ -507,7 +511,7 @@ class CLIAgentDriver:
         rollout_url: str,
         api_key: str,
     ) -> None:
-        home = config.sandbox_home if hasattr(config, "sandbox_home") else "/home/user"
+        home = self._resolve_sandbox_home(sandbox, config)
         model = config.model if hasattr(config, "model") else "model"
         content = json.dumps(
             {
@@ -526,11 +530,7 @@ class CLIAgentDriver:
             },
             indent=2,
         )
-        paths = {f"{home}/.pi/agent/models.json"}
-        if home == "/root":
-            paths.add("/root/.pi/agent/models.json")
-        for path in paths:
-            sandbox.write_text(path, content)
+        sandbox.write_text(f"{home}/.pi/agent/models.json", content)
 
     def _resolve_env_vars(
         self,
