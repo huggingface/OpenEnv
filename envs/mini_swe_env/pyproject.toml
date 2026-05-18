@@ -23,6 +23,7 @@ dependencies = [
     "requests>=2.25.0",
     "aiohttp>=3.13.5",
     "datasets>=4.8.0",
+    "bitsandbytes>=0.43.0",
 ]
 
 [project.optional-dependencies]

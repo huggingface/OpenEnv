@@ -36,7 +36,8 @@ RUN uv pip install --system --no-cache "huggingface-hub>=1.5" && \
         "datasets>=4.8.0" \
         "aiohttp>=3.13.5" \
         "fastmcp>=3.3.0" \
-        "trackio>=0.25.0"
+        "trackio>=0.25.0" \
+        "bitsandbytes>=0.43.0"
 
 # Runtime defaults
 ENV PYTHONPATH=$HOME/app/src:$HOME/app/envs \
