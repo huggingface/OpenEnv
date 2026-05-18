@@ -34,13 +34,16 @@ echo "========================================"
 
 # ── 1. Start vLLM ─────────────────────────────────────────────
 echo "[start.sh] Starting vLLM on GPU $VLLM_GPU..."
-CUDA_VISIBLE_DEVICES="$VLLM_GPU" vllm serve "$MODEL" \
+# Async GRPO weight sync requires vLLM dev mode + NCCL transfer endpoints.
+CUDA_VISIBLE_DEVICES="$VLLM_GPU" VLLM_SERVER_DEV_MODE=1 vllm serve "$MODEL" \
     --tensor-parallel-size 1 \
     --max-model-len "$MAX_MODEL_LEN" \
     --host 127.0.0.1 \
     --port "$VLLM_PORT" \
     --api-key "$VLLM_KEY" \
     --gpu-memory-utilization "$GPU_MEM_UTIL" \
+    --logprobs-mode processed_logprobs \
+    --weight-transfer-config '{"backend":"nccl"}' \
     > /tmp/vllm.log 2>&1 &
 
 VLLM_PID=$!

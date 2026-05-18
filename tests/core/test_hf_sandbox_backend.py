@@ -200,7 +200,13 @@ class TestHFSandboxBackend:
         short_job = sandbox.start_bg("echo done > /tmp/bg.txt")
         assert short_job.wait(timeout=2) == 0
 
+        # timeout=0 should still perform one probe and detect completed jobs.
+        short_job_nonblocking = sandbox.start_bg("echo done > /tmp/bg_nowait.txt")
+        assert short_job_nonblocking.wait(timeout=0) == 0
+
         long_job = sandbox.start_bg("sleep 300")
+        with pytest.raises(TimeoutError):
+            long_job.wait(timeout=0)
         with pytest.raises(TimeoutError):
             long_job.wait(timeout=0.1)
         long_job.kill()
