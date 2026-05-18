@@ -22,6 +22,7 @@ setup/verify command results, and file outputs.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from typing import Any, Optional
@@ -50,6 +51,8 @@ _RUN_ROLLOUT_TIMEOUT_S = 900.0
 HOME = "/home/user"
 WORKDIR = f"{HOME}/workdir"
 INSTRUCTION_PATH = f"{HOME}/task/instruction.md"
+_log = logging.getLogger(__name__)
+
 REWARD_FILE = f"{HOME}/logs/verifier/reward.txt"
 PROXY_LOG = f"{HOME}/logs/agent/proxy.log"
 AGENT_LOG = f"{HOME}/logs/agent/opencode.jsonl"
@@ -83,21 +86,22 @@ class CodingAgentEnvironment(MCPEnvironment):
         # Lazy imports so module import stays cheap and so tests can patch.
         try:
             from ..models import (
-                CommandResult,
                 CodingAgentState,
+                CommandResult,
                 RolloutResult,
                 RolloutTurn,
             )
         except ImportError:  # pragma: no cover
             from models import (  # type: ignore
-                CommandResult,
                 CodingAgentState,
+                CommandResult,
                 RolloutResult,
                 RolloutTurn,
             )
 
         from openenv.core.harness.agents import get_agent_spec
         from openenv.core.harness.agents.cli_driver import CLIAgentSessionFactory
+
         from coding_agent_env.config import CodingAgentConfig
         from coding_agent_env.harness import CodingAgentSessionFactory
         from coding_agent_env.task import CodingAgentTask
@@ -374,8 +378,8 @@ class CodingAgentEnvironment(MCPEnvironment):
                 result.setup_results.append(
                     self._CommandResult(
                         cmd=cmd,
-                        exit_code=0,
-                        stdout="executed during bootstrap",
+                        exit_code=None,
+                        stdout="executed during bootstrap (individual exit code not captured)",
                         stderr="",
                         duration_s=0.0,
                     )
@@ -466,12 +470,21 @@ class CodingAgentEnvironment(MCPEnvironment):
         max_tokens_cap: int,
     ) -> Any:
         if agent == "opencode":
+            if top_logprobs:
+                _log.warning(
+                    "top_logprobs=%d is not supported for agent='opencode' "
+                    "and will have no effect. Use interception_gate mode for "
+                    "logprob capture.",
+                    top_logprobs,
+                )
             return self._CodingAgentConfig(
                 provider="openai_compatible",
                 base_url=base_url.rstrip("/"),
                 api_key=api_key,
                 model=model,
                 agent_timeout_s=agent_timeout_s,
+                disable_thinking=disable_thinking,
+                max_tokens_cap=max_tokens_cap if max_tokens_cap != 4096 else None,
             )
 
         provider = self._infer_pi_provider(base_url)

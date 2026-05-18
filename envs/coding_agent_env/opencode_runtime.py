@@ -52,6 +52,12 @@ def build_opencode_json(config: CodingAgentConfig) -> str:
     """
 
     provider_name = "intercepted"
+    model_key = config.model.split("/", 1)[-1]
+
+    model_block: dict[str, Any] = {"name": "Intercepted Model"}
+    if config.max_tokens_cap is not None:
+        model_block["limit"] = {"output": config.max_tokens_cap}
+
     provider_block: dict[str, Any] = {
         "npm": provider_npm_package(config.provider),
         "name": "Intercepted",
@@ -61,15 +67,20 @@ def build_opencode_json(config: CodingAgentConfig) -> str:
             "timeout": config.request_timeout_ms,
         },
         "models": {
-            config.model.split("/", 1)[-1]: {"name": "Intercepted Model"},
+            model_key: model_block,
         },
     }
 
     doc: dict[str, Any] = {
         "$schema": "https://opencode.ai/config.json",
-        "model": f"{provider_name}/{config.model.split('/', 1)[-1]}",
+        "model": f"{provider_name}/{model_key}",
         "provider": {provider_name: provider_block},
     }
+
+    # Disable thinking/reasoning tokens when requested. AI SDK respects
+    # the top-level "reasoning" key to control reasoning token generation.
+    if config.disable_thinking:
+        doc["reasoning"] = "none"
 
     tools = _build_tools_block(config)
     if tools:

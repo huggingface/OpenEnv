@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import queue as _queue_mod
 import shlex
 import time
 import uuid
@@ -36,11 +37,7 @@ from openenv.core.harness import (
 from openenv.core.harness.sandbox import BgJob, SandboxBackend, SandboxHandle
 
 from .base import CLIAgentSpec
-from .interception_server import (
-    deliver_response,
-    InterceptionServer,
-    ToolHandler,
-)
+from .interception_server import deliver_response, InterceptionServer, ToolHandler
 
 
 _log = logging.getLogger(__name__)
@@ -81,7 +78,7 @@ class CLIAgentSession(ResourceSession):
         agent_bg_job: BgJob | None = None,
         interception_server: InterceptionServer | None = None,
         interception_rollout_id: str | None = None,
-        interception_queue: asyncio.Queue | None = None,
+        interception_queue: _queue_mod.Queue[str] | None = None,
     ) -> None:
         self.spec = spec
         self.sandbox = sandbox
@@ -209,14 +206,14 @@ class CLIAgentSession(ResourceSession):
                     f"{self.spec.name} interception_gate: no request within timeout"
                 )
             try:
-                request_id = await asyncio.wait_for(
-                    self._interception_queue.get(),
+                request_id = await asyncio.to_thread(
+                    self._interception_queue.get,
                     timeout=min(remaining, 1.0),
                 )
                 intercept = server.get_intercept(request_id)
                 if intercept is not None:
                     return intercept
-            except asyncio.TimeoutError:
+            except _queue_mod.Empty:
                 pass
 
             if self._agent_bg_job is not None:
@@ -322,7 +319,7 @@ class CLIAgentDriver:
 
         base_url_override: str | None = None
         interception_rollout_id: str | None = None
-        interception_queue: asyncio.Queue | None = None
+        interception_queue: _queue_mod.Queue[str] | None = None
 
         if self.mode == "interception_gate":
             assert self._interception_server is not None
@@ -535,7 +532,10 @@ class CLIAgentDriver:
             },
             indent=2,
         )
-        for path in {f"{home}/.pi/agent/models.json", "/root/.pi/agent/models.json"}:
+        paths = {f"{home}/.pi/agent/models.json"}
+        if home == "/root":
+            paths.add("/root/.pi/agent/models.json")
+        for path in paths:
             sandbox.write_text(path, content)
 
     def _resolve_env_vars(

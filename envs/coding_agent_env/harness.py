@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import uuid
 from typing import Any, Literal
 
 from openenv.core.harness import ResourceSessionFactory
@@ -21,11 +23,7 @@ from openenv.core.harness.agents.opencode import OPENCODE_SPEC
 from openenv.core.harness.sandbox import SandboxBackend, SandboxHandle
 
 from .config import CodingAgentConfig
-from .opencode_runtime import (
-    agent_log_path,
-    build_env_vars,
-    build_run_cmd,
-)
+from .opencode_runtime import agent_log_path, build_env_vars, build_run_cmd
 from .task import CodingAgentTask
 
 
@@ -124,12 +122,37 @@ class CodingAgentSessionFactory(ResourceSessionFactory):
             _log.error("factory.create: bootstrap failed: %r", exc)
             sandbox.kill()
             raise
+
+        # Wire up interception_gate if the driver is configured for it
+        base_url_override: str | None = None
+        interception_rollout_id: str | None = None
+        interception_queue: asyncio.Queue | None = None
+
+        if self._driver.mode == "interception_gate":
+            assert self._driver._interception_server is not None
+            assert self._driver._interception_base_url is not None
+            rollout_id = episode_id or f"rollout_{uuid.uuid4().hex[:8]}"
+            interception_rollout_id = rollout_id
+            interception_queue = self._driver._interception_server.register_rollout(
+                rollout_id
+            )
+            base_url_override = (
+                f"{self._driver._interception_base_url.rstrip('/')}"
+                f"/rollout/{rollout_id}/v1"
+            )
+
         session = CodingAgentSession(
             sandbox=sandbox,
             config=self._config,
             task=oc_task,
             verifier=self._verifier,
+            base_url_override=base_url_override,
         )
+        # Pass interception fields to the parent CLIAgentSession
+        session._interception_server = self._driver._interception_server
+        session._interception_rollout_id = interception_rollout_id
+        session._interception_queue = interception_queue
+
         session.start_agent()
         return session
 

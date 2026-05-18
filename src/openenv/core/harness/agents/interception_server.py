@@ -31,11 +31,11 @@ Usage — training loop::
     # Docker: base_url = f"http://host.docker.internal:{server.port}"
     # Remote: base_url = your_tunnel_or_public_url
 
-    queue = server.register_rollout(rollout_id)
+    request_queue = server.register_rollout(rollout_id)
     # Agent runs with OPENAI_BASE_URL = f"{base_url}/rollout/{rollout_id}/v1"
 
     while True:
-        request_id = await asyncio.wait_for(queue.get(), timeout=...)
+        request_id = await asyncio.to_thread(request_queue.get, timeout=...)
         intercept = server.get_intercept(request_id)
         if intercept is None:
             continue
@@ -52,6 +52,7 @@ import asyncio
 import hmac
 import json
 import logging
+import queue as _queue_mod
 import secrets
 import threading
 import time
@@ -85,6 +86,8 @@ class InterceptionServer:
         self.port = port
         self.host = host
         self.secret = secret or secrets.token_urlsafe(32)
+        if not self.secret.strip():
+            raise ValueError("InterceptionServer secret must not be blank.")
         self._app: web.Application | None = None
         self._runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
@@ -155,11 +158,11 @@ class InterceptionServer:
         self,
         rollout_id: str,
         state: dict[str, Any] | None = None,
-    ) -> asyncio.Queue:
-        queue: asyncio.Queue = asyncio.Queue()
+    ) -> _queue_mod.Queue[str]:
+        request_queue: _queue_mod.Queue[str] = _queue_mod.Queue()
         with self._state_lock:
             self.active_rollouts[rollout_id] = {
-                "request_id_queue": queue,
+                "request_id_queue": request_queue,
                 "state": state,
                 "tool_handlers": {},
                 "tool_defs": {},
@@ -170,7 +173,7 @@ class InterceptionServer:
             rollout_id,
             active,
         )
-        return queue
+        return request_queue
 
     def unregister_rollout(self, rollout_id: str) -> None:
         with self._state_lock:
@@ -391,8 +394,8 @@ class InterceptionServer:
             if context is None:
                 return web.json_response({"error": "rollout not found"}, status=404)
             self.intercepts[request_id] = intercept
-            request_queue: asyncio.Queue = context["request_id_queue"]
-        await request_queue.put(request_id)
+            request_queue: _queue_mod.Queue[str] = context["request_id_queue"]
+        request_queue.put_nowait(request_id)
 
         if is_streaming:
             return await self._stream_response(request, intercept)
@@ -458,6 +461,46 @@ class InterceptionServer:
         return resp
 
 
+def _resolve_future_threadsafe(future: asyncio.Future, value: Any) -> None:
+    """Set a future's result from any thread.
+
+    ``asyncio.Future`` is not thread-safe: calling ``set_result`` from a
+    thread that is not running the future's event loop can silently fail
+    to wake the coroutine awaiting it.  This helper detects cross-loop
+    calls and uses ``call_soon_threadsafe`` to schedule the resolution on
+    the correct loop.
+    """
+    if future.done():
+        return
+    loop = future.get_loop()
+    try:
+        running = asyncio.get_running_loop()
+    except RuntimeError:
+        running = None
+    if running is loop:
+        future.set_result(value)
+    else:
+        loop.call_soon_threadsafe(future.set_result, value)
+
+
+def _put_queue_threadsafe(q: asyncio.Queue, item: Any) -> None:
+    """Put an item on an asyncio.Queue from any thread."""
+    loop = getattr(q, "_loop", None)
+    if loop is None:
+        # Fallback: put_nowait which is simpler. Let QueueFull propagate —
+        # silently dropping items would cause hard-to-debug streaming issues.
+        q.put_nowait(item)
+        return
+    try:
+        running = asyncio.get_running_loop()
+    except RuntimeError:
+        running = None
+    if running is loop:
+        q.put_nowait(item)
+    else:
+        loop.call_soon_threadsafe(q.put_nowait, item)
+
+
 async def deliver_response(
     intercept: dict[str, Any], response_dict: dict[str, Any]
 ) -> None:
@@ -466,14 +509,20 @@ async def deliver_response(
     For non-streaming requests, resolves the future directly.
     For streaming requests, synthesizes SSE chunks from the complete
     response and signals EOF.
+
+    Thread-safe: can be called from any thread, not just the event loop
+    that owns the future/queue.  This is required because the rollout
+    worker may run ``deliver_response`` from its own ``asyncio.run()``
+    in a daemon thread while the ``InterceptionServer``'s aiohttp
+    handler awaits the future on a different loop.
     """
     is_streaming = intercept.get("stream", False)
     chunk_queue: asyncio.Queue | None = intercept.get("chunk_queue")
     future: asyncio.Future | None = intercept.get("response_future")
 
     if not is_streaming:
-        if future and not future.done():
-            future.set_result(response_dict)
+        if future:
+            _resolve_future_threadsafe(future, response_dict)
         return
 
     if chunk_queue is None:
@@ -499,7 +548,7 @@ async def deliver_response(
                 }
             ],
         }
-        await chunk_queue.put(content_chunk)
+        _put_queue_threadsafe(chunk_queue, content_chunk)
         finish_chunk = {
             "id": response_dict.get("id", ""),
             "object": "chat.completion.chunk",
@@ -513,11 +562,11 @@ async def deliver_response(
                 }
             ],
         }
-        await chunk_queue.put(finish_chunk)
+        _put_queue_threadsafe(chunk_queue, finish_chunk)
 
-    await chunk_queue.put(None)
-    if future and not future.done():
-        future.set_result(response_dict)
+    _put_queue_threadsafe(chunk_queue, None)
+    if future:
+        _resolve_future_threadsafe(future, response_dict)
 
 
 __all__ = [

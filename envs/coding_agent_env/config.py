@@ -45,6 +45,10 @@ class CodingAgentConfig(BaseModel):
     extra_env: dict[str, str] = Field(default_factory=dict)
     extra_setup_shell: str | None = None
 
+    # --- Model behavior --------------------------------------------------------
+    disable_thinking: bool = False
+    max_tokens_cap: int | None = None
+
     # --- Sandbox paths --------------------------------------------------------
     # Root directory inside the sandbox where the primitive writes config,
     # task files, and logs. E2B's default user is ``user`` with home

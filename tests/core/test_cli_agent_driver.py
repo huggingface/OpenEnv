@@ -18,6 +18,7 @@ All tests run without external dependencies (no E2B, no LLM, no network).
 from __future__ import annotations
 
 import json
+import queue as _queue_mod
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -585,7 +586,8 @@ class TestCLIAgentDriver:
         home_models = "/home/user/.pi/agent/models.json"
         root_models = "/root/.pi/agent/models.json"
         assert home_models in sbx.written
-        assert root_models in sbx.written
+        # /root/ path is only written when sandbox_home == "/root"
+        assert root_models not in sbx.written
 
         cfg = json.loads(sbx.written[home_models])
         provider = cfg["providers"]["openenv"]
@@ -786,15 +788,13 @@ class TestCLIAgentSession:
 
     @pytest.mark.asyncio
     async def test_next_request_handles_missing_intercept_without_keyerror(self):
-        import asyncio
-
         from openenv.core.harness.agents.cli_driver import CLIAgentSession
         from openenv.core.harness.agents.interception_server import InterceptionServer
 
         spec = _make_test_spec()
         sbx = FakeSandbox()
-        queue: asyncio.Queue[str] = asyncio.Queue()
-        await queue.put("req_missing")
+        q: _queue_mod.Queue[str] = _queue_mod.Queue()
+        q.put("req_missing")
 
         session = CLIAgentSession(
             spec=spec,
@@ -804,7 +804,7 @@ class TestCLIAgentSession:
             agent_bg_job=FakeBgJob(),
             interception_server=InterceptionServer(secret="s"),
             interception_rollout_id="rollout-1",
-            interception_queue=queue,
+            interception_queue=q,
         )
 
         # Missing request IDs can happen if unregister_rollout races with queue.get().
