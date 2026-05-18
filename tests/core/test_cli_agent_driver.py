@@ -17,8 +17,11 @@ All tests run without external dependencies (no E2B, no LLM, no network).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import queue as _queue_mod
+import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -809,6 +812,79 @@ class TestCLIAgentSession:
 
         # Missing request IDs can happen if unregister_rollout races with queue.get().
         assert await session.next_request(timeout_s=0.2) is None
+
+    def test_next_request_soak_cross_loop_queue_get(self):
+        """Soak test cross-loop request dequeueing via queue.Queue.
+
+        Exercises the worker pattern that used to be unsafe with asyncio.Queue:
+        repeatedly call next_request() from fresh event loops (asyncio.run)
+        while request IDs are pushed from another thread.
+        """
+        from openenv.core.harness.agents.cli_driver import CLIAgentSession
+        from openenv.core.harness.agents.interception_server import InterceptionServer
+
+        spec = _make_test_spec()
+        sbx = FakeSandbox()
+        server = InterceptionServer(secret="s")
+        request_queue = server.register_rollout("rollout-soak")
+
+        session = CLIAgentSession(
+            spec=spec,
+            sandbox=sbx,
+            task=FakeTask(),
+            config=FakeConfig(),
+            interception_server=server,
+            interception_rollout_id="rollout-soak",
+            interception_queue=request_queue,
+        )
+
+        total_requests = 200
+        consumed: list[str] = []
+        failures: list[BaseException] = []
+
+        def _consumer() -> None:
+            try:
+                for _ in range(total_requests):
+                    intercept = asyncio.run(session.next_request(timeout_s=2.0))
+                    assert intercept is not None
+                    request_id = intercept["request_id"]
+                    consumed.append(request_id)
+                    with server._state_lock:
+                        server.intercepts.pop(request_id, None)
+            except BaseException as exc:  # pragma: no cover - assertion path
+                failures.append(exc)
+
+        def _producer() -> None:
+            try:
+                for i in range(total_requests):
+                    request_id = f"req_soak_{i:04d}"
+                    with server._state_lock:
+                        server.intercepts[request_id] = {
+                            "request_id": request_id,
+                            "messages": [{"role": "user", "content": "ping"}],
+                        }
+                    request_queue.put_nowait(request_id)
+                    if i % 10 == 0:
+                        time.sleep(0.001)
+            except BaseException as exc:  # pragma: no cover - unexpected
+                failures.append(exc)
+
+        consumer_t = threading.Thread(target=_consumer, name="soak-consumer")
+        producer_t = threading.Thread(target=_producer, name="soak-producer")
+
+        consumer_t.start()
+        producer_t.start()
+
+        producer_t.join(timeout=10)
+        consumer_t.join(timeout=15)
+
+        assert not producer_t.is_alive(), "producer thread hung"
+        assert not consumer_t.is_alive(), "consumer thread hung"
+        assert not failures
+        assert len(consumed) == total_requests
+        assert len(set(consumed)) == total_requests
+
+        session.close()
 
 
 class TestCLIAgentSessionFactory:
