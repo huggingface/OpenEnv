@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import contextlib
+import queue as _queue_mod
 import logging
 import os
 from dataclasses import dataclass
@@ -131,7 +131,7 @@ class SWEAsyncControlPlane:
         rollout_id: str,
         *,
         state: dict[str, Any] | None = None,
-    ) -> asyncio.Queue:
+    ) -> _queue_mod.Queue[str]:
         queue = self.server.register_rollout(rollout_id, state=state)
         stats = self.stats()
         _log.info(

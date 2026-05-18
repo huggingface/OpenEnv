@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import queue as _queue_mod
 import logging
 import shlex
 import time
@@ -502,7 +503,7 @@ class SWESessionFactory(ResourceSessionFactory):
 
         base_url_override: str | None = None
         interception_rollout_id: str | None = None
-        interception_queue: asyncio.Queue | None = None
+        interception_queue: _queue_mod.Queue[str] | None = None
 
         if self._mode == "interception_gate":
             assert self._interception_server is not None
