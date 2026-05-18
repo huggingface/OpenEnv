@@ -98,22 +98,17 @@ html_theme_options = {
     },
     "icon_links": [
         {
-            "name": "X",
-            "url": "https://x.com/PyTorch",
-            "icon": "fa-brands fa-x-twitter",
-        },
-        {
             "name": "GitHub",
             "url": "https://github.com/meta-pytorch/OpenEnv",
             "icon": "fa-brands fa-github",
         },
-        {
-            "name": "Discourse",
-            "url": "https://dev-discuss.pytorch.org/",
-            "icon": "fa-brands fa-discourse",
-        },
     ],
-    "use_edit_page_button": True,
+    "use_edit_page_button": False,
+    "secondary_sidebar_items": ["page-toc"],
+    "article_header_end": [],
+    "article_footer_items": [],
+    "show_lf_footer": False,
+    "show_pytorch_org_link": False,
     "switcher": {
         "json_url": "_static/versions.json",
         "version_match": switcher_version,
@@ -137,7 +132,7 @@ templates_path = [
 
 html_context = {
     "theme_variables": theme_variables,
-    "display_github": True,
+    "display_github": False,
     "github_url": "https://github.com",
     "github_user": "meta-pytorch",
     "github_repo": "OpenEnv",

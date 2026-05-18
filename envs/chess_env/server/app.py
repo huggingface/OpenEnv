@@ -15,7 +15,12 @@ from .chess_environment import ChessEnvironment
 # Pass the class (factory) instead of an instance for WebSocket session support
 app = create_app(ChessEnvironment, ChessAction, ChessObservation, env_name="chess_env")
 
-if __name__ == "__main__":
+
+def main():
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+if __name__ == "__main__":
+    main()

@@ -217,6 +217,31 @@ def test_validate_command_local_json_output(tmp_path: Path) -> None:
     assert payload["summary"]["failed_criteria"] == []
 
 
+def test_validate_command_accepts_dockerfile_managed_openenv_core(
+    tmp_path: Path,
+) -> None:
+    """Local validation accepts envs that install OpenEnv in Dockerfile."""
+    env_dir = tmp_path / "test_env"
+    _write_minimal_valid_env(env_dir)
+    (env_dir / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "test-env"\n'
+        'version = "0.1.0"\n'
+        'dependencies = ["fastapi>=0.115.0"]\n'
+        "\n"
+        "[project.scripts]\n"
+        'server = "server.app:main"\n'
+    )
+    (env_dir / "server" / "Dockerfile").write_text(
+        'RUN pip install --no-cache-dir --no-deps "openenv-core[core]>=0.2.2"\n'
+    )
+
+    result = runner.invoke(app, ["validate", str(env_dir), "--json"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.output)["passed"] is True
+
+
 def test_validate_command_accepts_main_call_with_arguments(tmp_path: Path) -> None:
     """Local validation accepts a guarded main(...) call with arguments."""
     env_dir = tmp_path / "test_env"

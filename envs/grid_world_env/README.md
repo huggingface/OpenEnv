@@ -4,6 +4,7 @@ emoji: 🌍
 colorFrom: blue
 colorTo: indigo
 sdk: docker
+app_port: 8000
 pinned: false
 ---
 
@@ -261,4 +262,3 @@ Strictly typed through Pydantic models
 
 Deployment-ready for development, testing, and production workflows
 ---
-
