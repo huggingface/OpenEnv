@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-import asyncio
+import queue as _queue_mod
 import uuid
 from typing import Any, Literal
 
@@ -126,7 +126,7 @@ class CodingAgentSessionFactory(ResourceSessionFactory):
         # Wire up interception_gate if the driver is configured for it
         base_url_override: str | None = None
         interception_rollout_id: str | None = None
-        interception_queue: asyncio.Queue | None = None
+        interception_queue: _queue_mod.Queue[str] | None = None
 
         if self._driver.mode == "interception_gate":
             assert self._driver._interception_server is not None
