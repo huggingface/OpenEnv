@@ -30,6 +30,8 @@ echo "Max model len: $MAX_MODEL_LEN"
 echo "GPU mem util:  $GPU_MEM_UTIL"
 echo "vLLM GPU:      $VLLM_GPU"
 echo "Trainer GPU:   $TRAINER_GPU"
+echo "Checkpointing: ${SWE_CHECKPOINT_TO_HUB:-auto}"
+echo "Checkpoint repo: ${SWE_HUB_MODEL_ID:-<auto>}"
 echo "========================================"
 
 # ── 1. Start vLLM ─────────────────────────────────────────────

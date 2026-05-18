@@ -28,7 +28,18 @@ Set these in the Space Settings tab:
 
 | Secret | Description |
 |--------|-------------|
-| `HF_TOKEN` | HF token for sandbox creation and model downloads |
+| `HF_TOKEN` | HF token for sandbox creation, model downloads, and checkpoint uploads |
 | `INTERCEPTION_AUTH_TOKEN` | Shared auth token for Pi ↔ InterceptionServer |
 | `SWE_MODEL` | Model ID to serve and train (e.g. `Qwen/Qwen3-1.7B`) |
+
+## Optional Variables (recommended)
+
+| Variable | Description |
+|----------|-------------|
 | `TRACKIO_SPACE_ID` | Trackio dashboard Space for metrics (e.g. `user/swe-grpo-dashboard`) |
+| `SWE_CHECKPOINT_TO_HUB` | Enable checkpoint upload to HF Hub (`1`/`0`, default `1` on Spaces) |
+| `SWE_HUB_MODEL_ID` | Hub model repo used as checkpoint bucket (e.g. `user/swe-async-grpo-checkpoints`) |
+| `SWE_RESUME_FROM_CHECKPOINT` | `auto` (default) to resume from `last-checkpoint`, or explicit path/name |
+| `SWE_CHECKPOINT_SAVE_STEPS` | Save/upload frequency in trainer steps (default `2`) |
+| `SWE_CHECKPOINT_SAVE_TOTAL_LIMIT` | Number of local checkpoints to keep (default `2`) |
+| `SWE_HUB_PRIVATE_REPO` | Create/use private checkpoint repo (`1`/`0`, default `1`) |
