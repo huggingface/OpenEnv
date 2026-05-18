@@ -243,6 +243,8 @@ class TestREPLEnvironment:
             ),
             # Dict containing a tuple value.
             ("print(\"FINAL({'a': (1, 2)})\")", "{'a': (1, 2)}"),
+            # Output after FINAL must not bleed into the extracted answer.
+            ("print('FINAL(42)\\nresult: (ok)')", "42"),
         ],
     )
     def test_final_pattern_nested_parentheses(self, code, expected):

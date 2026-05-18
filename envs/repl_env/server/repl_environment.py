@@ -536,13 +536,18 @@ class REPLEnvironment(Environment):
         Returns:
             Final answer string or None if not found
         """
-        # Pattern 1: RLM-style FINAL(answer). Greedy + line-anchored so nested
-        # parentheses (e.g. FINAL(f(x)), FINAL((1, 2, 3))) are captured fully.
-        final_match = re.search(
-            r"^\s*FINAL\((.*)\)\s*$", stdout, re.MULTILINE | re.DOTALL
-        )
-        if final_match:
-            return final_match.group(1).strip()
+        # Pattern 1: RLM-style FINAL(answer). Paren-counting handles nested
+        # parens (e.g. FINAL(f(x))) and multi-line values without regex flag trade-offs.
+        idx = stdout.find("FINAL(")
+        if idx != -1:
+            depth, start = 0, idx + len("FINAL")
+            for i, ch in enumerate(stdout[idx + len("FINAL"):], start=idx + len("FINAL")):
+                if ch == "(":
+                    depth += 1
+                elif ch == ")":
+                    depth -= 1
+                    if depth == 0:
+                        return stdout[start + 1 : i].strip()
 
         # Pattern 2: RLM-style FINAL_VAR(variable_name)
         final_var_match = re.search(r"FINAL_VAR\((\w+)\)", stdout)
