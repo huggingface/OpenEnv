@@ -83,6 +83,54 @@ def test_get_user_by_access_token_does_not_log_token(
     failing_session.close.assert_called_once()
 
 
+def test_get_user_by_access_token_does_not_leak_token_via_exception_str(
+    user_manager_module, monkeypatch, caplog
+):
+    """The token must not leak via str(exc) either.
+
+    SQLAlchemy StatementError / DBAPIError include the bound parameters dict
+    in their string form, e.g.:
+        '... [parameters: {"static_token_1": "ya29..."}] ...'
+    A naive `logger.error(f"...: {e}")` would emit the raw token even with
+    the f-string's other slots sanitized. The current implementation logs
+    only `type(e).__name__`, so this test pins that behavior.
+    """
+    UserManager = user_manager_module.UserManager
+    token = "ya29.A0ARrdaM-SECRET-INSIDE-EXC-STR"
+
+    class FakeStatementError(Exception):
+        def __str__(self) -> str:
+            return (
+                "(sqlite3.OperationalError) no such column "
+                "[SQL: SELECT users.* FROM users WHERE users.static_token = ?] "
+                f"[parameters: ({token!r},)]"
+            )
+
+    failing_session = MagicMock()
+    failing_session.query.side_effect = FakeStatementError()
+    monkeypatch.setattr(user_manager_module, "get_session", lambda _id: failing_session)
+    monkeypatch.setattr(user_manager_module, "init_database", lambda _id: None)
+
+    manager = UserManager.__new__(UserManager)
+    manager.database_id = "test-db"
+
+    with caplog.at_level(logging.ERROR, logger=user_manager_module.__name__):
+        with pytest.raises(FakeStatementError):
+            manager.get_user_by_access_token(token)
+
+    assert token not in caplog.text, (
+        "raw token leaked via str(exception) in log output"
+    )
+    expected_fp = hashlib.sha256(token.encode("utf-8")).hexdigest()[:8]
+    assert f"fingerprint={expected_fp}" in caplog.text
+    assert "FakeStatementError" in caplog.text, (
+        "log should still identify the exception type for diagnostics"
+    )
+    assert "[parameters:" not in caplog.text, (
+        "the SQLAlchemy-style parameter dump must not reach the log sink"
+    )
+
+
 def test_get_user_by_access_token_propagates_original_exception(
     user_manager_module, monkeypatch
 ):
