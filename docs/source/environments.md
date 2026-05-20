@@ -549,13 +549,13 @@ AgentWorldModel-1K — 1,000 synthetic MCP tool-use environments with 10,000 tas
 ```
 ````
 
-````{grid-item-card} Opencode
+````{grid-item-card} Coding Agent
 :class-card: sd-border-1
 
-`opencode_env` runs the OpenCode coding agent inside an isolated E2B sandbox against any OpenAI-compatible LLM endpoint, optionally capturing per-token logpr...
+`coding_agent_env` runs coding-agent harnesses (currently OpenCode + Pi) inside an isolated E2B sandbox against any OpenAI-compatible LLM endpoint, optionally capturing per-token logpr...
 
 +++
-```{button-link} environments/opencode.html
+```{button-link} environments/coding_agent.html
 :color: primary
 :outline:
 
@@ -633,5 +633,5 @@ environments/tbench2
 environments/unity
 environments/wildfire
 environments/agent_world_model
-environments/opencode
+environments/coding_agent
 ```

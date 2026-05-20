@@ -1,0 +1,55 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openenv-coding-agent-env"
+version = "0.1.0"
+description = "Coding-agent environment for OpenEnv — runs OpenCode/Pi harnesses in an E2B sandbox against OpenAI-compatible LLM endpoints."
+requires-python = ">=3.10"
+dependencies = [
+    # Core OpenEnv (server + MCP). 0.3.0 ships the harness runtime.
+    "openenv-core[core]>=0.3.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.0.0",
+    "fastmcp>=2.0.0",
+    "requests>=2.31.0",
+
+    # Web UI — pin to current major (6.x) to match local dev and avoid
+    # behavior drift on Space rebuilds.
+    "gradio>=6.0.0",
+
+    # OpenCode harness primitive — sandbox + agent driver
+    "httpx>=0.27.0",
+    "e2b>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.0.0",
+]
+
+[project.scripts]
+# Server entrypoint — enables ``uv run --project . server``.
+server = "coding_agent_env.server.app:main"
+
+[tool.setuptools]
+include-package-data = true
+packages = [
+    "coding_agent_env",
+    "coding_agent_env.sandbox",
+    "coding_agent_env.server",
+]
+package-dir = { "coding_agent_env" = ".", "coding_agent_env.sandbox" = "sandbox", "coding_agent_env.server" = "server" }
+
+[tool.setuptools.package-data]
+coding_agent_env = ["**/*.md"]
