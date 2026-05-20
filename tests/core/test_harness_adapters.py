@@ -47,9 +47,41 @@ class TestPiSpec:
         assert PI_SPEC.mcp_config.method == "config_file"
         assert PI_SPEC.mcp_config.path_template is not None
         assert ".mcp.json" in PI_SPEC.mcp_config.path_template
-        assert PI_SPEC.env is not None
-        assert "HF_TOKEN" in PI_SPEC.env
-        assert "PI_SKIP_VERSION_CHECK" in PI_SPEC.env
+        assert PI_SPEC.build_env_vars is not None
+
+    def test_build_env_vars_provider_specific_api_key(self):
+        from openenv.core.harness.agents.pi import PI_SPEC
+
+        @dataclass
+        class PiConfig:
+            provider: str
+            api_key: str = "secret"
+            base_url: str = "https://api.example.com/v1"
+            extra_env: dict[str, str] = field(default_factory=dict)
+
+        assert PI_SPEC.build_env_vars is not None
+
+        hf_env = PI_SPEC.build_env_vars(PI_SPEC, PiConfig(provider="huggingface"))
+        assert hf_env["HF_TOKEN"] == "secret"
+        assert "OPENAI_API_KEY" not in hf_env
+
+        oa_env = PI_SPEC.build_env_vars(PI_SPEC, PiConfig(provider="openai"))
+        assert oa_env["OPENAI_API_KEY"] == "secret"
+        assert "HF_TOKEN" not in oa_env
+
+    def test_build_env_vars_rejects_unknown_provider(self):
+        from openenv.core.harness.agents.pi import PI_SPEC
+
+        @dataclass
+        class PiConfig:
+            provider: str = "unknown"
+            api_key: str = "secret"
+            base_url: str = "https://api.example.com/v1"
+            extra_env: dict[str, str] = field(default_factory=dict)
+
+        assert PI_SPEC.build_env_vars is not None
+        with pytest.raises(ValueError, match="Unsupported pi provider"):
+            PI_SPEC.build_env_vars(PI_SPEC, PiConfig())
 
     def test_build_command(self):
         from openenv.core.harness.agents.pi import PI_SPEC

@@ -19,8 +19,7 @@ One page with:
     agent_timeout_s, template).
   - Preset buttons for the ready-made example tasks.
   - Run button → result panel with reward, setup/verify per-command
-    results, file outputs, logprob stats, agent + proxy log tails,
-    and the raw RolloutResult JSON.
+    results, file outputs, agent log tail, and the raw RolloutResult JSON.
 """
 
 from __future__ import annotations
@@ -156,51 +155,6 @@ def _command_rows(items: list[dict[str, Any]]) -> list[list[str]]:
     return rows
 
 
-def _logprobs_md(turns: list[dict[str, Any]]) -> str:
-    if not turns:
-        return "_No proxy turns captured._\n\nLogprob capture is handled by the training loop via `interception_gate` mode."
-    n = len(turns)
-    productive = sum(1 for t in turns if t.get("completion_tokens"))
-    total_toks = sum(len(t.get("completion_tokens") or []) for t in turns)
-    all_lps = [
-        float(x)
-        for t in turns
-        for x in (t.get("per_token_logps") or [])
-        if x is not None
-    ]
-    mean_lp = (sum(all_lps) / len(all_lps)) if all_lps else None
-    lines = [
-        f"**turns**: `{n}`  ·  **productive**: `{productive}`  ·  "
-        f"**total_completion_tokens**: `{total_toks}`",
-    ]
-    if mean_lp is not None:
-        lines.append(f"**mean_logprob**: `{mean_lp:+.4f}`")
-    finishes: dict[str, int] = {}
-    for t in turns:
-        f = t.get("finish_reason") or "unknown"
-        finishes[f] = finishes.get(f, 0) + 1
-    if finishes:
-        lines.append(
-            "**finish_reasons**: "
-            + "  ".join(f"`{k}={v}`" for k, v in finishes.items())
-        )
-    productive_rows = [t for t in turns if t.get("completion_tokens")]
-    if productive_rows:
-        first = productive_rows[0]
-        toks = first["completion_tokens"][:10]
-        lps = first.get("per_token_logps") or []
-        lines.append(
-            "\n**first productive turn (first 10 tokens)**\n\n"
-            "```\n"
-            + "\n".join(
-                f"  {tok!r:<14}  {lp:+.3f}" if i < len(lps) else f"  {tok!r:<14}  -"
-                for i, (tok, lp) in enumerate(zip(toks, lps + [None] * len(toks)))
-            )
-            + "\n```"
-        )
-    return "\n\n".join(lines)
-
-
 def _live_status_md(
     agent: str,
     endpoint_kind: str,
@@ -292,9 +246,9 @@ def coding_agent_gradio_builder(
         """Generator handler — yields incremental UI updates.
 
         Each ``yield`` is a tuple matching ``outputs=[...]``:
-        (summary_md, setup_table, verify_table, files_md, logprobs_md,
-        logs_md, raw_json). Early yields keep summary_md as a live phase
-        log while the rollout runs; the final yield populates everything.
+        (summary_md, setup_table, verify_table, files_md, logs_md,
+        raw_json). Early yields keep summary_md as a live phase log while
+        the rollout runs; the final yield populates everything.
         """
         import queue
         import threading
@@ -308,7 +262,7 @@ def coding_agent_gradio_builder(
             )
         except ValueError as exc:
             err = f"endpoint resolution failed: {exc}"
-            yield (f"### error\n\n```\n{err}\n```", [], [], "", "", "", {"error": err})
+            yield (f"### error\n\n```\n{err}\n```", [], [], "", "", {"error": err})
             return
 
         # Translate "auto" / "on" / "off" into bool / None.
@@ -369,7 +323,6 @@ def coding_agent_gradio_builder(
             [],
             "",
             "",
-            "",
             {},
         )
 
@@ -397,7 +350,7 @@ def coding_agent_gradio_builder(
                 elapsed,
                 status_lines,
             )
-            yield (md, [], [], "", "", "", {})
+            yield (md, [], [], "", "", {})
 
         # Drain any final messages still in the queue.
         while not status_q.empty():
@@ -414,7 +367,6 @@ def coding_agent_gradio_builder(
                 f"### error\n\n```\n{err}\n```",
                 [],
                 [],
-                "",
                 "",
                 _live_status_md(
                     agent,
@@ -434,7 +386,6 @@ def coding_agent_gradio_builder(
             _command_rows(result.get("setup_results") or []),
             _command_rows(result.get("verify_results") or []),
             _files_md(result.get("files") or {}),
-            _logprobs_md(result.get("proxy_turns") or []),
             (
                 "### live phase log\n\n"
                 + _live_status_md(
@@ -445,8 +396,7 @@ def coding_agent_gradio_builder(
                     time.time() - t_start,
                     status_lines,
                 )
-                + f"\n\n### agent log (tail)\n```\n{result.get('agent_log_tail', '')[:4000]}\n```\n\n"
-                f"### proxy log (tail)\n```\n{result.get('proxy_log_tail', '')[:4000]}\n```"
+                + f"\n\n### agent log (tail)\n```\n{result.get('agent_log_tail', '')[:4000]}\n```"
             ),
             result,
         )
@@ -460,8 +410,7 @@ def coding_agent_gradio_builder(
         gr.Markdown(
             "Run one coding-agent rollout in an E2B sandbox against your chosen "
             "LLM endpoint. Pick an agent + endpoint, write the task as "
-            "`(instruction, setup, verify)`, and inspect reward + per-token "
-            "logprobs."
+            "`(instruction, setup, verify)`, and inspect reward + logs."
         )
 
         gr.Markdown(_catalog_banner())
@@ -563,8 +512,6 @@ def coding_agent_gradio_builder(
                 )
             with gr.Tab("Files"):
                 files_md = gr.Markdown("")
-            with gr.Tab("Logprobs"):
-                logprobs_md = gr.Markdown("")
             with gr.Tab("Logs"):
                 logs_md = gr.Markdown("")
             with gr.Tab("Raw JSON"):
@@ -604,7 +551,6 @@ def coding_agent_gradio_builder(
                 setup_table,
                 verify_table,
                 files_md,
-                logprobs_md,
                 logs_md,
                 raw_json,
             ],

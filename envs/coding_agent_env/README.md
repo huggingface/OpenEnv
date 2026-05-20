@@ -200,8 +200,8 @@ directly.
 | `template` | `str` | `""` | E2B template name; `"coding-agent-rl"` skips ~2 min of install per rollout. |
 
 Returns `RolloutResult` JSON with: `reward`, `setup_results[]`,
-`verify_results[]`, `files{}`, `agent_log_tail`,
-`proxy_log_tail`, `wall_s`, `agent_exit_code`, `sandbox_id`, `error`.
+`verify_results[]`, `files{}`, `agent_log_tail`, `wall_s`,
+`agent_exit_code`, `sandbox_id`, `error`.
 
 ## Two Operating Modes
 
@@ -259,7 +259,7 @@ coding_agent_env/
 ├── __init__.py                     # re-exports primitive + client + models
 │
 ├── client.py                       # CodingAgentEnv(MCPToolClient)
-├── models.py                       # RolloutResult / RolloutTurn / CodingAgentState
+├── models.py                       # RolloutResult / CodingAgentState
 │
 ├── config.py                       # CodingAgentConfig (primitive)
 ├── harness.py                      # CodingAgentSession / CodingAgentSessionFactory (CLI-only)

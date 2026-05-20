@@ -25,7 +25,7 @@ from openenv.core.harness.sandbox import SandboxBackend, SandboxHandle
 from .client import CodingAgentEnv
 from .config import CodingAgentConfig, Provider
 from .harness import CodingAgentSession, CodingAgentSessionFactory
-from .models import CommandResult, CodingAgentState, RolloutResult, RolloutTurn
+from .models import CommandResult, CodingAgentState, RolloutResult
 from .task import CodingAgentTask
 
 try:
@@ -42,7 +42,6 @@ __all__ = [
     "CommandResult",
     "CodingAgentState",
     "RolloutResult",
-    "RolloutTurn",
     # Harness primitive
     "CodingAgentConfig",
     "CodingAgentSession",

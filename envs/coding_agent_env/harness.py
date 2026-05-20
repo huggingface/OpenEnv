@@ -36,6 +36,9 @@ class CodingAgentSession(CLIAgentSession):
         task: CodingAgentTask,
         verifier: Verifier | None = None,
         base_url_override: str | None = None,
+        interception_server: InterceptionServer | None = None,
+        interception_rollout_id: str | None = None,
+        interception_queue: _queue_mod.Queue[str] | None = None,
     ) -> None:
         super().__init__(
             spec=OPENCODE_SPEC,
@@ -44,6 +47,9 @@ class CodingAgentSession(CLIAgentSession):
             config=config,
             verifier=verifier,
             base_url_override=base_url_override,
+            interception_server=interception_server,
+            interception_rollout_id=interception_rollout_id,
+            interception_queue=interception_queue,
         )
 
     def fetch_trace(self) -> str:
@@ -129,16 +135,21 @@ class CodingAgentSessionFactory(ResourceSessionFactory):
         interception_queue: _queue_mod.Queue[str] | None = None
 
         if self._driver.mode == "interception_gate":
-            assert self._driver._interception_server is not None
-            assert self._driver._interception_base_url is not None
+            interception_server = self._driver._interception_server
+            if interception_server is None:
+                raise RuntimeError(
+                    "interception_gate mode requires an InterceptionServer"
+                )
+            interception_base_url = self._driver._interception_base_url
+            if interception_base_url is None:
+                raise RuntimeError(
+                    "interception_gate mode requires interception_base_url"
+                )
             rollout_id = episode_id or f"rollout_{uuid.uuid4().hex[:8]}"
             interception_rollout_id = rollout_id
-            interception_queue = self._driver._interception_server.register_rollout(
-                rollout_id
-            )
+            interception_queue = interception_server.register_rollout(rollout_id)
             base_url_override = (
-                f"{self._driver._interception_base_url.rstrip('/')}"
-                f"/rollout/{rollout_id}/v1"
+                f"{interception_base_url.rstrip('/')}/rollout/{rollout_id}/v1"
             )
 
         session = CodingAgentSession(
@@ -147,11 +158,10 @@ class CodingAgentSessionFactory(ResourceSessionFactory):
             task=oc_task,
             verifier=self._verifier,
             base_url_override=base_url_override,
+            interception_server=self._driver._interception_server,
+            interception_rollout_id=interception_rollout_id,
+            interception_queue=interception_queue,
         )
-        # Pass interception fields to the parent CLIAgentSession
-        session._interception_server = self._driver._interception_server
-        session._interception_rollout_id = interception_rollout_id
-        session._interception_queue = interception_queue
 
         session.start_agent()
         return session
