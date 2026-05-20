@@ -142,7 +142,11 @@ async def test_interception_server_unregister_rollout_cancels_pending_request() 
 
 @pytest.mark.asyncio
 async def test_interception_server_tool_endpoint_executes_registered_handler() -> None:
-    server = InterceptionServer(port=0, secret="secret-token")
+    server = InterceptionServer(
+        port=0,
+        secret="secret-token",
+        tool_name_allowlist={"answer"},
+    )
     await server.start()
     server.register_rollout("r1")
     seen: dict[str, object] = {}
@@ -186,11 +190,74 @@ async def test_interception_server_tool_endpoint_returns_404_for_unknown_tool() 
         await server.stop()
 
 
+def test_interception_server_rejects_reserved_tool_name_registration() -> None:
+    server = InterceptionServer(
+        port=0,
+        secret="secret-token",
+        tool_name_allowlist={"reset"},
+    )
+    server.register_rollout("r1")
+
+    async def _handler(arguments: dict) -> dict:
+        return {"ok": True}
+
+    with pytest.raises(ValueError, match="reserved"):
+        server.register_tool_handler("r1", "reset", _handler)
+
+
+def test_interception_server_rejects_tool_definition_name_mismatch() -> None:
+    server = InterceptionServer(
+        port=0,
+        secret="secret-token",
+        tool_name_allowlist={"answer"},
+    )
+    server.register_rollout("r1")
+
+    async def _handler(arguments: dict) -> dict:
+        return {"ok": True}
+
+    mismatched = {
+        "type": "function",
+        "function": {
+            "name": "not_answer",
+            "description": "Mismatch",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    }
+
+    with pytest.raises(ValueError, match="must exactly match"):
+        server.register_tool_handler(
+            "r1",
+            "answer",
+            _handler,
+            tool_definition=mismatched,
+        )
+
+
+def test_interception_server_rejects_tool_not_in_allowlist() -> None:
+    server = InterceptionServer(
+        port=0,
+        secret="secret-token",
+        tool_name_allowlist={"answer"},
+    )
+    server.register_rollout("r1")
+
+    async def _handler(arguments: dict) -> dict:
+        return {"ok": True}
+
+    with pytest.raises(ValueError, match="allowlist"):
+        server.register_tool_handler("r1", "search", _handler)
+
+
 @pytest.mark.asyncio
 async def test_interception_server_injects_registered_tool_defs_into_intercept() -> (
     None
 ):
-    server = InterceptionServer(port=0, secret="secret-token")
+    server = InterceptionServer(
+        port=0,
+        secret="secret-token",
+        tool_name_allowlist={"answer"},
+    )
     await server.start()
     queue = server.register_rollout("r1")
 

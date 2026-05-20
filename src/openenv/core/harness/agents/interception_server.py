@@ -24,7 +24,7 @@ works. For remote sandboxes (E2B, HF Sandbox), set up your own tunnel
 
 Usage — training loop::
 
-    server = InterceptionServer(port=8765)
+    server = InterceptionServer(port=8765, tool_name_allowlist={"answer"})
     await server.start()
 
     # Make the server reachable — your responsibility.
@@ -53,11 +53,14 @@ import hmac
 import json
 import logging
 import queue as _queue_mod
+import re
 import secrets
 import threading
 import time
 import uuid
 from typing import Any, Awaitable, Callable
+
+from openenv.core.env_server.mcp_types import RESERVED_TOOL_NAMES
 
 from aiohttp import web
 
@@ -66,6 +69,7 @@ _log = logging.getLogger(__name__)
 
 _KEEPALIVE_INTERVAL_S = 3.0
 _MAX_REQUEST_BODY = 16 * 1024 * 1024
+_TOOL_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 ToolHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 
@@ -82,12 +86,25 @@ class InterceptionServer:
         port: int = 0,
         secret: str | None = None,
         host: str = "127.0.0.1",
+        tool_name_allowlist: set[str] | None = None,
     ) -> None:
         self.port = port
         self.host = host
         self.secret = secret or secrets.token_urlsafe(32)
         if not self.secret.strip():
             raise ValueError("InterceptionServer secret must not be blank.")
+        normalized_allowlist: set[str] = set()
+        for raw_name in tool_name_allowlist or set():
+            name = raw_name.strip()
+            if not name:
+                raise ValueError("tool_name_allowlist must not include blank names")
+            if not _TOOL_NAME_RE.fullmatch(name):
+                raise ValueError(
+                    "tool_name_allowlist entries must match "
+                    f"^[A-Za-z0-9_-]{{1,64}}$ (got {raw_name!r})"
+                )
+            normalized_allowlist.add(name)
+        self._tool_name_allowlist = frozenset(normalized_allowlist)
         self._app: web.Application | None = None
         self._runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
@@ -237,16 +254,25 @@ class InterceptionServer:
         Optionally provide ``tool_definition`` (OpenAI tool schema). Registered
         schemas are injected into intercepted chat-completion requests for the
         rollout when the incoming request does not already include the tool.
+
+        Only tool names explicitly configured in ``tool_name_allowlist`` are
+        accepted. Control-plane names (``reset``, ``step``, ``state``,
+        ``close``) are always rejected to preserve the dual API boundary.
         """
+        normalized_name = self._validate_tool_registration(
+            tool_name,
+            tool_definition=tool_definition,
+        )
+
         with self._state_lock:
             context = self.active_rollouts.get(rollout_id)
             if context is None:
                 raise KeyError(f"rollout not found: {rollout_id}")
             handlers: dict[str, ToolHandler] = context["tool_handlers"]
-            handlers[tool_name] = handler
+            handlers[normalized_name] = handler
             if tool_definition is not None:
                 tool_defs: dict[str, dict[str, Any]] = context["tool_defs"]
-                tool_defs[tool_name] = tool_definition
+                tool_defs[normalized_name] = tool_definition
 
     def unregister_tool_handler(self, rollout_id: str, tool_name: str) -> None:
         with self._state_lock:
@@ -267,6 +293,44 @@ class InterceptionServer:
             return None
         name = function.get("name")
         return name if isinstance(name, str) and name else None
+
+    def _validate_tool_registration(
+        self,
+        tool_name: str,
+        *,
+        tool_definition: dict[str, Any] | None,
+    ) -> str:
+        normalized = tool_name.strip()
+        if not normalized:
+            raise ValueError("tool_name must not be blank")
+        if not _TOOL_NAME_RE.fullmatch(normalized):
+            raise ValueError(
+                f"tool_name must match ^[A-Za-z0-9_-]{{1,64}}$ (got {tool_name!r})"
+            )
+        if normalized.lower() in RESERVED_TOOL_NAMES:
+            raise ValueError(
+                "Interception tool name is reserved for infrastructure/control "
+                f"APIs: {normalized!r}"
+            )
+        if normalized not in self._tool_name_allowlist:
+            raise ValueError(
+                "Interception tool name is not in the configured allowlist: "
+                f"{normalized!r}"
+            )
+
+        if tool_definition is not None:
+            definition_name = self._tool_name(tool_definition)
+            if definition_name is None:
+                raise ValueError(
+                    "tool_definition must be an OpenAI tool schema with function.name"
+                )
+            if definition_name != normalized:
+                raise ValueError(
+                    "tool_definition.function.name must exactly match tool_name "
+                    f"({definition_name!r} != {normalized!r})"
+                )
+
+        return normalized
 
     def _merge_rollout_tools(
         self,
