@@ -21,12 +21,9 @@ LABEL maintainer="OpenEnv Team"
 LABEL description="OpenApp Environment with BrowserGym for UI agent training"
 LABEL org.opencontainers.image.source="https://github.com/meta-pytorch/OpenEnv"
 
-# Set working directory
-WORKDIR /app/env
-
 # Install system dependencies
 # - git: required to clone OpenApps from GitHub
-# - curl: for healthcheck
+# - curl: for healthcheck and uv installer
 # - Playwright/BrowserGym dependencies: fonts, libraries for browser automation
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -59,16 +56,19 @@ RUN apt-get update && \
     xdg-utils && \
     rm -rf /var/lib/apt/lists/*
 
+# Install uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    mv /root/.local/bin/uv /usr/local/bin/uv && \
+    mv /root/.local/bin/uvx /usr/local/bin/uvx
+
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
-
-# Set working directory
-WORKDIR /app/env
 
 # Copy environment files
 # Context is always the env directory (envs/openapp_env/)
 # - GitHub Actions: uses context: envs/openapp_env
 # - HuggingFace: openenv push uploads env dir as context
+WORKDIR /app/env
 COPY . /app/env
 
 # Install OpenApps FIRST to establish openai<2 (required by agentlab)
@@ -76,22 +76,22 @@ COPY . /app/env
 WORKDIR /app
 RUN git clone https://github.com/facebookresearch/OpenApps.git openapps && \
     cd openapps && \
-    pip install --no-cache-dir -e .
+    uv pip install --system --no-cache-dir -e .
 
 # Verify OpenApps installation
 RUN python -c "import open_apps; print('✓ OpenApps installed')"
 
-# Install openenv-core from GitHub with --no-deps to avoid openai>=2.7.2 conflict
+# Install openenv-core with --no-deps to avoid openai>=2.7.2 conflict
 # Then install only the server dependencies (no openai needed for server)
-RUN pip install --no-cache-dir --no-deps "openenv-core[core]>=0.2.2" && \
-    pip install --no-cache-dir fastapi pydantic uvicorn requests websockets fastmcp "beartype>=0.17.2"
+RUN uv pip install --system --no-cache-dir --no-deps "openenv-core[core]>=0.2.2" && \
+    uv pip install --system --no-cache-dir fastapi pydantic uvicorn requests websockets fastmcp "beartype>=0.17.2"
 
 # Install openapp_env and remaining dependencies
 WORKDIR /app/env
-RUN pip install --no-cache-dir -e .
+RUN uv pip install --system --no-cache-dir -e .
 
 # Ensure fastmcp runtime deps are on compatible versions after all installs.
-RUN pip install --no-cache-dir --upgrade "beartype>=0.22.6" "fastmcp>=2.14.5"
+RUN uv pip install --system --no-cache-dir --upgrade "beartype>=0.22.6" "fastmcp>=2.14.5"
 
 # Verify installation
 RUN python -c "import openapp_env; print('✓ openapp_env installed')" && \
