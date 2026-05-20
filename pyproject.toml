@@ -30,6 +30,7 @@ dependencies = [
     # Web UI dependencies
     "gradio>=4.0.0",
     "httpx>=0.28.1",
+    "aiohttp>=3.13.5",
 ]
 
 [project.optional-dependencies]
