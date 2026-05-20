@@ -143,7 +143,11 @@ async def _run(args: argparse.Namespace) -> int:
     gym_task = tasks[args.task_index]
     swe_task = gym_task.to_swe_task()
 
-    server = InterceptionServer(port=args.interception_port, host=args.interception_host)
+    server = InterceptionServer(
+        port=args.interception_port,
+        host=args.interception_host,
+        tool_name_allowlist={"answer"},
+    )
     await server.start()
 
     try:

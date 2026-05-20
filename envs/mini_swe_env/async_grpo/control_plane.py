@@ -103,6 +103,7 @@ class SWEAsyncControlPlane:
             host=config.host,
             port=config.port,
             secret=config.auth_token,
+            tool_name_allowlist={"answer"},
         )
 
     @property
