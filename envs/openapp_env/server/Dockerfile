@@ -21,12 +21,9 @@ LABEL maintainer="OpenEnv Team"
 LABEL description="OpenApp Environment with BrowserGym for UI agent training"
 LABEL org.opencontainers.image.source="https://github.com/meta-pytorch/OpenEnv"
 
-# Set working directory
-WORKDIR /app/env
-
 # Install system dependencies
 # - git: required to clone OpenApps from GitHub
-# - curl: for healthcheck
+# - curl: for healthcheck and uv installer
 # - Playwright/BrowserGym dependencies: fonts, libraries for browser automation
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -59,41 +56,48 @@ RUN apt-get update && \
     xdg-utils && \
     rm -rf /var/lib/apt/lists/*
 
+# Install uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    mv /root/.local/bin/uv /usr/local/bin/uv && \
+    mv /root/.local/bin/uvx /usr/local/bin/uvx
+
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
-
-# Set working directory
-WORKDIR /app/env
+# Run everything from the project virtual environment uv sync creates.
+ENV PATH="/app/env/.venv/bin:$PATH"
 
 # Copy environment files
 # Context is always the env directory (envs/openapp_env/)
 # - GitHub Actions: uses context: envs/openapp_env
 # - HuggingFace: openenv push uploads env dir as context
+WORKDIR /app/env
 COPY . /app/env
 
-# Install OpenApps FIRST to establish openai<2 (required by agentlab)
-# This must happen before openenv-core to avoid version conflict
+# Install all locked dependencies (openenv-core, the FastAPI/uvicorn/fastmcp web
+# stack, browsergym-core, playwright) plus the project into a venv from the
+# committed uv.lock. Resolving from the lockfile keeps fastapi/starlette/fastmcp on
+# a mutually compatible set — an ad-hoc fastmcp upgrade pulls starlette>=1.0 against
+# an older fastapi and breaks FastAPI's APIRouter
+# (TypeError: Router.__init__() got an unexpected keyword argument 'on_startup').
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen
+
+# Install OpenApps. It is kept as an editable git checkout (rather than a uv
+# dependency) because the runtime needs its repo layout: start.sh runs
+# `python launch.py`, and the environment resolves OpenApps' path from
+# open_apps.__file__. openai<2 is already pinned by the synced env (see the env's
+# pyproject [tool.uv] override), so this resolves without conflict.
 WORKDIR /app
 RUN git clone https://github.com/facebookresearch/OpenApps.git openapps && \
-    cd openapps && \
-    pip install --no-cache-dir -e .
+    uv pip install --python /app/env/.venv --no-cache-dir -e ./openapps && \
+    python -c "import open_apps; print('✓ OpenApps installed')"
 
-# Verify OpenApps installation
-RUN python -c "import open_apps; print('✓ OpenApps installed')"
+# OpenApps can pull the full browsergym (-> libwebarena, which pins
+# beartype==0.12.0). Restore a beartype compatible with openenv-core/fastmcp; only
+# browsergym.core is used at runtime, so the older pin is not needed.
+RUN uv pip install --python /app/env/.venv --no-cache-dir --upgrade "beartype>=0.22.6"
 
-# Install openenv-core from GitHub with --no-deps to avoid openai>=2.7.2 conflict
-# Then install only the server dependencies (no openai needed for server)
-RUN pip install --no-cache-dir --no-deps "openenv-core[core]>=0.2.2" && \
-    pip install --no-cache-dir fastapi pydantic uvicorn requests websockets fastmcp "beartype>=0.17.2"
-
-# Install openapp_env and remaining dependencies
-WORKDIR /app/env
-RUN pip install --no-cache-dir -e .
-
-# Ensure fastmcp runtime deps are on compatible versions after all installs.
-RUN pip install --no-cache-dir --upgrade "beartype>=0.22.6" "fastmcp>=2.14.5"
-
-# Verify installation
+# Verify installation (exercises the openenv-core + fastapi/starlette/fastmcp stack)
 RUN python -c "import openapp_env; print('✓ openapp_env installed')" && \
     python -c "import openapp_env.server.app; print('✓ openapp_env.server.app importable')"
 

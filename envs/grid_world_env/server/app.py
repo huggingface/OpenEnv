@@ -17,7 +17,12 @@ except ImportError:
     from core.env_server import create_app
 
 # Import our models and environment classes using relative paths
-from ..models import GridWorldAction, GridWorldObservation
+try:
+    from ..models import GridWorldAction, GridWorldObservation
+except ImportError as e:
+    if "relative import" not in str(e) and "no known parent package" not in str(e):
+        raise
+    from models import GridWorldAction, GridWorldObservation
 from .grid_world_environment import GridWorldEnvironment
 
 # Create single environment instance

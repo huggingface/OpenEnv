@@ -1,0 +1,13 @@
+# Keep the build context lean and reproducible. uv sync recreates the venv inside
+# the image; a host .venv (built for a different OS/arch) must never be copied in.
+.venv
+**/__pycache__
+*.egg-info
+.ruff_cache
+.pytest_cache
+build
+dist
+wheels
+# Local OpenApps checkout (the image clones it fresh)
+OpenApps
+openapps
