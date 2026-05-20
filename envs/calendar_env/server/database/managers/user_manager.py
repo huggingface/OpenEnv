@@ -124,7 +124,7 @@ class UserManager:
             # can correlate failures without leaking credentials to the log sink.
             logger.error(
                 f"Error getting user by access token "
-                f"(fingerprint={_token_fingerprint(static_token)}): {e}"
+                f"(fingerprint={_token_fingerprint(static_token)}): {type(e).__name__}"
             )
             raise
         finally:
