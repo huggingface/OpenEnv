@@ -183,6 +183,33 @@ def test_build_agent_config_opencode() -> None:
     assert isinstance(cfg, env._CodingAgentConfig)
     assert cfg.model == "gpt-4o-mini"
     assert cfg.agent_timeout_s == 123.0
+    assert cfg.max_tokens_cap == 2048
+
+    cfg_4096 = env._build_agent_config(
+        agent="opencode",
+        mode="black_box",
+        base_url="https://api.openai.com/v1",
+        api_key="sk-test",
+        model="gpt-4o-mini",
+        agent_timeout_s=123.0,
+        disable_thinking=True,
+        top_logprobs=7,
+        max_tokens_cap=4096,
+    )
+    assert cfg_4096.max_tokens_cap == 4096
+
+    cfg_uncapped = env._build_agent_config(
+        agent="opencode",
+        mode="black_box",
+        base_url="https://api.openai.com/v1",
+        api_key="sk-test",
+        model="gpt-4o-mini",
+        agent_timeout_s=123.0,
+        disable_thinking=True,
+        top_logprobs=7,
+        max_tokens_cap=0,
+    )
+    assert cfg_uncapped.max_tokens_cap is None
 
 
 def test_build_agent_config_pi() -> None:

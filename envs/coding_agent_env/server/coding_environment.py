@@ -484,7 +484,7 @@ class CodingAgentEnvironment(MCPEnvironment):
                 model=model,
                 agent_timeout_s=agent_timeout_s,
                 disable_thinking=disable_thinking,
-                max_tokens_cap=max_tokens_cap if max_tokens_cap != 4096 else None,
+                max_tokens_cap=max_tokens_cap if max_tokens_cap > 0 else None,
             )
 
         provider = self._infer_pi_provider(base_url)
