@@ -11,8 +11,9 @@ Pi runs in print mode for non-interactive harness usage::
     pi --no-session --no-context-files --provider <p> --model <m> --thinking off \\
        -p @/home/user/task/instruction.txt 2>&1 | tee /home/user/logs/agent/pi.txt
 
-The provider and model are passed as CLI flags so the spec's ``env`` dict
-only needs auth credentials (``HF_TOKEN``, ``OPENAI_API_KEY``, etc.).
+The provider and model are passed as CLI flags. Provider-specific credentials
+are exported via ``build_env_vars`` according to Pi's provider docs
+(``HF_TOKEN`` for ``huggingface``, ``OPENAI_API_KEY`` for ``openai``, etc.).
 
 Registered on import::
 
@@ -111,6 +112,48 @@ def _parse_events(line: str) -> AgentEvent | None:
     return AgentEvent(type="assistant", data=data, raw=line)
 
 
+def _provider_api_key_env(provider: str) -> str:
+    provider_key = provider.strip().lower()
+    env_by_provider = {
+        # https://github.com/earendil-works/pi/tree/main/packages/coding-agent#providers--models
+        "openai": "OPENAI_API_KEY",
+        "openenv": "OPENAI_API_KEY",
+        "huggingface": "HF_TOKEN",
+        "anthropic": "ANTHROPIC_API_KEY",
+        "gemini": "GEMINI_API_KEY",
+        "google": "GEMINI_API_KEY",
+    }
+    env_name = env_by_provider.get(provider_key)
+    if env_name is None:
+        raise ValueError(
+            f"Unsupported pi provider {provider!r}; expected one of "
+            f"{sorted(env_by_provider)}"
+        )
+    return env_name
+
+
+def _build_env_vars(spec: CLIAgentSpec, config: Any) -> dict[str, str]:
+    provider = config.provider if hasattr(config, "provider") else "openai"
+    if not isinstance(provider, str) or not provider.strip():
+        provider = "openai"
+    api_key = config.api_key if hasattr(config, "api_key") else ""
+    base_url = config.base_url if hasattr(config, "base_url") else ""
+    extra_env = config.extra_env if hasattr(config, "extra_env") else {}
+
+    env = dict(extra_env)
+    env["PI_SKIP_VERSION_CHECK"] = "1"
+    env["PI_TELEMETRY"] = "0"
+
+    if base_url:
+        env["OPENAI_BASE_URL"] = base_url
+
+    key_env_var = _provider_api_key_env(provider)
+    if api_key:
+        env[key_env_var] = api_key
+
+    return env
+
+
 PI_SPEC = CLIAgentSpec(
     name="pi",
     install_check_cmd=["pi", "--version"],
@@ -137,17 +180,12 @@ PI_SPEC = CLIAgentSpec(
     artifacts={
         "agent_log": ArtifactSpec(path="/home/user/logs/agent/pi.txt"),
     },
-    env={
-        "HF_TOKEN": "{api_key}",
-        "OPENAI_API_KEY": "{api_key}",
-        "OPENAI_BASE_URL": "{base_url}",
-        "PI_SKIP_VERSION_CHECK": "1",
-        "PI_TELEMETRY": "0",
-    },
+    env=None,
     extension_dir_template="{home}/.pi/agent/extensions",
     build_command=_build_command,
     build_mcp_config=_build_mcp_config,
     parse_events=_parse_events,
+    build_env_vars=_build_env_vars,
 )
 
 register_agent(PI_SPEC)
