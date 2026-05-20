@@ -14,28 +14,26 @@ version = "0.1.0"
 description = "OpenApp Environment for OpenEnv - web application simulation environment for UI agents"
 requires-python = ">=3.11,<3.14"
 dependencies = [
-    # NOTE: openenv-core is NOT listed here to avoid openai version conflict
-    # It is installed separately in the Dockerfile with --no-deps to avoid
-    # openai>=2.7.2 conflicting with OpenApps' openai<2 requirement.
-    # For local development, install manually:
-    #   pip install --no-deps "openenv-core @ git+https://github.com/meta-pytorch/OpenEnv.git"
-    #   pip install fastapi pydantic uvicorn requests websockets
-    #
-    # NOTE: open_apps is also NOT listed here for the same reason.
-    # Install manually for local development:
-    #   pip install git+https://github.com/facebookresearch/OpenApps.git
-    #
-    # Server dependencies (these are installed by Dockerfile separately for openenv-core)
+    # Core OpenEnv server dependencies. openenv-core requires openai>=2.7.2, but the
+    # server never imports openai; the [tool.uv] override below forces openai<2 so the
+    # graph resolves consistently alongside open_apps (see note below).
+    "openenv-core[core]>=0.2.2",
     "fastapi>=0.115.0",
     "pydantic>=2.0.0",
     "uvicorn[standard]>=0.24.0",
     "requests>=2.31.0",
     "websockets>=15.0.1",
-    # BrowserGym dependencies
-    "browsergym>=0.13.3",
+    # BrowserGym: only browsergym.core is imported. The full `browsergym` meta pulls
+    # webarena -> libwebarena, which pins an incompatible beartype==0.12.0.
+    "browsergym-core>=0.13.3",
     "playwright>=1.40.0",
     # Additional dependencies for web app interaction
     "python-multipart>=0.0.20",
+    # NOTE: open_apps is intentionally NOT listed here. It needs its git repo layout
+    # at runtime (start.sh runs `python launch.py`; the env resolves its path from
+    # open_apps.__file__), so the Docker image clones it and installs it editable.
+    # For local development:
+    #   pip install -e /path/to/OpenApps   # github.com/facebookresearch/OpenApps
 ]
 
 [project.optional-dependencies]
@@ -56,3 +54,10 @@ openapp_env = ["**/*.yaml", "**/*.yml", "**/*.md"]
 
 [tool.hatch.metadata]
 allow-direct-references = true
+
+[tool.uv]
+# open_apps (installed editable from its git repo in the Docker image) depends on
+# agentlab, which pins openai<2, while openenv-core requires openai>=2.7.2. The
+# server never imports openai, so force openai<2 to keep the whole graph — including
+# the later open_apps editable install — on a single consistent version.
+override-dependencies = ["openai<2"]
