@@ -11,7 +11,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "openenv-mini-swe-env"
 version = "0.1.0"
-description = "Mini SWE environment for OpenEnv — SWE-Gym task training with Pi agent and Async GRPO."
+description = "Mini SWE environment for OpenEnv — SWE-Gym task execution and host-side grading."
 requires-python = ">=3.10"
 dependencies = [
     # Core OpenEnv (server + MCP). 0.3.0 ships the harness runtime.
@@ -23,18 +23,9 @@ dependencies = [
     "requests>=2.25.0",
     "aiohttp>=3.13.5",
     "datasets>=4.8.0",
-    "bitsandbytes>=0.43.0",
 ]
 
 [project.optional-dependencies]
-train = [
-    "trl>=1.4.0",
-    "accelerate>=1.13.0",
-    "hf-sandbox>=0.1.1",
-    "datasets>=4.8.0",
-    "aiohttp>=3.13.5",
-    "fastmcp>=3.3.0",
-]
 dev = ["pytest>=8.0.0", "pytest-asyncio>=0.23.0", "pytest-cov>=4.0.0"]
 
 [project.scripts]
@@ -42,5 +33,5 @@ server = "mini_swe_env.server.app:main"
 
 [tool.setuptools]
 include-package-data = true
-packages = ["mini_swe_env", "mini_swe_env.server", "mini_swe_env.async_grpo"]
-package-dir = { "mini_swe_env" = ".", "mini_swe_env.server" = "server", "mini_swe_env.async_grpo" = "async_grpo" }
+packages = ["mini_swe_env", "mini_swe_env.server"]
+package-dir = { "mini_swe_env" = ".", "mini_swe_env.server" = "server" }

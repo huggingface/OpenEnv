@@ -15,7 +15,7 @@
 #   - Python with huggingface_hub installed
 #
 # Usage:
-#   bash envs/mini_swe_env/async_grpo/space_app/deploy_hf_space.sh [OPTIONS]
+#   bash examples/mini_swe_env/async_grpo/space_app/deploy_hf_space.sh [OPTIONS]
 #
 # Options:
 #   --space-id OWNER/NAME     Space ID (default: $HF_SPACE_ID or rycerzes/swe-async-grpo-train)
@@ -213,15 +213,16 @@ else
       envs/mini_swe_env/ "$STAGE_DIR/envs/mini_swe_env/"
 
     mkdir -p "$STAGE_DIR/examples/mini_swe_env"
-    cp examples/mini_swe_env/train_swe_async_grpo.py "$STAGE_DIR/examples/mini_swe_env/"
+    rsync -a --exclude='__pycache__' --exclude='*.pyc' \
+      examples/mini_swe_env/ "$STAGE_DIR/examples/mini_swe_env/"
 
     cp pyproject.toml "$STAGE_DIR/"
     cp LICENSE "$STAGE_DIR/"
     cp .gitignore "$STAGE_DIR/"
 
     # Space-specific files at root
-    cp envs/mini_swe_env/async_grpo/space_app/Dockerfile "$STAGE_DIR/Dockerfile"
-    cp envs/mini_swe_env/async_grpo/space_app/start.sh "$STAGE_DIR/start.sh"
+    cp examples/mini_swe_env/async_grpo/space_app/Dockerfile "$STAGE_DIR/Dockerfile"
+    cp examples/mini_swe_env/async_grpo/space_app/start.sh "$STAGE_DIR/start.sh"
 
     # Space README (metadata)
     cat > "$STAGE_DIR/README.md" << EOF

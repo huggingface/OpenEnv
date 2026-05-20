@@ -46,7 +46,7 @@ The agent **cannot** influence the training reward.  The in-sandbox
 |------|---------|
 | `run_swe_sample.py` | Real end-to-end interception rollout with a live LLM |
 | `train_swe_async_grpo.py` | AsyncGRPO trainer entrypoint wired to SWE custom rollout worker |
-| `envs/mini_swe_env/async_grpo/` | Control plane, worker, and trainer wiring modules |
+| `examples/mini_swe_env/async_grpo/` | Control plane, worker, and trainer wiring modules |
 
 ## Quick Start
 

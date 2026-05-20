@@ -1,4 +1,11 @@
-from mini_swe_env.async_grpo.rollout_worker import (
+import sys
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parents[2]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from examples.mini_swe_env.async_grpo.rollout_worker import (
     _get_tools,
     _has_answer_call,
     _is_terminal_non_tool_response,

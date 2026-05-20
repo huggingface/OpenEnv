@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Any
 
 _root = Path(__file__).resolve().parent.parent.parent
-for _p in (_root / "src", _root / "envs"):
+for _p in (_root, _root / "src", _root / "envs"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
@@ -44,11 +44,11 @@ from datasets import Dataset  # noqa: E402
 from transformers import AutoTokenizer  # noqa: E402
 from trl.experimental.async_grpo import AsyncGRPOConfig, AsyncGRPOTrainer  # noqa: E402
 
-from mini_swe_env.async_grpo.control_plane import (  # noqa: E402
+from examples.mini_swe_env.async_grpo.control_plane import (  # noqa: E402
     SWEAsyncControlPlane,
     SWEAsyncControlPlaneConfig,
 )
-from mini_swe_env.async_grpo.rollout_worker import (  # noqa: E402
+from examples.mini_swe_env.async_grpo.rollout_worker import (  # noqa: E402
     SWERolloutWorker,
     WorkerConfig,
 )
@@ -82,8 +82,9 @@ def start_interception_server(
     # Start the server on the new loop.
     future = asyncio.run_coroutine_threadsafe(control_plane.start(), loop)
     # The loop must be running for the coroutine to execute.
-    thread = threading.Thread(target=_run_event_loop, args=(loop,), daemon=True,
-                              name="interception-server")
+    thread = threading.Thread(
+        target=_run_event_loop, args=(loop,), daemon=True, name="interception-server"
+    )
     thread.start()
     # Wait for start() to complete.
     future.result(timeout=30)
@@ -195,7 +196,9 @@ def _build_checkpoint_args() -> tuple[dict[str, Any], str | None, bool]:
     elif resume_pref == "auto":
         resume_from_checkpoint = "last-checkpoint"
     else:
-        resume_from_checkpoint = os.environ.get("SWE_RESUME_FROM_CHECKPOINT", "").strip()
+        resume_from_checkpoint = os.environ.get(
+            "SWE_RESUME_FROM_CHECKPOINT", ""
+        ).strip()
 
     return checkpoint_args, resume_from_checkpoint, True
 
@@ -237,13 +240,15 @@ def main() -> int:
     _log.info("loaded %d tasks", len(swe_tasks))
 
     # ── Dataset (prompt per task) ─────────────────────────────────
-    dataset = Dataset.from_list([
-        {
-            "prompt": [{"role": "user", "content": t.instruction}],
-            "instance_id": t.instance_id,
-        }
-        for t in swe_tasks
-    ])
+    dataset = Dataset.from_list(
+        [
+            {
+                "prompt": [{"role": "user", "content": t.instruction}],
+                "instance_id": t.instance_id,
+            }
+            for t in swe_tasks
+        ]
+    )
 
     # ── Tokenizer ─────────────────────────────────────────────────
     tokenizer = AutoTokenizer.from_pretrained(model)
@@ -293,7 +298,9 @@ def main() -> int:
             prompts = kwargs.get("prompts", [])
             return [0.0] * len(prompts)
 
-        checkpoint_args, resume_from_checkpoint, checkpoint_requested = _build_checkpoint_args()
+        checkpoint_args, resume_from_checkpoint, checkpoint_requested = (
+            _build_checkpoint_args()
+        )
         async_grpo_args: dict[str, Any] = {
             "output_dir": os.path.join(
                 os.environ.get("HOME", "/tmp"), "outputs/swe_async_grpo"
@@ -351,7 +358,10 @@ def main() -> int:
             try:
                 trainer.train(resume_from_checkpoint=resume_from_checkpoint)
             except Exception as exc:
-                if resume_from_checkpoint == "last-checkpoint" and _is_missing_checkpoint_error(exc):
+                if (
+                    resume_from_checkpoint == "last-checkpoint"
+                    and _is_missing_checkpoint_error(exc)
+                ):
                     _log.warning(
                         "No hub checkpoint found at 'last-checkpoint'; starting from scratch"
                     )

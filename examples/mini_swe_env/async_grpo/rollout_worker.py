@@ -54,7 +54,7 @@ except Exception:  # pragma: no cover - optional at import time
     get_ip = None
     get_open_port = None
 
-from ..models import SWETask
+from mini_swe_env.models import SWETask
 
 _log = logging.getLogger(__name__)
 
