@@ -54,7 +54,6 @@ INSTRUCTION_PATH = f"{HOME}/task/instruction.md"
 _log = logging.getLogger(__name__)
 
 REWARD_FILE = f"{HOME}/logs/verifier/reward.txt"
-PROXY_LOG = f"{HOME}/logs/agent/proxy.log"
 AGENT_LOG = f"{HOME}/logs/agent/opencode.jsonl"
 VERIFY_TIMEOUT_S = 120
 _SUPPORTED_AGENTS = ("opencode", "pi")
@@ -89,14 +88,12 @@ class CodingAgentEnvironment(MCPEnvironment):
                 CodingAgentState,
                 CommandResult,
                 RolloutResult,
-                RolloutTurn,
             )
         except ImportError:  # pragma: no cover
             from models import (  # type: ignore
                 CodingAgentState,
                 CommandResult,
                 RolloutResult,
-                RolloutTurn,
             )
 
         from openenv.core.harness.agents import get_agent_spec
@@ -113,7 +110,6 @@ class CodingAgentEnvironment(MCPEnvironment):
 
         self._CommandResult = CommandResult
         self._RolloutResult = RolloutResult
-        self._RolloutTurn = RolloutTurn
         self._CodingAgentState = CodingAgentState
         self._CodingAgentConfig = CodingAgentConfig
         self._CodingAgentSessionFactory = CodingAgentSessionFactory
@@ -418,24 +414,18 @@ class CodingAgentEnvironment(MCPEnvironment):
             else:
                 result.reward = None
 
-            # Collect filesystem + proxy trace.
-            _emit("collecting workdir files + proxy trace + logs")
+            # Collect filesystem + agent log tail.
+            _emit("collecting workdir files + logs")
             result.files, result.files_extra = self._collect_files(session.sandbox)
-            result.proxy_turns = self._collect_proxy_turns(session)
-            result.proxy_log_tail = self._safe_read(session.sandbox, PROXY_LOG)[-2000:]
             result.agent_log_tail = self._collect_agent_log_tail(session, agent)
             _emit(
                 f"collected: {len(result.files)} file(s), "
-                f"{len(result.proxy_turns)} proxy turn(s), "
                 f"reward={'%.2f' % result.reward if result.reward is not None else 'n/a'}"
             )
         except Exception as exc:  # noqa: BLE001
             result.error = f"{type(exc).__name__}: {exc}"
             _emit(f"ERROR: {result.error}")
             if session is not None:
-                result.proxy_log_tail = self._safe_read(session.sandbox, PROXY_LOG)[
-                    -2000:
-                ]
                 result.agent_log_tail = self._collect_agent_log_tail(session, agent)
         finally:
             if session is not None:
@@ -606,10 +596,6 @@ class CodingAgentEnvironment(MCPEnvironment):
             except Exception:
                 extras.append(path)
         return files, extras
-
-    def _collect_proxy_turns(self, session: Any) -> list[Any]:
-        """Logprob capture is now owned by the training loop via interception_gate."""
-        return []
 
     @staticmethod
     def _safe_read(sandbox: Any, path: str) -> str:

@@ -14,24 +14,8 @@ returns a :class:`RolloutResult` JSON.
 
 from __future__ import annotations
 
-from typing import Any
-
 from openenv.core.env_server.types import State
 from pydantic import BaseModel, Field
-
-
-class RolloutTurn(BaseModel):
-    """One intercepted LLM turn shape (trainer-owned in interception_gate mode)."""
-
-    turn: int
-    finish_reason: str | None = None
-    completion_tokens: list[str] = Field(default_factory=list)
-    completion_token_ids: list[int] = Field(default_factory=list)
-    per_token_logps: list[float] = Field(default_factory=list)
-    latency_s: float = 0.0
-    timestamp: float = 0.0
-    upstream_status: int | None = None
-    upstream_error: dict[str, Any] | None = None
 
 
 class CommandResult(BaseModel):
@@ -66,17 +50,12 @@ class RolloutResult(BaseModel):
     setup_results: list[CommandResult] = Field(default_factory=list)
     verify_results: list[CommandResult] = Field(default_factory=list)
 
-    # Per-turn LLM trajectory placeholder. Capture is trainer-owned in
-    # interception_gate mode; environment currently leaves this empty.
-    proxy_turns: list[RolloutTurn] = Field(default_factory=list)
-
     # Filesystem the agent produced (path -> contents, truncated)
     files: dict[str, str] = Field(default_factory=dict)
     files_extra: list[str] = Field(default_factory=list)
 
     # Diagnostic tails
     agent_log_tail: str = ""
-    proxy_log_tail: str = ""
 
     # Error surfacing
     error: str | None = None

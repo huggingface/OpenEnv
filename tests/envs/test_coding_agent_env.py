@@ -55,7 +55,6 @@ def test_public_api_imports() -> None:
         E2BSandboxBackend,
         Provider,
         RolloutResult,
-        RolloutTurn,
         SandboxBackend,
         SandboxHandle,
     )
@@ -280,7 +279,7 @@ def test_build_session_factory_requires_e2b_dependency() -> None:
 
 
 def test_rollout_result_serializes_round_trip() -> None:
-    from coding_agent_env import CommandResult, RolloutResult, RolloutTurn
+    from coding_agent_env import CommandResult, RolloutResult
 
     r = RolloutResult(
         task_id="t1",
@@ -291,22 +290,12 @@ def test_rollout_result_serializes_round_trip() -> None:
         mode="black_box",
         setup_results=[CommandResult(cmd="pip install pandas", exit_code=0)],
         verify_results=[CommandResult(cmd="pytest", exit_code=1, stderr="boom")],
-        proxy_turns=[
-            RolloutTurn(
-                turn=1,
-                finish_reason="stop",
-                completion_tokens=["hi"],
-                per_token_logps=[-0.1],
-                latency_s=0.2,
-            )
-        ],
         files={"/home/user/workdir/x.py": "print('x')"},
     )
     blob = r.model_dump_json()
     rebuilt = RolloutResult.model_validate_json(blob)
     assert rebuilt.reward == 0.75
     assert rebuilt.verify_results[0].exit_code == 1
-    assert rebuilt.proxy_turns[0].completion_tokens == ["hi"]
 
 
 def test_coding_agent_task_coerce_str() -> None:
@@ -402,8 +391,6 @@ def test_run_rollout_e2e_via_deployed_space() -> None:
     assert result.reward == 1.0, (
         f"expected reward=1.0 got {result.reward}: {result.error}"
     )
-    # proxy_turns is now always empty — logprob capture is trainer-owned
-    # via interception_gate mode, not captured by the environment.
     assert any(f.endswith("/binary_search.py") for f in result.files), (
         f"expected binary_search.py in workdir, got {list(result.files)}"
     )
