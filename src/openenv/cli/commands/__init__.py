@@ -6,6 +6,15 @@
 
 """OpenEnv CLI commands."""
 
-from . import build, fork, init, push, serve, skills, validate
+from . import build, fork, init, import_env, push, serve, skills, validate
 
-__all__ = ["build", "fork", "init", "push", "serve", "skills", "validate"]
+__all__ = [
+    "build",
+    "fork",
+    "import_env",
+    "init",
+    "push",
+    "serve",
+    "skills",
+    "validate",
+]

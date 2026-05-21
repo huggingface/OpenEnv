@@ -206,6 +206,31 @@ class Environment(ABC, Generic[ActT, ObsT, StateT]):
             version="1.0.0",
         )
 
+    def list_splits(self) -> list[Any]:
+        """Return task split descriptors supported by this environment."""
+        raise NotImplementedError("Environment does not support task splits")
+
+    def list_tasks(self, split: str) -> list[Any]:
+        """Return all task specs for a split."""
+        raise NotImplementedError("Environment does not support task listing")
+
+    def num_tasks(self, split: str) -> int:
+        """Return the number of task specs in a split."""
+        return len(self.list_tasks(split))
+
+    def get_task(self, split: str, index: int) -> Any:
+        """Return one task spec by split and index."""
+        return self.list_tasks(split)[index]
+
+    def get_task_range(
+        self,
+        split: str,
+        start: Optional[int] = None,
+        stop: Optional[int] = None,
+    ) -> list[Any]:
+        """Return task specs for Python slice-style range bounds."""
+        return self.list_tasks(split)[slice(start, stop)]
+
     def _apply_transform(self, observation: ObsT) -> ObsT:
         """Apply transform if one is provided."""
         if self.transform is not None:

@@ -101,6 +101,15 @@ app = create_app(
 
 This is what the environment's `server/app.py` entry point typically does — see `envs/echo_env/server/app.py` for a minimal real example.
 
+## Optional Task APIs
+
+Environments that expose reusable datasets can implement the optional task and
+split methods on `Environment`: `list_splits`, `list_tasks`, `num_tasks`,
+`get_task`, and `get_task_range`. OpenEnv serves these through ORS-compatible
+endpoints such as `/list_environments`, `/{env_name}/splits`, and
+`/{env_name}/task_range`. Existing environments that do not implement these
+methods continue to work; task routes return `501` for unsupported APIs.
+
 ## Rewards via the Rubric
 
 Rewards are computed **inside the environment**, not by external code. The base `Environment` accepts an optional `rubric` on `__init__` — pass it to `super().__init__(rubric=...)`, call `self._reset_rubric()` from `reset`, and `self._apply_rubric(action, observation)` from `step` (or `_apply_rubric_async` from `step_async`). The [Rubrics tutorial](../tutorials/rubrics.md) covers the composable API end-to-end.

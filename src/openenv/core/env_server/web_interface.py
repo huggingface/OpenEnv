@@ -475,7 +475,12 @@ def create_web_interface_app(
 
     # Create the base environment app
     app = create_fastapi_app(
-        env, action_cls, observation_cls, max_concurrent_envs, concurrency_config
+        env,
+        action_cls,
+        observation_cls,
+        max_concurrent_envs,
+        concurrency_config,
+        env_name=env_name,
     )
 
     # Load environment metadata
