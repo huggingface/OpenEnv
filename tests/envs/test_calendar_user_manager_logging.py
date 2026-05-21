@@ -118,9 +118,7 @@ def test_get_user_by_access_token_does_not_leak_token_via_exception_str(
         with pytest.raises(FakeStatementError):
             manager.get_user_by_access_token(token)
 
-    assert token not in caplog.text, (
-        "raw token leaked via str(exception) in log output"
-    )
+    assert token not in caplog.text, "raw token leaked via str(exception) in log output"
     expected_fp = hashlib.sha256(token.encode("utf-8")).hexdigest()[:8]
     assert f"fingerprint={expected_fp}" in caplog.text
     assert "FakeStatementError" in caplog.text, (
