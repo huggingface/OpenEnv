@@ -1,6 +1,8 @@
-# Pin vLLM to 0.18.1 — TRL AsyncGRPO supports 0.12-0.18.x for NCCL weight sync.
-# vLLM 0.19+ has breaking changes in the weight transfer API.
-FROM vllm/vllm-openai:v0.18.1
+# vLLM 0.21.0 — supports Qwen3_5ForCausalLM (text-only), transformers >=5.0,
+# and the four-phase weight-transfer protocol (init/start/update/finish).
+# TRL AsyncGRPO uses vLLM as an external HTTP server; its optional-dep pin
+# (<=0.18.0) does not apply when vLLM is installed independently.
+FROM vllm/vllm-openai:v0.21.0
 
 # System deps + Docker CLI (for Docker sandbox backend)
 RUN apt-get update -qq && \
@@ -23,8 +25,13 @@ RUN mkdir -p /home/user/.cache/huggingface && chown -R user:user /home/user/.cac
 WORKDIR $HOME/app
 COPY --chown=user . .
 
-# Install deps: force-upgrade huggingface-hub first (resolves vLLM <1.0 vs hf-sandbox >=1.5 conflict)
-# vLLM 0.18.1 works fine with newer huggingface-hub at runtime.
+# Install deps:
+# 1. Force-upgrade huggingface-hub (resolves vLLM vs hf-sandbox conflict).
+# 2. Force-install transformers >=5.2.0 (required by TRL v1.4.0 AsyncGRPO,
+#    and for native Qwen3.5-4B model type support).  --no-deps avoids
+#    pulling vLLM's bundled transformers which may conflict.
+# 3. TRL emits a warning about vLLM >0.18 but functions correctly —
+#    the version check is advisory, not blocking.
 RUN uv pip install --system --no-cache "huggingface-hub>=1.5" && \
     uv pip install --system --no-cache --no-deps \
         -e "." \
@@ -37,7 +44,8 @@ RUN uv pip install --system --no-cache "huggingface-hub>=1.5" && \
         "aiohttp>=3.13.5" \
         "fastmcp>=3.3.0" \
         "trackio>=0.25.0" \
-        "bitsandbytes>=0.43.0"
+        "bitsandbytes>=0.43.0" && \
+    uv pip install --system --no-cache --no-deps "transformers>=5.2.0"
 
 # Runtime defaults
 ENV PYTHONPATH=$HOME/app/src:$HOME/app/envs \

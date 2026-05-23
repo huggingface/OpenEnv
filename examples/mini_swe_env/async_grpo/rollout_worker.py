@@ -59,6 +59,27 @@ from mini_swe_env.models import SWETask
 _log = logging.getLogger(__name__)
 
 
+def _vllm_version() -> tuple[int, ...]:
+    """Return parsed vLLM version as a tuple, e.g. (0, 20, 2).
+
+    Returns (0, 0, 0) if vLLM is not installed or version cannot be parsed.
+    """
+    try:
+        import vllm  # noqa: F811
+
+        parts = vllm.__version__.split(".")
+        return tuple(int(p) for p in parts[:3])
+    except Exception:
+        return (0, 0, 0)
+
+
+# vLLM 0.21+ uses a four-phase weight transfer protocol:
+#   init_weight_transfer_engine → start_weight_update → update_weights → finish_weight_update
+# start_weight_update(is_checkpoint_format=True) routes through model.load_weights()
+# which handles parameter name remapping (e.g. CausalLM → VLM prefixes).
+_VLLM_NEEDS_WEIGHT_UPDATE_LIFECYCLE = _vllm_version() >= (0, 21, 0)
+
+
 # ── Sample dataclass ───────────────────────────────────────────────────
 
 
@@ -142,6 +163,13 @@ class SWERolloutWorker:
         self._started = False
         self._model_update_group: Any | None = None
 
+        # Prefix to prepend to trainer parameter names so they match vLLM's
+        # model architecture.  For VLM models like Qwen3_5ForConditionalGeneration
+        # served with --language-model-only, vLLM parameters are at
+        # "language_model.model.layers.X" but the trainer (AutoModelForCausalLM)
+        # produces "model.layers.X".  Set to "" to disable remapping.
+        self._vllm_weight_prefix = "language_model."
+
         self._init_weight_transfer()
 
     # ── RolloutWorkerProtocol ──────────────────────────────────────
@@ -201,6 +229,14 @@ class SWERolloutWorker:
             return
 
         names = [name for name, _ in items]
+
+        # VLM models (e.g. Qwen3_5ForConditionalGeneration) have parameters at
+        # language_model.model.layers.X but the trainer (AutoModelForCausalLM)
+        # produces names like model.layers.X.  Prepend the prefix so names match.
+        if names and not names[0].startswith("language_model."):
+            if self._vllm_weight_prefix:
+                names = [f"{self._vllm_weight_prefix}{n}" for n in names]
+
         dtype_names = [
             str(getattr(tensor, "dtype", "float32")).split(".")[-1]
             for _, tensor in items
@@ -211,10 +247,20 @@ class SWERolloutWorker:
             "dtype_names": dtype_names,
             "shapes": shapes,
             "packed": True,
-            "is_checkpoint_format": True,
         }
 
         with self._weight_sync_lock:
+            # vLLM 0.21+ four-phase protocol:
+            #   start_weight_update(is_checkpoint_format=True) → update_weights → finish_weight_update
+            # is_checkpoint_format=True tells vLLM to use model.load_weights() which
+            # handles parameter name remapping (e.g. CausalLM → VLM prefixes).
+            if _VLLM_NEEDS_WEIGHT_UPDATE_LIFECYCLE:
+                self._post_json(
+                    "/start_weight_update",
+                    timeout=60,
+                    json_body={"is_checkpoint_format": True},
+                )
+
             post_error: list[Exception] = []
 
             def _post_update() -> None:
@@ -247,6 +293,10 @@ class SWERolloutWorker:
                 raise RuntimeError(
                     f"vLLM /update_weights failed: {post_error[0]}"
                 ) from post_error[0]
+
+            # vLLM >= 0.21: finalize layerwise reload / quantization.
+            if _VLLM_NEEDS_WEIGHT_UPDATE_LIFECYCLE:
+                self._post_json("/finish_weight_update", timeout=120)
 
     def update_model_version(self, version: int) -> None:
         with self._lock:

@@ -45,16 +45,27 @@ echo "========================================"
 # ── 1. Start vLLM ─────────────────────────────────────────────
 echo "[start.sh] Starting vLLM on GPU $VLLM_GPU..."
 # Async GRPO weight sync requires vLLM dev mode + NCCL transfer endpoints.
+# Qwen3.5 uses Gated DeltaNet (Mamba-like), which requires one Mamba cache
+# block per concurrent sequence.  --max-num-seqs 64 prevents exceeding cache.
+# vLLM 0.21+ registers Qwen3_5ForCausalLM natively; --language-model-only skips
+# vision encoder to save memory.  Weight sync uses is_checkpoint_format=True
+# which routes through model.load_weights() for proper name remapping.
 CUDA_VISIBLE_DEVICES="$VLLM_GPU" VLLM_SERVER_DEV_MODE=1 vllm serve "$MODEL" \
     --tensor-parallel-size 1 \
     --max-model-len "$MAX_MODEL_LEN" \
+    --max-num-seqs 64 \
     --host 127.0.0.1 \
     --port "$VLLM_PORT" \
     --api-key "$VLLM_KEY" \
     --gpu-memory-utilization "$GPU_MEM_UTIL" \
     --logprobs-mode processed_logprobs \
     --weight-transfer-config '{"backend":"nccl"}' \
-    > /tmp/vllm.log 2>&1 &
+    --language-model-only \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_coder \
+    --reasoning-parser qwen3 \
+    --default-chat-template-kwargs '{"enable_thinking": false}' \
+    2>&1 | tee /tmp/vllm.log &
 
 VLLM_PID=$!
 echo "[start.sh] vLLM PID=$VLLM_PID"
@@ -62,7 +73,7 @@ echo "[start.sh] vLLM PID=$VLLM_PID"
 # ── 2. Wait for vLLM health ───────────────────────────────────
 echo "[start.sh] Waiting for vLLM to be ready..."
 WAITED=0
-MAX_WAIT=300
+MAX_WAIT=600
 while [ $WAITED -lt $MAX_WAIT ]; do
     if curl -sf "http://127.0.0.1:${VLLM_PORT}/health" > /dev/null 2>&1; then
         echo "[start.sh] vLLM ready after ${WAITED}s"
