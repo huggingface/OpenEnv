@@ -17,6 +17,14 @@ VLLM_KEY="${VLLM_API_KEY:-token}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-4096}"
 GPU_MEM_UTIL="${GPU_MEMORY_UTILIZATION:-0.9}"
 
+# Prefer repo-local venv Python for local/dev runs; fall back to image python.
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+if [ -x "$HOME/app/.venv/bin/python" ]; then
+    PYTHON_BIN="$HOME/app/.venv/bin/python"
+elif [ -x "$HOME/app/.venv/Scripts/python.exe" ]; then
+    PYTHON_BIN="$HOME/app/.venv/Scripts/python.exe"
+fi
+
 # GPU assignment. On 2-GPU Spaces: vLLM=0, trainer=1.
 # On single GPU: both empty (share GPU 0).
 VLLM_GPU="${VLLM_GPU:-0}"
@@ -77,6 +85,6 @@ fi
 
 # ── 3. Start trainer (foreground) ──────────────────────────────
 echo "[start.sh] Starting trainer on GPU $TRAINER_GPU..."
-CUDA_VISIBLE_DEVICES="$TRAINER_GPU" exec python3 examples/mini_swe_env/train_swe_async_grpo.py \
+CUDA_VISIBLE_DEVICES="$TRAINER_GPU" exec "$PYTHON_BIN" examples/mini_swe_env/train_swe_async_grpo.py \
     --vllm-url "http://127.0.0.1:${VLLM_PORT}" \
     "$@"

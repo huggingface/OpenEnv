@@ -12,7 +12,7 @@
 # Prerequisites:
 #   - hf CLI installed and authenticated (hf auth login)
 #   - HF_TOKEN set or in ~/.cache/huggingface/token
-#   - Python with huggingface_hub installed
+#   - Python with huggingface_hub installed in repo .venv (preferred), or uv/python3 available
 #
 # Usage:
 #   bash examples/mini_swe_env/async_grpo/space_app/deploy_hf_space.sh [OPTIONS]
@@ -48,6 +48,34 @@ MONITOR=false
 PAUSE=false
 RESUME=false
 
+# ── Tooling prerequisites ───────────────────────────────────────────────
+# Prefer repo-local venv Python, then uv, then system python3.
+if [ -x "$REPO_ROOT/.venv/bin/python" ]; then
+    PYTHON_CMD=("$REPO_ROOT/.venv/bin/python")
+elif [ -x "$REPO_ROOT/.venv/Scripts/python.exe" ]; then
+    PYTHON_CMD=("$REPO_ROOT/.venv/Scripts/python.exe")
+elif command -v uv >/dev/null 2>&1; then
+    PYTHON_CMD=(uv run python)
+elif command -v python3 >/dev/null 2>&1; then
+    PYTHON_CMD=("$(command -v python3)")
+else
+    echo "ERROR: Python interpreter not found."
+    echo "Expected one of:"
+    echo "  - $REPO_ROOT/.venv/bin/python"
+    echo "  - $REPO_ROOT/.venv/Scripts/python.exe"
+    echo "  - uv run python"
+    echo "  - python3"
+    exit 1
+fi
+
+if ! command -v hf >/dev/null 2>&1; then
+    echo "ERROR: hf CLI not found. Install huggingface_hub CLI and run 'hf auth login'."
+    exit 1
+fi
+
+# Ensure Python subprocesses use UTF-8 output (avoids cp1252 emoji crashes on Windows).
+export PYTHONUTF8=1
+
 # ── Parse args ──────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -81,7 +109,7 @@ export HF_TOKEN
 # ── Pause/Resume shortcuts ──────────────────────────────────────────────
 if [ "$PAUSE" = true ]; then
     echo "⏸  Pausing Space $SPACE_ID..."
-    python3 -c "
+    "${PYTHON_CMD[@]}" -c "
 from huggingface_hub import HfApi
 api = HfApi(token='$HF_TOKEN')
 api.pause_space('$SPACE_ID')
@@ -92,7 +120,7 @@ fi
 
 if [ "$RESUME" = true ]; then
     echo "▶  Resuming Space $SPACE_ID..."
-    python3 -c "
+    "${PYTHON_CMD[@]}" -c "
 from huggingface_hub import HfApi
 api = HfApi(token='$HF_TOKEN')
 api.restart_space('$SPACE_ID', factory_reboot=True)
@@ -117,12 +145,12 @@ echo ""
 
 # ── Step 1: Create Space (idempotent) ──────────────────────────────────
 echo "[1/6] Creating Space (if needed)..."
-hf repos create "$SPACE_ID" --type space --space-sdk docker --public --exist-ok 2>/dev/null || true
+hf repo create "$SPACE_ID" --repo-type space --space-sdk docker --no-private --exist-ok >/dev/null
 echo "  ✓ Space exists: https://huggingface.co/spaces/$SPACE_ID"
 
 # ── Step 2: Configure secrets ──────────────────────────────────────────
 echo "[2/6] Configuring secrets and variables..."
-python3 << PYEOF
+"${PYTHON_CMD[@]}" << PYEOF
 from huggingface_hub import HfApi
 import os, secrets
 
@@ -178,7 +206,7 @@ PYEOF
 
 # ── Step 3: Set hardware ───────────────────────────────────────────────
 echo "[3/6] Setting hardware to $HARDWARE..."
-python3 -c "
+"${PYTHON_CMD[@]}" -c "
 from huggingface_hub import HfApi
 import os
 api = HfApi(token=os.environ['HF_TOKEN'])
@@ -197,24 +225,55 @@ else
 
     cd "$REPO_ROOT"
 
-    # Copy essential files only
-    rsync -a --exclude='.git' --exclude='.venv' --exclude='__pycache__' \
-      --exclude='.worktrees' --exclude='node_modules' --exclude='*.pyc' \
-      --exclude='.tox' --exclude='.mypy_cache' --exclude='.pytest_cache' \
-      --exclude='*.egg-info' --exclude='uv.lock' --exclude='.ruff_cache' \
-      --exclude='docs' --exclude='tests' --exclude='.claude' --exclude='.agents' \
-      --exclude='.codex' --exclude='.github' --exclude='rfcs' --exclude='tutorial' \
-      --exclude='scripts' --exclude='.env' \
-      src/ "$STAGE_DIR/src/"
+    # Copy essential files only (Python-based to avoid rsync shell/path quirks on Windows).
+    export REPO_ROOT STAGE_DIR
+    "${PYTHON_CMD[@]}" << 'PYEOF'
+import fnmatch
+import os
+import shutil
+from pathlib import Path
 
-    mkdir -p "$STAGE_DIR/envs"
-    rsync -a --exclude='__pycache__' --exclude='*.pyc' --exclude='uv.lock' \
-      --exclude='.venv' \
-      envs/mini_swe_env/ "$STAGE_DIR/envs/mini_swe_env/"
+repo = Path(os.environ["REPO_ROOT"])
+stage = Path(os.environ["STAGE_DIR"])
 
-    mkdir -p "$STAGE_DIR/examples/mini_swe_env"
-    rsync -a --exclude='__pycache__' --exclude='*.pyc' \
-      examples/mini_swe_env/ "$STAGE_DIR/examples/mini_swe_env/"
+
+def _ignore(patterns: list[str]):
+    def _inner(_dir: str, names: list[str]) -> set[str]:
+        ignored: set[str] = set()
+        for name in names:
+            for pat in patterns:
+                if fnmatch.fnmatch(name, pat):
+                    ignored.add(name)
+                    break
+        return ignored
+
+    return _inner
+
+
+def copy_tree(src_rel: str, dst_rel: str, patterns: list[str]) -> None:
+    src = repo / src_rel
+    dst = stage / dst_rel
+    if not src.exists():
+        raise FileNotFoundError(f"Missing source path: {src}")
+    shutil.copytree(src, dst, dirs_exist_ok=True, ignore=_ignore(patterns))
+
+
+common_ignores = [
+    "__pycache__",
+    "*.pyc",
+    ".venv",
+    ".tox",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    "*.egg-info",
+    "uv.lock",
+]
+
+copy_tree("src", "src", common_ignores)
+copy_tree("envs/mini_swe_env", "envs/mini_swe_env", common_ignores)
+copy_tree("examples/mini_swe_env", "examples/mini_swe_env", ["__pycache__", "*.pyc"])
+PYEOF
 
     cp pyproject.toml "$STAGE_DIR/"
     cp LICENSE "$STAGE_DIR/"
@@ -250,8 +309,8 @@ EOF
 # Auto-generated training args from deploy script
 # --sandbox-backend $SANDBOX_BACKEND --max-tasks $MAX_TASKS --max-steps $MAX_STEPS --max-turns $MAX_TURNS
 EOF
-    # Actually replace the exec line to include our args
-    sed -i "s|exec python3 examples/mini_swe_env/train_swe_async_grpo.py|exec python3 examples/mini_swe_env/train_swe_async_grpo.py --sandbox-backend $SANDBOX_BACKEND --max-tasks $MAX_TASKS --max-steps $MAX_STEPS --max-turns $MAX_TURNS|" "$STAGE_DIR/start.sh"
+    # Append deploy-time args to the trainer exec line (interpreter-agnostic).
+    sed -i "s|\(exec .*examples/mini_swe_env/train_swe_async_grpo.py\)|\1 --sandbox-backend $SANDBOX_BACKEND --max-tasks $MAX_TASKS --max-steps $MAX_STEPS --max-turns $MAX_TURNS|" "$STAGE_DIR/start.sh"
 
     FILE_COUNT=$(find "$STAGE_DIR" -type f | wc -l)
     echo "  ✓ Staged $FILE_COUNT files"
@@ -259,7 +318,7 @@ EOF
     # ── Step 5: Upload to Space ────────────────────────────────────────
     echo "[5/6] Uploading to Space..."
     cd "$STAGE_DIR"
-    hf upload "$SPACE_ID" . --type space \
+    hf upload "$SPACE_ID" . --repo-type space \
       --commit-message "Deploy: $MODEL, $MAX_TASKS tasks, $MAX_STEPS steps" 2>&1 | tail -3
     echo "  ✓ Upload complete"
 fi
@@ -273,7 +332,7 @@ echo ""
 
 if [ "$MONITOR" = true ]; then
     echo "Monitoring build (Ctrl+C to stop)..."
-    python3 << PYEOF
+    "${PYTHON_CMD[@]}" << PYEOF
 from huggingface_hub import HfApi
 import time, os
 
