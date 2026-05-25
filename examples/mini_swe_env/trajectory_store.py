@@ -114,14 +114,29 @@ class TrajectoryStore:
     - Filtering by resolved, turn count, etc.
     - pass@k statistics computation
     - Loading from existing JSONL files
+    - Periodic upload to HF Hub dataset repo (crash-safe persistence)
     """
 
-    def __init__(self, output_dir: str | Path) -> None:
+    def __init__(
+        self,
+        output_dir: str | Path,
+        *,
+        hub_repo_id: str | None = None,
+        hub_upload_every: int = 5,
+    ) -> None:
         self._dir = Path(output_dir)
         self._dir.mkdir(parents=True, exist_ok=True)
         self._filepath = self._dir / "trajectories.jsonl"
         self._records: list[TrajectoryRecord] = []
         self._pending_writes: list[TrajectoryRecord] = []
+
+        # HF Hub persistence
+        self._hub_repo_id = hub_repo_id
+        self._hub_upload_every = max(1, hub_upload_every)
+        self._since_last_upload = 0
+        self._hub_api: Any = None
+        if hub_repo_id:
+            self._init_hub()
 
         # Load existing records if file exists
         if self._filepath.exists():
@@ -144,7 +159,7 @@ class TrajectoryStore:
         self._pending_writes.append(record)
 
     def flush(self) -> None:
-        """Write pending records to disk."""
+        """Write pending records to disk and upload to Hub if configured."""
         if not self._pending_writes:
             return
         with open(self._filepath, "a") as f:
@@ -153,6 +168,83 @@ class TrajectoryStore:
         count = len(self._pending_writes)
         self._pending_writes = []
         _log.debug("flushed %d trajectories to %s", count, self._filepath)
+
+        # Periodic upload to HF Hub
+        if self._hub_repo_id:
+            self._since_last_upload += count
+            if self._since_last_upload >= self._hub_upload_every:
+                self._upload_to_hub()
+                self._since_last_upload = 0
+
+    def upload_now(self) -> None:
+        """Force an immediate upload to HF Hub (call at end of run)."""
+        if self._hub_repo_id:
+            self._upload_to_hub()
+
+    def _init_hub(self) -> None:
+        """Initialize HF Hub repo for trajectory persistence."""
+        try:
+            from huggingface_hub import HfApi
+            self._hub_api = HfApi()
+            self._hub_api.create_repo(
+                repo_id=self._hub_repo_id,
+                repo_type="dataset",
+                private=True,
+                exist_ok=True,
+            )
+            _log.info("hub persistence enabled: %s", self._hub_repo_id)
+
+            # Try to download existing trajectories on startup (resume support)
+            try:
+                from huggingface_hub import hf_hub_download
+                local_path = hf_hub_download(
+                    repo_id=self._hub_repo_id,
+                    filename="trajectories.jsonl",
+                    repo_type="dataset",
+                    local_dir=str(self._dir),
+                )
+                _log.info("downloaded existing trajectories from hub")
+            except Exception:
+                _log.debug("no existing trajectories on hub (fresh start)")
+
+        except ImportError:
+            _log.warning("huggingface_hub not installed, hub persistence disabled")
+            self._hub_repo_id = None
+        except Exception as exc:
+            _log.warning("hub init failed: %s (persistence disabled)", exc)
+            self._hub_repo_id = None
+
+    def _upload_to_hub(self) -> None:
+        """Upload trajectories.jsonl + stats.json to HF Hub."""
+        if not self._hub_api or not self._filepath.exists():
+            return
+        try:
+            self._hub_api.upload_file(
+                path_or_fileobj=str(self._filepath),
+                path_in_repo="trajectories.jsonl",
+                repo_id=self._hub_repo_id,
+                repo_type="dataset",
+                commit_message=f"Update trajectories ({len(self._records)} total)",
+            )
+            # Also upload stats
+            stats_path = self._dir / "stats.json"
+            stats = self.pass_at_k_stats()
+            stats_summary = {k: v for k, v in stats.items() if k != "per_task"}
+            stats_path.write_text(json.dumps(stats_summary, indent=2))
+            self._hub_api.upload_file(
+                path_or_fileobj=str(stats_path),
+                path_in_repo="stats.json",
+                repo_id=self._hub_repo_id,
+                repo_type="dataset",
+                commit_message=f"Update stats ({len(self._records)} trajectories)",
+            )
+            _log.info(
+                "hub_upload complete: %d trajectories to %s",
+                len(self._records),
+                self._hub_repo_id,
+            )
+        except Exception as exc:
+            _log.warning("hub upload failed (will retry next flush): %s", exc)
 
     def filter(
         self,

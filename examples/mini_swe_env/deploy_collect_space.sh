@@ -193,6 +193,8 @@ variables = {
     "RATE_LIMIT": "$RATE_LIMIT",
     "TASK_VARIANT": "lite",
     "HF_SANDBOX_FLAVOR": "cpu-basic",
+    "TRAJECTORY_HUB_REPO": f"{space_id.split('/')[0]}/swe-teacher-trajectories",
+    "HUB_UPLOAD_EVERY": "5",
 }
 for key, value in variables.items():
     if not value:
@@ -282,17 +284,17 @@ RUN apt-get update -qq && \
 
 # Python deps
 COPY pyproject.toml .
-RUN pip install --no-cache-dir \
+COPY src/ src/
+RUN pip install --no-cache-dir -e ".[core]" && \
+    pip install --no-cache-dir \
     httpx \
     aiohttp \
     datasets \
     huggingface_hub \
     hf-sandbox \
-    pydantic && \
-    pip install --no-cache-dir -e . || true
+    fastmcp
 
-# Copy source
-COPY src/ src/
+# Copy remaining source
 COPY envs/ envs/
 COPY examples/ examples/
 
@@ -360,6 +362,8 @@ ARGS=(
     --interception-host 0.0.0.0
     --agent-timeout-s 1800
     --export-sft
+    --hub-repo-id "${TRAJECTORY_HUB_REPO:-}"
+    --hub-upload-every "${HUB_UPLOAD_EVERY:-5}"
 )
 
 # Optional: limit tasks
@@ -368,6 +372,7 @@ if [ -n "${MAX_TASKS:-}" ]; then
 fi
 
 echo "Starting collection..."
+export PYTHONPATH=/app/src:/app/envs:/app/examples/mini_swe_env
 exec python examples/mini_swe_env/collect_rollouts_best_of_n.py "${ARGS[@]}"
 STARTSH
 

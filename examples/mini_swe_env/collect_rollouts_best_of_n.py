@@ -225,6 +225,17 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Export SFT-ready JSONL after collection",
     )
+    p.add_argument(
+        "--hub-repo-id",
+        default=os.environ.get("TRAJECTORY_HUB_REPO", ""),
+        help="HF Dataset repo for trajectory persistence (default: $TRAJECTORY_HUB_REPO)",
+    )
+    p.add_argument(
+        "--hub-upload-every",
+        type=int,
+        default=5,
+        help="Upload to Hub every N trajectories (default: 5)",
+    )
     return p
 
 
@@ -615,8 +626,15 @@ async def _run(args: argparse.Namespace) -> int:
     )
 
     # ── Load/create trajectory store ──────────────────────────────
-    store = TrajectoryStore(args.output_dir)
+    hub_repo = args.hub_repo_id.strip() if args.hub_repo_id else None
+    store = TrajectoryStore(
+        args.output_dir,
+        hub_repo_id=hub_repo or None,
+        hub_upload_every=args.hub_upload_every,
+    )
     _log.info("Trajectory store: %s (%d existing)", store.filepath, len(store))
+    if hub_repo:
+        _log.info("Hub persistence: %s (every %d)", hub_repo, args.hub_upload_every)
 
     # Count existing rollouts per task for resume
     existing_counts: dict[str, int] = defaultdict(int)
@@ -754,6 +772,9 @@ async def _run(args: argparse.Namespace) -> int:
     )
 
     _print_summary(store, args)
+
+    # ── Final hub upload ───────────────────────────────────────
+    store.upload_now()
 
     # ── Export SFT data if requested ──────────────────────────────
     if args.export_sft:
