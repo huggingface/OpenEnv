@@ -26,7 +26,7 @@ Example:
     SWE_LLM_BASE_URL=https://your-vllm.com/v1 \
     SWE_LLM_API_KEY=sk-... \
     SWE_LLM_MODEL=Qwen/Qwen3.6-27B \
-    INTERCEPTION_BASE_URL=https://your-tunnel.trycloudflare.com \
+    INTERCEPTION_BASE_URL=https://your-public-url.example.com \
     INTERCEPTION_AUTH_TOKEN=secret123 \
     PYTHONPATH=src:envs python examples/mini_swe_env/collect_rollouts_best_of_n.py \
         --n-rollouts 4 --max-concurrent 3 --output-dir trajectories/teacher_27b
