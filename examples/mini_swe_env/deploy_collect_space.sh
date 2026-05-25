@@ -198,6 +198,12 @@ variables = {
 }
 for key, value in variables.items():
     if not value:
+        # Remove variable if empty (e.g. MAX_TASKS not set = use all tasks)
+        try:
+            api.delete_space_variable(space_id, key)
+            print(f"  ✓ Var removed: {key} (using default)")
+        except Exception:
+            pass
         continue
     try:
         api.add_space_variable(space_id, key, value)

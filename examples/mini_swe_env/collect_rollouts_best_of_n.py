@@ -354,13 +354,53 @@ async def _run_one_rollout(
             ):
                 answer_called = True
 
-            await session.deliver(intercept, llm_resp)
+                # Invoke host-side grading directly (like run_swe_sample.py)
+                # Pi can't call the tool endpoint itself after we break.
+                rollout_id = intercept.get("rollout_id", "")
+                try:
+                    answer_resp = await client.post(
+                        f"http://127.0.0.1:{server.port}/rollout/{rollout_id}/v1/tools/answer",
+                        headers={"Authorization": f"Bearer {server.secret}"},
+                        json={"arguments": {}},
+                        timeout=300.0,
+                    )
+                    if answer_resp.status_code == 200:
+                        answer_bridged = True
+                        _log.info(
+                            "answer_bridged instance_id=%s result=%s",
+                            gym_task.instance_id,
+                            answer_resp.text[:200],
+                        )
+                    else:
+                        _log.warning(
+                            "answer_bridge_failed instance_id=%s status=%d",
+                            gym_task.instance_id,
+                            answer_resp.status_code,
+                        )
+                except Exception as exc:
+                    _log.warning(
+                        "answer_bridge_error instance_id=%s: %s",
+                        gym_task.instance_id,
+                        str(exc)[:150],
+                    )
 
-            # Check if host-side answer was bridged
-            if bool(getattr(session, "answer_called", False)):
-                answer_called = True
-            if bool(getattr(session, "answer_bridged", False)):
-                answer_bridged = True
+                # Replace tool-call response with plain text so Pi stops cleanly
+                llm_resp = dict(llm_resp)
+                choices = list(llm_resp.get("choices") or [])
+                if choices:
+                    choice0_mod = dict(choices[0])
+                    msg_mod = dict(choice0_mod.get("message") or {})
+                    msg_mod.pop("tool_calls", None)
+                    msg_mod["content"] = (
+                        (msg_mod.get("content") or "")
+                        + "\nSubmission received and graded on host."
+                    ).strip()
+                    choice0_mod["message"] = msg_mod
+                    choice0_mod["finish_reason"] = "stop"
+                    choices[0] = choice0_mod
+                    llm_resp["choices"] = choices
+
+            await session.deliver(intercept, llm_resp)
 
             if answer_called:
                 break
