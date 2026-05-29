@@ -173,14 +173,15 @@ class SWESession(CLIAgentSession):
 
     Extends :class:`CLIAgentSession` with:
     - ``verify()`` — returns the reward produced by the host-side
-      ``answer`` tool (stored by the InterceptionServer tool handler).
-    - Falls back to running verify commands for legacy tasks.
+      ``answer`` tool, or grades the repo state post-hoc if no answer
+      was called.
     - SWE task metadata.
 
-    **Reward architecture**: The ``answer`` tool runs host-side via
-    the InterceptionServer's ``/vf/tools`` routing.  ``verify()`` simply
-    returns the reward already computed during the rollout.  There is
-    no separate grading step.
+    **Reward architecture**: The ``answer`` tool is optional. If the
+    agent calls it, grading runs immediately and returns feedback.
+    If the agent never calls ``answer()`` (timeout, max turns, natural
+    exit), ``verify()`` grades the repo state post-hoc — the agent's
+    edits are evaluated regardless of explicit submission.
     """
 
     def __init__(
@@ -188,6 +189,7 @@ class SWESession(CLIAgentSession):
         *,
         swe_task: SWETask,
         verify_timeout_s: int = VERIFY_TIMEOUT_S,
+        grade_fn: Any | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -197,6 +199,8 @@ class SWESession(CLIAgentSession):
         self._answer_reward_source: str | None = None
         self._answer_called = False
         self._answer_bridged = False
+        # Callback for post-hoc grading: (sandbox, swe_task) -> (reward, resolved)
+        self._grade_fn = grade_fn
 
     @property
     def swe_task(self) -> SWETask:
@@ -332,7 +336,32 @@ class SWESession(CLIAgentSession):
                 },
             )
 
-        # 4. No reward source — agent didn't call answer, no verify cmds.
+        # 4. Post-hoc grading: grade the repo state regardless of answer().
+        # whether or not it explicitly submitted.
+        if self._grade_fn is not None:
+            try:
+                reward, resolved = self._grade_fn(self.sandbox, self._swe_task)
+                source = "post_hoc_grade"
+                return VerifyResult(
+                    env_reward=float(reward),
+                    done=True,
+                    metrics={
+                        "instance_id": self._swe_task.instance_id,
+                        "reward_source": source,
+                        "resolved": resolved,
+                        "answer_called": False,
+                        "answer_bridged": False,
+                    },
+                    artifacts={
+                        "task_id": self._swe_task.task_id,
+                    },
+                )
+            except Exception:
+                _log.exception(
+                    "post-hoc grading failed for %s", self._swe_task.instance_id
+                )
+
+        # 5. No grading possible (no grade_fn, no verify cmds, no answer).
         return VerifyResult(
             env_reward=0.0,
             done=True,
@@ -524,6 +553,7 @@ class SWESessionFactory(ResourceSessionFactory):
         session = SWESession(
             swe_task=swe_task,
             verify_timeout_s=self._verify_timeout_s,
+            grade_fn=self._grade_answer_submission,
             spec=self._spec,
             sandbox=sandbox,
             task=agent_task,
