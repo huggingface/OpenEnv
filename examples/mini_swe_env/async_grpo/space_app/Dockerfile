@@ -6,7 +6,7 @@ FROM vllm/vllm-openai:v0.21.0
 
 # System deps + Docker CLI (for Docker sandbox backend)
 RUN apt-get update -qq && \
-    apt-get install -y -qq --no-install-recommends curl ca-certificates docker.io && \
+    apt-get install -y -qq --no-install-recommends curl ca-certificates docker.io git && \
     update-ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
@@ -37,7 +37,7 @@ RUN uv pip install --system --no-cache "huggingface-hub>=1.5" && \
         -e "." \
         -e "envs/mini_swe_env" && \
     uv pip install --system --no-cache \
-        "trl>=1.6.0" \
+        "trl>=1.5.1" \
         "accelerate>=1.13.0" \
         "hf-sandbox[named-tunnels] @ git+https://github.com/rycerzes/hf-sandbox@feat/named-tunnels" \
         "datasets>=4.8.0" \

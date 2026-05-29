@@ -37,9 +37,16 @@ from typing import Any, Iterator, Sequence, cast
 import requests
 
 try:
-    from trl.chat_template_utils import add_response_schema, parse_response
+    from trl.chat_template_utils import (
+        add_response_schema,
+        get_training_chat_template,
+        is_chat_template_prefix_preserving,
+        parse_response,
+    )
 except Exception:  # pragma: no cover - defensive for older TRL versions
     add_response_schema = None
+    get_training_chat_template = None
+    is_chat_template_prefix_preserving = None
     parse_response = None
 
 try:
@@ -147,6 +154,19 @@ class SWERolloutWorker:
                 self._tokenizer = add_response_schema(self._tokenizer)
             except Exception as exc:
                 _log.debug("add_response_schema unavailable for tokenizer: %s", exc)
+
+        # Use TRL's prefix-preserving training template if available.
+        # The stock Qwen3.5 template is NOT prefix-preserving (it conditionally
+        # renders <think> tags based on message position), which breaks our
+        # suffix computation.  The training template fixes this.
+        self._chat_template: str | None = None
+        if get_training_chat_template is not None:
+            try:
+                self._chat_template = get_training_chat_template(self._tokenizer)
+                if self._chat_template:
+                    _log.info("using TRL prefix-preserving training chat template")
+            except (ValueError, TypeError) as exc:
+                _log.debug("get_training_chat_template failed: %s", exc)
         self._vllm_base_url = vllm_base_url.rstrip("/")
         self._vllm_api_key = vllm_api_key
         self._vllm_model = vllm_model
@@ -538,7 +558,9 @@ class SWERolloutWorker:
         all_lps: list[float] = []
 
         initial_prompt_ids: list[int] | None = None
-        prev_prompt_ids: list[int] | None = None
+        # prev_base_ids: render of all messages so far WITHOUT add_generation_prompt.
+        # The training template guarantees this is prefix-preserving across turns.
+        prev_base_ids: list[int] | None = None
 
         turns = 0
         answer_called = False
@@ -570,13 +592,45 @@ class SWERolloutWorker:
                     all_ids.extend(current_prompt_ids)
                     all_mask.extend([0] * len(current_prompt_ids))
                     all_lps.extend([0.0] * len(current_prompt_ids))
-                elif prev_prompt_ids is not None:
-                    # Subsequent turns: the delta between prev generation end
-                    # and this turn's prompt is the tool-result suffix.
-                    # prev_prompt_ids + prev_turn_ids = end of last generation
-                    # current_prompt_ids = prev_prompt_ids + prev_turn_ids + suffix_ids
-                    prev_len = len(prev_prompt_ids)
-                    suffix_ids = current_prompt_ids[prev_len:]
+                elif prev_base_ids is not None:
+                    # Subsequent turns: compute the interstitial (tool-result
+                    # suffix) between the last generation and this turn's prompt.
+                    #
+                    # We use Polar's approach (arXiv:2605.24220 §3.4.2):
+                    # The "base" render (add_generation_prompt=False) is
+                    # prefix-preserving across turns — guaranteed by TRL's
+                    # training chat template.  The suffix = tokens in the
+                    # current prompt that come AFTER the previous base.
+                    prev_len = len(prev_base_ids)
+
+                    # Prefix validation.
+                    if current_prompt_ids[:prev_len] != prev_base_ids:
+                        _log.warning(
+                            "prefix mismatch at turn %d (prev_base=%d tokens, "
+                            "first diff at idx %d). Using EOT fallback.",
+                            turns,
+                            prev_len,
+                            next(
+                                (
+                                    i
+                                    for i, (a, b) in enumerate(
+                                        zip(current_prompt_ids, prev_base_ids)
+                                    )
+                                    if a != b
+                                ),
+                                -1,
+                            ),
+                        )
+                        # Fallback: use Polar's EOT-based interstitial detection
+                        # on the canonical tail from the full prompt.
+                        suffix_ids = _slice_interstitial_fallback(
+                            current_prompt_ids,
+                            prev_base_ids,
+                            self._tokenizer.eos_token_id,
+                        )
+                    else:
+                        suffix_ids = current_prompt_ids[prev_len:]
+
                     all_ids.extend(suffix_ids)
                     all_mask.extend([0] * len(suffix_ids))
                     all_lps.extend([0.0] * len(suffix_ids))
@@ -592,8 +646,16 @@ class SWERolloutWorker:
                 all_mask.extend([1] * len(turn_ids))
                 all_lps.extend(turn_lps)
 
-                # For next turn's suffix computation:
-                prev_prompt_ids = current_prompt_ids + turn_ids
+                # For next turn's suffix computation: compute the "base" render
+                # of all messages so far (WITHOUT add_generation_prompt).  This
+                # is prefix-preserving across turns — the next turn's prompt
+                # (rendered with add_gen=True) will start with these tokens.
+                #
+                # This approach avoids retokenization drift at the
+                # add_generation_prompt boundary (e.g. <think>\n vs
+                # <think>\n\n</think>\n\n) which would cause prefix mismatches
+                # with the naive prev_prompt = prompt + turn_ids approach.
+                prev_base_ids = self._render_base_ids(messages, tools)
 
                 # ── Build chat response for Pi ────────────────────
                 assistant_message = _parse_assistant_message(
@@ -694,6 +756,48 @@ class SWERolloutWorker:
         # ``tools=[]`` can trigger unwanted boilerplate in some templates.
         if tools:
             kwargs["tools"] = tools
+        # Use TRL's prefix-preserving training template when available.
+        if self._chat_template:
+            kwargs["chat_template"] = self._chat_template
+
+        # Qwen3.5's chat template iterates tool_call.arguments with |items,
+        # expecting a dict.  The OpenAI API spec (and our _normalize_tool_calls)
+        # stores arguments as a JSON *string*.  Parse them into dicts here so
+        # the Jinja template can iterate key-value pairs.
+        messages = _ensure_tool_call_arguments_parsed(messages)
+
+        try:
+            ids = self._tokenizer.apply_chat_template(messages, **kwargs)
+        except TypeError:
+            kwargs.pop("tools", None)
+            ids = self._tokenizer.apply_chat_template(messages, **kwargs)
+        return cast(list[int], ids)
+
+    def _render_base_ids(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+    ) -> list[int]:
+        """Render messages WITHOUT add_generation_prompt.
+
+        The resulting token sequence is prefix-preserving: appending tool
+        results to the messages and re-rendering (with add_gen=True) will
+        produce a token sequence whose first ``len(base_ids)`` tokens match
+        exactly.  This property is what makes suffix computation reliable
+        across turns (see TITO blog, Polar §3.4.2, TRL's
+        ``is_chat_template_prefix_preserving``).
+        """
+        kwargs: dict[str, Any] = {
+            "add_generation_prompt": False,
+            "return_dict": False,
+        }
+        if tools:
+            kwargs["tools"] = tools
+        if self._chat_template:
+            kwargs["chat_template"] = self._chat_template
+
+        messages = _ensure_tool_call_arguments_parsed(messages)
+
         try:
             ids = self._tokenizer.apply_chat_template(messages, **kwargs)
         except TypeError:
@@ -742,6 +846,49 @@ class SWERolloutWorker:
 # ── Helpers ────────────────────────────────────────────────────────────
 
 
+def _slice_interstitial_fallback(
+    current_prompt_ids: list[int],
+    prev_base_ids: list[int],
+    eos_token_id: int | None,
+) -> list[int]:
+    """Fallback interstitial extraction when prefix check fails.
+
+    Uses Polar's EOT-based detection: find the longest common prefix between
+    ``current_prompt_ids`` and ``prev_base_ids``, then return everything in
+    ``current_prompt_ids`` after that common prefix.  This handles edge cases
+    where the template isn't perfectly prefix-preserving (e.g. thinking-token
+    variations).
+    """
+    # Find longest common prefix
+    common_len = 0
+    for a, b in zip(current_prompt_ids, prev_base_ids):
+        if a != b:
+            break
+        common_len += 1
+
+    # Return everything after the common prefix in current_prompt_ids
+    return current_prompt_ids[common_len:]
+
+
+def _strip_trailing_eos(ids: list[int], eos_token_id: int | None) -> list[int]:
+    """Strip trailing EOS token from generated token IDs.
+
+    vLLM includes the stop token (e.g. ``<|im_end|>``) in the returned
+    ``token_ids`` when ``finish_reason == 'stop'``.  The chat template will
+    re-render that same token as part of the canonical assistant block
+    (``{{- '<|im_end|>\n' }}``).  To avoid double-counting it in the prefix
+    computation, we strip it here.
+
+    This mirrors TRL's ``_get_tool_suffix_ids`` EOS-trimming logic and Polar's
+    interstitial boundary detection (Section 3.4.2 of arXiv:2605.24220).
+    """
+    if eos_token_id is None or not ids:
+        return ids
+    if ids[-1] == eos_token_id:
+        return ids[:-1]
+    return ids
+
+
 def _get_messages(intercept: dict[str, Any]) -> list[dict[str, Any]]:
     msgs = intercept.get("messages")
     if isinstance(msgs, list) and msgs:
@@ -762,6 +909,43 @@ def _get_tools(intercept: dict[str, Any]) -> list[dict[str, Any]] | None:
     if isinstance(tools, list):
         return [t for t in tools if isinstance(t, dict)]
     return None
+
+
+def _ensure_tool_call_arguments_parsed(
+    messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Deep-copy messages, parsing tool_call arguments from JSON strings to dicts.
+
+    Qwen3.5's chat template iterates ``tool_call.arguments|items`` expecting a
+    mapping.  The OpenAI API (and our interception layer) stores arguments as a
+    JSON string.  This bridges the gap.
+    """
+    out: list[dict[str, Any]] = []
+    for msg in messages:
+        tool_calls = msg.get("tool_calls")
+        if not tool_calls or not isinstance(tool_calls, list):
+            out.append(msg)
+            continue
+        new_tcs: list[dict[str, Any]] = []
+        for tc in tool_calls:
+            if not isinstance(tc, dict):
+                new_tcs.append(tc)
+                continue
+            fn = tc.get("function")
+            if not isinstance(fn, dict):
+                new_tcs.append(tc)
+                continue
+            args = fn.get("arguments")
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except (json.JSONDecodeError, TypeError):
+                    args = {}
+            new_tcs.append(
+                {**tc, "function": {**fn, "arguments": args if isinstance(args, dict) else {}}}
+            )
+        out.append({**msg, "tool_calls": new_tcs})
+    return out
 
 
 def _normalize_tool_calls(raw_tool_calls: Any) -> list[dict[str, Any]]:
