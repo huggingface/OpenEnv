@@ -23,9 +23,9 @@
 #   --model MODEL_NAME        Model name on vLLM endpoint (default: qwen-3.6-27b)
 #   --api-url URL             vLLM API base URL (default: https://api.siemens.com/llm/v1)
 #   --api-key KEY             vLLM API key (required, or set SWE_LLM_API_KEY)
-#   --cf-api-token TOKEN      Cloudflare API token (or set CF_API_TOKEN)
-#   --cf-account-id ID        Cloudflare account ID (or set CF_ACCOUNT_ID)
-#   --cf-zone-id ID           Cloudflare zone ID (or set CF_ZONE_ID)
+#   --cf-api-token TOKEN      cf API token (or set CF_API_TOKEN)
+#   --cf-account-id ID        cf account ID (or set CF_ACCOUNT_ID)
+#   --cf-zone-id ID           cf zone ID (or set CF_ZONE_ID)
 #   --cf-domain DOMAIN        Domain for sandbox tunnels (or set CF_DOMAIN)
 #   --n-rollouts N            Rollouts per task (default: 4)
 #   --max-concurrent N        Concurrent rollouts (default: 3)
@@ -167,7 +167,7 @@ printf "║  %-54s  ║\n" "Rate Limit:  $RATE_LIMIT req/min"
 if [ -n "$CF_API_TOKEN" ]; then
 printf "║  %-54s  ║\n" "CF Tunnel:   named (${CF_DOMAIN})"
 else
-printf "║  %-54s  ║\n" "CF Tunnel:   quick (trycloudflare.com)"
+printf "║  %-54s  ║\n" "CF Tunnel:   quick (auto-generated URL)"
 fi
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
@@ -193,7 +193,7 @@ space_secrets = {
     "INTERCEPTION_AUTH_TOKEN": secrets.token_urlsafe(32),
 }
 
-# Cloudflare named tunnel secrets (optional — enables reliable sandbox connectivity)
+# Named tunnel secrets (optional — enables reliable sandbox connectivity)
 cf_secrets = {
     "CF_API_TOKEN": "$CF_API_TOKEN",
     "CF_ACCOUNT_ID": "$CF_ACCOUNT_ID",

@@ -175,7 +175,7 @@ space_secrets = {
     "VLLM_API_KEY": "token",
 }
 
-# Cloudflare named tunnel secrets (optional — enables reliable sandbox connectivity)
+# named tunnel secrets (optional — enables reliable sandbox connectivity)
 cf_secrets = {
     "CF_API_TOKEN": os.environ.get("CF_API_TOKEN", ""),
     "CF_ACCOUNT_ID": os.environ.get("CF_ACCOUNT_ID", ""),
