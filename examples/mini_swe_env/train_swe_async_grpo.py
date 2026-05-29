@@ -833,6 +833,9 @@ def main() -> int:
             "vllm_server_timeout": _float_env("SWE_ROLLOUT_QUEUE_TIMEOUT_S", 900.0),
             "max_completion_length": args.max_completion_tokens,
             "max_steps": args.max_steps,
+            # Online rollout samples are newly generated after resume; do not
+            # discard live GRPO groups to match the previous dataloader offset.
+            "ignore_data_skip": _bool_env("SWE_IGNORE_DATA_SKIP", True),
             "per_device_train_batch_size": 1,
             "gradient_accumulation_steps": 1,
             "num_generations": args.num_generations,
