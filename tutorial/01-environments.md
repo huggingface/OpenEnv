@@ -4,7 +4,7 @@
 
 <img src="https://upload.wikimedia.org/wikipedia/commons/1/10/PyTorch_logo_icon.svg" width="200" alt="PyTorch">
 
-### *From "Hello World" to RL Training in 5 Minutes* ✨
+### *From "Hello World" to RL Training in 5 Minutes* ✨b
 
 ---
 
