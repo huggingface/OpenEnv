@@ -106,6 +106,9 @@ class WorkerConfig:
     max_turns: int = 50
     max_completion_tokens: int = 2048
     temperature: float = 1.0
+    # Number of rollouts per prompt for group-relative advantage
+    # normalization (true GRPO). Polar used 16.
+    num_generations: int = 16
     # After returning a terminal plain-text response (finish_reason=stop,
     # no tool_calls), wait briefly for a follow-up request before treating
     # the rollout as complete. This avoids 600s stalls when agent exit
@@ -162,6 +165,14 @@ class SWERolloutWorker:
         self._model_version = 0
         self._started = False
         self._model_update_group: Any | None = None
+
+        # ── Group-relative advantage (GRPO) ──────────────────────
+        # Accumulate rollout samples by task until num_generations are
+        # collected, then normalize advantages within the group and push
+        # all samples to the rollout buffer.
+        self._group_lock = threading.Lock()
+        # task_id → list of (RolloutSample with raw reward in .advantage)
+        self._pending_groups: dict[str, list[RolloutSample]] = {}
 
         # Prefix to prepend to trainer parameter names so they match vLLM's
         # model architecture.  For VLM models like Qwen3_5ForConditionalGeneration
@@ -413,6 +424,75 @@ class SWERolloutWorker:
         with self._lock:
             return self._model_version
 
+    def _next_group_task(self) -> SWETask:
+        """Pick a task that needs more rollouts to complete its group.
+
+        Prioritizes tasks that already have partial groups (some rollouts
+        done but < num_generations). Falls back to a fresh task.
+        """
+        with self._group_lock:
+            # Find a task with a partial group that needs more rollouts
+            for task_id, samples in self._pending_groups.items():
+                if len(samples) < self._cfg.num_generations:
+                    # Return the corresponding task
+                    for t in self._tasks:
+                        if t.instance_id == task_id:
+                            return t
+        # No partial groups — start a fresh task
+        return self._next_task()
+
+    def _submit_to_group(self, task: SWETask, sample: RolloutSample) -> None:
+        """Add a completed rollout to its task's group.
+
+        When the group reaches num_generations, normalize advantages
+        (GRPO-style) and push all samples to the rollout buffer.
+        """
+        completed_group: list[RolloutSample] | None = None
+
+        with self._group_lock:
+            group = self._pending_groups.setdefault(task.instance_id, [])
+            group.append(sample)
+
+            if len(group) >= self._cfg.num_generations:
+                completed_group = self._pending_groups.pop(task.instance_id)
+
+        if completed_group is not None:
+            self._score_and_push_group(task.instance_id, completed_group)
+
+    def _score_and_push_group(
+        self, task_id: str, group: list[RolloutSample]
+    ) -> None:
+        """Compute group-relative advantages (GRPO) and push to buffer."""
+        rewards = [s.advantage for s in group]  # raw rewards stored here
+        n = len(rewards)
+        mean_r = sum(rewards) / n
+        var_r = sum((r - mean_r) ** 2 for r in rewards) / n
+        std_r = var_r**0.5
+
+        for i, sample in enumerate(group):
+            if std_r > 1e-8:
+                sample.advantage = (rewards[i] - mean_r) / std_r
+            else:
+                # All rewards identical (e.g. all 0 or all 1) — zero advantage
+                sample.advantage = 0.0
+
+            # Add group metrics
+            sample.metrics["group_reward_mean"] = mean_r
+            sample.metrics["group_reward_std"] = std_r
+            sample.metrics["group_size"] = float(n)
+
+            try:
+                self.rollout_buffer.put(sample, timeout=2.0)
+            except queue.Full:
+                _log.warning(
+                    "queue full, dropping sample from group %s", task_id
+                )
+
+        _log.info(
+            "group complete: task=%s n=%d reward_mean=%.3f reward_std=%.3f",
+            task_id, n, mean_r, std_r,
+        )
+
     def _loop(self, idx: int) -> None:
         while not self._stop.is_set():
             while self._pause.is_set() and not self._stop.is_set():
@@ -420,7 +500,7 @@ class SWERolloutWorker:
             if self._stop.is_set():
                 return
 
-            task = self._next_task()
+            task = self._next_group_task()
             eid = f"swe-{idx}-{uuid.uuid4().hex[:8]}"
             try:
                 sample = asyncio.run(self._rollout(task, eid))
@@ -433,10 +513,7 @@ class SWERolloutWorker:
                 time.sleep(self._cfg.idle_backoff_s)
                 continue
 
-            try:
-                self.rollout_buffer.put(sample, timeout=2.0)
-            except queue.Full:
-                _log.warning("queue full, dropping %s", task.instance_id)
+            self._submit_to_group(task, sample)
 
     # ── Single rollout ─────────────────────────────────────────────
 

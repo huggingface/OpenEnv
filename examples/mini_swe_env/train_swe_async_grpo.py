@@ -118,6 +118,10 @@ def _args() -> argparse.Namespace:
     p.add_argument("--sandbox-backend", default="hf", choices=["docker", "e2b", "hf"])
     p.add_argument("--vllm-url", default="http://localhost:8000")
     p.add_argument("--agent", default="pi", choices=["pi", "opencode"])
+    p.add_argument(
+        "--num-generations", type=int, default=16,
+        help="Rollouts per prompt for group-relative advantage (GRPO). Polar used 16.",
+    )
     return p.parse_args()
 
 
@@ -289,6 +293,7 @@ def main() -> int:
             config=WorkerConfig(
                 max_inflight=2,
                 max_turns=args.max_turns,
+                num_generations=args.num_generations,
             ),
         )
 
@@ -309,10 +314,14 @@ def main() -> int:
             "vllm_server_timeout": 2400.0,
             "max_completion_length": 2048,
             "max_steps": args.max_steps,
+            # Polar: rollout_batch_size=4. With single GPU trainer,
+            # batch_size=4 via gradient accumulation.
             "per_device_train_batch_size": 1,
-            "gradient_accumulation_steps": 1,
-            "num_generations": 1,
+            "gradient_accumulation_steps": 4,
+            "num_generations": args.num_generations,
+            # Polar: lr=1e-6, weight_decay=0.1
             "learning_rate": 1e-6,
+            "weight_decay": 0.1,
             "temperature": 1.0,
             "optim": "adamw_bnb_8bit",
             "bf16": True,
