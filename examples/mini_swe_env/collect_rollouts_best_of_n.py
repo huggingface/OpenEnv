@@ -288,6 +288,7 @@ async def _run_one_rollout(
     answer_bridged = False
     messages_captured: list[dict[str, Any]] = []
     tool_calls_log: list[dict[str, Any]] = []
+    completions: list[dict[str, Any]] = []  # Per-turn completion records (Polar-style)
 
     try:
         while turns < max_turns:
@@ -306,9 +307,11 @@ async def _run_one_rollout(
             body = intercept.get("body") or {}
             req_messages = body.get("messages") or intercept.get("messages") or []
 
-            # Only capture on first turn (full history) or append new msgs
-            if turns == 1:
-                messages_captured = list(req_messages)
+            # Each intercept contains the full conversation so far
+            # (system + user + assistant + tool results from all previous turns).
+            # Always update to the latest — on the final turn this gives us
+            # the complete multi-turn trajectory.
+            messages_captured = list(req_messages)
 
             # ── Rate-limited LLM call with exponential backoff ──
             await rate_limiter.acquire()
@@ -326,6 +329,19 @@ async def _run_one_rollout(
             choice0 = (llm_resp.get("choices") or [{}])[0]
             msg = choice0.get("message") or {}
             tool_calls = msg.get("tool_calls") or []
+
+            # Store per-completion record (Polar-compatible format)
+            # Captures the full request + response per turn for RL reconstruction
+            completions.append({
+                "completion_id": f"{episode_id}-t{turns}",
+                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "request": {
+                    "messages": list(req_messages),
+                    "tools": body.get("tools") or intercept.get("tools") or [],
+                    "model": llm_model,
+                },
+                "response": llm_resp,
+            })
 
             # Capture assistant message
             assistant_msg: dict[str, Any] = {"role": "assistant"}
@@ -413,6 +429,34 @@ async def _run_one_rollout(
             )
 
         # ── Grade ─────────────────────────────────────────────────
+        # If answer wasn't called during the rollout, invoke grading
+        # post-hoc on whatever repo state the agent left behind.
+        # This matches Polar's approach: grade the patch regardless of
+        # whether the agent explicitly submitted.
+        if not answer_called:
+            rollout_id = episode_id
+            try:
+                answer_resp = await client.post(
+                    f"http://127.0.0.1:{server.port}/rollout/{rollout_id}/v1/tools/answer",
+                    headers={"Authorization": f"Bearer {server.secret}"},
+                    json={"arguments": {}},
+                    timeout=300.0,
+                )
+                if answer_resp.status_code == 200:
+                    answer_bridged = True
+                    _log.info(
+                        "post_hoc_grade instance_id=%s turns=%d result=%s",
+                        gym_task.instance_id,
+                        turns,
+                        answer_resp.text[:200],
+                    )
+            except Exception as exc:
+                _log.warning(
+                    "post_hoc_grade_error instance_id=%s: %s",
+                    gym_task.instance_id,
+                    str(exc)[:150],
+                )
+
         vr = session.verify(transcript=[])
         reward = float(getattr(vr, "env_reward", 0.0) or 0.0)
         resolved = reward >= 1.0
@@ -458,6 +502,7 @@ async def _run_one_rollout(
             tool_calls_count=len(tool_calls_log),
             messages=messages_captured,
             tool_calls=tool_calls_log,
+            completions=completions,
             test_outcomes=test_outcomes if isinstance(test_outcomes, dict) else {},
             metadata={
                 "answer_bridged": answer_bridged,
@@ -504,9 +549,9 @@ async def _forward_to_llm(
     """Forward intercepted request to the teacher LLM with retry + backoff."""
     body = dict(intercept.get("body") or {})
     body["model"] = model
-    # Don't request logprobs for teacher collection (not needed for SFT)
-    body.pop("logprobs", None)
-    body.pop("top_logprobs", None)
+    # Request logprobs for RL-readiness (token-faithful reconstruction)
+    body["logprobs"] = True
+    body["top_logprobs"] = 1
     body.pop("stream", None)
     body.pop("stream_options", None)
     # Disable thinking mode — get direct content, not reasoning tokens

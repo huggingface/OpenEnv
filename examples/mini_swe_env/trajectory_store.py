@@ -85,6 +85,10 @@ class TrajectoryRecord:
     # Grading details
     test_outcomes: dict[str, Any] = field(default_factory=dict)
 
+    # Per-turn completion records (Polar-compatible)
+    # Each entry: {completion_id, timestamp, request: {messages, tools, model}, response: {...}}
+    completions: list[dict[str, Any]] = field(default_factory=list)
+
     # Timestamps
     timestamp_utc: str = ""
 
