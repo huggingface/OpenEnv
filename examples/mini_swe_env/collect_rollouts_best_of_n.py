@@ -160,8 +160,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--max-turns",
         type=int,
-        default=50,
-        help="Max agent turns per rollout (default: 50)",
+        default=0,
+        help="Max agent turns per rollout (default: 0 = unlimited, agent runs until exit or timeout)",
     )
     p.add_argument(
         "--agent-timeout-s",
@@ -291,7 +291,7 @@ async def _run_one_rollout(
     completions: list[dict[str, Any]] = []  # Per-turn completion records
 
     try:
-        while turns < max_turns:
+        while max_turns == 0 or turns < max_turns:
             intercept = await session.next_request(timeout_s=agent_timeout_s)
             if intercept is None:
                 _log.info(
