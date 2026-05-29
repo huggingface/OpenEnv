@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from openenv.core.env_server.mcp_types import CallToolAction, ListToolsAction
 from terminus_env.models import TerminusState
-from terminus_env.server.e2b_sandbox import ShellResult
+from terminus_env.server.hf_sandbox import ShellResult
 from terminus_env.server.terminus_env_environment import TerminusEnvironment
 
 
@@ -57,23 +57,29 @@ def test_lists_single_terminal_tool_without_reset():
     assert [tool.name for tool in obs.tools] == ["terminal"]
 
 
-def test_reset_without_e2b_key_fails_cleanly(monkeypatch):
-    monkeypatch.delenv("E2B_API_KEY", raising=False)
+def test_reset_when_hf_sandbox_creation_fails_cleanly(monkeypatch):
+    def fail_create(**kwargs):
+        raise RuntimeError("missing token")
+
+    monkeypatch.setattr(
+        "terminus_env.server.terminus_env_environment.HFSandbox",
+        fail_create,
+    )
     env = TerminusEnvironment()
 
     obs = env.reset()
 
     assert obs.done is True
     assert obs.metadata["status"] == "error"
-    assert "E2B_API_KEY" in obs.metadata["error"]
+    assert "HF sandbox" in obs.metadata["error"]
+    assert "missing token" in obs.metadata["error"]
 
 
 def test_reset_runs_setup_and_stores_verify_commands(monkeypatch):
-    monkeypatch.setenv("E2B_API_KEY", "fake-key")
     fake_sandbox = FakeSandbox()
     monkeypatch.setattr(
-        "terminus_env.server.terminus_env_environment.E2BSandbox",
-        lambda api_key: fake_sandbox,
+        "terminus_env.server.terminus_env_environment.HFSandbox",
+        lambda **kwargs: fake_sandbox,
     )
     env = TerminusEnvironment()
 
@@ -91,10 +97,9 @@ def test_reset_runs_setup_and_stores_verify_commands(monkeypatch):
 
 
 def test_reset_fails_when_setup_command_fails(monkeypatch):
-    monkeypatch.setenv("E2B_API_KEY", "fake-key")
     monkeypatch.setattr(
-        "terminus_env.server.terminus_env_environment.E2BSandbox",
-        lambda api_key: FakeSandbox(),
+        "terminus_env.server.terminus_env_environment.HFSandbox",
+        lambda **kwargs: FakeSandbox(),
     )
     env = TerminusEnvironment()
 
@@ -119,6 +124,7 @@ def test_terminal_command_runs_inside_existing_sandbox():
     )
 
     assert obs.error is None
+    assert obs.reward == 0.0
     assert "shell: pwd" in _extract_text(obs.result)
     assert env.state.step_count == 1
     assert env.state.commands[0].command == "pwd"

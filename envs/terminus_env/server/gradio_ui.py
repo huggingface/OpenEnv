@@ -87,7 +87,7 @@ _STYLE = """
 
 _EMPTY_TERMINAL = (
     "<div class='term-shell'><div class='term-empty'>"
-    "Reset the environment to create an E2B sandbox, then run commands."
+    "Reset the environment to create an HF sandbox, then run commands."
     "</div></div>"
 )
 
@@ -202,7 +202,7 @@ def terminus_ui_builder(
     with gr.Blocks(title=f"{title} - Terminal") as demo:
         gr.Markdown(f"# {title}")
         gr.Markdown(
-            "Single-tool terminal environment backed by an E2B sandbox. "
+            "Single-tool terminal environment backed by an HF sandbox. "
             "Reset creates a fresh session; commands run through `terminal(command=...)`."
         )
 
@@ -236,7 +236,7 @@ def terminus_ui_builder(
                     label="Terminal command",
                     value="pwd && ls -la",
                     lines=6,
-                    placeholder="Run shell commands in the E2B sandbox",
+                    placeholder="Run shell commands in the HF sandbox",
                 )
                 run_btn = gr.Button("Run command", variant="primary")
 
@@ -280,7 +280,7 @@ def terminus_ui_builder(
             return (
                 _closed_terminal_html(),
                 {},
-                "Session closed. The E2B sandbox was released.",
+                "Session closed. The HF sandbox was released.",
             )
 
         async def on_run(command: str):

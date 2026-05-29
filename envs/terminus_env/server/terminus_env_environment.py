@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""E2B-backed single-tool coding environment inspired by Terminus."""
+"""HF Sandbox-backed single-tool coding environment inspired by Terminus."""
 
 from __future__ import annotations
 
@@ -17,23 +17,25 @@ from openenv.core.env_server.mcp_environment import MCPEnvironment
 from openenv.core.env_server.types import Action, Observation
 
 try:
-    from .e2b_sandbox import E2BSandbox
+    from .hf_sandbox import HFSandbox
+    from .local_sandbox import LocalSandbox
     from ..models import CommandResult, TerminusState
 except ImportError:  # pragma: no cover
     from models import CommandResult, TerminusState
-    from server.e2b_sandbox import E2BSandbox
+    from server.hf_sandbox import HFSandbox
+    from server.local_sandbox import LocalSandbox
 
 
 REWARD_FILE = "/home/user/logs/verifier/reward.txt"
 
 
 class TerminusEnvironment(MCPEnvironment):
-    """Single-tool terminal environment with one E2B sandbox per episode."""
+    """Single-tool terminal environment with one sandbox per episode."""
 
     SUPPORTS_CONCURRENT_SESSIONS = True
 
     def __init__(self):
-        self._sandbox: Optional[E2BSandbox] = None
+        self._sandbox: Optional[Any] = None
         self._state = TerminusState(episode_id=str(uuid4()), step_count=0)
 
         mcp = FastMCP("terminus_env")
@@ -43,7 +45,7 @@ class TerminusEnvironment(MCPEnvironment):
             """Run a shell command or submit a final answer inside the sandbox.
 
             Args:
-                command: Shell command to execute in the episode's E2B sandbox.
+                command: Shell command to execute in the episode sandbox.
                 final_answer: Optional answer string. When provided, stored
                     as the final answer and any reset-time verify commands run.
 
@@ -76,38 +78,36 @@ class TerminusEnvironment(MCPEnvironment):
         episode_id: Optional[str] = None,
         **kwargs: Any,
     ) -> Observation:
-        """Create a fresh E2B sandbox and run optional setup commands."""
+        """Create a fresh sandbox and run optional setup commands."""
         if self._sandbox:
             self._sandbox.kill()
             self._sandbox = None
 
-        api_key = os.environ.get("E2B_API_KEY")
         self._state = TerminusState(
             episode_id=episode_id or str(uuid4()),
             step_count=0,
         )
-        if not api_key:
-            return Observation(
-                done=True,
-                reward=None,
-                metadata={
-                    "status": "error",
-                    "error": (
-                        "E2B_API_KEY is not set. Configure it before resetting "
-                        "terminus_env."
-                    ),
-                },
-            )
-
+        backend = str(
+            kwargs.get("sandbox_backend")
+            or os.getenv("TERMINUS_SANDBOX_BACKEND", "hf")
+        ).lower()
+        sandbox_label = (
+            "HF sandbox"
+            if backend in {"hf", "hf-sandbox", "huggingface"}
+            else f"{backend} sandbox"
+        )
         try:
-            self._sandbox = E2BSandbox(api_key=api_key)
+            self._sandbox = _create_sandbox(kwargs)
         except Exception as exc:  # noqa: BLE001
             return Observation(
                 done=True,
                 reward=None,
                 metadata={
                     "status": "error",
-                    "error": f"failed to create E2B sandbox: {type(exc).__name__}: {exc}",
+                    "error": (
+                        f"failed to create {sandbox_label}: "
+                        f"{type(exc).__name__}: {exc}"
+                    ),
                 },
             )
 
@@ -186,6 +186,8 @@ class TerminusEnvironment(MCPEnvironment):
         if self._state.submitted_answer is not None and self._state.last_reward is not None:
             obs.done = True
             obs.reward = self._state.last_reward
+        elif obs.reward is None:
+            obs.reward = 0.0
         return obs
 
     async def step_async(
@@ -199,6 +201,8 @@ class TerminusEnvironment(MCPEnvironment):
         if self._state.submitted_answer is not None and self._state.last_reward is not None:
             obs.done = True
             obs.reward = self._state.last_reward
+        elif obs.reward is None:
+            obs.reward = 0.0
         return obs
 
     @property
@@ -247,6 +251,23 @@ def _coerce_commands(value: Any) -> list[str]:
     return [str(item) for item in value if str(item).strip()]
 
 
+def _create_sandbox(kwargs: dict[str, Any]) -> Any:
+    backend = str(
+        kwargs.get("sandbox_backend")
+        or os.getenv("TERMINUS_SANDBOX_BACKEND", "hf")
+    ).lower()
+    if backend in {"local", "bwrap", "process"}:
+        return LocalSandbox(root=kwargs.get("sandbox_root"))
+    if backend not in {"hf", "hf-sandbox", "huggingface"}:
+        raise ValueError(f"unknown sandbox backend: {backend}")
+    return HFSandbox(
+        image=kwargs.get("sandbox_image") or kwargs.get("hf_sandbox_image"),
+        flavor=kwargs.get("sandbox_flavor") or kwargs.get("hf_sandbox_flavor"),
+        timeout=kwargs.get("sandbox_timeout") or kwargs.get("hf_sandbox_timeout"),
+        forward_hf_token=kwargs.get("forward_hf_token"),
+    )
+
+
 def _format_for_llm(result) -> str:
     parts = []
     if result.stdout:
@@ -258,7 +279,7 @@ def _format_for_llm(result) -> str:
     return "\n".join(parts) if parts else "(no output)"
 
 
-def _read_reward_override(sandbox: E2BSandbox) -> Optional[float]:
+def _read_reward_override(sandbox: Any) -> Optional[float]:
     result = sandbox.run_shell(f"cat {REWARD_FILE} 2>/dev/null || true")
     raw = (result.stdout or "").strip()
     if not raw:

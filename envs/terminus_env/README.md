@@ -10,17 +10,17 @@ base_path: /web
 tags:
   - openenv
   - terminus
-  - e2b
+  - hf-sandbox
   - coding
-short_description: Single-tool E2B-backed coding environment
+short_description: Single-tool coding environment
 ---
 
 # Terminus Environment
 
-`terminus_env` is a single-tool coding environment backed by E2B Code
-Interpreter. Each OpenEnv episode creates a fresh E2B sandbox, runs optional
-setup commands, keeps shell state and files isolated for that episode, and runs
-optional verify commands when the agent submits a final answer.
+`terminus_env` is a single-tool coding environment. Each OpenEnv episode
+creates a fresh sandbox, runs optional setup commands, keeps shell state and
+files isolated for that episode, and runs optional verify commands when the
+agent submits a final answer.
 
 The tool shape follows the Terminus-style "one tool" idea: agents do their work
 through a single terminal entrypoint rather than a notebook/toolbox surface.
@@ -48,7 +48,7 @@ with TerminusEnv(base_url="http://localhost:8000").sync() as env:
 
 ```bash
 cd envs/terminus_env
-E2B_API_KEY=e2b_... uv run --project . server
+TERMINUS_SANDBOX_BACKEND=local uv run --project . server
 ```
 
 The API and custom terminal web UI are served on port 8000. The UI is mounted
@@ -59,13 +59,25 @@ at `/web`.
 ```bash
 cd envs/terminus_env
 openenv build -t terminus-env
-docker run -p 8000:8000 -e E2B_API_KEY=e2b_... terminus-env
+docker run -p 8000:8000 -e HF_TOKEN=hf_... terminus-env
 ```
 
 ## Configuration
 
-- `E2B_API_KEY`: required when resetting an episode.
+- `TERMINUS_SANDBOX_BACKEND`: `local` for the lightweight cluster smoke
+  backend, or `hf` for `hf-sandbox`. Defaults to `hf`.
+- `HF_TOKEN`: required by the optional `hf-sandbox` backend to launch
+  Hugging Face Jobs.
+- `HF_SANDBOX_IMAGE`: sandbox image. Defaults to `python:3.12`.
+- `HF_SANDBOX_FLAVOR`: Hugging Face Jobs flavor. Defaults to `cpu-basic`.
+- `HF_SANDBOX_TIMEOUT`: Hugging Face Jobs timeout. Defaults to `1h`.
+- `HF_SANDBOX_FORWARD_HF_TOKEN`: forward `HF_TOKEN` into the sandbox. Defaults
+  to `false`.
 - `MAX_CONCURRENT_ENVS`: maximum concurrent WebSocket sessions. Defaults to `4`.
+
+The local backend requires `bwrap` on the server node and is intended for simple
+cluster smoke tasks. Install the `hf` extra and use the `hf` backend for
+stronger remote sandboxing.
 
 ## Setup and Verify Commands
 
