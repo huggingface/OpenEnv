@@ -6,9 +6,9 @@ import ast
 from pathlib import Path
 
 from .base import (
-    DetectedEnvironment,
     append_dependency_files,
     copy_source_tree,
+    DetectedEnvironment,
     ensure_vendor_package,
     iter_python_files,
     module_path,
@@ -22,6 +22,7 @@ _VERIFIERS_MODULES = {
     "verifiers.envs.environment",
     "verifiers.v1",
 }
+
 
 def _imports_verifiers(tree: ast.AST) -> bool:
     for node in ast.walk(tree):

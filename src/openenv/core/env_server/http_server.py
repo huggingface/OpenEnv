@@ -1046,7 +1046,9 @@ class HTTPEnvServer:
             if isinstance(split, dict):
                 return _make_json_serializable(split)
             if isinstance(split, str):
-                split_type = split if split in {"train", "validation", "test"} else "validation"
+                split_type = (
+                    split if split in {"train", "validation", "test"} else "validation"
+                )
                 return {"name": split, "type": split_type}
             return {"name": str(split), "type": "validation"}
 

@@ -315,11 +315,20 @@ def test_import_command_requires_env_class_when_multiple_ors_classes(
 
     result = runner.invoke(
         app,
-        ["import", str(source), "--name", "imported_env", "--output-dir", str(tmp_path)],
+        [
+            "import",
+            str(source),
+            "--name",
+            "imported_env",
+            "--output-dir",
+            str(tmp_path),
+        ],
     )
 
     assert result.exit_code != 0
-    assert "--env-class" in result.output
+    assert "Multiple environment entrypoints" in result.output
+    assert "env" in result.output
+    assert "class" in result.output
 
 
 def test_import_command_detects_ors_and_generates_working_wrapper(

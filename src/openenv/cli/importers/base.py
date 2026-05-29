@@ -171,6 +171,7 @@ def append_dependency_files(
 
     pyproject.write_text(tomli_w.dumps(data), encoding="utf-8", newline="\n")
 
+
 @dataclass(frozen=True)
 class DetectedEnvironment:
     """A source environment class detected without importing user code."""
@@ -219,7 +220,9 @@ class ImporterRegistry:
             if importer.source_type == source_type:
                 return importer
         supported = ", ".join(self.supported_types)
-        raise ValueError(f"Unsupported source type {source_type!r}. Supported: {supported}")
+        raise ValueError(
+            f"Unsupported source type {source_type!r}. Supported: {supported}"
+        )
 
     def detect(
         self,

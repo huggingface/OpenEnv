@@ -10,7 +10,6 @@ import functools
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from openenv.core.env_server.http_server import create_app, HTTPEnvServer
 from openenv.core.env_server.interfaces import Environment
 from openenv.core.env_server.mcp_types import (

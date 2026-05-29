@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-
 from openenv.cli.importers import DEFAULT_IMPORTERS, ImporterRegistry
 
 from .._cli_utils import console
