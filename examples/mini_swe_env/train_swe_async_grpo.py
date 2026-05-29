@@ -849,7 +849,10 @@ def main() -> int:
                 "SWE_TORCH_EMPTY_CACHE_STEPS",
                 1,
             ),
-            "max_staleness": _int_env("SWE_ASYNC_MAX_STALENESS", 4),
+            "max_staleness": _int_env(
+                "SWE_ASYNC_MAX_STALENESS",
+                max(16, args.num_generations * 4),
+            ),
             "weight_sync_steps": _int_env("SWE_ASYNC_WEIGHT_SYNC_STEPS", 1),
             "max_inflight_tasks": _int_env(
                 "SWE_ASYNC_MAX_INFLIGHT_TASKS",
