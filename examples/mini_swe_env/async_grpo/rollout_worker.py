@@ -92,7 +92,12 @@ _VLLM_NEEDS_WEIGHT_UPDATE_LIFECYCLE = _vllm_version() >= (0, 21, 0)
 
 @dataclass
 class RolloutSample:
-    """Matches the fields TRL's ``RolloutQueueDataset`` reads."""
+    """Matches the fields TRL's ``RolloutQueueDataset`` reads.
+
+    Note: TRL's own RolloutSample also has ``prompt`` and ``completion``
+    (message-level) but those are only used by TRL's built-in reward_funcs.
+    We compute rewards via ``session.verify()`` so they're unnecessary.
+    """
 
     input_ids: list[int]
     completion_mask: list[int]
