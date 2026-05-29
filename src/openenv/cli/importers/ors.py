@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import ast
-import shutil
-import textwrap
 from pathlib import Path
 
-from openenv.cli.commands.init import (
-    _copy_template_directory,
-    _create_template_replacements,
+from .base import (
+    DetectedEnvironment,
+    append_dependency_files,
+    copy_source_tree,
+    ensure_vendor_package,
+    iter_python_files,
+    module_path,
+    safe_vendor_dir_name,
+    write_text,
 )
-
-from .base import DetectedEnvironment
 
 
 _ORS_MODULES = {
@@ -20,46 +22,17 @@ _ORS_MODULES = {
     "ors.environment",
     "openreward",
     "openreward.environment",
+    "openreward.environments",
+    "openreward.environments.environment",
     "openrewardstandard",
     "openrewardstandard.environment",
 }
 
-_EXCLUDED_DIRS = {
-    ".git",
-    ".hg",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache",
-    ".tox",
-    ".venv",
-    "__pycache__",
-    "build",
-    "dist",
-    "node_modules",
-    "venv",
+_ORS_ROOT_DEPENDENCIES = {
+    "openreward": "openreward",
+    "openrewardstandard": "openrewardstandard",
+    "ors": "ors",
 }
-
-_EXCLUDED_FILE_SUFFIXES = {".pyc", ".pyo"}
-
-
-def _is_excluded(path: Path) -> bool:
-    return any(part in _EXCLUDED_DIRS for part in path.parts)
-
-
-def _iter_python_files(source: Path) -> list[Path]:
-    return [
-        path
-        for path in sorted(source.rglob("*.py"))
-        if not _is_excluded(path.relative_to(source))
-    ]
-
-
-def _module_path(source: Path, file_path: Path) -> str:
-    rel = file_path.relative_to(source).with_suffix("")
-    parts = list(rel.parts)
-    if parts[-1] == "__init__":
-        parts = parts[:-1]
-    return ".".join(parts)
 
 
 def _dotted_name(node: ast.AST) -> str | None:
@@ -97,6 +70,22 @@ def _collect_environment_aliases(
     return environment_aliases, module_aliases
 
 
+def _ors_dependency_roots(tree: ast.AST) -> set[str]:
+    roots: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            root = module.split(".", 1)[0]
+            if module in _ORS_MODULES and root in _ORS_ROOT_DEPENDENCIES:
+                roots.add(root)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".", 1)[0]
+                if alias.name in _ORS_MODULES and root in _ORS_ROOT_DEPENDENCIES:
+                    roots.add(root)
+    return roots
+
+
 def _inherits_ors_environment(
     base: ast.AST,
     environment_aliases: set[str],
@@ -109,11 +98,16 @@ def _inherits_ors_environment(
         return True
 
     for alias, module in module_aliases.items():
+        root = module.split(".", 1)[0]
         if dotted == f"{alias}.Environment":
-            return module in {"ors", "openreward", "openrewardstandard"}
+            return module in _ORS_MODULES or root in _ORS_ROOT_DEPENDENCIES
         if dotted == f"{alias}.environment.Environment":
-            return module in _ORS_MODULES
-        if dotted == f"{alias}.Environment" and module.endswith(".environment"):
+            return module in _ORS_MODULES or root in _ORS_ROOT_DEPENDENCIES
+        if dotted == f"{alias}.environments.Environment":
+            return module in _ORS_MODULES or root in _ORS_ROOT_DEPENDENCIES
+        if dotted == f"{alias}.Environment" and (
+            module.endswith(".environment") or module.endswith(".environments")
+        ):
             return True
     return False
 
@@ -123,7 +117,7 @@ def detect_ors_environments(source: Path) -> list[DetectedEnvironment]:
     source = source.resolve()
     matches: list[DetectedEnvironment] = []
 
-    for file_path in _iter_python_files(source):
+    for file_path in iter_python_files(source):
         try:
             tree = ast.parse(file_path.read_text(encoding="utf-8"))
         except (SyntaxError, UnicodeDecodeError):
@@ -144,7 +138,7 @@ def detect_ors_environments(source: Path) -> list[DetectedEnvironment]:
                     DetectedEnvironment(
                         source_type="ors",
                         class_name=node.name,
-                        module_path=_module_path(source, file_path),
+                        module_path=module_path(source, file_path),
                         file_path=file_path,
                     )
                 )
@@ -152,53 +146,21 @@ def detect_ors_environments(source: Path) -> list[DetectedEnvironment]:
     return matches
 
 
-def _safe_vendor_dir_name(source: Path) -> str:
-    name = source.name.strip().replace("-", "_")
-    return name if name.isidentifier() else "source"
+def detect_ors_dependencies(source: Path) -> list[str]:
+    roots: set[str] = set()
+    for file_path in iter_python_files(source.resolve()):
+        try:
+            tree = ast.parse(file_path.read_text(encoding="utf-8"))
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+        roots.update(_ors_dependency_roots(tree))
 
-
-def _copy_source_tree(source: Path, destination: Path) -> None:
-    def ignore(_dir: str, names: list[str]) -> set[str]:
-        ignored = set()
-        for name in names:
-            path = Path(name)
-            if name in _EXCLUDED_DIRS or path.suffix in _EXCLUDED_FILE_SUFFIXES:
-                ignored.add(name)
-        return ignored
-
-    shutil.copytree(source, destination, ignore=ignore)
-
-
-def _write_text(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(textwrap.dedent(content).lstrip(), encoding="utf-8", newline="\n")
-
-
-def _append_dependency_files(env_dir: Path, env_name: str) -> None:
-    requirements = env_dir / "server" / "requirements.txt"
-    if requirements.exists():
-        content = requirements.read_text(encoding="utf-8")
-        if "ors-sdk" not in content:
-            requirements.write_text(
-                content.rstrip() + "\nors-sdk>=0.1.0\n",
-                encoding="utf-8",
-                newline="\n",
-            )
-
-    pyproject = env_dir / "pyproject.toml"
-    if pyproject.exists():
-        content = pyproject.read_text(encoding="utf-8")
-        if '"ors-sdk' not in content:
-            content = content.replace(
-                '    "openenv-core[core]>=0.2.2",',
-                '    "openenv-core[core]>=0.2.2",\n    "ors-sdk>=0.1.0",',
-            )
-        if "[tool.setuptools.package-data]" not in content:
-            content += (
-                '\n[tool.setuptools.package-data]\n'
-                f'"{env_name}" = ["vendor/**/*"]\n'
-            )
-        pyproject.write_text(content, encoding="utf-8", newline="\n")
+    dependencies = []
+    for root in sorted(roots):
+        if (source / root).exists() or (source / f"{root}.py").exists():
+            continue
+        dependencies.append(_ORS_ROOT_DEPENDENCIES[root])
+    return dependencies
 
 
 def _wrapper_source(
@@ -209,10 +171,14 @@ def _wrapper_source(
     source_class: str,
     vendor_dir: str,
 ) -> str:
+    source_import_module = f"{env_name}.vendor.{vendor_dir}"
+    if source_module:
+        source_import_module = f"{source_import_module}.{source_module}"
     return f'''
     from __future__ import annotations
 
     import asyncio
+    import contextlib
     import inspect
     import sys
     import threading
@@ -235,19 +201,38 @@ def _wrapper_source(
 
 
     _VENDORED_SOURCE_ROOT = Path(__file__).resolve().parents[1] / "vendor" / "{vendor_dir}"
-    if str(_VENDORED_SOURCE_ROOT) not in sys.path:
-        sys.path.insert(0, str(_VENDORED_SOURCE_ROOT))
+    _SOURCE_MODULE = "{source_import_module}"
 
-    _ORIGINAL_ENV_CLASS = getattr(import_module("{source_module}"), "{source_class}")
+
+    @contextlib.contextmanager
+    def _vendored_source_path():
+        source_path = str(_VENDORED_SOURCE_ROOT)
+        inserted = source_path not in sys.path
+        if inserted:
+            sys.path.insert(0, source_path)
+        try:
+            yield
+        finally:
+            if inserted:
+                try:
+                    sys.path.remove(source_path)
+                except ValueError:
+                    pass
+
+
+    with _vendored_source_path():
+        _ORIGINAL_ENV_CLASS = getattr(import_module(_SOURCE_MODULE), "{source_class}")
 
 
     def _run_sync(value: Any) -> Any:
         if not inspect.isawaitable(value):
             return value
         try:
-            asyncio.get_running_loop()
+            loop = asyncio.get_running_loop()
         except RuntimeError:
             return asyncio.run(value)
+        if not loop.is_running():
+            return loop.run_until_complete(value)
 
         result: dict[str, Any] = {{}}
 
@@ -257,12 +242,17 @@ def _wrapper_source(
             except BaseException as exc:
                 result["error"] = exc
 
-        thread = threading.Thread(target=runner)
+        thread = threading.Thread(target=runner, daemon=True)
         thread.start()
         thread.join()
         if "error" in result:
             raise result["error"]
         return result.get("value")
+
+
+    def _call_vendored(func: Any, *args: Any, **kwargs: Any) -> Any:
+        with _vendored_source_path():
+            return _run_sync(func(*args, **kwargs))
 
 
     def _dump(value: Any) -> Any:
@@ -316,17 +306,17 @@ def _wrapper_source(
             self._done = False
 
         def list_splits(self) -> list[dict[str, Any]]:
-            splits = _run_sync(self._ors_cls.list_splits())
+            splits = _call_vendored(self._ors_cls.list_splits)
             return [_normalize_split(split) for split in splits]
 
         def list_tasks(self, split: str) -> list[Any]:
-            return _dump(_run_sync(self._ors_cls.list_tasks(split)))
+            return _dump(_call_vendored(self._ors_cls.list_tasks, split))
 
         def num_tasks(self, split: str) -> int:
-            return int(_run_sync(self._ors_cls.num_tasks(split)))
+            return int(_call_vendored(self._ors_cls.num_tasks, split))
 
         def get_task(self, split: str, index: int) -> Any:
-            return _dump(_run_sync(self._ors_cls.get_task(split, index)))
+            return _dump(_call_vendored(self._ors_cls.get_task, split, index))
 
         def get_task_range(
             self,
@@ -334,7 +324,7 @@ def _wrapper_source(
             start: int | None = None,
             stop: int | None = None,
         ) -> list[Any]:
-            return _dump(_run_sync(self._ors_cls.get_task_range(split, start, stop)))
+            return _dump(_call_vendored(self._ors_cls.get_task_range, split, start, stop))
 
         def _first_task(self) -> tuple[str, int, Any]:
             splits = self.list_splits()
@@ -363,12 +353,13 @@ def _wrapper_source(
                     task_spec = self.get_task(split, index)
 
             self._task_spec = _dump(task_spec)
-            self._ors_env = self._ors_cls(
+            self._ors_env = _call_vendored(
+                self._ors_cls,
                 task_spec=task_spec,
                 secrets=secrets or {{}},
             )
-            _run_sync(self._ors_env.setup())
-            prompt = _dump(_run_sync(self._ors_env.get_prompt()))
+            _call_vendored(self._ors_env.setup)
+            prompt = _dump(_call_vendored(self._ors_env.get_prompt))
             self._last_reward = None
             self._done = False
             self._state = State(
@@ -393,13 +384,13 @@ def _wrapper_source(
 
         def _ensure_session(self) -> None:
             if self._ors_env is None:
-                self.reset()
+                raise RuntimeError("Call reset() before invoking ORS tools")
 
         def _all_tools(self) -> list[Tool]:
-            shared = _run_sync(self._ors_cls.list_tools())
+            shared = _call_vendored(self._ors_cls.list_tools)
             tools = [_tool_from_ors(tool) for tool in getattr(shared, "tools", [])]
             if self._ors_env is not None:
-                task_tools = _run_sync(self._ors_env.list_task_tools())
+                task_tools = _call_vendored(self._ors_env.list_task_tools)
                 tools.extend(_tool_from_ors(tool) for tool in getattr(task_tools, "tools", []))
             return tools
 
@@ -416,7 +407,7 @@ def _wrapper_source(
 
             self._ensure_session()
             assert self._ors_env is not None
-            result = _run_sync(self._ors_env._call_tool(action.tool_name, action.arguments))
+            result = _call_vendored(self._ors_env._call_tool, action.tool_name, action.arguments)
             root = getattr(result, "root", result)
             ok = getattr(root, "ok", False)
             self._state.step_count += 1
@@ -457,7 +448,7 @@ def _wrapper_source(
             if self._ors_env is None:
                 return
             try:
-                _run_sync(self._ors_env.teardown())
+                _call_vendored(self._ors_env.teardown)
             finally:
                 self._ors_env = None
     '''
@@ -514,6 +505,11 @@ class ORSImporter:
         env_name: str,
         detected: DetectedEnvironment,
     ) -> None:
+        from openenv.cli.commands.init import (
+            _copy_template_directory,
+            _create_template_replacements,
+        )
+
         replacements = _create_template_replacements(env_name)
         _copy_template_directory(
             "openenv.cli.templates.openenv_env",
@@ -523,11 +519,13 @@ class ORSImporter:
             env_name,
         )
 
-        vendor_dir = _safe_vendor_dir_name(source)
-        _copy_source_tree(source, destination / "vendor" / vendor_dir)
+        vendor_dir = safe_vendor_dir_name(source)
+        vendor_path = destination / "vendor" / vendor_dir
+        copy_source_tree(source, vendor_path)
+        ensure_vendor_package(vendor_path)
 
         prefix = replacements["__ENV_CLASS_NAME__"]
-        _write_text(
+        write_text(
             destination / "server" / f"{env_name}_environment.py",
             _wrapper_source(
                 env_name=env_name,
@@ -537,8 +535,12 @@ class ORSImporter:
                 vendor_dir=vendor_dir,
             ),
         )
-        _write_text(
+        write_text(
             destination / "server" / "app.py",
             _app_source(env_name=env_name, class_name_prefix=prefix),
         )
-        _append_dependency_files(destination, env_name)
+        append_dependency_files(
+            destination,
+            env_name,
+            detect_ors_dependencies(source),
+        )

@@ -16,7 +16,7 @@ from .exceptions import (
     SessionNotFoundError,
 )
 from .http_server import create_app, create_fastapi_app, HTTPEnvServer
-from .interfaces import Environment, Message, ModelTokenizer, Transform
+from .interfaces import Environment, Message, ModelTokenizer, TaskProvider, Transform
 
 try:
     from .mcp_environment import MCPEnvironment
@@ -84,6 +84,7 @@ __all__ = [
     # Core interfaces
     "Environment",
     "Transform",
+    "TaskProvider",
     "Message",
     "ModelTokenizer",
     # Types

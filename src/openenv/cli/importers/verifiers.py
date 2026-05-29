@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import ast
-import shutil
-import textwrap
 from pathlib import Path
 
-from openenv.cli.commands.init import (
-    _copy_template_directory,
-    _create_template_replacements,
+from .base import (
+    DetectedEnvironment,
+    append_dependency_files,
+    copy_source_tree,
+    ensure_vendor_package,
+    iter_python_files,
+    module_path,
+    safe_vendor_dir_name,
+    write_text,
 )
-
-from .base import DetectedEnvironment
 
 
 _VERIFIERS_MODULES = {
@@ -20,44 +22,6 @@ _VERIFIERS_MODULES = {
     "verifiers.envs.environment",
     "verifiers.v1",
 }
-
-_EXCLUDED_DIRS = {
-    ".git",
-    ".hg",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache",
-    ".tox",
-    ".venv",
-    "__pycache__",
-    "build",
-    "dist",
-    "node_modules",
-    "venv",
-}
-
-_EXCLUDED_FILE_SUFFIXES = {".pyc", ".pyo"}
-
-
-def _is_excluded(path: Path) -> bool:
-    return any(part in _EXCLUDED_DIRS for part in path.parts)
-
-
-def _iter_python_files(source: Path) -> list[Path]:
-    return [
-        path
-        for path in sorted(source.rglob("*.py"))
-        if not _is_excluded(path.relative_to(source))
-    ]
-
-
-def _module_path(source: Path, file_path: Path) -> str:
-    rel = file_path.relative_to(source).with_suffix("")
-    parts = list(rel.parts)
-    if parts[-1] == "__init__":
-        parts = parts[:-1]
-    return ".".join(parts)
-
 
 def _imports_verifiers(tree: ast.AST) -> bool:
     for node in ast.walk(tree):
@@ -77,7 +41,7 @@ def detect_verifiers_environments(source: Path) -> list[DetectedEnvironment]:
     source = source.resolve()
     matches: list[DetectedEnvironment] = []
 
-    for file_path in _iter_python_files(source):
+    for file_path in iter_python_files(source):
         try:
             tree = ast.parse(file_path.read_text(encoding="utf-8"))
         except (SyntaxError, UnicodeDecodeError):
@@ -93,61 +57,12 @@ def detect_verifiers_environments(source: Path) -> list[DetectedEnvironment]:
                         DetectedEnvironment(
                             source_type="verifiers",
                             class_name=node.name,
-                            module_path=_module_path(source, file_path),
+                            module_path=module_path(source, file_path),
                             file_path=file_path,
                         )
                     )
 
     return matches
-
-
-def _safe_vendor_dir_name(source: Path) -> str:
-    name = source.name.strip().replace("-", "_")
-    return name if name.isidentifier() else "source"
-
-
-def _copy_source_tree(source: Path, destination: Path) -> None:
-    def ignore(_dir: str, names: list[str]) -> set[str]:
-        ignored = set()
-        for name in names:
-            path = Path(name)
-            if name in _EXCLUDED_DIRS or path.suffix in _EXCLUDED_FILE_SUFFIXES:
-                ignored.add(name)
-        return ignored
-
-    shutil.copytree(source, destination, ignore=ignore)
-
-
-def _write_text(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(textwrap.dedent(content).lstrip(), encoding="utf-8", newline="\n")
-
-
-def _append_dependency_files(env_dir: Path, env_name: str) -> None:
-    requirements = env_dir / "server" / "requirements.txt"
-    if requirements.exists():
-        content = requirements.read_text(encoding="utf-8")
-        if "verifiers" not in content:
-            requirements.write_text(
-                content.rstrip() + "\nverifiers>=0.1.14\n",
-                encoding="utf-8",
-                newline="\n",
-            )
-
-    pyproject = env_dir / "pyproject.toml"
-    if pyproject.exists():
-        content = pyproject.read_text(encoding="utf-8")
-        if '"verifiers' not in content:
-            content = content.replace(
-                '    "openenv-core[core]>=0.2.2",',
-                '    "openenv-core[core]>=0.2.2",\n    "verifiers>=0.1.14",',
-            )
-        if "[tool.setuptools.package-data]" not in content:
-            content += (
-                '\n[tool.setuptools.package-data]\n'
-                f'"{env_name}" = ["vendor/**/*"]\n'
-            )
-        pyproject.write_text(content, encoding="utf-8", newline="\n")
 
 
 def _wrapper_source(
@@ -157,10 +72,14 @@ def _wrapper_source(
     source_module: str,
     vendor_dir: str,
 ) -> str:
+    source_import_module = f"{env_name}.vendor.{vendor_dir}"
+    if source_module:
+        source_import_module = f"{source_import_module}.{source_module}"
     return f'''
     from __future__ import annotations
 
     import asyncio
+    import contextlib
     import inspect
     import sys
     import threading
@@ -183,19 +102,38 @@ def _wrapper_source(
 
 
     _VENDORED_SOURCE_ROOT = Path(__file__).resolve().parents[1] / "vendor" / "{vendor_dir}"
-    if str(_VENDORED_SOURCE_ROOT) not in sys.path:
-        sys.path.insert(0, str(_VENDORED_SOURCE_ROOT))
+    _SOURCE_MODULE = "{source_import_module}"
 
-    _LOAD_ENVIRONMENT = getattr(import_module("{source_module}"), "load_environment")
+
+    @contextlib.contextmanager
+    def _vendored_source_path():
+        source_path = str(_VENDORED_SOURCE_ROOT)
+        inserted = source_path not in sys.path
+        if inserted:
+            sys.path.insert(0, source_path)
+        try:
+            yield
+        finally:
+            if inserted:
+                try:
+                    sys.path.remove(source_path)
+                except ValueError:
+                    pass
+
+
+    with _vendored_source_path():
+        _LOAD_ENVIRONMENT = getattr(import_module(_SOURCE_MODULE), "load_environment")
 
 
     def _run_sync(value: Any) -> Any:
         if not inspect.isawaitable(value):
             return value
         try:
-            asyncio.get_running_loop()
+            loop = asyncio.get_running_loop()
         except RuntimeError:
             return asyncio.run(value)
+        if not loop.is_running():
+            return loop.run_until_complete(value)
 
         result: dict[str, Any] = {{}}
 
@@ -205,12 +143,17 @@ def _wrapper_source(
             except BaseException as exc:
                 result["error"] = exc
 
-        thread = threading.Thread(target=runner)
+        thread = threading.Thread(target=runner, daemon=True)
         thread.start()
         thread.join()
         if "error" in result:
             raise result["error"]
         return result.get("value")
+
+
+    def _call_vendored(func: Any, *args: Any, **kwargs: Any) -> Any:
+        with _vendored_source_path():
+            return _run_sync(func(*args, **kwargs))
 
 
     def _dump(value: Any) -> Any:
@@ -257,7 +200,7 @@ def _wrapper_source(
             annotation = config_param.annotation
             if isinstance(annotation, type):
                 kwargs["config"] = annotation()
-        return _LOAD_ENVIRONMENT(**kwargs)
+        return _call_vendored(_LOAD_ENVIRONMENT, **kwargs)
 
 
     def _dataset_to_tasks(dataset: Any) -> list[dict[str, Any]]:
@@ -295,9 +238,9 @@ def _wrapper_source(
             taskset = getattr(env, "taskset", None)
             if taskset is not None:
                 if split in {{"eval", "validation", "test"}} and hasattr(taskset, "eval_rows"):
-                    rows = _dump(taskset.eval_rows())
+                    rows = _dump(_call_vendored(taskset.eval_rows))
                 elif hasattr(taskset, "rows"):
-                    rows = _dump(taskset.rows())
+                    rows = _dump(_call_vendored(taskset.rows))
                 else:
                     rows = []
                 tasks = []
@@ -307,7 +250,7 @@ def _wrapper_source(
                     row_split = row.get("split")
                     if row_split is not None and split not in {{"eval", "validation", "test"}} and row_split != split:
                         continue
-                    task = taskset.task(row) if hasattr(taskset, "task") else row
+                    task = _call_vendored(taskset.task, row) if hasattr(taskset, "task") else row
                     dumped = _dump(task)
                     if isinstance(dumped, dict):
                         dumped.setdefault("example_id", index)
@@ -315,9 +258,9 @@ def _wrapper_source(
                 return tasks
 
             if split in {{"eval", "validation", "test"}} and hasattr(env, "get_eval_dataset"):
-                return _dataset_to_tasks(env.get_eval_dataset())
+                return _dataset_to_tasks(_call_vendored(env.get_eval_dataset))
             if hasattr(env, "get_dataset"):
-                return _dataset_to_tasks(env.get_dataset())
+                return _dataset_to_tasks(_call_vendored(env.get_dataset))
             return []
 
         def list_splits(self) -> list[dict[str, Any]]:
@@ -325,12 +268,12 @@ def _wrapper_source(
             taskset = getattr(env, "taskset", None)
             names: list[str] = []
             if taskset is not None and hasattr(taskset, "rows"):
-                for row in _dump(taskset.rows()):
+                for row in _dump(_call_vendored(taskset.rows)):
                     if isinstance(row, dict) and row.get("split"):
                         names.append(str(row["split"]))
                 if hasattr(taskset, "eval_rows"):
                     try:
-                        if len(_dump(taskset.eval_rows())) > 0:
+                        if len(_dump(_call_vendored(taskset.eval_rows))) > 0:
                             names.append("eval")
                     except Exception:
                         pass
@@ -417,7 +360,7 @@ def _wrapper_source(
 
         def _ensure_session(self) -> None:
             if self._task_spec is None:
-                self.reset()
+                raise RuntimeError("Call reset() before submitting Verifiers completions")
 
         def step(
             self,
@@ -490,9 +433,10 @@ def _wrapper_source(
             taskset = getattr(env, "taskset", None)
             harness = getattr(env, "harness", None)
             if taskset is not None and harness is not None:
-                task = taskset.to_task(self._task_spec) if hasattr(taskset, "to_task") else self._task_spec
+                task = _call_vendored(taskset.to_task, self._task_spec) if hasattr(taskset, "to_task") else self._task_spec
                 state["task"] = _dump(task)
-                maybe_state_cls = getattr(import_module("verifiers"), "State", None)
+                with _vendored_source_path():
+                    maybe_state_cls = getattr(import_module("verifiers"), "State", None)
                 if maybe_state_cls is not None and hasattr(maybe_state_cls, "for_task"):
                     try:
                         vf_state = maybe_state_cls.for_task(task)
@@ -501,10 +445,10 @@ def _wrapper_source(
                     except Exception:
                         pass
                 if hasattr(harness, "score_group"):
-                    _run_sync(harness.score_group([task], [state]))
+                    _call_vendored(harness.score_group, [task], [state])
 
             elif hasattr(env, "rubric") and hasattr(env.rubric, "score_rollout"):
-                _run_sync(env.rubric.score_rollout(state))
+                _call_vendored(env.rubric.score_rollout, state)
 
             reward = state.get("reward")
             return {{
@@ -524,7 +468,7 @@ def _wrapper_source(
             try:
                 teardown = getattr(self._vf_env, "_teardown", None)
                 if callable(teardown):
-                    _run_sync(teardown())
+                    _call_vendored(teardown)
             finally:
                 self._vf_env = None
     '''
@@ -581,6 +525,11 @@ class VerifiersImporter:
         env_name: str,
         detected: DetectedEnvironment,
     ) -> None:
+        from openenv.cli.commands.init import (
+            _copy_template_directory,
+            _create_template_replacements,
+        )
+
         replacements = _create_template_replacements(env_name)
         _copy_template_directory(
             "openenv.cli.templates.openenv_env",
@@ -590,11 +539,13 @@ class VerifiersImporter:
             env_name,
         )
 
-        vendor_dir = _safe_vendor_dir_name(source)
-        _copy_source_tree(source, destination / "vendor" / vendor_dir)
+        vendor_dir = safe_vendor_dir_name(source)
+        vendor_path = destination / "vendor" / vendor_dir
+        copy_source_tree(source, vendor_path)
+        ensure_vendor_package(vendor_path)
 
         prefix = replacements["__ENV_CLASS_NAME__"]
-        _write_text(
+        write_text(
             destination / "server" / f"{env_name}_environment.py",
             _wrapper_source(
                 env_name=env_name,
@@ -603,8 +554,8 @@ class VerifiersImporter:
                 vendor_dir=vendor_dir,
             ),
         )
-        _write_text(
+        write_text(
             destination / "server" / "app.py",
             _app_source(env_name=env_name, class_name_prefix=prefix),
         )
-        _append_dependency_files(destination, env_name)
+        append_dependency_files(destination, env_name, ["verifiers>=0.1.14"])

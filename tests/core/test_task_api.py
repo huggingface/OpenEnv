@@ -6,11 +6,19 @@
 
 """Tests for ORS-compatible task and split endpoints."""
 
+import functools
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from openenv.core.env_server.http_server import create_app, HTTPEnvServer
 from openenv.core.env_server.interfaces import Environment
+from openenv.core.env_server.mcp_types import (
+    CallToolAction,
+    CallToolObservation,
+    ListToolsAction,
+    ListToolsObservation,
+)
 from openenv.core.env_server.types import Action, Observation, State
 
 
@@ -59,6 +67,44 @@ class UnsupportedTaskEnvironment(Environment):
 
     def step(self, action: TaskAction, **kwargs) -> TaskObservation:
         return TaskObservation(message=action.value)
+
+    @property
+    def state(self) -> State:
+        return State()
+
+
+class PartialStepAsyncEnvironment(Environment):
+    def __init__(self):
+        async def step_async(action: CallToolAction, **kwargs) -> CallToolObservation:
+            return CallToolObservation(tool_name=action.tool_name, result={"ok": True})
+
+        self.step_async = functools.partial(step_async)  # type: ignore[method-assign]
+
+    def reset(self, **kwargs) -> TaskObservation:
+        return TaskObservation(message="ready")
+
+    def step(self, action: CallToolAction, **kwargs) -> CallToolObservation:
+        return CallToolObservation(tool_name=action.tool_name, result={"sync": True})
+
+    @property
+    def state(self) -> State:
+        return State()
+
+
+class PartialMcpStepAsyncEnvironment(Environment):
+    def __init__(self):
+        async def step_async(action: Action, **kwargs) -> Observation:
+            if isinstance(action, ListToolsAction):
+                return ListToolsObservation(tools=[])
+            return CallToolObservation(tool_name="unknown", result=None)
+
+        self.step_async = functools.partial(step_async)  # type: ignore[method-assign]
+
+    def reset(self, **kwargs) -> TaskObservation:
+        return TaskObservation(message="ready")
+
+    def step(self, action: Action, **kwargs) -> Observation:
+        return TaskObservation(message="sync")
 
     @property
     def state(self) -> State:
@@ -142,3 +188,39 @@ def test_create_app_threads_env_name_to_task_routes() -> None:
 
     assert client.get("/list_environments").json() == ["created_env"]
     assert client.get("/created_env/splits").status_code == 200
+
+
+def test_step_route_handles_partial_step_async() -> None:
+    app = create_app(
+        PartialStepAsyncEnvironment,
+        CallToolAction,
+        CallToolObservation,
+        env_name="partial_env",
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/step",
+        json={"action": {"tool_name": "submit", "arguments": {}}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["observation"]["result"] == {"ok": True}
+
+
+def test_mcp_style_step_handles_partial_step_async() -> None:
+    app = create_app(
+        PartialMcpStepAsyncEnvironment,
+        CallToolAction,
+        CallToolObservation,
+        env_name="partial_mcp_env",
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 1},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["result"] == {"tools": []}

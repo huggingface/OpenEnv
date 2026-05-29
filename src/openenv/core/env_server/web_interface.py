@@ -32,6 +32,11 @@ from .interfaces import Environment
 from .serialization import deserialize_action_with_preprocessing, serialize_observation
 from .types import Action, EnvironmentMetadata, Observation, State
 
+
+def _overrides_method(method: Any, base_method: Any) -> bool:
+    return getattr(method, "__func__", method) is not base_method
+
+
 # Quick Start markdown template; placeholders match init suffixes (__ENV_NAME__, __ENV_CLASS_NAME__*).
 DEFAULT_QUICK_START_MARKDOWN = """
 ### Connect to this environment
@@ -347,7 +352,7 @@ class WebInterfaceManager:
         """Reset the environment and update state."""
         reset_kwargs = reset_kwargs or {}
 
-        is_async = self.env.reset_async.__func__ is not Environment.reset_async
+        is_async = _overrides_method(self.env.reset_async, Environment.reset_async)
         sig = inspect.signature(self.env.reset_async if is_async else self.env.reset)
         valid_kwargs = self._get_valid_kwargs(sig, reset_kwargs)
 

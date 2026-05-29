@@ -121,6 +121,11 @@ async def _maybe_await(value: Any) -> Any:
     return value
 
 
+def _overrides_method(method: Any, base_method: Any) -> bool:
+    """Return whether a bound method differs from the base implementation."""
+    return getattr(method, "__func__", method) is not base_method
+
+
 from .exceptions import (
     ConcurrencyConfigurationError,
     EnvironmentFactoryError,
@@ -634,7 +639,7 @@ class HTTPEnvServer:
             try:
                 kwargs = request.model_dump(exclude_unset=True)
 
-                is_async = _env.reset_async.__func__ is not Environment.reset_async
+                is_async = _overrides_method(_env.reset_async, Environment.reset_async)
 
                 if is_async:
                     sig = inspect.signature(_env.reset_async)
@@ -669,7 +674,7 @@ class HTTPEnvServer:
             try:
                 kwargs = request.model_dump(exclude_unset=True, exclude={"action"})
 
-                is_async = _env.step_async.__func__ is not Environment.step_async
+                is_async = _overrides_method(_env.step_async, Environment.step_async)
 
                 if is_async:
                     sig = inspect.signature(_env.step_async)
@@ -837,7 +842,9 @@ class HTTPEnvServer:
                 mcp_session_factory = getattr(_env, "mcp_session", None)
 
                 async def call_mcp_style_step(action: Action) -> Observation:
-                    is_async = _env.step_async.__func__ is not Environment.step_async
+                    is_async = _overrides_method(
+                        _env.step_async, Environment.step_async
+                    )
                     if is_async:
                         return await _env.step_async(action)
                     if managed_session_id:
@@ -1046,7 +1053,9 @@ class HTTPEnvServer:
         async def _call_task_method(method_name: str, *args: Any) -> Any:
             _env = self._env_factory()
             try:
-                method = getattr(_env, method_name)
+                method = getattr(_env, method_name, None)
+                if not callable(method):
+                    raise NotImplementedError
                 return await _maybe_await(method(*args))
             except NotImplementedError as e:
                 raise HTTPException(
@@ -1505,9 +1514,9 @@ all schema information needed to interact with the environment.
                                 case "reset":
                                     msg = WSResetMessage(**message_dict)
 
-                                    is_async = (
-                                        session_env.reset_async.__func__
-                                        is not Environment.reset_async
+                                    is_async = _overrides_method(
+                                        session_env.reset_async,
+                                        Environment.reset_async,
                                     )
 
                                     if is_async:
@@ -1543,9 +1552,9 @@ all schema information needed to interact with the environment.
                                         msg.data, self.action_cls
                                     )
 
-                                    is_async = (
-                                        session_env.step_async.__func__
-                                        is not Environment.step_async
+                                    is_async = _overrides_method(
+                                        session_env.step_async,
+                                        Environment.step_async,
                                     )
 
                                     if is_async:

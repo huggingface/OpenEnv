@@ -18,6 +18,11 @@ wrapper package. The command detects the source format from the directory
 contents, so ORS/OpenReward and Prime Intellect Verifiers sources do not
 require `--type` in the common case.
 
+The generated wrapper vendors the source tree into the package. The importer
+skips VCS/cache/build directories and common secret file patterns such as
+`.env`, `secrets.yaml`, and private key files; review the generated `vendor/`
+directory before publishing a wrapper.
+
 ```bash
 openenv import path/to/source --name my_env --output-dir ./envs
 openenv import path/to/source --name my_env --output-dir ./envs --env-class MyEnv

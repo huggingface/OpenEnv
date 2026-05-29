@@ -74,6 +74,40 @@ class ModelTokenizer(Protocol):
         ...
 
 
+class TaskProvider(Protocol):
+    """Optional task discovery API for dataset-backed environments.
+
+    Task provider methods are for metadata/discovery only and should be
+    side-effect-free. The HTTP compatibility routes may call them on a
+    short-lived environment instance.
+    """
+
+    def list_splits(self) -> list[Any]:
+        """Return task split descriptors supported by this environment."""
+        ...
+
+    def list_tasks(self, split: str) -> list[Any]:
+        """Return all task specs for a split."""
+        ...
+
+    def num_tasks(self, split: str) -> int:
+        """Return the number of task specs in a split."""
+        ...
+
+    def get_task(self, split: str, index: int) -> Any:
+        """Return one task spec by split and index."""
+        ...
+
+    def get_task_range(
+        self,
+        split: str,
+        start: Optional[int] = None,
+        stop: Optional[int] = None,
+    ) -> list[Any]:
+        """Return task specs for Python slice-style range bounds."""
+        ...
+
+
 class Transform(ABC, Generic[ObsT]):
     """Transform observations to add rewards, metrics, or other modifications.
 
@@ -205,31 +239,6 @@ class Environment(ABC, Generic[ActT, ObsT, StateT]):
             description=f"{self.__class__.__name__} environment",
             version="1.0.0",
         )
-
-    def list_splits(self) -> list[Any]:
-        """Return task split descriptors supported by this environment."""
-        raise NotImplementedError("Environment does not support task splits")
-
-    def list_tasks(self, split: str) -> list[Any]:
-        """Return all task specs for a split."""
-        raise NotImplementedError("Environment does not support task listing")
-
-    def num_tasks(self, split: str) -> int:
-        """Return the number of task specs in a split."""
-        return len(self.list_tasks(split))
-
-    def get_task(self, split: str, index: int) -> Any:
-        """Return one task spec by split and index."""
-        return self.list_tasks(split)[index]
-
-    def get_task_range(
-        self,
-        split: str,
-        start: Optional[int] = None,
-        stop: Optional[int] = None,
-    ) -> list[Any]:
-        """Return task specs for Python slice-style range bounds."""
-        return self.list_tasks(split)[slice(start, stop)]
 
     def _apply_transform(self, observation: ObsT) -> ObsT:
         """Apply transform if one is provided."""

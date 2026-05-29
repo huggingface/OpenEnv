@@ -12,9 +12,10 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 from openenv.cli.__main__ import app
-from openenv.cli.importers.ors import detect_ors_environments
+from openenv.cli.importers.ors import detect_ors_dependencies, detect_ors_environments
 from openenv.cli.importers.verifiers import detect_verifiers_environments
 from openenv.core.env_server.mcp_types import CallToolAction, ListToolsAction
 from typer.testing import CliRunner
@@ -241,6 +242,29 @@ class SampleEnv(ORSEnvironment):
     assert matches[0].source_type == "ors"
 
 
+def test_ors_detector_finds_openreward_environments_import_path(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "sample.py").write_text(
+        """
+from openreward.environments import Environment
+
+
+class SampleEnv(Environment):
+    pass
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    matches = detect_ors_environments(source)
+
+    assert len(matches) == 1
+    assert matches[0].class_name == "SampleEnv"
+    assert detect_ors_dependencies(source) == ["openreward"]
+
+
 def test_ors_detector_returns_no_matches_for_unrelated_source(tmp_path: Path) -> None:
     source = tmp_path / "source"
     source.mkdir()
@@ -334,6 +358,10 @@ def test_import_command_detects_ors_and_generates_working_wrapper(
         env = ImportedEnvironment()
         assert env.list_splits() == [{"name": "train", "type": "train"}]
         assert env.get_task("train", 0) == {"id": "alpha", "goal": "answer"}
+        with pytest.raises(RuntimeError, match="reset"):
+            ImportedEnvironment().step(
+                CallToolAction(tool_name="answer", arguments={"value": "42"})
+            )
 
         reset_obs = env.reset(split="train", index=0)
         assert reset_obs.metadata["task_spec"] == {"id": "alpha", "goal": "answer"}
@@ -364,8 +392,134 @@ def test_import_command_detects_ors_and_generates_working_wrapper(
             },
         ).json()
         assert mcp_tools["result"]["tools"][0]["name"] == "answer"
+        mcp_call = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "tools/call",
+                "params": {"name": "answer", "arguments": {"value": "42"}},
+                "id": 2,
+            },
+        ).json()
+        assert "reset" in mcp_call["error"]["message"]
     finally:
         sys.path.remove(str(output_dir))
+
+
+def test_import_command_handles_source_module_matching_generated_package(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    _write_fake_ors_sdk(source)
+    (source / "collision_env.py").write_text(
+        """
+from ors import Environment, Split
+
+
+class CollisionEnvironment(Environment):
+    @classmethod
+    def list_splits(cls):
+        return [Split(name="train", type="train")]
+""".lstrip(),
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "out"
+
+    with patch("openenv.cli.commands.import_env._generate_uv_lock", return_value=True):
+        result = runner.invoke(
+            app,
+            [
+                "import",
+                str(source),
+                "--name",
+                "collision_env",
+                "--output-dir",
+                str(output_dir),
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    sys.path.insert(0, str(output_dir))
+    try:
+        from collision_env.server.collision_env_environment import (  # type: ignore
+            CollisionEnvironment,
+        )
+
+        env = CollisionEnvironment()
+        assert env.list_splits() == [{"name": "train", "type": "train"}]
+    finally:
+        sys.path.remove(str(output_dir))
+
+
+def test_import_command_excludes_common_secret_files(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    _write_single_fake_ors_env(source)
+    (source / ".env").write_text("TOKEN=secret\n", encoding="utf-8")
+    (source / "secrets.yaml").write_text("token: secret\n", encoding="utf-8")
+    (source / "private.pem").write_text("secret\n", encoding="utf-8")
+    output_dir = tmp_path / "out"
+
+    with patch("openenv.cli.commands.import_env._generate_uv_lock", return_value=True):
+        result = runner.invoke(
+            app,
+            [
+                "import",
+                str(source),
+                "--name",
+                "secret_env",
+                "--output-dir",
+                str(output_dir),
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    vendor_dir = output_dir / "secret_env" / "vendor" / "source"
+    assert not (vendor_dir / ".env").exists()
+    assert not (vendor_dir / "secrets.yaml").exists()
+    assert not (vendor_dir / "private.pem").exists()
+
+
+def test_import_command_uses_detected_ors_dependency(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "demo.py").write_text(
+        """
+from openreward.environments import Environment
+
+
+class DemoEnvironment(Environment):
+    pass
+""".lstrip(),
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "out"
+
+    with patch("openenv.cli.commands.import_env._generate_uv_lock", return_value=True):
+        result = runner.invoke(
+            app,
+            [
+                "import",
+                str(source),
+                "--name",
+                "openreward_env",
+                "--output-dir",
+                str(output_dir),
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    requirements = (
+        output_dir / "openreward_env" / "server" / "requirements.txt"
+    ).read_text(encoding="utf-8")
+    pyproject = (output_dir / "openreward_env" / "pyproject.toml").read_text(
+        encoding="utf-8"
+    )
+    assert "openreward" in requirements
+    assert "openreward" in pyproject
+    assert "ors-sdk" not in requirements
+    assert "ors-sdk" not in pyproject
 
 
 def test_import_command_detects_verifiers_and_generates_working_wrapper(
@@ -406,6 +560,10 @@ def test_import_command_detects_verifiers_and_generates_working_wrapper(
             {"name": "train", "type": "train"},
             {"name": "eval", "type": "validation"},
         ]
+        with pytest.raises(RuntimeError, match="reset"):
+            VfImportedEnvironment().step(
+                CallToolAction(tool_name="submit", arguments={"completion": "alpha"})
+            )
         assert env.num_tasks("train") == 2
         assert env.get_task("train", 1)["answer"] == "beta"
 

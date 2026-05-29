@@ -104,11 +104,14 @@ This is what the environment's `server/app.py` entry point typically does — se
 ## Optional Task APIs
 
 Environments that expose reusable datasets can implement the optional task and
-split methods on `Environment`: `list_splits`, `list_tasks`, `num_tasks`,
-`get_task`, and `get_task_range`. OpenEnv serves these through ORS-compatible
-endpoints such as `/list_environments`, `/{env_name}/splits`, and
-`/{env_name}/task_range`. Existing environments that do not implement these
-methods continue to work; task routes return `501` for unsupported APIs.
+split `TaskProvider` protocol: `list_splits`, `list_tasks`, `num_tasks`,
+`get_task`, and `get_task_range`. These are discovery methods, not part of the
+core step/reset environment contract, and should be side-effect-free because
+compatibility routes may call them on short-lived environment instances. OpenEnv
+serves them through ORS-compatible endpoints such as `/list_environments`,
+`/{env_name}/splits`, and `/{env_name}/task_range`. Existing environments that
+do not implement these methods continue to work; task routes return `501` for
+unsupported APIs.
 
 ## Rewards via the Rubric
 
