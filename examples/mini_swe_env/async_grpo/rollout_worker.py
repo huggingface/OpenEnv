@@ -179,7 +179,15 @@ class SWERolloutWorker:
         # served with --language-model-only, vLLM parameters are at
         # "language_model.model.layers.X" but the trainer (AutoModelForCausalLM)
         # produces "model.layers.X".  Set to "" to disable remapping.
-        self._vllm_weight_prefix = "language_model."
+        #
+        # Only Qwen3.5 models need this prefix — they are unified VLMs where
+        # vLLM resolves Qwen3_5ForConditionalGeneration even in text-only mode.
+        # Standard CausalLM models (Qwen3, Llama, etc.) have matching param names.
+        self._vllm_weight_prefix = (
+            "language_model."
+            if "qwen3.5" in vllm_model.lower() or "qwen3_5" in vllm_model.lower()
+            else ""
+        )
 
         self._init_weight_transfer()
 
