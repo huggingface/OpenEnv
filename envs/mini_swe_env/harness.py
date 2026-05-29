@@ -50,11 +50,12 @@ import asyncio
 import json
 import queue as _queue_mod
 import logging
+import os
 import shlex
 import time
 import uuid
-from dataclasses import dataclass, field
-from typing import Any, Literal
+from dataclasses import dataclass, field, replace
+from typing import Any, Callable, Literal
 
 from openenv.core.harness import Message, ResourceSessionFactory, VerifyResult
 from openenv.core.harness.agents import get_agent_spec
@@ -101,43 +102,103 @@ Consider the following PR description:
 {problem_statement}
 </pr_description>
 
+{hints_block}
+
 <instructions>
 # Task Instructions
 
 ## Overview
-You're a software engineer working on a codebase at /testbed.
+You're a software engineer working on a codebase at {workdir}.
 Your task is to fix the issue described in the PR description above
 by making changes to the source code (non-test files).
 
 ## Important Boundaries
-- MODIFY: Regular source code files in /testbed
+- MODIFY: Regular source code files in {workdir}
 - DO NOT MODIFY: Tests, configuration files (pyproject.toml, setup.cfg, etc.)
+- Test edits do not help. Grading may restore evaluation tests before running.
+- Plain text does not execute anything. To inspect files, run commands, edit
+  code, or submit a fix, you must use your available tools.
+- The repo environment is already bootstrapped. Do not create a new virtualenv
+  or reinstall the project unless a command clearly shows it is necessary.
+- Do not use `git commit`, `git branch`, or `git push`. Grading only checks the
+  final working tree state.
+- Each bash tool call runs in a fresh shell. If commands depend on shell state,
+  combine them into one bash invocation; `source` and shell variables do not
+  persist across separate tool calls.
+- Do not claim a file was changed or a test passed unless you actually used a
+  tool and observed that result.
 
 ## Recommended Workflow
-1. Analyze the codebase by finding and reading relevant files
-2. Create a script to reproduce the issue
-3. Edit the source code to resolve the issue
-4. Verify your fix works by running your script again
-5. Test edge cases to ensure your fix is robust
+1. Start with the maintainer hints or issue description. If they point to a
+   likely source file or function, inspect that before broad repo-wide searches.
+   If the issue mentions an identifier or exact error text, grep for that first.
+2. Reproduce the issue with focused commands instead of exhaustive greps over
+   unrelated tests.
+3. Edit the source code to resolve the issue.
+4. Verify the fix with targeted commands, then check for obvious regressions.
+5. If the `answer` tool is available, call it only after you have actually
+   changed source code and verified the result.
 
-## Submitting Your Answer
-When you've completed your work and verified your fix, call the `answer`
-tool to submit your solution for grading. This runs the test suite and
-returns whether the issue is resolved.
-
-You cannot continue working after submitting — make sure your fix is
-tested before calling `answer`.
+{submission_block}
 </instructions>"""
 
 
-def _wrap_instruction(problem_statement: str) -> str:
+def _bool_env(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _answer_tool_enabled() -> bool:
+    return _bool_env("SWE_ENABLE_ANSWER_TOOL", True)
+
+
+def _wrap_instruction(
+    problem_statement: str,
+    *,
+    hints_text: str = "",
+    workdir: str = TESTBED,
+    answer_tool_enabled: bool = True,
+) -> str:
     """Wrap a problem statement with SWE-Gym-style task instructions.
 
     Tells the agent about the workflow, boundaries, and crucially
     about the ``answer`` tool for submission.
     """
+    hints = (hints_text or "").strip()
+    hints_block = ""
+    if hints:
+        hints_block = (
+            "<maintainer_hints>\n"
+            "Additional context from issue triage or maintainers:\n"
+            f"{hints}\n"
+            "</maintainer_hints>"
+        )
+    if answer_tool_enabled:
+        submission_block = (
+            "## Submitting Your Answer\n"
+            "When you've completed your work and verified your fix, call the "
+            "`answer`\n"
+            "tool to submit your solution for grading. This runs the test suite and\n"
+            "returns whether the issue is resolved.\n\n"
+            "You cannot continue working after submitting — make sure your fix is\n"
+            "tested before calling `answer`."
+        )
+    else:
+        submission_block = (
+            "## Ending The Run\n"
+            "There is no `answer` tool in this run.\n"
+            "Keep working until you have made and checked the best source-code "
+            "fix you can.\n"
+            "Your final repo state will be graded automatically when the session "
+            "ends."
+        )
     return _SWE_INSTRUCTION_TEMPLATE.format(
         problem_statement=problem_statement,
+        hints_block=hints_block,
+        workdir=workdir,
+        submission_block=submission_block,
     )
 
 
@@ -197,6 +258,9 @@ class SWESession(CLIAgentSession):
         self._answer_reward_source: str | None = None
         self._answer_called = False
         self._answer_bridged = False
+        self._fallback_grader: (
+            Callable[..., tuple[float, bool]] | None
+        ) = None
 
     @property
     def swe_task(self) -> SWETask:
@@ -294,7 +358,9 @@ class SWESession(CLIAgentSession):
                 t0 = time.time()
                 try:
                     r = self.sandbox.exec(
-                        cmd, cwd=TESTBED, timeout=self._verify_timeout_s
+                        cmd,
+                        cwd=self.config.workdir,
+                        timeout=self._verify_timeout_s,
                     )
                     detail = {
                         "cmd": cmd,
@@ -332,7 +398,37 @@ class SWESession(CLIAgentSession):
                 },
             )
 
-        # 4. No reward source — agent didn't call answer, no verify cmds.
+        # 4. Final-state fallback: grade the sandbox even if the agent forgot
+        # to call answer(). This preserves valid reward signal for training.
+        if self._fallback_grader is not None:
+            try:
+                reward, resolved = self._fallback_grader(
+                    self.sandbox,
+                    self._swe_task,
+                    home=self.config.sandbox_home,
+                    workdir=self.config.workdir,
+                )
+                return VerifyResult(
+                    env_reward=float(reward),
+                    done=True,
+                    metrics={
+                        "instance_id": self._swe_task.instance_id,
+                        "reward_source": "host_verify_fallback",
+                        "resolved": bool(resolved),
+                        "answer_called": False,
+                        "answer_bridged": False,
+                    },
+                    artifacts={
+                        "task_id": self._swe_task.task_id,
+                    },
+                )
+            except Exception:
+                _log.exception(
+                    "fallback grading failed for %s",
+                    self._swe_task.instance_id,
+                )
+
+        # 5. No reward source — agent didn't call answer, no verify cmds.
         return VerifyResult(
             env_reward=0.0,
             done=True,
@@ -476,6 +572,10 @@ class SWESessionFactory(ResourceSessionFactory):
             swe_task = coerce_swe_task(task)
         validate_swe_task(swe_task)
 
+        backend_supports_images = bool(
+            getattr(self._backend, "supports_images", True)
+        )
+        requested_image = swe_task.sandbox_image if backend_supports_images else None
         sandbox_timeout = int(self._config.agent_timeout_s) + 600
         sandbox = self._backend.create(
             timeout_s=sandbox_timeout,
@@ -484,17 +584,31 @@ class SWESessionFactory(ResourceSessionFactory):
                 if episode_id
                 else {"instance_id": swe_task.instance_id}
             ),
-            image=swe_task.sandbox_image,
+            image=requested_image,
+        )
+
+        session_config = replace(
+            self._config,
+            sandbox_home=self._resolve_sandbox_home(sandbox),
+            workdir=self._resolve_workdir(sandbox),
         )
 
         try:
-            if not swe_task.sandbox_image:
-                self._prepare_repo(sandbox, swe_task)
+            if not requested_image:
+                self._prepare_repo(sandbox, swe_task, workdir=session_config.workdir)
+                self._bootstrap_local_repo_env(
+                    sandbox,
+                    swe_task,
+                    config=session_config,
+                )
 
-            self._run_setup(sandbox, swe_task)
+            self._run_setup(sandbox, swe_task, workdir=session_config.workdir)
 
-            agent_task = self._build_agent_task(swe_task)
-            self._driver._bootstrap_sandbox(sandbox, agent_task, self._config)
+            agent_task = self._build_agent_task(
+                swe_task,
+                workdir=session_config.workdir,
+            )
+            self._driver._bootstrap_sandbox(sandbox, agent_task, session_config)
 
         except Exception as exc:
             _log.error("SWESessionFactory.create: bootstrap failed: %r", exc)
@@ -516,9 +630,15 @@ class SWESessionFactory(ResourceSessionFactory):
                 rollout_id,
             )
 
-        agent_task = self._build_agent_task(swe_task)
+        agent_task = self._build_agent_task(
+            swe_task,
+            workdir=session_config.workdir,
+        )
         agent_bg = self._driver._start_agent(
-            sandbox, agent_task, self._config, base_url_override=base_url_override
+            sandbox,
+            agent_task,
+            session_config,
+            base_url_override=base_url_override,
         )
 
         session = SWESession(
@@ -527,7 +647,7 @@ class SWESessionFactory(ResourceSessionFactory):
             spec=self._spec,
             sandbox=sandbox,
             task=agent_task,
-            config=self._config,
+            config=session_config,
             base_url_override=base_url_override,
             agent_bg_job=agent_bg,
             interception_server=self._interception_server,
@@ -535,19 +655,38 @@ class SWESessionFactory(ResourceSessionFactory):
             interception_queue=interception_queue,
         )
 
-        if self._mode == "interception_gate":
+        if self._mode == "interception_gate" and _answer_tool_enabled():
             self._register_answer_tool(session)
+        session._fallback_grader = self._grade_answer_submission
 
         return session
 
     # ── Bootstrap helpers ──────────────────────────────────────────────────
 
-    def _prepare_repo(self, sandbox: SandboxHandle, task: SWETask) -> None:
+    def _resolve_sandbox_home(self, sandbox: SandboxHandle) -> str:
+        home = getattr(sandbox, "sandbox_home", None)
+        if isinstance(home, str) and home.strip():
+            return home
+        return self._config.sandbox_home
+
+    def _resolve_workdir(self, sandbox: SandboxHandle) -> str:
+        workdir = getattr(sandbox, "workdir", None)
+        if isinstance(workdir, str) and workdir.strip():
+            return workdir
+        return self._config.workdir
+
+    def _prepare_repo(
+        self,
+        sandbox: SandboxHandle,
+        task: SWETask,
+        *,
+        workdir: str,
+    ) -> None:
         """Clone the repo and reset to base_commit."""
-        sandbox.exec(f"mkdir -p {TESTBED}", timeout=10)
+        sandbox.exec(f"mkdir -p {shlex.quote(workdir)}", timeout=10)
         clone_url = f"https://github.com/{task.repo}.git"
         r = sandbox.exec(
-            f"git clone --quiet {clone_url} {TESTBED}",
+            f"git clone --quiet {clone_url} {shlex.quote(workdir)}",
             timeout=SETUP_TIMEOUT_S,
         )
         if r.exit_code != 0:
@@ -556,7 +695,7 @@ class SWESessionFactory(ResourceSessionFactory):
             )
         r = sandbox.exec(
             f"git checkout --quiet {task.base_commit}",
-            cwd=TESTBED,
+            cwd=workdir,
             timeout=60,
         )
         if r.exit_code != 0:
@@ -564,24 +703,86 @@ class SWESessionFactory(ResourceSessionFactory):
                 f"git checkout failed (exit {r.exit_code}): {r.stderr[:500]}"
             )
 
-    def _run_setup(self, sandbox: SandboxHandle, task: SWETask) -> None:
+    def _run_setup(
+        self,
+        sandbox: SandboxHandle,
+        task: SWETask,
+        *,
+        workdir: str,
+    ) -> None:
         """Run task setup commands in the workspace."""
         for cmd in task.setup:
-            r = sandbox.exec(cmd, cwd=TESTBED, timeout=SETUP_TIMEOUT_S)
+            r = sandbox.exec(cmd, cwd=workdir, timeout=SETUP_TIMEOUT_S)
             if r.exit_code != 0:
                 raise RuntimeError(
                     f"Setup command failed (exit {r.exit_code}): "
                     f"{cmd[:120]}\nstderr: {(r.stderr or '')[:500]}"
                 )
 
-    def _build_agent_task(self, swe_task: SWETask) -> _SWEAgentTask:
+    def _bootstrap_local_repo_env(
+        self,
+        sandbox: SandboxHandle,
+        swe_task: SWETask,
+        *,
+        config: SWEAgentConfig,
+    ) -> None:
+        """Install repo/runtime deps when the backend cannot provide task images.
+
+        SWE-Gym tasks usually rely on prebuilt per-task images. For rootless
+        local sandboxes we recreate just enough of that environment to run the
+        repeated-task pilot by installing the repo editable plus common test
+        dependencies inside the sandbox-local virtualenv.
+        """
+        del swe_task
+        workdir_q = shlex.quote(config.workdir)
+        commands = [
+            "python -m pip install -U pip setuptools wheel",
+            "python -m pip install pytest",
+            (
+                f"cd {workdir_q} && ("
+                "python -m pip install -e .[all] || "
+                "python -m pip install -e .[tests] || "
+                "python -m pip install -e .[test] || "
+                "python -m pip install -e . || "
+                "python -m pip install .)"
+            ),
+        ]
+        if sandbox.exists(f"{config.workdir}/requirements-tests.txt"):
+            commands.append(
+                f"cd {workdir_q} && python -m pip install -r requirements-tests.txt"
+            )
+        elif sandbox.exists(f"{config.workdir}/requirements-test.txt"):
+            commands.append(
+                f"cd {workdir_q} && python -m pip install -r requirements-test.txt"
+            )
+
+        for cmd in commands:
+            result = sandbox.exec(cmd, cwd=config.workdir, timeout=SETUP_TIMEOUT_S)
+            if result.exit_code != 0:
+                raise RuntimeError(
+                    "local sandbox repo bootstrap failed "
+                    f"(exit {result.exit_code}): {(result.stderr or result.stdout)[-500:]}"
+                )
+
+    def _build_agent_task(
+        self,
+        swe_task: SWETask,
+        *,
+        workdir: str,
+    ) -> _SWEAgentTask:
         """Convert SWETask into the shape CLIAgentDriver expects.
 
         Wraps the raw problem statement with SWE-Gym-style instructions
         that tell the agent about the ``answer`` tool.
         """
+        answer_tool_enabled = _answer_tool_enabled()
         return _SWEAgentTask(
-            instruction=_wrap_instruction(swe_task.instruction),
+            instruction=_wrap_instruction(
+                swe_task.instruction,
+                hints_text=str((swe_task.metadata or {}).get("hints_text", "") or ""),
+                workdir=workdir,
+                answer_tool_enabled=answer_tool_enabled,
+            ),
             setup_shell=None,
             metadata={
                 "task_id": swe_task.task_id,
@@ -614,6 +815,8 @@ class SWESessionFactory(ResourceSessionFactory):
                 self._grade_answer_submission,
                 session.sandbox,
                 session.swe_task,
+                home=session.config.sandbox_home,
+                workdir=session.config.workdir,
             )
             session.set_answer_reward(reward, source="host_answer_tool")
             return {
@@ -635,14 +838,26 @@ class SWESessionFactory(ResourceSessionFactory):
         self,
         sandbox: SandboxHandle,
         swe_task: SWETask,
+        *,
+        home: str,
+        workdir: str,
     ) -> tuple[float, bool]:
         """Compute answer-tool reward on host and return ``(reward, resolved)``."""
         try:
             metadata = swe_task.metadata or {}
             required = {"version", "patch", "test_patch", "FAIL_TO_PASS"}
             if required.issubset(metadata):
-                return self._grade_with_swegym_metadata(sandbox, swe_task)
-            return self._grade_with_verify_commands(sandbox, swe_task)
+                return self._grade_with_swegym_metadata(
+                    sandbox,
+                    swe_task,
+                    home=home,
+                    workdir=workdir,
+                )
+            return self._grade_with_verify_commands(
+                sandbox,
+                swe_task,
+                workdir=workdir,
+            )
         except Exception:
             _log.exception("answer-tool grading failed for %s", swe_task.instance_id)
             return 0.0, False
@@ -651,6 +866,9 @@ class SWESessionFactory(ResourceSessionFactory):
         self,
         sandbox: SandboxHandle,
         swe_task: SWETask,
+        *,
+        home: str,
+        workdir: str,
     ) -> tuple[float, bool]:
         """Grade SWE-Gym tasks directly from FAIL/PASS test-case outcomes."""
         metadata = swe_task.metadata
@@ -672,33 +890,56 @@ class SWESessionFactory(ResourceSessionFactory):
         )
 
         touched_files = self._extract_paths_from_test_patch(gym_task.test_patch)
+        changed_test_like_files = self._list_changed_test_paths(
+            sandbox,
+            workdir=workdir,
+        )
+        files_to_restore = sorted(set(touched_files) | set(changed_test_like_files))
         self._revert_test_files(
             sandbox,
             base_commit=swe_task.base_commit,
-            paths=touched_files,
+            paths=files_to_restore,
             strict=True,
+            workdir=workdir,
         )
 
-        self._apply_test_patch(sandbox, gym_task.test_patch)
-        case_results = self._run_swegym_case_tests(sandbox, gym_task)
-        grade = grade_from_case_results(gym_task, case_results)
+        self._apply_test_patch(sandbox, gym_task.test_patch, home=home, workdir=workdir)
+        case_results = self._run_swegym_case_tests(
+            sandbox,
+            gym_task,
+            workdir=workdir,
+        )
+        grade = grade_from_case_results(
+            gym_task,
+            case_results,
+            reward_mode=os.environ.get("SWE_REWARD_MODE", "binary").strip().lower()
+            or "binary",
+        )
 
         # Best-effort cleanup in case grading was interrupted.
         self._revert_test_files(
             sandbox,
             base_commit=swe_task.base_commit,
-            paths=touched_files,
+            paths=files_to_restore,
             strict=False,
+            workdir=workdir,
         )
 
         return float(grade.reward), bool(grade.resolved)
 
-    def _apply_test_patch(self, sandbox: SandboxHandle, test_patch: str) -> None:
-        patch_path = f"{HOME}/.openenv_swe_test_patch.diff"
+    def _apply_test_patch(
+        self,
+        sandbox: SandboxHandle,
+        test_patch: str,
+        *,
+        home: str,
+        workdir: str,
+    ) -> None:
+        patch_path = f"{home}/.openenv_swe_test_patch.diff"
         sandbox.write_text(patch_path, test_patch)
         result = sandbox.exec(
             f"git apply --whitespace=nowarn {shlex.quote(patch_path)}",
-            cwd=TESTBED,
+            cwd=workdir,
             timeout=30,
         )
         if result.exit_code != 0:
@@ -711,6 +952,8 @@ class SWESessionFactory(ResourceSessionFactory):
         self,
         sandbox: SandboxHandle,
         gym_task: SWEGymTask,
+        *,
+        workdir: str,
     ) -> dict[str, bool]:
         cases: list[str] = []
         seen: set[str] = set()
@@ -723,7 +966,7 @@ class SWESessionFactory(ResourceSessionFactory):
         results: dict[str, bool] = {}
         for case in cases:
             cmd = f"python -m pytest -q --maxfail=1 {shlex.quote(case)}"
-            run = sandbox.exec(cmd, cwd=TESTBED, timeout=self._verify_timeout_s)
+            run = sandbox.exec(cmd, cwd=workdir, timeout=self._verify_timeout_s)
             results[case] = run.exit_code == 0
         return results
 
@@ -731,13 +974,15 @@ class SWESessionFactory(ResourceSessionFactory):
         self,
         sandbox: SandboxHandle,
         swe_task: SWETask,
+        *,
+        workdir: str,
     ) -> tuple[float, bool]:
         """Legacy fallback for non-SWE-Gym tasks."""
         if not swe_task.verify:
             return 0.0, False
         passed = 0
         for cmd in swe_task.verify:
-            r = sandbox.exec(cmd, cwd=TESTBED, timeout=self._verify_timeout_s)
+            r = sandbox.exec(cmd, cwd=workdir, timeout=self._verify_timeout_s)
             if r.exit_code == 0:
                 passed += 1
         reward = passed / len(swe_task.verify)
@@ -755,6 +1000,42 @@ class SWESessionFactory(ResourceSessionFactory):
             paths.append(path)
         return sorted(set(paths))
 
+    @staticmethod
+    def _is_test_like_path(path: str) -> bool:
+        text = (path or "").strip().strip('"')
+        if not text:
+            return False
+        normalized = text.replace("\\", "/")
+        basename = normalized.rsplit("/", 1)[-1]
+        if basename == "conftest.py":
+            return True
+        if basename.startswith("test_") or basename.endswith("_test.py"):
+            return True
+        parts = normalized.split("/")
+        return any(part in {"test", "tests", "testing"} for part in parts[:-1])
+
+    @classmethod
+    def _list_changed_test_paths(
+        cls,
+        sandbox: SandboxHandle,
+        *,
+        workdir: str,
+    ) -> list[str]:
+        commands = (
+            "git diff --name-only HEAD --",
+            "git ls-files --others --exclude-standard",
+        )
+        paths: set[str] = set()
+        for cmd in commands:
+            result = sandbox.exec(cmd, cwd=workdir, timeout=10)
+            if result.exit_code != 0:
+                continue
+            for line in (result.stdout or "").splitlines():
+                path = line.strip()
+                if cls._is_test_like_path(path):
+                    paths.add(path)
+        return sorted(paths)
+
     def _revert_test_files(
         self,
         sandbox: SandboxHandle,
@@ -762,6 +1043,7 @@ class SWESessionFactory(ResourceSessionFactory):
         base_commit: str,
         paths: list[str],
         strict: bool,
+        workdir: str,
     ) -> None:
         if not paths:
             return
@@ -770,7 +1052,7 @@ class SWESessionFactory(ResourceSessionFactory):
         for path in paths:
             has_file = sandbox.exec(
                 f"git cat-file -e {shlex.quote(f'{base_commit}:{path}')}",
-                cwd=TESTBED,
+                cwd=workdir,
                 timeout=10,
             )
             if has_file.exit_code == 0:
@@ -781,7 +1063,7 @@ class SWESessionFactory(ResourceSessionFactory):
             else:
                 cmd = f"rm -f -- {shlex.quote(path)}"
 
-            result = sandbox.exec(cmd, cwd=TESTBED, timeout=20)
+            result = sandbox.exec(cmd, cwd=workdir, timeout=20)
             if result.exit_code != 0:
                 failures.append(
                     f"{path}: {(result.stderr or result.stdout or '').strip()}"

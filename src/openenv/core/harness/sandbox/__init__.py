@@ -18,6 +18,7 @@ from typing import Any, Literal
 
 from .base import BgJob, ExecResult, SandboxBackend, SandboxHandle
 from .docker_backend import DockerBgJob, DockerSandboxBackend, DockerSandboxHandle
+from .local_backend import LocalBgJob, LocalSandboxBackend, LocalSandboxHandle
 
 __all__ = [
     "BgJob",
@@ -25,6 +26,9 @@ __all__ = [
     "DockerSandboxBackend",
     "DockerSandboxHandle",
     "ExecResult",
+    "LocalBgJob",
+    "LocalSandboxBackend",
+    "LocalSandboxHandle",
     "SandboxBackend",
     "SandboxHandle",
     "create_sandbox_backend",
@@ -46,7 +50,7 @@ except ImportError:
 
 
 def create_sandbox_backend(
-    backend: Literal["e2b", "docker", "hf"] = "e2b",
+    backend: Literal["e2b", "docker", "hf", "local"] = "e2b",
     **kwargs: Any,
 ) -> SandboxBackend:
     """Create a sandbox backend by name.
@@ -57,6 +61,8 @@ def create_sandbox_backend(
     For ``"docker"``: local Docker, no external dependencies.
 
     For ``"hf"``: Hugging Face Jobs via ``hf-sandbox``.
+
+    For ``"local"``: isolated temp directories and subprocesses on the host.
     """
     if backend == "e2b":
         from .e2b_backend import E2BSandboxBackend
@@ -68,6 +74,8 @@ def create_sandbox_backend(
         from .hf_backend import HFSandboxBackend
 
         return HFSandboxBackend(**kwargs)
+    elif backend == "local":
+        return LocalSandboxBackend(**kwargs)
     raise ValueError(
-        f"Unknown sandbox backend: {backend!r}. Use 'e2b', 'docker', or 'hf'."
+        f"Unknown sandbox backend: {backend!r}. Use 'e2b', 'docker', 'hf', or 'local'."
     )
