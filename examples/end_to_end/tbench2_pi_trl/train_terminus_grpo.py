@@ -35,13 +35,13 @@ from transformers import AutoTokenizer
 from trl.experimental.async_grpo import AsyncGRPOConfig, AsyncGRPOTrainer
 
 TASK_DATASET_ID = "burtenshaw/terminus-pi-trl-tasks"
-MODEL = "Qwen/Qwen3.5-4B"
+MODEL = "Qwen/Qwen3-4B"
 ENV_URL = os.environ.get("TERMINUS_ENV_URL", "http://localhost:8000")
 OUTPUT_DIR = Path(os.environ.get("TERMINUS_OUTPUT_DIR", "/tmp/terminus-pi-trl-output"))
-HUB_MODEL_ID = "burtenshaw/terminus-pi-trl-async-grpo-qwen35-4b"
+HUB_MODEL_ID = "burtenshaw/terminus-pi-trl-async-grpo-qwen3-4b"
 TRACKIO_PROJECT = "terminus-pi-trl"
 REPORT_TO = "trackio"
-RUN_NAME = f"{os.environ.get('JOB_ID', 'local')}-terminus"
+RUN_NAME = os.environ.get("JOB_ID", "local") + "-terminus"
 VLLM_SERVER_URL = os.environ.get("TERMINUS_VLLM_SERVER_URL", "http://localhost:8001")
 REWARD_RE = re.compile(r"reward=([+-]?(?:\d+(?:\.\d*)?|\.\d+))")
 
@@ -163,40 +163,6 @@ def _parse_tool_reward(content: str) -> float | None:
     return float(match.group(1))
 
 
-class TerminusAsyncGRPOTrainer(AsyncGRPOTrainer):
-    """Map local Qwen3.5 weight names to the vLLM server wrapper."""
-
-    def _streaming_iter(self):
-        for name, tensor in super()._streaming_iter():
-            yield _vllm_weight_name(name), tensor
-
-
-def _install_vllm_weight_name_adapter() -> None:
-    import trl.experimental.async_grpo.async_grpo_trainer as trainer_module
-
-    original_worker = trainer_module.AsyncRolloutWorker
-    if getattr(original_worker, "_terminus_weight_name_adapter", False):
-        return
-
-    class TerminusRolloutWorker(original_worker):
-        _terminus_weight_name_adapter = True
-
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            names = kwargs.get("weight_names")
-            if names is not None:
-                kwargs = {**kwargs, "weight_names": [_vllm_weight_name(n) for n in names]}
-            super().__init__(*args, **kwargs)
-
-    trainer_module.AsyncRolloutWorker = TerminusRolloutWorker
-
-
-def _vllm_weight_name(name: str) -> str:
-    name = name.removeprefix("module.")
-    if name.startswith(("model.", "lm_head.")):
-        return f"language_model.{name}"
-    return name
-
-
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -215,9 +181,8 @@ def main() -> None:
     tokenizer = AutoTokenizer.from_pretrained(MODEL)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    _install_vllm_weight_name_adapter()
 
-    trainer = TerminusAsyncGRPOTrainer(
+    trainer = AsyncGRPOTrainer(
         model=MODEL,
         args=AsyncGRPOConfig(
             output_dir=str(OUTPUT_DIR),
