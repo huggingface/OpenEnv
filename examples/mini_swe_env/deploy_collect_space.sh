@@ -23,6 +23,10 @@
 #   --model MODEL_NAME        Model name on vLLM endpoint (default: qwen-3.6-27b)
 #   --api-url URL             vLLM API base URL (default: https://api.siemens.com/llm/v1)
 #   --api-key KEY             vLLM API key (required, or set SWE_LLM_API_KEY)
+#   --cf-api-token TOKEN      Cloudflare API token (or set CF_API_TOKEN)
+#   --cf-account-id ID        Cloudflare account ID (or set CF_ACCOUNT_ID)
+#   --cf-zone-id ID           Cloudflare zone ID (or set CF_ZONE_ID)
+#   --cf-domain DOMAIN        Domain for sandbox tunnels (or set CF_DOMAIN)
 #   --n-rollouts N            Rollouts per task (default: 4)
 #   --max-concurrent N        Concurrent rollouts (default: 3)
 #   --max-turns N             Max agent turns (default: 50)
@@ -45,6 +49,10 @@ SPACE_ID="${HF_SPACE_ID:-rycerzes/swe-teacher-collect}"
 MODEL="${SWE_LLM_MODEL:-qwen-3.6-27b}"
 API_URL="${SWE_LLM_BASE_URL:-https://api.siemens.com/llm/v1}"
 API_KEY="${SWE_LLM_API_KEY:-}"
+CF_API_TOKEN="${CF_API_TOKEN:-}"
+CF_ACCOUNT_ID="${CF_ACCOUNT_ID:-}"
+CF_ZONE_ID="${CF_ZONE_ID:-}"
+CF_DOMAIN="${CF_DOMAIN:-}"
 N_ROLLOUTS=4
 MAX_CONCURRENT=3
 MAX_TURNS=50
@@ -82,6 +90,10 @@ while [[ $# -gt 0 ]]; do
         --model) MODEL="$2"; shift 2 ;;
         --api-url) API_URL="$2"; shift 2 ;;
         --api-key) API_KEY="$2"; shift 2 ;;
+        --cf-api-token) CF_API_TOKEN="$2"; shift 2 ;;
+        --cf-account-id) CF_ACCOUNT_ID="$2"; shift 2 ;;
+        --cf-zone-id) CF_ZONE_ID="$2"; shift 2 ;;
+        --cf-domain) CF_DOMAIN="$2"; shift 2 ;;
         --n-rollouts) N_ROLLOUTS="$2"; shift 2 ;;
         --max-concurrent) MAX_CONCURRENT="$2"; shift 2 ;;
         --max-turns) MAX_TURNS="$2"; shift 2 ;;
@@ -152,6 +164,11 @@ printf "║  %-54s  ║\n" "Concurrent:  $MAX_CONCURRENT"
 printf "║  %-54s  ║\n" "Max Turns:   $MAX_TURNS"
 printf "║  %-54s  ║\n" "Max Tasks:   ${MAX_TASKS:-all (230 Lite)}"
 printf "║  %-54s  ║\n" "Rate Limit:  $RATE_LIMIT req/min"
+if [ -n "$CF_API_TOKEN" ]; then
+printf "║  %-54s  ║\n" "CF Tunnel:   named (${CF_DOMAIN})"
+else
+printf "║  %-54s  ║\n" "CF Tunnel:   quick (trycloudflare.com)"
+fi
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -175,6 +192,17 @@ space_secrets = {
     "SWE_LLM_API_KEY": "$API_KEY",
     "INTERCEPTION_AUTH_TOKEN": secrets.token_urlsafe(32),
 }
+
+# Cloudflare named tunnel secrets (optional — enables reliable sandbox connectivity)
+cf_secrets = {
+    "CF_API_TOKEN": "$CF_API_TOKEN",
+    "CF_ACCOUNT_ID": "$CF_ACCOUNT_ID",
+    "CF_ZONE_ID": "$CF_ZONE_ID",
+    "CF_DOMAIN": "$CF_DOMAIN",
+}
+for key, value in cf_secrets.items():
+    if value:
+        space_secrets[key] = value
 for key, value in space_secrets.items():
     try:
         api.add_space_secret(space_id, key, value)
@@ -297,7 +325,7 @@ RUN pip install --no-cache-dir -e ".[core]" && \
     aiohttp \
     datasets \
     huggingface_hub \
-    hf-sandbox \
+    "hf-sandbox[named-tunnels] @ git+https://github.com/rycerzes/hf-sandbox@feat/named-tunnels" \
     fastmcp
 
 # Copy remaining source

@@ -27,7 +27,7 @@ COPY --chown=user . .
 
 # Install deps:
 # 1. Force-upgrade huggingface-hub (resolves vLLM vs hf-sandbox conflict).
-# 2. Force-install transformers >=5.2.0 (required by TRL v1.4.0 AsyncGRPO,
+# 2. Force-install transformers >=5.2.0 (required by TRL v1.6.0 AsyncGRPO,
 #    and for native Qwen3.5-4B model type support).  --no-deps avoids
 #    pulling vLLM's bundled transformers which may conflict.
 # 3. TRL emits a warning about vLLM >0.18 but functions correctly —
@@ -37,9 +37,9 @@ RUN uv pip install --system --no-cache "huggingface-hub>=1.5" && \
         -e "." \
         -e "envs/mini_swe_env" && \
     uv pip install --system --no-cache \
-        "trl>=1.4.0" \
+        "trl>=1.6.0" \
         "accelerate>=1.13.0" \
-        "hf-sandbox>=0.1.1" \
+        "hf-sandbox[named-tunnels] @ git+https://github.com/rycerzes/hf-sandbox@feat/named-tunnels" \
         "datasets>=4.8.0" \
         "aiohttp>=3.13.5" \
         "fastmcp>=3.3.0" \

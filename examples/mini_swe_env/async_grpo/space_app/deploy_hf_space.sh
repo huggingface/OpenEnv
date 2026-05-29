@@ -41,6 +41,7 @@ MODEL="${SWE_MODEL:-Qwen/Qwen3-1.7B}"
 MAX_TASKS=5
 MAX_STEPS=10
 MAX_TURNS=30
+NUM_GENERATIONS=16
 HARDWARE="a10g-largex2"
 SANDBOX_BACKEND="hf"
 SKIP_BUILD=false
@@ -84,6 +85,7 @@ while [[ $# -gt 0 ]]; do
         --max-tasks) MAX_TASKS="$2"; shift 2 ;;
         --max-steps) MAX_STEPS="$2"; shift 2 ;;
         --max-turns) MAX_TURNS="$2"; shift 2 ;;
+        --num-generations) NUM_GENERATIONS="$2"; shift 2 ;;
         --hardware) HARDWARE="$2"; shift 2 ;;
         --sandbox-backend) SANDBOX_BACKEND="$2"; shift 2 ;;
         --skip-build) SKIP_BUILD=true; shift ;;
@@ -172,6 +174,17 @@ space_secrets = {
     "SWE_MODEL": "$MODEL",
     "VLLM_API_KEY": "token",
 }
+
+# Cloudflare named tunnel secrets (optional — enables reliable sandbox connectivity)
+cf_secrets = {
+    "CF_API_TOKEN": os.environ.get("CF_API_TOKEN", ""),
+    "CF_ACCOUNT_ID": os.environ.get("CF_ACCOUNT_ID", ""),
+    "CF_ZONE_ID": os.environ.get("CF_ZONE_ID", ""),
+    "CF_DOMAIN": os.environ.get("CF_DOMAIN", ""),
+}
+for key, value in cf_secrets.items():
+    if value:
+        space_secrets[key] = value
 for key, value in space_secrets.items():
     try:
         api.add_space_secret(space_id, key, value)
@@ -181,7 +194,7 @@ for key, value in space_secrets.items():
 
 # Variables (non-sensitive)
 variables = {
-    "MAX_MODEL_LEN": "4096",
+    "MAX_MODEL_LEN": "32768",
     "GPU_MEMORY_UTILIZATION": "0.70",
     "VLLM_GPU": "0",
     "TRAINER_GPU": "1",
@@ -310,7 +323,7 @@ EOF
 # --sandbox-backend $SANDBOX_BACKEND --max-tasks $MAX_TASKS --max-steps $MAX_STEPS --max-turns $MAX_TURNS
 EOF
     # Append deploy-time args to the trainer exec line (interpreter-agnostic).
-    sed -i "s|\(exec .*examples/mini_swe_env/train_swe_async_grpo.py\)|\1 --sandbox-backend $SANDBOX_BACKEND --max-tasks $MAX_TASKS --max-steps $MAX_STEPS --max-turns $MAX_TURNS|" "$STAGE_DIR/start.sh"
+    sed -i "s|\(exec .*examples/mini_swe_env/train_swe_async_grpo.py\)|\1 --sandbox-backend $SANDBOX_BACKEND --max-tasks $MAX_TASKS --max-steps $MAX_STEPS --max-turns $MAX_TURNS --num-generations $NUM_GENERATIONS|" "$STAGE_DIR/start.sh"
 
     FILE_COUNT=$(find "$STAGE_DIR" -type f | wc -l)
     echo "  ✓ Staged $FILE_COUNT files"
