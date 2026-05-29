@@ -861,7 +861,11 @@ def main() -> int:
                 or os.environ.get("TRACKIO_PROJECT", "").strip()
                 or "huggingface"
             ),
-            "trackio_space_id": os.environ.get("TRACKIO_SPACE_ID", "").strip() or None,
+            "trackio_space_id": (
+                os.environ.get("SWE_TRACKIO_SPACE_ID", "").strip()
+                or os.environ.get("TRACKIO_SPACE_ID", "").strip()
+                or None
+            ),
             "log_completions": _bool_env("SWE_LOG_COMPLETIONS", False),
             "num_completions_to_print": _int_env(
                 "SWE_LOG_COMPLETIONS_LIMIT",
