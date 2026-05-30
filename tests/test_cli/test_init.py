@@ -366,7 +366,7 @@ def test_init_requirements_file(tmp_path: Path) -> None:
     req_content = requirements.read_text()
     assert "fastapi" in req_content
     assert "uvicorn" in req_content
-    assert "openenv[core]>=0.2.0" in req_content
+    assert "openenv-core[core]>=0.2.0" in req_content
 
 
 def test_init_validates_empty_env_name(tmp_path: Path) -> None:

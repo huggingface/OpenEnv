@@ -157,6 +157,21 @@ def test_push_authenticates_with_hf(tmp_path: Path) -> None:
         assert mock_whoami.called
 
 
+def test_push_rejects_interface_and_no_interface(tmp_path: Path) -> None:
+    """Test that push rejects --interface and --no-interface together."""
+    _create_test_openenv_env(tmp_path)
+
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(str(tmp_path))
+        result = runner.invoke(app, ["push", "--interface", "--no-interface"])
+    finally:
+        os.chdir(old_cwd)
+
+    assert result.exit_code != 0
+    assert "cannot specify both" in result.output.lower()
+
+
 def test_push_enables_web_interface_in_dockerfile(tmp_path: Path) -> None:
     """Test that push enables web interface in Dockerfile."""
     _create_test_openenv_env(tmp_path)

@@ -160,13 +160,29 @@ Note: When connecting to an existing server, `__ENV_NAME__env.close()` will NOT 
 The client supports context manager usage for automatic connection management:
 
 ```python
+import asyncio
 from __ENV_NAME__ import __ENV_CLASS_NAME__Action, __ENV_CLASS_NAME__Env
 
-# Connect with context manager (auto-connects and closes)
-with __ENV_CLASS_NAME__Env(base_url="http://localhost:8000") as env:
+async def main():
+    async with __ENV_CLASS_NAME__Env(base_url="http://localhost:8000") as env:
+        result = await env.reset()
+        print(f"Reset: {result.observation.echoed_message}")
+        # Multiple steps with low latency
+        for msg in ["Hello", "World", "!"]:
+            result = await env.step(__ENV_CLASS_NAME__Action(message=msg))
+            print(f"Echoed: {result.observation.echoed_message}")
+
+asyncio.run(main())
+```
+
+Or use the synchronous wrapper:
+
+```python
+from __ENV_NAME__ import __ENV_CLASS_NAME__Action, __ENV_CLASS_NAME__Env
+
+with __ENV_CLASS_NAME__Env(base_url="http://localhost:8000").sync() as env:
     result = env.reset()
     print(f"Reset: {result.observation.echoed_message}")
-    # Multiple steps with low latency
     for msg in ["Hello", "World", "!"]:
         result = env.step(__ENV_CLASS_NAME__Action(message=msg))
         print(f"Echoed: {result.observation.echoed_message}")
@@ -195,19 +211,22 @@ app = create_app(
 Then multiple clients can connect simultaneously:
 
 ```python
+import asyncio
 from __ENV_NAME__ import __ENV_CLASS_NAME__Action, __ENV_CLASS_NAME__Env
-from concurrent.futures import ThreadPoolExecutor
 
-def run_episode(client_id: int):
-    with __ENV_CLASS_NAME__Env(base_url="http://localhost:8000") as env:
-        result = env.reset()
+async def run_episode(client_id: int):
+    async with __ENV_CLASS_NAME__Env(base_url="http://localhost:8000") as env:
+        result = await env.reset()
         for i in range(10):
-            result = env.step(__ENV_CLASS_NAME__Action(message=f"Client {client_id}, step {i}"))
+            result = await env.step(__ENV_CLASS_NAME__Action(message=f"Client {client_id}, step {i}"))
         return client_id, result.observation.message_length
 
-# Run 4 episodes concurrently
-with ThreadPoolExecutor(max_workers=4) as executor:
-    results = list(executor.map(run_episode, range(4)))
+async def main():
+    # Run 4 episodes concurrently
+    results = await asyncio.gather(*(run_episode(i) for i in range(4)))
+    print(results)
+
+asyncio.run(main())
 ```
 
 ## Development & Testing

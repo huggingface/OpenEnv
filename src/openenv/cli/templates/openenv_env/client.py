@@ -25,12 +25,17 @@ class __ENV_CLASS_NAME__Env(
     enabling efficient multi-step interactions with lower latency.
     Each client instance has its own dedicated environment session on the server.
 
-    Example:
-        >>> # Connect to a running server
-        >>> with __ENV_CLASS_NAME__Env(base_url="http://localhost:8000") as client:
-        ...     result = client.reset()
+    Example (async, recommended):
+        >>> async with __ENV_CLASS_NAME__Env(base_url="http://localhost:8000") as client:
+        ...     result = await client.reset()
         ...     print(result.observation.echoed_message)
         ...
+        ...     result = await client.step(__ENV_CLASS_NAME__Action(message="Hello!"))
+        ...     print(result.observation.echoed_message)
+
+    Example (sync wrapper):
+        >>> with __ENV_CLASS_NAME__Env(base_url="http://localhost:8000").sync() as client:
+        ...     result = client.reset()
         ...     result = client.step(__ENV_CLASS_NAME__Action(message="Hello!"))
         ...     print(result.observation.echoed_message)
 
