@@ -9,12 +9,16 @@
 from openenv.core.env_server.mcp_types import CallToolAction, ListToolsAction
 
 from .client import TerminusEnv
+from .harness import TerminusSessionFactory, build_terminal_tool_call, terminus_reward
 from .models import CommandResult, TerminusState
 
 __all__ = [
     "TerminusEnv",
+    "TerminusSessionFactory",
     "TerminusState",
     "CommandResult",
     "CallToolAction",
     "ListToolsAction",
+    "build_terminal_tool_call",
+    "terminus_reward",
 ]

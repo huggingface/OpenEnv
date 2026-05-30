@@ -11,11 +11,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "openenv-terminus-env"
 version = "0.1.0"
-description = "Single-tool E2B-backed coding environment for OpenEnv"
+description = "Single-tool coding environment for OpenEnv"
 requires-python = ">=3.10"
 dependencies = [
     "openenv-core[core]>=0.2.2",
-    "e2b-code-interpreter>=1.0.0",
     "fastapi>=0.115.0",
     "fastmcp>=3.0.0",
     "gradio>=4.0.0",
@@ -25,6 +24,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+hf = [
+    "hf-sandbox>=0.1.1",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.0.0",
