@@ -549,7 +549,10 @@ class TerminusPiRolloutWorker:
             return self._model_version
 
     def _rollout(self, task: Any, rollout_id: str) -> RolloutSample:
-        session = self._session_factory.create(task=task, episode_id=rollout_id)
+        session = self._session_factory.create(
+            task=_session_task(task),
+            episode_id=rollout_id,
+        )
         request_queue = self._interception.register_rollout(rollout_id)
         result_box: dict[str, Any] = {}
         error_box: list[BaseException] = []
@@ -748,6 +751,19 @@ def _parse_assistant_message(
         message["content"] = ""
         message["tool_calls"] = tool_calls
     return message
+
+
+def _session_task(task: Any) -> Any:
+    if not isinstance(task, dict) or not isinstance(task.get("prompt"), list):
+        return task
+    instruction = "\n\n".join(
+        str(message.get("content", ""))
+        for message in task["prompt"]
+        if isinstance(message, dict) and message.get("content")
+    )
+    if not instruction:
+        return task
+    return {**task, "instruction": instruction}
 
 
 def _assistant_message_from_text(text: str) -> dict[str, Any]:
