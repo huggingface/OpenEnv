@@ -1,6 +1,35 @@
 import { Type } from "typebox";
 
 const bridgeUrl = process.env.OPENENV_PI_BRIDGE_URL;
+const modelBaseUrl = process.env.OPENENV_PI_MODEL_BASE_URL;
+const modelId = process.env.OPENENV_PI_MODEL_ID;
+const modelProvider = process.env.OPENENV_PI_MODEL_PROVIDER || "openenv-vllm";
+const modelApiKey = process.env.OPENENV_PI_MODEL_API_KEY || "openenv";
+
+function registerModelProvider(pi) {
+  if (!modelBaseUrl || !modelId) {
+    return;
+  }
+  pi.registerProvider(modelProvider, {
+    baseUrl: modelBaseUrl,
+    apiKey: modelApiKey,
+    api: "openai-completions",
+    compat: {
+      supportsDeveloperRole: false,
+      supportsReasoningEffort: false,
+      thinkingFormat: "qwen-chat-template",
+    },
+    models: [{
+      id: modelId,
+      name: modelId,
+      reasoning: false,
+      input: ["text"],
+      contextWindow: 32768,
+      maxTokens: 4096,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    }],
+  });
+}
 
 async function callBridge(method, params = {}, id = method) {
   if (!bridgeUrl) {
@@ -24,6 +53,8 @@ async function callBridge(method, params = {}, id = method) {
 }
 
 export default async function(pi) {
+  registerModelProvider(pi);
+
   const { tools = [] } = await callBridge("tools/list");
   for (const tool of tools) {
     pi.registerTool({

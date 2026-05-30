@@ -732,6 +732,9 @@ class TestPiCLIHarnessAdapter:
             del cwd, text, capture_output, timeout
             seen_commands.append(list(command))
             bridge_url = env["OPENENV_PI_BRIDGE_URL"]
+            assert env["OPENENV_PI_MODEL_BASE_URL"] == "http://trainer.example/v1"
+            assert env["OPENENV_PI_MODEL_ID"] == "test-model"
+            assert env["OPENENV_PI_MODEL_PROVIDER"] == "openenv-vllm"
 
             def post(payload):
                 request = urllib.request.Request(
@@ -778,6 +781,7 @@ class TestPiCLIHarnessAdapter:
         adapter = PiCLIHarnessAdapter(
             pi_command="pi",
             model="test-model",
+            model_base_url="http://trainer.example/v1",
             command_runner=fake_pi,
         )
 
@@ -788,6 +792,8 @@ class TestPiCLIHarnessAdapter:
         assert result.tool_trace[0].tool_name == "finish"
         assert result.tool_trace[0].result.metadata["reward"] == 1.0
         assert result.messages == [{"role": "assistant", "content": "done"}]
+        assert seen_commands[0][seen_commands[0].index("--provider") + 1] == "openenv-vllm"
+        assert seen_commands[0][seen_commands[0].index("--model") + 1] == "test-model"
         assert seen_commands[0][:3] == ["pi", "--mode", "json"]
         extension_path = seen_commands[0][seen_commands[0].index("--extension") + 1]
         assert extension_path.endswith("pi_bridge.mjs")

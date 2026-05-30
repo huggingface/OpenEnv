@@ -43,6 +43,10 @@ TRACKIO_PROJECT = "terminus-pi-trl"
 REPORT_TO = "trackio"
 RUN_NAME = os.environ.get("JOB_ID", "local") + "-terminus"
 VLLM_SERVER_URL = os.environ.get("TERMINUS_VLLM_SERVER_URL", "http://localhost:8001")
+PI_VLLM_BASE_URL = os.environ.get(
+    "TERMINUS_PI_VLLM_BASE_URL",
+    VLLM_SERVER_URL.rstrip("/") + "/v1",
+)
 
 os.environ["TRACKIO_PROJECT"] = TRACKIO_PROJECT
 
@@ -117,7 +121,11 @@ def main() -> None:
         ).sync(),
         default_verify=list(task["verify"]),
     )
-    pi_harness = PiCLIHarnessAdapter(timeout_s=600.0)
+    pi_harness = PiCLIHarnessAdapter(
+        model=MODEL,
+        model_base_url=PI_VLLM_BASE_URL,
+        timeout_s=600.0,
+    )
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL)
     if tokenizer.pad_token is None:

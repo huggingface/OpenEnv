@@ -136,6 +136,9 @@ class PiCLIHarnessAdapter(CLIHarnessAdapter):
         pi_command: str | list[str] | tuple[str, ...] = "pi",
         provider: str | None = None,
         model: str | None = None,
+        model_base_url: str | None = None,
+        model_api_key: str = "openenv",
+        model_provider: str = "openenv-vllm",
         cwd: str | None = None,
         timeout_s: float = 600.0,
         extra_args: list[str] | None = None,
@@ -146,6 +149,9 @@ class PiCLIHarnessAdapter(CLIHarnessAdapter):
         )
         self._provider = provider
         self._model = model
+        self._model_base_url = model_base_url
+        self._model_api_key = model_api_key
+        self._model_provider = model_provider
         self._cwd = cwd
         self._timeout_s = timeout_s
         self._extra_args = list(extra_args or [])
@@ -174,6 +180,13 @@ class PiCLIHarnessAdapter(CLIHarnessAdapter):
 
             env = dict(os.environ)
             env["OPENENV_PI_BRIDGE_URL"] = bridge_url
+            if self._model_base_url:
+                if not self._model:
+                    raise ValueError("model is required when model_base_url is set")
+                env["OPENENV_PI_MODEL_BASE_URL"] = self._model_base_url
+                env["OPENENV_PI_MODEL_ID"] = self._model
+                env["OPENENV_PI_MODEL_PROVIDER"] = self._provider or self._model_provider
+                env["OPENENV_PI_MODEL_API_KEY"] = self._model_api_key
 
             command = [
                 *self._pi_command,
@@ -191,8 +204,11 @@ class PiCLIHarnessAdapter(CLIHarnessAdapter):
                 "--tools",
                 ",".join(tool.name for tool in tools),
             ]
-            if self._provider:
-                command.extend(["--provider", self._provider])
+            provider = self._provider or (
+                self._model_provider if self._model_base_url else None
+            )
+            if provider:
+                command.extend(["--provider", provider])
             if self._model:
                 command.extend(["--model", self._model])
             command.extend(self._extra_args)
