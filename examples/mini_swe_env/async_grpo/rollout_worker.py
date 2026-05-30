@@ -128,6 +128,15 @@ class WorkerConfig:
     post_response_grace_s: float = 10.0
     stop_on_idle_terminal_response: bool = True
     idle_backoff_s: float = 0.5
+    # vLLM max_model_len for pre-generation guard.  If the prompt +
+    # max_completion_tokens exceeds this, the rollout terminates early
+    # with reward=0 rather than crashing the engine.  Set to match
+    # vLLM's --max-model-len.
+    max_model_len: int = 40960
+    # Number of context overflow failures before a task is blacklisted
+    # for the remainder of the training run.  Prevents infinite retry
+    # loops on tasks whose prompts inherently exceed the context window.
+    max_context_overflow_per_task: int = 3
 
 
 # ── Worker ─────────────────────────────────────────────────────────────
@@ -198,6 +207,13 @@ class SWERolloutWorker:
         self._group_lock = threading.Lock()
         # task_id → list of (RolloutSample with raw reward in .advantage)
         self._pending_groups: dict[str, list[RolloutSample]] = {}
+
+        # ── Context overflow tracking ────────────────────────────
+        # Track tasks that repeatedly exceed context to avoid infinite
+        # retry loops.  Failed sessions get reward=0 and are excluded
+        # from group normalization in _score_and_push_group.
+        self._overflow_counts: dict[str, int] = {}
+        self._overflow_lock = threading.Lock()
 
         # Prefix to prepend to trainer parameter names so they match vLLM's
         # model architecture.  For VLM models like Qwen3_5ForConditionalGeneration
@@ -457,21 +473,69 @@ class SWERolloutWorker:
         with self._lock:
             return self._model_version
 
+    def _is_task_blacklisted(self, task_id: str) -> bool:
+        """Check if a task has been blacklisted due to repeated context overflow."""
+        with self._overflow_lock:
+            return (
+                self._overflow_counts.get(task_id, 0)
+                >= self._cfg.max_context_overflow_per_task
+            )
+
+    def _record_context_overflow(self, task_id: str) -> None:
+        """Record a context overflow for a task.  After max attempts,
+        abandon the group with reward=0 for all pending samples."""
+        abandon_group = False
+        with self._overflow_lock:
+            self._overflow_counts[task_id] = (
+                self._overflow_counts.get(task_id, 0) + 1
+            )
+            count = self._overflow_counts[task_id]
+            if count >= self._cfg.max_context_overflow_per_task:
+                _log.warning(
+                    "task %s blacklisted after %d context overflows — "
+                    "abandoning group with reward=0",
+                    task_id,
+                    count,
+                )
+                abandon_group = True
+
+        if abandon_group:
+            # Flush the partial group: failed sessions get reward=0
+            # and are excluded from group normalization.
+            with self._group_lock:
+                partial = self._pending_groups.pop(task_id, None)
+            if partial:
+                for sample in partial:
+                    sample.advantage = 0.0
+                    sample.metrics["context_overflow_abandoned"] = 1.0
+                    try:
+                        self.rollout_buffer.put(sample, timeout=1.0)
+                    except queue.Full:
+                        pass
+
     def _next_group_task(self) -> SWETask:
         """Pick a task that needs more rollouts to complete its group.
 
         Prioritizes tasks that already have partial groups (some rollouts
         done but < num_generations). Falls back to a fresh task.
+        Skips tasks blacklisted due to repeated context overflow.
         """
         with self._group_lock:
             # Find a task with a partial group that needs more rollouts
             for task_id, samples in self._pending_groups.items():
                 if len(samples) < self._cfg.num_generations:
+                    if self._is_task_blacklisted(task_id):
+                        continue
                     # Return the corresponding task
                     for t in self._tasks:
                         if t.instance_id == task_id:
                             return t
-        # No partial groups — start a fresh task
+        # No partial groups — start a fresh task (skip blacklisted)
+        for _ in range(len(self._tasks)):
+            task = self._next_task()
+            if not self._is_task_blacklisted(task.instance_id):
+                return task
+        # All tasks blacklisted — fatal (shouldn't happen with 293 tasks)
         return self._next_task()
 
     def _submit_to_group(self, task: SWETask, sample: RolloutSample) -> None:
@@ -495,21 +559,51 @@ class SWERolloutWorker:
     def _score_and_push_group(
         self, task_id: str, group: list[RolloutSample]
     ) -> None:
-        """Compute group-relative advantages (GRPO) and push to buffer."""
+        """Compute group-relative advantages (GRPO) and push to buffer.
+
+        Failed sessions (context_overflow) are excluded from the group
+        mean/std and get advantage=0, matching Polar's reward_post_process
+        which zeros FAILED/ABORTED trajectories.
+        """
         rewards = [s.advantage for s in group]  # raw rewards stored here
         n = len(rewards)
-        mean_r = sum(rewards) / n
-        var_r = sum((r - mean_r) ** 2 for r in rewards) / n
+
+        # Exclude failed sessions from the baseline computation.
+        valid_mask = [
+            s.metrics.get("context_overflow", 0.0) == 0.0 for s in group
+        ]
+        valid_rewards = [r for r, v in zip(rewards, valid_mask) if v]
+
+        if not valid_rewards:
+            # All sessions failed — no signal.
+            for sample in group:
+                sample.advantage = 0.0
+                sample.metrics["group_reward_mean"] = 0.0
+                sample.metrics["group_reward_std"] = 0.0
+                sample.metrics["group_size"] = float(n)
+                try:
+                    self.rollout_buffer.put(sample, timeout=2.0)
+                except queue.Full:
+                    _log.warning("queue full, dropping sample from group %s", task_id)
+            _log.info(
+                "group complete (all failed): task=%s n=%d", task_id, n
+            )
+            return
+
+        mean_r = sum(valid_rewards) / len(valid_rewards)
+        var_r = sum((r - mean_r) ** 2 for r in valid_rewards) / len(valid_rewards)
         std_r = var_r**0.5
 
         for i, sample in enumerate(group):
-            if std_r > 1e-8:
+            if not valid_mask[i]:
+                # Failed session: zero advantage, zero gradient.
+                sample.advantage = 0.0
+            elif std_r > 1e-8:
                 sample.advantage = (rewards[i] - mean_r) / std_r
             else:
-                # All rewards identical (e.g. all 0 or all 1) — zero advantage
+                # All valid rewards identical — zero advantage
                 sample.advantage = 0.0
 
-            # Add group metrics
             sample.metrics["group_reward_mean"] = mean_r
             sample.metrics["group_reward_std"] = std_r
             sample.metrics["group_size"] = float(n)
@@ -522,8 +616,8 @@ class SWERolloutWorker:
                 )
 
         _log.info(
-            "group complete: task=%s n=%d reward_mean=%.3f reward_std=%.3f",
-            task_id, n, mean_r, std_r,
+            "group complete: task=%s n=%d valid=%d reward_mean=%.3f reward_std=%.3f",
+            task_id, n, len(valid_rewards), mean_r, std_r,
         )
 
     def _loop(self, idx: int) -> None:
@@ -537,6 +631,34 @@ class SWERolloutWorker:
             eid = f"swe-{idx}-{uuid.uuid4().hex[:8]}"
             try:
                 sample = asyncio.run(self._rollout(task, eid))
+            except SWERolloutWorker.ContextOverflowError as exc:
+                # Record the overflow and submit a zero-reward sample so
+                # the group can still progress.  After max_context_overflow_per_task
+                # failures the task is blacklisted.
+                _log.warning(
+                    "context overflow worker=%d task=%s: %s",
+                    idx,
+                    task.instance_id,
+                    exc,
+                )
+                self._record_context_overflow(task.instance_id)
+                pad = getattr(self._tokenizer, "pad_token_id", 0) or 0
+                overflow_sample = RolloutSample(
+                    input_ids=[pad],
+                    completion_mask=[1],
+                    old_log_probs=[0.0],
+                    advantage=0.0,
+                    model_version=self._model_ver(),
+                    metrics={
+                        "reward": 0.0,
+                        "turns": 0.0,
+                        "context_overflow": 1.0,
+                        "answer_called": 0.0,
+                    },
+                )
+                self._submit_to_group(task, overflow_sample)
+                time.sleep(self._cfg.idle_backoff_s)
+                continue
             except Exception:
                 _log.exception("rollout failed worker=%d id=%s", idx, task.instance_id)
                 time.sleep(self._cfg.idle_backoff_s)
@@ -643,9 +765,27 @@ class SWERolloutWorker:
                 turns += 1
 
                 # ── Generate via /v1/completions ──────────────────
-                turn_ids, turn_lps, text, finish_reason = self._generate(
-                    current_prompt_ids
-                )
+                # If context overflows on turn 1, let it propagate to _loop()
+                # which emits a zero-reward placeholder.  On later turns,
+                # terminate the rollout with the partial trajectory (reward=0)
+                # so the session still contributes to the group.
+                try:
+                    turn_ids, turn_lps, text, finish_reason = self._generate(
+                        current_prompt_ids
+                    )
+                except SWERolloutWorker.ContextOverflowError:
+                    if turns <= 1:
+                        raise
+                    _log.warning(
+                        "context overflow at turn %d for task=%s — "
+                        "terminating with partial trajectory (%d tokens)",
+                        turns,
+                        task.instance_id,
+                        len(all_ids),
+                    )
+                    rollout_stop_reason = "context_overflow"
+                    self._record_context_overflow(task.instance_id)
+                    break
 
                 all_ids.extend(turn_ids)
                 all_mask.extend([1] * len(turn_ids))
@@ -714,8 +854,12 @@ class SWERolloutWorker:
                     pending_intercept = maybe_next
 
             # ── Reward ────────────────────────────────────────────
-            vr = session.verify(transcript=[])
-            reward = float(getattr(vr, "env_reward", 0.0) or 0.0)
+            # Context overflow means the agent didn't finish; assign reward=0.
+            if rollout_stop_reason == "context_overflow":
+                reward = 0.0
+            else:
+                vr = session.verify(transcript=[])
+                reward = float(getattr(vr, "env_reward", 0.0) or 0.0)
 
             if not all_lps:
                 pad = getattr(self._tokenizer, "pad_token_id", 0) or 0
@@ -733,6 +877,9 @@ class SWERolloutWorker:
                     "reward": reward,
                     "turns": float(turns),
                     "answer_called": float(answer_called),
+                    "context_overflow": float(
+                        rollout_stop_reason == "context_overflow"
+                    ),
                     "terminal_idle_stop": float(
                         rollout_stop_reason
                         in {
@@ -810,6 +957,13 @@ class SWERolloutWorker:
             ids = self._tokenizer.apply_chat_template(messages, **kwargs)
         return cast(list[int], ids)
 
+    class ContextOverflowError(RuntimeError):
+        """Raised when prompt + max_tokens exceeds max_model_len.
+
+        Caught in _loop() to terminate the session gracefully with
+        reward=0, avoiding the infinite retry loop.
+        """
+
     def _generate(
         self,
         prompt_ids: list[int],
@@ -817,7 +971,21 @@ class SWERolloutWorker:
         """POST /v1/completions with token IDs.
 
         Returns: ``(token_ids, token_logprobs, text, finish_reason)``.
+
+        Raises ContextOverflowError if the prompt would exceed
+        max_model_len.  This is caught in _loop() for graceful
+        termination with reward=0.
         """
+        # Pre-generation guard: check before sending to vLLM so we don't
+        # waste a round trip and risk the engine going idle.
+        total_needed = len(prompt_ids) + self._cfg.max_completion_tokens
+        if total_needed > self._cfg.max_model_len:
+            raise SWERolloutWorker.ContextOverflowError(
+                f"prompt ({len(prompt_ids)}) + max_tokens "
+                f"({self._cfg.max_completion_tokens}) = {total_needed} > "
+                f"max_model_len ({self._cfg.max_model_len})"
+            )
+
         body = {
             "model": self._vllm_model,
             "prompt": prompt_ids,
@@ -837,7 +1005,13 @@ class SWERolloutWorker:
             timeout=self._cfg.request_timeout_s,
         )
         if resp.status_code != 200:
-            raise RuntimeError(f"vllm {resp.status_code}: {resp.text[:400]}")
+            error_text = resp.text[:400]
+            # Detect context overflow from vLLM's 400 response
+            if resp.status_code == 400 and "max_model_len" in error_text:
+                raise SWERolloutWorker.ContextOverflowError(
+                    f"vLLM rejected: {error_text}"
+                )
+            raise RuntimeError(f"vllm {resp.status_code}: {error_text}")
 
         choice = resp.json()["choices"][0]
         return (

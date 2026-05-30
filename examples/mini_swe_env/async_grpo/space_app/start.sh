@@ -14,7 +14,7 @@ set -e
 MODEL="${SWE_MODEL:?ERROR: Set SWE_MODEL (e.g. Qwen/Qwen3-1.7B)}"
 VLLM_PORT="${VLLM_PORT:-8000}"
 VLLM_KEY="${VLLM_API_KEY:-token}"
-MAX_MODEL_LEN="${MAX_MODEL_LEN:-4096}"
+MAX_MODEL_LEN="${MAX_MODEL_LEN:-49152}"
 GPU_MEM_UTIL="${GPU_MEMORY_UTILIZATION:-0.9}"
 
 # Prefer repo-local venv Python for local/dev runs; fall back to image python.

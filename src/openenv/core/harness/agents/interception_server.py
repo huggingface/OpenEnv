@@ -126,6 +126,14 @@ class InterceptionServer:
                 "/rollout/{rollout_id}/v1/tools/{tool_name}",
                 self._handle_tool_call,
             )
+            app.router.add_post(
+                "/rollout/{rollout_id}/exit",
+                self._handle_exit,
+            )
+            app.router.add_post(
+                "/rollout/{rollout_id}/v1/exit",
+                self._handle_exit,
+            )
             app.router.add_get("/health", self._handle_health)
             runner = web.AppRunner(app)
             await runner.setup()
@@ -362,6 +370,33 @@ class InterceptionServer:
 
     async def _handle_health(self, request: web.Request) -> web.Response:
         return web.json_response({"status": "ok", **self.stats()})
+
+    async def _handle_exit(self, request: web.Request) -> web.Response:
+        """Handle agent process exit notification.
+
+        Called by the sandbox entrypoint after the agent process exits.
+        Enqueues a sentinel ``None`` on the rollout's request queue so that
+        ``next_request()`` returns immediately instead of waiting for the
+        full timeout.
+        """
+        rollout_id = request.match_info["rollout_id"]
+        with self._state_lock:
+            rollout = self.active_rollouts.get(rollout_id)
+        if rollout is None:
+            return web.json_response({"status": "ignored", "reason": "unknown rollout_id"})
+
+        queue = rollout.get("request_id_queue")
+        if queue is not None:
+            try:
+                queue.put_nowait(None)  # sentinel: signals "agent exited"
+            except Exception:
+                pass
+
+        _log.info(
+            "interception_exit_signal rollout_id=%s",
+            rollout_id,
+        )
+        return web.json_response({"status": "ok"})
 
     async def _handle_tool_call(self, request: web.Request) -> web.Response:
         if not self._authorized(request):

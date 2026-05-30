@@ -194,8 +194,8 @@ for key, value in space_secrets.items():
 
 # Variables (non-sensitive)
 variables = {
-    "MAX_MODEL_LEN": "32768",
-    "GPU_MEMORY_UTILIZATION": "0.70",
+    "MAX_MODEL_LEN": "40960",
+    "GPU_MEMORY_UTILIZATION": "0.75",
     "VLLM_GPU": "0",
     "TRAINER_GPU": "1",
     "INTERCEPTION_HOST": "0.0.0.0",

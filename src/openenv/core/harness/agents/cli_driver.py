@@ -210,6 +210,9 @@ class CLIAgentSession(ResourceSession):
                     self._interception_queue.get,
                     timeout=min(remaining, 1.0),
                 )
+                # None sentinel = agent process exited (sent by /exit endpoint)
+                if request_id is None:
+                    return None
                 intercept = server.get_intercept(request_id)
                 if intercept is not None:
                     return intercept
@@ -507,6 +510,20 @@ class CLIAgentDriver:
         if self.mode == "interception_gate" and self._interception_server is not None:
             envs["OPENAI_API_KEY"] = self._interception_server.secret
             envs["ANTHROPIC_API_KEY"] = self._interception_server.secret
+
+            # Append an exit notification so the InterceptionServer detects
+            # agent exit immediately instead of waiting for the full timeout.
+            # The /exit endpoint enqueues a None sentinel on the request queue,
+            # causing next_request() to return None.
+            if base_url_override:
+                exit_url = f"{base_url_override.rstrip('/')}/exit"
+                api_key = self._interception_server.secret
+                cmd = (
+                    f"{{ {cmd} ; }} ; "
+                    f'curl -sf -X POST -H "Authorization: Bearer {api_key}" '
+                    f'"{exit_url}" || true'
+                )
+
         return sandbox.start_bg(cmd, envs=envs)
 
     def _write_pi_models_config(

@@ -14,7 +14,7 @@ on the main thread.
 
 Prerequisites:
     CUDA_VISIBLE_DEVICES=0 vllm serve Qwen/Qwen3-1.7B \\
-        --tensor-parallel-size 1 --max-model-len 4096
+        --tensor-parallel-size 1 --max-model-len 40960
 
     CUDA_VISIBLE_DEVICES=1 \\
     SWE_MODEL=Qwen/Qwen3-1.7B \\
