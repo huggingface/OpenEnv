@@ -32,7 +32,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Iterator, Sequence, cast
+from typing import Any, Callable, Iterator, Sequence, cast
 
 import requests
 
@@ -137,6 +137,16 @@ class WorkerConfig:
     # for the remainder of the training run.  Prevents infinite retry
     # loops on tasks whose prompts inherently exceed the context window.
     max_context_overflow_per_task: int = 3
+    # Message truncation settings for context window management.
+    # Instead of crashing on overflow, progressively truncate long tool
+    # outputs and assistant messages to fit within context budget.
+    max_tool_message_chars: int = 6000
+    min_tool_message_chars: int = 256
+    max_assistant_message_chars: int = 4000
+    min_assistant_message_chars: int = 256
+    # Retry config for transient sandbox/network errors.
+    max_rollout_attempts: int = 4
+    failure_backoff_s: float = 30.0
 
 
 # ── Worker ─────────────────────────────────────────────────────────────
@@ -711,6 +721,20 @@ class SWERolloutWorker:
                 # ── Tokenize this turn's full prompt ──────────────
                 messages = _get_messages(intercept)
                 tools = _get_tools(intercept)
+
+                # Trim messages to fit within context budget before tokenizing.
+                messages, _ = _fit_messages_to_context_window(
+                    messages=messages,
+                    tools=tools,
+                    render_prompt_ids=self._render_prompt_ids,
+                    requested_completion_tokens=self._cfg.max_completion_tokens,
+                    max_model_len=self._cfg.max_model_len,
+                    max_tool_message_chars=self._cfg.max_tool_message_chars,
+                    min_tool_message_chars=self._cfg.min_tool_message_chars,
+                    max_assistant_message_chars=self._cfg.max_assistant_message_chars,
+                    min_assistant_message_chars=self._cfg.min_assistant_message_chars,
+                )
+
                 current_prompt_ids = self._render_prompt_ids(messages, tools)
 
                 if initial_prompt_ids is None:
@@ -886,6 +910,9 @@ class SWERolloutWorker:
                             "idle_after_terminal_stop",
                             "agent_exit_after_terminal_stop",
                         }
+                    ),
+                    "request_idle_timeout": float(
+                        rollout_stop_reason == "request_idle_timeout"
                     ),
                     "wall_s": round(time.time() - t0, 3),
                     "n_tokens": float(len(all_ids)),
@@ -1232,3 +1259,200 @@ def _has_answer_call(resp: dict[str, Any]) -> bool:
             if ((tc or {}).get("function") or {}).get("name") == "answer":
                 return True
     return False
+
+
+# ── Context window message trimming ────────────────────────────────────
+
+_TRUNCATION_MARKER = "\n...[truncated]...\n"
+_OMITTED_TOOL_OUTPUT_MARKER = "[tool output omitted]"
+_OMITTED_ASSISTANT_TEXT_MARKER = "[omitted]"
+
+
+def _truncate_text_middle(
+    text: str,
+    *,
+    max_chars: int,
+    marker: str = _TRUNCATION_MARKER,
+) -> tuple[str, bool]:
+    """Truncate text in the middle, preserving head and tail."""
+    if max_chars <= 0 or len(text) <= max_chars:
+        return text, False
+
+    usable = max_chars - len(marker)
+    if usable <= 8:
+        return marker[: max(1, max_chars)], True
+
+    head = max(1, int(usable * 0.75))
+    tail = max(1, usable - head)
+    return text[:head].rstrip() + marker + text[-tail:].lstrip(), True
+
+
+def _truncate_messages_for_prompt_budget(
+    messages: Sequence[dict[str, Any]],
+    *,
+    max_tool_message_chars: int,
+    max_assistant_message_chars: int,
+) -> tuple[list[dict[str, Any]], int, int]:
+    """Truncate long tool/assistant messages in-place."""
+    truncated_messages: list[dict[str, Any]] = []
+    tool_truncations = 0
+    assistant_truncations = 0
+
+    for message in messages:
+        updated = dict(message)
+        content = updated.get("content")
+        if not isinstance(content, str):
+            truncated_messages.append(updated)
+            continue
+
+        role = str(updated.get("role") or "")
+        if role == "tool":
+            content, changed = _truncate_text_middle(
+                content,
+                max_chars=max_tool_message_chars,
+            )
+            if changed:
+                tool_truncations += 1
+        elif role == "assistant":
+            content, changed = _truncate_text_middle(
+                content,
+                max_chars=max_assistant_message_chars,
+            )
+            if changed:
+                assistant_truncations += 1
+
+        updated["content"] = content
+        truncated_messages.append(updated)
+
+    return truncated_messages, tool_truncations, assistant_truncations
+
+
+def _replace_oldest_message_content(
+    messages: Sequence[dict[str, Any]],
+    *,
+    role: str,
+    replacement: str,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Replace the oldest message of a given role with a short placeholder."""
+    updated_messages = [dict(message) for message in messages]
+    for idx, message in enumerate(updated_messages):
+        if message.get("role") != role:
+            continue
+        content = message.get("content")
+        if not isinstance(content, str) or content == replacement:
+            continue
+        if len(replacement) >= len(content):
+            continue
+        message["content"] = replacement
+        updated_messages[idx] = message
+        return updated_messages, True
+    return updated_messages, False
+
+
+def _fit_messages_to_context_window(
+    *,
+    messages: Sequence[dict[str, Any]],
+    tools: list[dict[str, Any]] | None,
+    render_prompt_ids: Callable[
+        [list[dict[str, Any]], list[dict[str, Any]] | None],
+        list[int],
+    ],
+    requested_completion_tokens: int,
+    max_model_len: int,
+    max_tool_message_chars: int,
+    min_tool_message_chars: int,
+    max_assistant_message_chars: int,
+    min_assistant_message_chars: int,
+    safety_margin: int = 16,
+) -> tuple[list[dict[str, Any]], list[int]]:
+    """Progressively truncate messages to fit prompt within context budget.
+
+    Strategy:
+    1. Truncate tool outputs to max_tool_message_chars, halving until min.
+    2. Truncate assistant messages similarly.
+    3. Replace oldest tool messages entirely with a placeholder.
+    4. Replace oldest assistant messages entirely with a placeholder.
+
+    Returns (trimmed_messages, prompt_token_ids).
+    """
+    prompt_budget = max(
+        1,
+        max_model_len - max(1, int(requested_completion_tokens)) - safety_margin,
+    )
+    tool_char_budget = max(1, int(max_tool_message_chars))
+    assistant_char_budget = max(1, int(max_assistant_message_chars))
+    min_tool_chars = max(1, int(min_tool_message_chars))
+    min_assistant_chars = max(1, int(min_assistant_message_chars))
+
+    base_messages = [dict(message) for message in messages]
+    prepared_messages = base_messages
+    prompt_ids = render_prompt_ids(prepared_messages, tools)
+    tool_truncations = 0
+    assistant_truncations = 0
+
+    # Phase 1: progressive truncation
+    while True:
+        prepared_messages, tool_truncations, assistant_truncations = (
+            _truncate_messages_for_prompt_budget(
+                base_messages,
+                max_tool_message_chars=tool_char_budget,
+                max_assistant_message_chars=assistant_char_budget,
+            )
+        )
+        prompt_ids = render_prompt_ids(prepared_messages, tools)
+        if len(prompt_ids) <= prompt_budget:
+            break
+        if tool_char_budget > min_tool_chars:
+            tool_char_budget = max(min_tool_chars, tool_char_budget // 2)
+            continue
+        if assistant_char_budget > min_assistant_chars:
+            assistant_char_budget = max(
+                min_assistant_chars,
+                assistant_char_budget // 2,
+            )
+            continue
+        break
+
+    # Phase 2: replace entire oldest messages with placeholders
+    omitted_tool_messages = 0
+    omitted_assistant_messages = 0
+    while len(prompt_ids) > prompt_budget:
+        prepared_messages, changed = _replace_oldest_message_content(
+            prepared_messages,
+            role="tool",
+            replacement=_OMITTED_TOOL_OUTPUT_MARKER,
+        )
+        if changed:
+            omitted_tool_messages += 1
+            prompt_ids = render_prompt_ids(prepared_messages, tools)
+            continue
+
+        prepared_messages, changed = _replace_oldest_message_content(
+            prepared_messages,
+            role="assistant",
+            replacement=_OMITTED_ASSISTANT_TEXT_MARKER,
+        )
+        if not changed:
+            break
+        omitted_assistant_messages += 1
+        prompt_ids = render_prompt_ids(prepared_messages, tools)
+
+    if (
+        tool_truncations
+        or assistant_truncations
+        or omitted_tool_messages
+        or omitted_assistant_messages
+    ):
+        _log.info(
+            "trimmed intercepted prompt: prompt_tokens=%d/%d tool_truncations=%d "
+            "assistant_truncations=%d omitted_tool_messages=%d "
+            "omitted_assistant_messages=%d",
+            len(prompt_ids),
+            prompt_budget,
+            tool_truncations,
+            assistant_truncations,
+            omitted_tool_messages,
+            omitted_assistant_messages,
+        )
+
+    return prepared_messages, prompt_ids

@@ -48,13 +48,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import queue as _queue_mod
 import logging
 import shlex
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from openenv.core.harness import Message, ResourceSessionFactory, VerifyResult
 from openenv.core.harness.agents import get_agent_spec
@@ -79,6 +80,33 @@ TESTBED = "/testbed"
 
 VERIFY_TIMEOUT_S = 300
 SETUP_TIMEOUT_S = 600
+DEFAULT_GIT_CHECKOUT_TIMEOUT_S = 300
+
+
+def _git_checkout_timeout_s() -> int:
+    """Read configurable git checkout timeout from environment."""
+    for name in ("SWE_GIT_CHECKOUT_TIMEOUT_S", "SWE_LOCAL_GIT_CHECKOUT_TIMEOUT_S"):
+        value = os.environ.get(name)
+        if value is None:
+            continue
+        try:
+            timeout_s = int(value)
+        except ValueError:
+            _log.warning(
+                "%s must be an integer; using %ss",
+                name,
+                DEFAULT_GIT_CHECKOUT_TIMEOUT_S,
+            )
+            return DEFAULT_GIT_CHECKOUT_TIMEOUT_S
+        if timeout_s > 0:
+            return timeout_s
+        _log.warning(
+            "%s must be positive; using %ss",
+            name,
+            DEFAULT_GIT_CHECKOUT_TIMEOUT_S,
+        )
+        return DEFAULT_GIT_CHECKOUT_TIMEOUT_S
+    return DEFAULT_GIT_CHECKOUT_TIMEOUT_S
 
 _ANSWER_TOOL_DEFINITION = {
     "type": "function",
@@ -101,43 +129,103 @@ Consider the following PR description:
 {problem_statement}
 </pr_description>
 
+{hints_block}
+
 <instructions>
 # Task Instructions
 
 ## Overview
-You're a software engineer working on a codebase at /testbed.
+You're a software engineer working on a codebase at {workdir}.
 Your task is to fix the issue described in the PR description above
 by making changes to the source code (non-test files).
 
 ## Important Boundaries
-- MODIFY: Regular source code files in /testbed
+- MODIFY: Regular source code files in {workdir}
 - DO NOT MODIFY: Tests, configuration files (pyproject.toml, setup.cfg, etc.)
+- Test edits do not help. Grading may restore evaluation tests before running.
+- Plain text does not execute anything. To inspect files, run commands, edit
+  code, or submit a fix, you must use your available tools.
+- The repo environment is already bootstrapped. Do not create a new virtualenv
+  or reinstall the project unless a command clearly shows it is necessary.
+- Do not use `git commit`, `git branch`, or `git push`. Grading only checks the
+  final working tree state.
+- Each bash tool call runs in a fresh shell. If commands depend on shell state,
+  combine them into one bash invocation; `source` and shell variables do not
+  persist across separate tool calls.
+- Do not claim a file was changed or a test passed unless you actually used a
+  tool and observed that result.
 
 ## Recommended Workflow
-1. Analyze the codebase by finding and reading relevant files
-2. Create a script to reproduce the issue
-3. Edit the source code to resolve the issue
-4. Verify your fix works by running your script again
-5. Test edge cases to ensure your fix is robust
+1. Start with the maintainer hints or issue description. If they point to a
+   likely source file or function, inspect that before broad repo-wide searches.
+   If the issue mentions an identifier or exact error text, grep for that first.
+2. Reproduce the issue with focused commands instead of exhaustive greps over
+   unrelated tests.
+3. Edit the source code to resolve the issue.
+4. Verify the fix with targeted commands, then check for obvious regressions.
+5. If the `answer` tool is available, call it only after you have actually
+   changed source code and verified the result.
 
-## Submitting Your Answer
-When you've completed your work and verified your fix, call the `answer`
-tool to submit your solution for grading. This runs the test suite and
-returns whether the issue is resolved.
-
-You cannot continue working after submitting — make sure your fix is
-tested before calling `answer`.
+{submission_block}
 </instructions>"""
 
 
-def _wrap_instruction(problem_statement: str) -> str:
+def _bool_env(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _answer_tool_enabled() -> bool:
+    return _bool_env("SWE_ENABLE_ANSWER_TOOL", True)
+
+
+def _wrap_instruction(
+    problem_statement: str,
+    *,
+    hints_text: str = "",
+    workdir: str = TESTBED,
+    answer_tool_enabled: bool = True,
+) -> str:
     """Wrap a problem statement with SWE-Gym-style task instructions.
 
     Tells the agent about the workflow, boundaries, and crucially
     about the ``answer`` tool for submission.
     """
+    hints = (hints_text or "").strip()
+    hints_block = ""
+    if hints:
+        hints_block = (
+            "<maintainer_hints>\n"
+            "Additional context from issue triage or maintainers:\n"
+            f"{hints}\n"
+            "</maintainer_hints>"
+        )
+    if answer_tool_enabled:
+        submission_block = (
+            "## Submitting Your Answer\n"
+            "When you've completed your work and verified your fix, call the "
+            "`answer`\n"
+            "tool to submit your solution for grading. This runs the test suite and\n"
+            "returns whether the issue is resolved.\n\n"
+            "You cannot continue working after submitting — make sure your fix is\n"
+            "tested before calling `answer`."
+        )
+    else:
+        submission_block = (
+            "## Ending The Run\n"
+            "There is no `answer` tool in this run.\n"
+            "Keep working until you have made and checked the best source-code "
+            "fix you can.\n"
+            "Your final repo state will be graded automatically when the session "
+            "ends."
+        )
     return _SWE_INSTRUCTION_TEMPLATE.format(
         problem_statement=problem_statement,
+        hints_block=hints_block,
+        workdir=workdir,
+        submission_block=submission_block,
     )
 
 
@@ -200,7 +288,7 @@ class SWESession(CLIAgentSession):
         self._answer_called = False
         self._answer_bridged = False
         # Callback for post-hoc grading: (sandbox, swe_task) -> (reward, resolved)
-        self._grade_fn = grade_fn
+        self._grade_fn: Callable[..., tuple[float, bool]] | None = grade_fn
 
     @property
     def swe_task(self) -> SWETask:
@@ -565,7 +653,7 @@ class SWESessionFactory(ResourceSessionFactory):
             interception_queue=interception_queue,
         )
 
-        if self._mode == "interception_gate":
+        if self._mode == "interception_gate" and _answer_tool_enabled():
             self._register_answer_tool(session)
 
         return session
@@ -587,7 +675,7 @@ class SWESessionFactory(ResourceSessionFactory):
         r = sandbox.exec(
             f"git checkout --quiet {task.base_commit}",
             cwd=TESTBED,
-            timeout=60,
+            timeout=_git_checkout_timeout_s(),
         )
         if r.exit_code != 0:
             raise RuntimeError(
@@ -610,8 +698,14 @@ class SWESessionFactory(ResourceSessionFactory):
         Wraps the raw problem statement with SWE-Gym-style instructions
         that tell the agent about the ``answer`` tool.
         """
+        answer_tool_enabled = _answer_tool_enabled()
         return _SWEAgentTask(
-            instruction=_wrap_instruction(swe_task.instruction),
+            instruction=_wrap_instruction(
+                swe_task.instruction,
+                hints_text=str((swe_task.metadata or {}).get("hints_text", "") or ""),
+                workdir=self._config.workdir,
+                answer_tool_enabled=answer_tool_enabled,
+            ),
             setup_shell=None,
             metadata={
                 "task_id": swe_task.task_id,
@@ -702,22 +796,30 @@ class SWESessionFactory(ResourceSessionFactory):
         )
 
         touched_files = self._extract_paths_from_test_patch(gym_task.test_patch)
+        # Also revert any test-like files the agent modified (anti-gaming).
+        changed_test_like_files = self._list_changed_test_paths(sandbox)
+        files_to_restore = sorted(set(touched_files) | set(changed_test_like_files))
         self._revert_test_files(
             sandbox,
             base_commit=swe_task.base_commit,
-            paths=touched_files,
+            paths=files_to_restore,
             strict=True,
         )
 
         self._apply_test_patch(sandbox, gym_task.test_patch)
         case_results = self._run_swegym_case_tests(sandbox, gym_task)
-        grade = grade_from_case_results(gym_task, case_results)
+        grade = grade_from_case_results(
+            gym_task,
+            case_results,
+            reward_mode=os.environ.get("SWE_REWARD_MODE", "binary").strip().lower()
+            or "binary",
+        )
 
         # Best-effort cleanup in case grading was interrupted.
         self._revert_test_files(
             sandbox,
             base_commit=swe_task.base_commit,
-            paths=touched_files,
+            paths=files_to_restore,
             strict=False,
         )
 
@@ -784,6 +886,52 @@ class SWESessionFactory(ResourceSessionFactory):
                 continue
             paths.append(path)
         return sorted(set(paths))
+
+    @staticmethod
+    def _is_test_like_path(path: str) -> bool:
+        """Return True if path looks like a test file.
+
+        Used to detect agent-modified test files before grading so they
+        can be reverted — prevents agents from gaming reward by editing
+        test expectations.
+        """
+        text = (path or "").strip().strip('"')
+        if not text:
+            return False
+        normalized = text.replace("\\", "/")
+        basename = normalized.rsplit("/", 1)[-1]
+        if basename == "conftest.py":
+            return True
+        if basename.startswith("test_") or basename.endswith("_test.py"):
+            return True
+        parts = normalized.split("/")
+        return any(part in {"test", "tests", "testing"} for part in parts[:-1])
+
+    @classmethod
+    def _list_changed_test_paths(
+        cls,
+        sandbox: SandboxHandle,
+    ) -> list[str]:
+        """Detect test-like files the agent modified or created.
+
+        Checks both tracked modifications (git diff) and untracked new
+        files (git ls-files --others).  Results are filtered through
+        ``_is_test_like_path`` to only revert test-related files.
+        """
+        commands = (
+            "git diff --name-only HEAD --",
+            "git ls-files --others --exclude-standard",
+        )
+        paths: set[str] = set()
+        for cmd in commands:
+            result = sandbox.exec(cmd, cwd=TESTBED, timeout=10)
+            if result.exit_code != 0:
+                continue
+            for line in (result.stdout or "").splitlines():
+                path = line.strip()
+                if cls._is_test_like_path(path):
+                    paths.add(path)
+        return sorted(paths)
 
     def _revert_test_files(
         self,
