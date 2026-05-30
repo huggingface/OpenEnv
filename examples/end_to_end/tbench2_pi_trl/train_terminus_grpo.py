@@ -37,10 +37,19 @@ TASK_DATASET_ID = "burtenshaw/terminus-pi-trl-tasks"
 MODEL = "Qwen/Qwen3-4B"
 ENV_URL = os.environ.get("TERMINUS_ENV_URL", "http://localhost:8000")
 OUTPUT_DIR = Path(os.environ.get("TERMINUS_OUTPUT_DIR", "/tmp/terminus-pi-trl-output"))
-HUB_MODEL_ID = "burtenshaw/terminus-pi-trl-async-grpo-qwen3-4b"
+HUB_MODEL_ID = os.environ.get(
+    "TERMINUS_HUB_MODEL_ID",
+    "burtenshaw/terminus-pi-trl-async-grpo-qwen3-4b",
+)
 TRACKIO_PROJECT = "terminus-pi-trl"
+TRACKIO_SPACE_ID = os.environ.get(
+    "TRACKIO_SPACE_ID",
+    "burtenshaw/terminus-pi-trl-trackio",
+)
 REPORT_TO = "trackio"
-RUN_NAME = os.environ.get("JOB_ID", "local") + "-terminus"
+RUN_NAME = os.environ.get("TERMINUS_RUN_NAME") or (
+    os.environ.get("JOB_ID", "local") + "-terminus"
+)
 VLLM_SERVER_URL = os.environ.get("TERMINUS_VLLM_SERVER_URL", "http://localhost:8001")
 VLLM_API_KEY = os.environ.get("VLLM_API_KEY", "openenv")
 
@@ -111,6 +120,7 @@ def main() -> None:
             report_to=REPORT_TO,
             run_name=RUN_NAME,
             project=TRACKIO_PROJECT,
+            trackio_space_id=TRACKIO_SPACE_ID,
             save_strategy="no",
             push_to_hub=True,
             hub_model_id=HUB_MODEL_ID,
