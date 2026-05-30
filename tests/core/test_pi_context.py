@@ -6,7 +6,9 @@
 
 from __future__ import annotations
 
-from openenv.core import PiContext
+import openenv.core
+from openenv.core.harness import PiContext as HarnessPiContext
+from openenv.core.pi import PiContext
 
 
 def test_pi_context_loads_project_instructions_and_skills(tmp_path):
@@ -27,6 +29,11 @@ def test_pi_context_loads_project_instructions_and_skills(tmp_path):
     assert "Extra context" in message["content"]
     assert "Project rules" in message["content"]
     assert "Use the shell skill" in message["content"]
+
+
+def test_pi_context_is_exported_from_pi_and_harness_modules():
+    assert HarnessPiContext is PiContext
+    assert "PiContext" not in openenv.core.__all__
 
 
 def test_pi_context_truncates_long_files(tmp_path):
