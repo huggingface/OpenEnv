@@ -23,6 +23,8 @@ from openenv.core.harness import (
 
 from .client import TerminusEnv
 
+REWARD_RE = re.compile(r"reward=([+-]?(?:\d+(?:\.\d*)?|\.\d+))")
+
 _TERMINUS_TOOLS: list[Tool] = [
     Tool(
         name="terminal",
@@ -323,6 +325,39 @@ class TerminusSessionFactory(ResourceSessionFactory):
         )
 
 
+def terminus_reward(completions=None, **kwargs) -> list[float]:
+    """Extract Terminus rewards from TRL tool messages."""
+
+    del kwargs
+    rewards = []
+    for completion in completions or []:
+        reward = 0.0
+        for message in completion if isinstance(completion, list) else []:
+            if not isinstance(message, dict) or message.get("role") != "tool":
+                continue
+            parsed = _parse_tool_reward(str(message.get("content", "")))
+            if parsed is not None:
+                reward = parsed
+        rewards.append(reward)
+    return rewards
+
+
+def _parse_tool_reward(content: str) -> float | None:
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError:
+        payload = None
+    if isinstance(payload, dict) and payload.get("reward") is not None:
+        try:
+            return float(payload["reward"])
+        except (TypeError, ValueError):
+            return None
+    match = REWARD_RE.search(content)
+    if match is None:
+        return None
+    return float(match.group(1))
+
+
 _TERMINAL_CALL_RE = re.compile(r"terminal\s*\((?P<body>.*?)\)", re.DOTALL)
 
 
@@ -421,6 +456,8 @@ def _parse_terminal_expression(text: str) -> dict[str, Any] | None:
 
 
 __all__ = [
+    "REWARD_RE",
     "TerminusSessionFactory",
     "build_terminal_tool_call",
+    "terminus_reward",
 ]

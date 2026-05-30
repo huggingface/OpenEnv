@@ -21,7 +21,11 @@ from openenv.core.harness import (
     build_harness_rollout_func,
 )
 from openenv.core.llm_client import LLMResponse, ToolCall
-from terminus_env.harness import TerminusSessionFactory, build_terminal_tool_call
+from terminus_env.harness import (
+    TerminusSessionFactory,
+    build_terminal_tool_call,
+    terminus_reward,
+)
 from terminus_env.models import CommandResult, TerminusState
 
 
@@ -173,6 +177,21 @@ def test_terminus_terminal_json_parser():
     assert tool_call.args == {"final_answer": "done"}
     assert mixed.name == "terminal"
     assert mixed.args == {"command": "printf terminus > answer.txt"}
+
+
+def test_terminus_reward_extracts_last_tool_reward():
+    rewards = terminus_reward(
+        completions=[
+            [
+                {"role": "tool", "content": '{"reward": 0.25}'},
+                {"role": "tool", "content": '{"done": true, "reward": 1.0}'},
+            ],
+            [{"role": "tool", "content": "Verification: 1/2 passed; reward=0.5"}],
+            [{"role": "assistant", "content": "no reward"}],
+        ]
+    )
+
+    assert rewards == [1.0, 0.5, 0.0]
 
 
 def test_terminus_session_factory_works_with_generic_rollout_helper():
