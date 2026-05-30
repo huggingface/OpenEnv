@@ -11,12 +11,11 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from importlib.resources import as_file, files
 from typing import Any, Callable
 
-from ..env_server.mcp_types import Tool
 from . import (
     _serialize_for_message,
     CLIHarnessAdapter,
@@ -40,53 +39,6 @@ def _messages_to_prompt(messages: list[Message]) -> str:
         content = message.get("content", "")
         parts.append(f"{role}:\n{_serialize_for_message(content)}")
     return "\n\n".join(parts)
-
-
-def _extension_source(tools: list[Tool]) -> str:
-    tool_payload = [
-        {
-            "name": tool.name,
-            "description": tool.description,
-            "inputSchema": tool.input_schema,
-        }
-        for tool in tools
-    ]
-    return (
-        'import { Type } from "typebox";\n\n'
-        f"const tools = {json.dumps(tool_payload, sort_keys=True)};\n"
-        "const bridgeUrl = process.env.OPENENV_PI_BRIDGE_URL;\n\n"
-        "export default function(pi) {\n"
-        "  for (const tool of tools) {\n"
-        "    pi.registerTool({\n"
-        "      name: tool.name,\n"
-        "      label: tool.name,\n"
-        "      description: tool.description || tool.name,\n"
-        "      parameters: Type.Unsafe(tool.inputSchema || { type: 'object', properties: {} }),\n"
-        "      async execute(toolCallId, params) {\n"
-        "        const response = await fetch(bridgeUrl, {\n"
-        "          method: 'POST',\n"
-        "          headers: { 'content-type': 'application/json' },\n"
-        "          body: JSON.stringify({\n"
-        "            jsonrpc: '2.0',\n"
-        "            id: toolCallId,\n"
-        "            method: 'tools/call',\n"
-        "            params: { name: tool.name, arguments: params || {} },\n"
-        "          }),\n"
-        "        });\n"
-        "        const payload = await response.json();\n"
-        "        if (payload.error) {\n"
-        "          throw new Error(payload.error.message || JSON.stringify(payload.error));\n"
-        "        }\n"
-        "        const result = payload.result || {};\n"
-        "        return {\n"
-        "          content: [{ type: 'text', text: JSON.stringify(result.data ?? result) }],\n"
-        "          details: result,\n"
-        "        };\n"
-        "      },\n"
-        "    });\n"
-        "  }\n"
-        "}\n"
-    )
 
 
 def _json_events(stdout: str) -> list[dict[str, Any]]:
@@ -209,12 +161,9 @@ class PiCLIHarnessAdapter(CLIHarnessAdapter):
         del limits
         tools = session.list_tools()
         tool_trace: list[ToolTraceEntry] = []
+        bridge_resource = files("openenv.core.harness").joinpath("pi_bridge.mjs")
 
-        with tempfile.TemporaryDirectory(prefix="openenv-pi-") as temp_dir:
-            extension_path = os.path.join(temp_dir, "openenv-tools.mjs")
-            with open(extension_path, "w", encoding="utf-8") as extension:
-                extension.write(_extension_source(tools))
-
+        with as_file(bridge_resource) as extension_path:
             server = ThreadingHTTPServer(
                 ("127.0.0.1", 0),
                 _bridge_handler(bridge, tool_trace),
@@ -238,7 +187,7 @@ class PiCLIHarnessAdapter(CLIHarnessAdapter):
                 "--no-prompt-templates",
                 "--no-context-files",
                 "--extension",
-                extension_path,
+                str(extension_path),
                 "--tools",
                 ",".join(tool.name for tool in tools),
             ]

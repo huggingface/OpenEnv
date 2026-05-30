@@ -43,8 +43,6 @@ TRACKIO_PROJECT = "terminus-pi-trl"
 REPORT_TO = "trackio"
 RUN_NAME = os.environ.get("JOB_ID", "local") + "-terminus"
 VLLM_SERVER_URL = os.environ.get("TERMINUS_VLLM_SERVER_URL", "http://localhost:8001")
-PI_PROVIDER = os.environ.get("TERMINUS_PI_PROVIDER")
-PI_MODEL = os.environ.get("TERMINUS_PI_MODEL")
 
 os.environ["TRACKIO_PROJECT"] = TRACKIO_PROJECT
 
@@ -64,78 +62,44 @@ class TerminusHarnessEnvironment:
         self._session = None
 
     def terminal(self, command: str = "", final_answer: str = "") -> str:
-        """Run the Pi CLI harness against the current Terminus task.
-
-        Args:
-            command: Ignored compatibility field.
-            final_answer: Ignored compatibility field.
-
-        Returns:
-            A JSON string with the tool output, reward, done flag, and error.
-        """
+        """Compatibility tool that runs Pi against the current Terminus task."""
         del command, final_answer
-        arguments = {
-            "harness": "pi_cli",
-        }
-
         if self._session is None:
-            return json.dumps(
-                {
-                    "tool_name": "terminal",
-                    "arguments": arguments,
-                    "done": True,
-                    "error": "environment was not reset",
-                    "output": "",
-                    "reward": 0.0,
-                },
-                sort_keys=True,
-            )
+            raise RuntimeError("environment was not reset")
 
-        try:
-            rollout = self._pi_harness.run_black_box(
-                session=self._session,
-                limits=self._limits,
-            )
-            verify = self._session.verify(
-                transcript=rollout.messages,
-                final_state={
-                    "done": rollout.done,
-                    "metrics": dict(rollout.metrics),
-                },
-            )
-            result = rollout.tool_trace[-1].result if rollout.tool_trace else None
-            data = result.data if result is not None else {}
-            output = data.get("output") if isinstance(data, dict) else data
-            reward = verify.env_reward
-            done = verify.done or rollout.done
-            error = None if result is None else result.error
-        except Exception as exc:
-            output = ""
-            reward = 0.0
-            done = True
-            error = str(exc)
+        rollout = self._pi_harness.run_black_box(
+            session=self._session,
+            limits=self._limits,
+        )
+        verify = self._session.verify(
+            transcript=rollout.messages,
+            final_state={
+                "done": rollout.done,
+                "metrics": dict(rollout.metrics),
+            },
+        )
+        result = rollout.tool_trace[-1].result if rollout.tool_trace else None
+        data = result.data if result is not None else {}
 
         return json.dumps(
             {
                 "tool_name": "terminal",
-                "arguments": arguments,
-                "done": done,
-                "error": error,
-                "output": output,
-                "reward": 0.0 if reward is None else float(reward),
+                "arguments": {"harness": "pi_cli"},
+                "done": verify.done or rollout.done,
+                "error": None if result is None else result.error,
+                "output": data.get("output") if isinstance(data, dict) else data,
+                "reward": 0.0
+                if verify.env_reward is None
+                else float(verify.env_reward),
             },
             sort_keys=True,
             default=str,
         )
 
     def reset(self, prompt: Any = None, **_: Any) -> None:
-        self._close_session()
-        self._session = self._session_factory.create(task=prompt)
-
-    def _close_session(self) -> None:
         if self._session is not None:
             self._session.close()
-            self._session = None
+        self._session = self._session_factory.create(task=prompt)
 
 
 def main() -> None:
@@ -153,11 +117,7 @@ def main() -> None:
         ).sync(),
         default_verify=list(task["verify"]),
     )
-    pi_harness = PiCLIHarnessAdapter(
-        provider=PI_PROVIDER,
-        model=PI_MODEL,
-        timeout_s=600.0,
-    )
+    pi_harness = PiCLIHarnessAdapter(timeout_s=600.0)
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL)
     if tokenizer.pad_token is None:
@@ -172,7 +132,7 @@ def main() -> None:
             gradient_accumulation_steps=1,
             num_generations=task["num_generations"],
             max_completion_length=task["max_completion_length"],
-            max_tool_calling_iterations=task["max_turns"],
+            max_tool_calling_iterations=1,
             max_inflight_tasks=task["num_generations"],
             learning_rate=1e-6,
             logging_steps=1,

@@ -22,7 +22,6 @@ from ..client_types import StepResult
 from ..env_server.mcp_types import JsonRpcErrorCode, JsonRpcResponse, Tool
 from ..env_server.types import State
 from ..llm_client import LLMResponse
-from ..pi import DEFAULT_PI_SYSTEM_PROMPT, PiContext
 
 Message = dict[str, Any]
 RESERVED_TOOL_NAMES = frozenset({"reset", "step", "state", "close"})
@@ -706,7 +705,6 @@ from .pi_cli import PiCLIHarnessAdapter
 
 __all__ = [
     "CLIHarnessAdapter",
-    "DEFAULT_PI_SYSTEM_PROMPT",
     "HarnessAdapter",
     "HarnessRolloutResult",
     "HarnessRunLimits",
@@ -715,7 +713,6 @@ __all__ = [
     "ModelStep",
     "ModelStepResult",
     "PiCLIHarnessAdapter",
-    "PiContext",
     "RESERVED_TOOL_NAMES",
     "ResourceSession",
     "ResourceSessionFactory",

@@ -732,22 +732,35 @@ class TestPiCLIHarnessAdapter:
             del cwd, text, capture_output, timeout
             seen_commands.append(list(command))
             bridge_url = env["OPENENV_PI_BRIDGE_URL"]
-            request = urllib.request.Request(
-                bridge_url,
-                data=json.dumps(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": "call-1",
-                        "method": "tools/call",
-                        "params": {"name": "finish", "arguments": {}},
-                    }
-                ).encode("utf-8"),
-                headers={"content-type": "application/json"},
-                method="POST",
-            )
-            with urllib.request.urlopen(request, timeout=5) as response:
-                payload = json.loads(response.read().decode("utf-8"))
 
+            def post(payload):
+                request = urllib.request.Request(
+                    bridge_url,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={"content-type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    return json.loads(response.read().decode("utf-8"))
+
+            tools = post(
+                {
+                    "jsonrpc": "2.0",
+                    "id": "tools",
+                    "method": "tools/list",
+                    "params": {},
+                }
+            )
+            payload = post(
+                {
+                    "jsonrpc": "2.0",
+                    "id": "call-1",
+                    "method": "tools/call",
+                    "params": {"name": "finish", "arguments": {}},
+                }
+            )
+
+            assert tools["result"]["tools"][0]["name"] == "finish"
             assert payload["result"]["done"] is True
             stdout = "\n".join(
                 [
@@ -776,6 +789,7 @@ class TestPiCLIHarnessAdapter:
         assert result.tool_trace[0].result.metadata["reward"] == 1.0
         assert result.messages == [{"role": "assistant", "content": "done"}]
         assert seen_commands[0][:3] == ["pi", "--mode", "json"]
-        assert "--extension" in seen_commands[0]
+        extension_path = seen_commands[0][seen_commands[0].index("--extension") + 1]
+        assert extension_path.endswith("pi_bridge.mjs")
         assert "--no-context-files" in seen_commands[0]
         assert seen_commands[0][-1] == "Solve pi-task"
