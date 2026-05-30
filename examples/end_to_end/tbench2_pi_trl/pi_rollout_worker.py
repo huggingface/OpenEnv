@@ -18,6 +18,11 @@ from openenv.core.harness import HarnessRunLimits
 from openenv.core.harness.pi_cli import PiCLIHarnessAdapter
 
 try:
+    from terminus_env.harness import build_terminal_tool_call
+except Exception:  # pragma: no cover - optional outside the Terminus example
+    build_terminal_tool_call = None
+
+try:
     from trl.chat_template_utils import (
         add_response_schema,
         get_training_chat_template,
@@ -639,13 +644,27 @@ class TerminusPiRolloutWorker:
                 all_ids = [pad_id]
                 all_mask = [1]
                 all_logprobs = [0.0]
+            metrics = {"reward": reward, "turns": float(turns)}
+            if rollout is not None:
+                metrics.update(
+                    {
+                        "pi/tool_calls": float(len(rollout.tool_trace)),
+                        "pi/events": float(rollout.metrics.get("pi_events", 0.0)),
+                        "pi/done": float(bool(rollout.done)),
+                    }
+                )
+            for name, value in (verify.metrics or {}).items():
+                if isinstance(value, bool):
+                    metrics[f"verify/{name}"] = float(value)
+                elif isinstance(value, (int, float)):
+                    metrics[f"verify/{name}"] = float(value)
             return RolloutSample(
                 input_ids=all_ids,
                 completion_mask=all_mask,
                 old_log_probs=all_logprobs,
                 advantage=reward,
                 model_version=self._current_model_version(),
-                metrics={"reward": reward, "turns": float(turns)},
+                metrics=metrics,
             )
         finally:
             self._interception.unregister_rollout(rollout_id)
@@ -713,18 +732,56 @@ def _parse_assistant_message(
     fallback_text: str,
 ) -> dict[str, Any]:
     if parse_response is None:
-        return {"role": "assistant", "content": fallback_text}
+        return _assistant_message_from_text(fallback_text)
     try:
         parsed = parse_response(tokenizer, completion_ids)
     except Exception:
-        return {"role": "assistant", "content": fallback_text}
+        return _assistant_message_from_text(fallback_text)
     if not isinstance(parsed, dict):
-        return {"role": "assistant", "content": fallback_text}
-    message = {"role": "assistant", "content": str(parsed.get("content") or "")}
+        return _assistant_message_from_text(fallback_text)
+    content = str(parsed.get("content") or "")
+    message = {"role": "assistant", "content": content}
     tool_calls = _normalize_tool_calls(parsed.get("tool_calls"))
+    if not tool_calls:
+        tool_calls = _terminal_tool_call_from_text(content or fallback_text)
     if tool_calls:
+        message["content"] = ""
         message["tool_calls"] = tool_calls
     return message
+
+
+def _assistant_message_from_text(text: str) -> dict[str, Any]:
+    tool_calls = _terminal_tool_call_from_text(text)
+    if tool_calls:
+        return {"role": "assistant", "content": "", "tool_calls": tool_calls}
+    return {"role": "assistant", "content": text}
+
+
+def _terminal_tool_call_from_text(text: str) -> list[dict[str, Any]]:
+    if build_terminal_tool_call is None or not text.strip():
+        return []
+    try:
+        tool_call = build_terminal_tool_call(
+            text,
+            call_id=f"call_{uuid.uuid4().hex[:8]}",
+        )
+    except Exception:
+        logger.debug("could not parse Terminus terminal text", exc_info=True)
+        return []
+    arguments = getattr(tool_call, "args", None) or {}
+    name = getattr(tool_call, "name", "")
+    if name != "terminal" or not arguments:
+        return []
+    return [
+        {
+            "id": str(getattr(tool_call, "id", "") or f"call_{uuid.uuid4().hex[:8]}"),
+            "type": "function",
+            "function": {
+                "name": name,
+                "arguments": json.dumps(arguments),
+            },
+        }
+    ]
 
 
 def _normalize_tool_calls(raw_tool_calls: Any) -> list[dict[str, Any]]:
