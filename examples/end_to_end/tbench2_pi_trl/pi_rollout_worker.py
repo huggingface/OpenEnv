@@ -679,6 +679,7 @@ class TerminusPiRolloutWorker:
         messages = body.get("messages") or intercept.get("messages")
         if not isinstance(messages, list):
             raise RuntimeError("intercepted request did not include messages")
+        messages = _normalize_chat_messages(messages)
         kwargs: dict[str, Any] = {
             "add_generation_prompt": True,
             "return_dict": False,
@@ -751,6 +752,23 @@ def _parse_assistant_message(
         message["content"] = ""
         message["tool_calls"] = tool_calls
     return message
+
+
+def _normalize_chat_messages(messages: list[Any]) -> list[dict[str, Any]]:
+    normalized = []
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        item = dict(message)
+        content = item.get("content")
+        if isinstance(content, list):
+            item["content"] = "\n".join(
+                str(part.get("text", ""))
+                for part in content
+                if isinstance(part, dict) and part.get("text") is not None
+            )
+        normalized.append(item)
+    return normalized
 
 
 def _session_task(task: Any) -> Any:
