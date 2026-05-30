@@ -44,6 +44,12 @@ from datasets import Dataset  # noqa: E402
 from transformers import AutoTokenizer  # noqa: E402
 from trl.experimental.async_grpo import AsyncGRPOConfig, AsyncGRPOTrainer  # noqa: E402
 
+try:
+    from peft import LoraConfig, TaskType  # noqa: E402
+except ImportError:
+    LoraConfig = None  # type: ignore[assignment,misc]
+    TaskType = None  # type: ignore[assignment,misc]
+
 from examples.mini_swe_env.async_grpo.control_plane import (  # noqa: E402
     SWEAsyncControlPlane,
     SWEAsyncControlPlaneConfig,
@@ -260,42 +266,54 @@ def main() -> int:
         tokenizer.pad_token = tokenizer.eos_token
 
     # ── Interception control plane (background thread) ────────────
-    control_cfg = SWEAsyncControlPlaneConfig.from_env()
-    control_plane = SWEAsyncControlPlane(config=control_cfg)
-    server_loop, server_thread = start_interception_server(control_plane)
-    _log.info("InterceptionServer running in background thread")
+    # Only rank 0 owns the interception server, session factory, and rollout
+    # worker.  Other ranks only participate in gradient computation.
+    local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+    is_main = local_rank == 0
+
+    control_plane: SWEAsyncControlPlane | None = None
+    server_loop = None
+    server_thread = None
+    worker: SWERolloutWorker | None = None
+
+    if is_main:
+        control_cfg = SWEAsyncControlPlaneConfig.from_env()
+        control_plane = SWEAsyncControlPlane(config=control_cfg)
+        server_loop, server_thread = start_interception_server(control_plane)
+        _log.info("InterceptionServer running in background thread")
 
     try:
-        # ── Session factory (Pi in sandbox) ───────────────────────
-        backend = create_sandbox_backend(args.sandbox_backend)
-        session_factory = SWESessionFactory(
-            agent=args.agent,
-            config=SWEAgentConfig(
-                base_url=control_plane.interception_base_url,
-                api_key=control_plane.auth_token,
-                model=model,
-                agent_timeout_s=1800.0,
-            ),
-            sandbox_backend=backend,
-            mode="interception_gate",
-            interception_server=control_plane.server,
-            interception_base_url=control_plane.interception_base_url,
-        )
+        # ── Session factory + rollout worker (rank 0 only) ────────
+        if is_main:
+            assert control_plane is not None
+            backend = create_sandbox_backend(args.sandbox_backend)
+            session_factory = SWESessionFactory(
+                agent=args.agent,
+                config=SWEAgentConfig(
+                    base_url=control_plane.interception_base_url,
+                    api_key=control_plane.auth_token,
+                    model=model,
+                    agent_timeout_s=1800.0,
+                ),
+                sandbox_backend=backend,
+                mode="interception_gate",
+                interception_server=control_plane.server,
+                interception_base_url=control_plane.interception_base_url,
+            )
 
-        # ── Rollout worker ────────────────────────────────────────
-        worker = SWERolloutWorker(
-            session_factory=session_factory,
-            tasks=swe_tasks,
-            tokenizer=tokenizer,
-            vllm_base_url=vllm_url,
-            vllm_api_key=vllm_key,
-            vllm_model=model,
-            config=WorkerConfig(
-                max_inflight=2,
-                max_turns=args.max_turns,
-                num_generations=args.num_generations,
-            ),
-        )
+            worker = SWERolloutWorker(
+                session_factory=session_factory,
+                tasks=swe_tasks,
+                tokenizer=tokenizer,
+                vllm_base_url=vllm_url,
+                vllm_api_key=vllm_key,
+                vllm_model=model,
+                config=WorkerConfig(
+                    max_inflight=2,
+                    max_turns=args.max_turns,
+                    num_generations=args.num_generations,
+                ),
+            )
 
         # ── Trainer ───────────────────────────────────────────────
         def _noop_reward(**kwargs: Any) -> list[float]:
@@ -312,6 +330,7 @@ def main() -> int:
             ),
             "vllm_server_base_url": vllm_url,
             "vllm_server_timeout": 2400.0,
+            "model_init_kwargs": {"dtype": "bfloat16"},
             "max_completion_length": 2048,
             "max_steps": args.max_steps,
             # Polar: rollout_batch_size=4. With single GPU trainer,
@@ -345,12 +364,34 @@ def main() -> int:
             )
             resume_from_checkpoint = None
 
+        # ── LoRA config (Unsloth-recommended hyperparams for Qwen3.5) ──
+        peft_config = None
+        if LoraConfig is not None:
+            peft_config = LoraConfig(
+                task_type=TaskType.CAUSAL_LM,
+                r=16,
+                lora_alpha=16,  # alpha == r recommended for Qwen3.5
+                lora_dropout=0,
+                target_modules=[
+                    "q_proj", "k_proj", "v_proj", "o_proj",
+                    "gate_proj", "up_proj", "down_proj",
+                ],
+                bias="none",
+            )
+            _log.info(
+                "LoRA config: r=%d alpha=%d targets=%s",
+                peft_config.r,
+                peft_config.lora_alpha,
+                peft_config.target_modules,
+            )
+
         trainer = AsyncGRPOTrainer(
             model=model,
             reward_funcs=_noop_reward,
             train_dataset=dataset,
             processing_class=tokenizer,
             rollout_worker=worker,
+            peft_config=peft_config,
             args=AsyncGRPOConfig(**async_grpo_args),
         )
 
@@ -386,8 +427,31 @@ def main() -> int:
         _log.info("done: step=%s", getattr(trainer.state, "global_step", "?"))
         return 0
     finally:
-        stop_interception_server(control_plane, server_loop, server_thread)
+        if control_plane is not None and server_loop is not None and server_thread is not None:
+            stop_interception_server(control_plane, server_loop, server_thread)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except SystemExit as exc:
+        if exc.code == 0:
+            # Normal exit — sleep forever to prevent Space restart.
+            import time as _t
+
+            _log.info("training completed successfully; sleeping to hold Space alive")
+            while True:
+                _t.sleep(3600)
+        else:
+            # Crash — log and sleep forever so logs are preserved.
+            _log.exception("training crashed (exit code %s); sleeping to preserve logs", exc.code)
+            import time as _t
+
+            while True:
+                _t.sleep(3600)
+    except Exception:
+        _log.exception("unhandled exception in training; sleeping to preserve logs")
+        import time as _t
+
+        while True:
+            _t.sleep(3600)

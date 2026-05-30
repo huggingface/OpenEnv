@@ -197,7 +197,7 @@ variables = {
     "MAX_MODEL_LEN": "40960",
     "GPU_MEMORY_UTILIZATION": "0.75",
     "VLLM_GPU": "0",
-    "TRAINER_GPU": "1",
+    "TRAINER_GPU": os.environ.get("TRAINER_GPU", "1,2,3"),
     "INTERCEPTION_HOST": "0.0.0.0",
     "INTERCEPTION_PORT": "7860",
     "TRL_EXPERIMENTAL_SILENCE": "1",

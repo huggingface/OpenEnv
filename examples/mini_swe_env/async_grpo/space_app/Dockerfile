@@ -37,7 +37,8 @@ RUN uv pip install --system --no-cache "huggingface-hub>=1.5" && \
         -e "." \
         -e "envs/mini_swe_env" && \
     uv pip install --system --no-cache \
-        "trl>=1.5.1" \
+        "trl @ git+https://github.com/rycerzes/trl@feat/async-grpo-parity" \
+        "peft>=0.15.0" \
         "accelerate>=1.13.0" \
         "hf-sandbox[named-tunnels] @ git+https://github.com/rycerzes/hf-sandbox@feat/named-tunnels" \
         "datasets>=4.8.0" \

@@ -96,6 +96,21 @@ fi
 
 # ── 3. Start trainer (foreground) ──────────────────────────────
 echo "[start.sh] Starting trainer on GPU $TRAINER_GPU..."
-CUDA_VISIBLE_DEVICES="$TRAINER_GPU" exec "$PYTHON_BIN" examples/mini_swe_env/train_swe_async_grpo.py \
-    --vllm-url "http://127.0.0.1:${VLLM_PORT}" \
-    "$@"
+
+# Count trainer GPUs for multi-GPU support
+IFS=',' read -ra TRAINER_GPUS <<< "$TRAINER_GPU"
+NUM_TRAINER_GPUS=${#TRAINER_GPUS[@]}
+
+if [ "$NUM_TRAINER_GPUS" -gt 1 ]; then
+    echo "[start.sh] Multi-GPU trainer: $NUM_TRAINER_GPUS GPUs ($TRAINER_GPU)"
+    CUDA_VISIBLE_DEVICES="$TRAINER_GPU" exec "$PYTHON_BIN" -m accelerate.commands.launch \
+        --num_processes "$NUM_TRAINER_GPUS" \
+        --mixed_precision bf16 \
+        examples/mini_swe_env/train_swe_async_grpo.py \
+        --vllm-url "http://127.0.0.1:${VLLM_PORT}" \
+        "$@"
+else
+    CUDA_VISIBLE_DEVICES="$TRAINER_GPU" exec "$PYTHON_BIN" examples/mini_swe_env/train_swe_async_grpo.py \
+        --vllm-url "http://127.0.0.1:${VLLM_PORT}" \
+        "$@"
+fi
