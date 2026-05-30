@@ -18,21 +18,20 @@
 # openenv-core = { git = "https://github.com/burtenshaw/OpenEnv.git", branch = "codex/terminus-pi-trl-space" }
 # openenv-terminus-env = { git = "https://github.com/burtenshaw/OpenEnv.git", branch = "codex/terminus-env-harness", subdirectory = "envs/terminus_env" }
 # ///
-"""Run the Terminus async GRPO environment-factory training example."""
+"""Run Terminus async GRPO with PI rollouts owned by TRL."""
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
-from typing import Any
 
 from datasets import load_dataset
-from openenv.core.harness import HarnessRunLimits, PiCLIHarnessAdapter
 from terminus_env.client import TerminusEnv
-from terminus_env.harness import TerminusSessionFactory, terminus_reward
+from terminus_env.harness import TerminusSessionFactory
 from transformers import AutoTokenizer
 from trl.experimental.async_grpo import AsyncGRPOConfig, AsyncGRPOTrainer
+
+from pi_rollout_worker import TerminusPiRolloutWorker, WorkerConfig
 
 TASK_DATASET_ID = "burtenshaw/terminus-pi-trl-tasks"
 MODEL = "Qwen/Qwen3-4B"
@@ -43,67 +42,9 @@ TRACKIO_PROJECT = "terminus-pi-trl"
 REPORT_TO = "trackio"
 RUN_NAME = os.environ.get("JOB_ID", "local") + "-terminus"
 VLLM_SERVER_URL = os.environ.get("TERMINUS_VLLM_SERVER_URL", "http://localhost:8001")
-PI_VLLM_BASE_URL = os.environ.get(
-    "TERMINUS_PI_VLLM_BASE_URL",
-    VLLM_SERVER_URL.rstrip("/") + "/v1",
-)
+VLLM_API_KEY = os.environ.get("VLLM_API_KEY", "openenv")
 
 os.environ["TRACKIO_PROJECT"] = TRACKIO_PROJECT
-
-
-class TerminusHarnessEnvironment:
-    """Small TRL environment wrapper backed by the Pi CLI harness."""
-
-    def __init__(
-        self,
-        session_factory: TerminusSessionFactory,
-        pi_harness: PiCLIHarnessAdapter,
-        limits: HarnessRunLimits,
-    ):
-        self._session_factory = session_factory
-        self._pi_harness = pi_harness
-        self._limits = limits
-        self._session = None
-
-    def terminal(self, command: str = "", final_answer: str = "") -> str:
-        """Compatibility tool that runs Pi against the current Terminus task."""
-        del command, final_answer
-        if self._session is None:
-            raise RuntimeError("environment was not reset")
-
-        rollout = self._pi_harness.run_black_box(
-            session=self._session,
-            limits=self._limits,
-        )
-        verify = self._session.verify(
-            transcript=rollout.messages,
-            final_state={
-                "done": rollout.done,
-                "metrics": dict(rollout.metrics),
-            },
-        )
-        result = rollout.tool_trace[-1].result if rollout.tool_trace else None
-        data = result.data if result is not None else {}
-
-        return json.dumps(
-            {
-                "tool_name": "terminal",
-                "arguments": {"harness": "pi_cli"},
-                "done": verify.done or rollout.done,
-                "error": None if result is None else result.error,
-                "output": data.get("output") if isinstance(data, dict) else data,
-                "reward": 0.0
-                if verify.env_reward is None
-                else float(verify.env_reward),
-            },
-            sort_keys=True,
-            default=str,
-        )
-
-    def reset(self, prompt: Any = None, **_: Any) -> None:
-        if self._session is not None:
-            self._session.close()
-        self._session = self._session_factory.create(task=prompt)
 
 
 def main() -> None:
@@ -112,7 +53,6 @@ def main() -> None:
     task_dataset = load_dataset(TASK_DATASET_ID, split="train")
     task = task_dataset[0]
     train_dataset = task_dataset.select_columns(["prompt"])
-    limits = HarnessRunLimits(max_turns=task["max_turns"])
     session_factory = TerminusSessionFactory(
         client_factory=lambda: TerminusEnv(
             base_url=ENV_URL,
@@ -121,15 +61,36 @@ def main() -> None:
         ).sync(),
         default_verify=list(task["verify"]),
     )
-    pi_harness = PiCLIHarnessAdapter(
-        model=MODEL,
-        model_base_url=PI_VLLM_BASE_URL,
-        timeout_s=600.0,
-    )
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+
+    rank = int(
+        os.environ.get("RANK")
+        or os.environ.get("ACCELERATE_PROCESS_INDEX")
+        or os.environ.get("SLURM_PROCID")
+        or "0"
+    )
+    worker = None
+    if rank == 0:
+        worker = TerminusPiRolloutWorker(
+            session_factory=session_factory,
+            tasks=list(task_dataset),
+            tokenizer=tokenizer,
+            vllm_base_url=VLLM_SERVER_URL,
+            vllm_model=MODEL,
+            vllm_api_key=VLLM_API_KEY,
+            chat_template_kwargs={"enable_thinking": False},
+            config=WorkerConfig(
+                max_inflight=task["num_generations"],
+                max_turns=task["max_turns"],
+                max_completion_tokens=task["max_completion_length"],
+            ),
+        )
+
+    def unused_reward(**kwargs: object) -> list[float]:
+        return [0.0] * len(kwargs.get("prompts", []))
 
     trainer = AsyncGRPOTrainer(
         model=MODEL,
@@ -140,9 +101,10 @@ def main() -> None:
             gradient_accumulation_steps=1,
             num_generations=task["num_generations"],
             max_completion_length=task["max_completion_length"],
-            max_tool_calling_iterations=1,
             max_inflight_tasks=task["num_generations"],
             learning_rate=1e-6,
+            temperature=1.0,
+            weight_sync_steps=1,
             logging_steps=1,
             logging_strategy="steps",
             log_completions=True,
@@ -155,15 +117,12 @@ def main() -> None:
             chat_template_kwargs={"enable_thinking": False},
             vllm_server_base_url=VLLM_SERVER_URL,
             request_timeout=600,
+            vllm_server_timeout=600,
         ),
         processing_class=tokenizer,
         train_dataset=train_dataset,
-        reward_funcs=terminus_reward,
-        environment_factory=lambda: TerminusHarnessEnvironment(
-            session_factory,
-            pi_harness,
-            limits,
-        ),
+        reward_funcs=unused_reward,
+        rollout_worker=worker,
     )
     trainer.train()
     trainer.save_model()
