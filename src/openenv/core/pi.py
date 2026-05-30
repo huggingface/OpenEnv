@@ -1,5 +1,10 @@
-#!/usr/bin/env python3
-"""Pi-style context loading for the Terminus async GRPO example."""
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+"""Pi-compatible model context helpers."""
 
 from __future__ import annotations
 
@@ -80,4 +85,4 @@ def _read_bounded(path: Path, max_chars: int) -> str:
     return text[:max_chars].rstrip() + "\n\n[truncated by PiContext]"
 
 
-__all__ = ["PiContext"]
+__all__ = ["DEFAULT_PI_SYSTEM_PROMPT", "PiContext"]

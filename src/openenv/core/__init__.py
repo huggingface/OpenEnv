@@ -26,6 +26,7 @@ if TYPE_CHECKING:
         ToolCall,
     )
     from .mcp_client import MCPClientBase, MCPToolClient
+    from .pi import PiContext
     from .sync_client import SyncEnvClient
 
 __all__ = [
@@ -40,6 +41,7 @@ __all__ = [
     "LLMResponse",
     "OpenAIClient",
     "ToolCall",
+    "PiContext",
     "create_llm_client",
 ] + env_server.__all__  # type: ignore
 
@@ -56,6 +58,7 @@ _LAZY_ATTRS = {
     "LLMResponse": (".llm_client", "LLMResponse"),
     "OpenAIClient": (".llm_client", "OpenAIClient"),
     "ToolCall": (".llm_client", "ToolCall"),
+    "PiContext": (".pi", "PiContext"),
     "create_llm_client": (".llm_client", "create_llm_client"),
 }
 

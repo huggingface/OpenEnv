@@ -24,13 +24,12 @@ from __future__ import annotations
 
 import json
 import os
-import re
 from pathlib import Path
 from typing import Any
 
 from datasets import load_dataset
 from terminus_env.client import TerminusEnv
-from terminus_env.harness import TerminusSessionFactory
+from terminus_env.harness import TerminusSessionFactory, terminus_reward
 from transformers import AutoTokenizer
 from trl.experimental.async_grpo import AsyncGRPOConfig, AsyncGRPOTrainer
 
@@ -43,7 +42,6 @@ TRACKIO_PROJECT = "terminus-pi-trl"
 REPORT_TO = "trackio"
 RUN_NAME = os.environ.get("JOB_ID", "local") + "-terminus"
 VLLM_SERVER_URL = os.environ.get("TERMINUS_VLLM_SERVER_URL", "http://localhost:8001")
-REWARD_RE = re.compile(r"reward=([+-]?(?:\d+(?:\.\d*)?|\.\d+))")
 
 os.environ["TRACKIO_PROJECT"] = TRACKIO_PROJECT
 
@@ -65,9 +63,19 @@ class TerminusHarnessEnvironment:
         Returns:
             A JSON string with the tool output, reward, done flag, and error.
         """
+        command = str(command or "")
+        final_answer = str(final_answer or "")
+        arguments = {
+            key: value
+            for key, value in (("command", command), ("final_answer", final_answer))
+            if value.strip()
+        }
+
         if self._session is None:
             return json.dumps(
                 {
+                    "tool_name": "terminal",
+                    "arguments": arguments,
                     "done": True,
                     "error": "environment was not reset",
                     "output": "",
@@ -76,8 +84,6 @@ class TerminusHarnessEnvironment:
                 sort_keys=True,
             )
 
-        command = str(command or "")
-        final_answer = str(final_answer or "")
         if command.strip() and final_answer.strip():
             first = self._session.call_tool("terminal", {"command": command})
             result = first
@@ -108,11 +114,14 @@ class TerminusHarnessEnvironment:
             )
         else:
             result = self._session.call_tool("terminal", {"command": ""})
+            arguments = {"command": ""}
 
         reward = result.metadata.get("reward")
         data = result.data if isinstance(result.data, dict) else {"output": result.data}
         return json.dumps(
             {
+                "tool_name": "terminal",
+                "arguments": arguments,
                 "done": result.done,
                 "error": result.error,
                 "output": data.get("output"),
@@ -130,38 +139,6 @@ class TerminusHarnessEnvironment:
         if self._session is not None:
             self._session.close()
             self._session = None
-
-
-def terminus_reward(completions=None, **kwargs) -> list[float]:
-    del kwargs
-    rewards = []
-    for completion in completions or []:
-        reward = 0.0
-        for message in completion if isinstance(completion, list) else []:
-            if not isinstance(message, dict) or message.get("role") != "tool":
-                continue
-            parsed = _parse_tool_reward(str(message.get("content", "")))
-            if parsed is not None:
-                reward = parsed
-        rewards.append(reward)
-    return rewards
-
-
-def _parse_tool_reward(content: str) -> float | None:
-    try:
-        payload = json.loads(content)
-    except json.JSONDecodeError:
-        payload = None
-    if isinstance(payload, dict) and payload.get("reward") is not None:
-        try:
-            return float(payload["reward"])
-        except (TypeError, ValueError):
-            return None
-    match = REWARD_RE.search(content)
-    if match is None:
-        return None
-    return float(match.group(1))
-
 
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
