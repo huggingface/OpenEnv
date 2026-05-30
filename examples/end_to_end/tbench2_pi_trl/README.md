@@ -1,6 +1,6 @@
 # Terminus + TRL Async GRPO
 
-Start a Terminus server and a compatible vLLM server, then run:
+Start a Terminus server, a compatible vLLM server, and configure the `pi` CLI, then run:
 
 ```bash
 TERMINUS_ENV_URL=http://localhost:8000 \

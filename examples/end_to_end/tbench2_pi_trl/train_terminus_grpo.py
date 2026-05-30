@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from datasets import load_dataset
+from openenv.core.harness import HarnessRunLimits, PiCLIHarnessAdapter
 from terminus_env.client import TerminusEnv
 from terminus_env.harness import TerminusSessionFactory, terminus_reward
 from transformers import AutoTokenizer
@@ -42,33 +43,39 @@ TRACKIO_PROJECT = "terminus-pi-trl"
 REPORT_TO = "trackio"
 RUN_NAME = os.environ.get("JOB_ID", "local") + "-terminus"
 VLLM_SERVER_URL = os.environ.get("TERMINUS_VLLM_SERVER_URL", "http://localhost:8001")
+PI_PROVIDER = os.environ.get("TERMINUS_PI_PROVIDER")
+PI_MODEL = os.environ.get("TERMINUS_PI_MODEL")
 
 os.environ["TRACKIO_PROJECT"] = TRACKIO_PROJECT
 
 
 class TerminusHarnessEnvironment:
-    """Small TRL environment wrapper backed by an OpenEnv resource session."""
+    """Small TRL environment wrapper backed by the Pi CLI harness."""
 
-    def __init__(self, session_factory: TerminusSessionFactory):
+    def __init__(
+        self,
+        session_factory: TerminusSessionFactory,
+        pi_harness: PiCLIHarnessAdapter,
+        limits: HarnessRunLimits,
+    ):
         self._session_factory = session_factory
+        self._pi_harness = pi_harness
+        self._limits = limits
         self._session = None
 
     def terminal(self, command: str = "", final_answer: str = "") -> str:
-        """Run a shell command or submit final_answer inside Terminus.
+        """Run the Pi CLI harness against the current Terminus task.
 
         Args:
-            command: Shell command to run in the sandbox.
-            final_answer: Final answer to submit after the task is complete.
+            command: Ignored compatibility field.
+            final_answer: Ignored compatibility field.
 
         Returns:
             A JSON string with the tool output, reward, done flag, and error.
         """
-        command = str(command or "")
-        final_answer = str(final_answer or "")
+        del command, final_answer
         arguments = {
-            key: value
-            for key, value in (("command", command), ("final_answer", final_answer))
-            if value.strip()
+            "harness": "pi_cli",
         }
 
         if self._session is None:
@@ -84,47 +91,37 @@ class TerminusHarnessEnvironment:
                 sort_keys=True,
             )
 
-        if command.strip() and final_answer.strip():
-            first = self._session.call_tool("terminal", {"command": command})
-            result = first
-            if not first.done:
-                result = self._session.call_tool(
-                    "terminal",
-                    {"final_answer": final_answer},
-                )
-                first_data = first.data if isinstance(first.data, dict) else {}
-                result_data = result.data if isinstance(result.data, dict) else {}
-                result.data = {
-                    **result_data,
-                    "output": "\n".join(
-                        str(part)
-                        for part in (
-                            first_data.get("output"),
-                            result_data.get("output"),
-                        )
-                        if part
-                    ),
-                }
-        elif command.strip():
-            result = self._session.call_tool("terminal", {"command": command})
-        elif final_answer.strip():
-            result = self._session.call_tool(
-                "terminal",
-                {"final_answer": final_answer},
+        try:
+            rollout = self._pi_harness.run_black_box(
+                session=self._session,
+                limits=self._limits,
             )
-        else:
-            result = self._session.call_tool("terminal", {"command": ""})
-            arguments = {"command": ""}
+            verify = self._session.verify(
+                transcript=rollout.messages,
+                final_state={
+                    "done": rollout.done,
+                    "metrics": dict(rollout.metrics),
+                },
+            )
+            result = rollout.tool_trace[-1].result if rollout.tool_trace else None
+            data = result.data if result is not None else {}
+            output = data.get("output") if isinstance(data, dict) else data
+            reward = verify.env_reward
+            done = verify.done or rollout.done
+            error = None if result is None else result.error
+        except Exception as exc:
+            output = ""
+            reward = 0.0
+            done = True
+            error = str(exc)
 
-        reward = result.metadata.get("reward")
-        data = result.data if isinstance(result.data, dict) else {"output": result.data}
         return json.dumps(
             {
                 "tool_name": "terminal",
                 "arguments": arguments,
-                "done": result.done,
-                "error": result.error,
-                "output": data.get("output"),
+                "done": done,
+                "error": error,
+                "output": output,
                 "reward": 0.0 if reward is None else float(reward),
             },
             sort_keys=True,
@@ -140,12 +137,14 @@ class TerminusHarnessEnvironment:
             self._session.close()
             self._session = None
 
+
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     task_dataset = load_dataset(TASK_DATASET_ID, split="train")
     task = task_dataset[0]
     train_dataset = task_dataset.select_columns(["prompt"])
+    limits = HarnessRunLimits(max_turns=task["max_turns"])
     session_factory = TerminusSessionFactory(
         client_factory=lambda: TerminusEnv(
             base_url=ENV_URL,
@@ -153,6 +152,11 @@ def main() -> None:
             message_timeout_s=600.0,
         ).sync(),
         default_verify=list(task["verify"]),
+    )
+    pi_harness = PiCLIHarnessAdapter(
+        provider=PI_PROVIDER,
+        model=PI_MODEL,
+        timeout_s=600.0,
     )
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL)
@@ -187,7 +191,11 @@ def main() -> None:
         processing_class=tokenizer,
         train_dataset=train_dataset,
         reward_funcs=terminus_reward,
-        environment_factory=lambda: TerminusHarnessEnvironment(session_factory),
+        environment_factory=lambda: TerminusHarnessEnvironment(
+            session_factory,
+            pi_harness,
+            limits,
+        ),
     )
     trainer.train()
     trainer.save_model()
