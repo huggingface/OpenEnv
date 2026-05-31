@@ -680,11 +680,12 @@ class SWERolloutWorker:
         turns = 0
         answer_called = False
         pending_intercept: dict[str, Any] | None = None
-        rollout_stop_reason = "max_turns"
+        turn_limit: int | None = self._cfg.max_turns if self._cfg.max_turns > 0 else None
+        rollout_stop_reason = "max_turns" if turn_limit is not None else "running"
         t0 = time.time()
 
         try:
-            while turns < self._cfg.max_turns and not self._stop.is_set():
+            while (turn_limit is None or turns < turn_limit) and not self._stop.is_set():
                 if pending_intercept is not None:
                     intercept = pending_intercept
                     pending_intercept = None

@@ -5,7 +5,7 @@
 #   1. Prepares the Space directory (minimal repo subset)
 #   2. Creates/updates the HF Space
 #   3. Configures secrets and environment variables
-#   4. Sets hardware (a10g-largex2)
+#   4. Sets hardware (a10g-largex4)
 #   5. Pushes code and triggers build
 #   6. Monitors build/startup
 #
@@ -19,11 +19,12 @@
 #
 # Options:
 #   --space-id OWNER/NAME     Space ID (default: $HF_SPACE_ID or rycerzes/swe-async-grpo-train)
-#   --model MODEL_ID          Model to train (default: Qwen/Qwen3-0.6B)
-#   --max-tasks N             Number of SWE tasks (default: 5)
-#   --max-steps N             Training steps (default: 10)
-#   --max-turns N             Max agent turns per rollout (default: 30)
-#   --hardware HW             Hardware tier (default: a10g-largex2)
+#   --model MODEL_ID          Model to train (default: Qwen/Qwen3.5-4B)
+#   --max-tasks N             Number of SWE tasks (default: 230)
+#   --max-steps N             Training steps (default: 230)
+#   --max-turns N             Max agent turns per rollout (default: 0, i.e. unlimited)
+#   --num-generations N       Samples per prompt (default: 16)
+#   --hardware HW             Hardware tier (default: a10g-largex4)
 #   --sandbox-backend BACKEND Backend for agent (default: hf)
 #   --skip-build              Only configure, don't push code
 #   --monitor                 Monitor logs after deploy
@@ -37,12 +38,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 
 SPACE_ID="${HF_SPACE_ID:-rycerzes/swe-async-grpo-train}"
-MODEL="${SWE_MODEL:-Qwen/Qwen3-1.7B}"
-MAX_TASKS=5
-MAX_STEPS=10
-MAX_TURNS=30
+# Default deployment profile for SWE-Gym Lite:
+# - Base checkpoint: Qwen/Qwen3.5-4B
+# - Samples per prompt: 16
+# - One full pass over lite split (230 tasks): max_tasks=230, max_steps=230
+# - Unlimited turns (max_turns=0)
+MODEL="${SWE_MODEL:-Qwen/Qwen3.5-4B}"
+MAX_TASKS=230
+MAX_STEPS=230
+MAX_TURNS=0
 NUM_GENERATIONS=16
-HARDWARE="a10g-largex2"
+HARDWARE="a10g-largex4"
 SANDBOX_BACKEND="hf"
 SKIP_BUILD=false
 MONITOR=false
@@ -141,6 +147,7 @@ printf "║  %-54s  ║\n" "Hardware: $HARDWARE"
 printf "║  %-54s  ║\n" "Tasks:    $MAX_TASKS"
 printf "║  %-54s  ║\n" "Steps:    $MAX_STEPS"
 printf "║  %-54s  ║\n" "Turns:    $MAX_TURNS"
+printf "║  %-54s  ║\n" "Gens:     $NUM_GENERATIONS"
 printf "║  %-54s  ║\n" "Sandbox:  $SANDBOX_BACKEND"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
@@ -202,6 +209,7 @@ variables = {
     "INTERCEPTION_PORT": "7860",
     "TRL_EXPERIMENTAL_SILENCE": "1",
     "TRACKIO_SPACE_ID": "rycerzes/swe-grpo-dashboard",
+    "SWE_REWARD_MODE": "binary",
     "SWE_CHECKPOINT_TO_HUB": "1",
     "SWE_HUB_MODEL_ID": checkpoint_repo,
     "SWE_RESUME_FROM_CHECKPOINT": "none",

@@ -122,16 +122,23 @@ def stop_interception_server(
 
 def _args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
+    # Defaults target a full pass over SWE-Gym Lite.
+    # 230 tasks + 230 steps approximates one epoch on the lite split.
     p.add_argument("--task-variant", default="lite", choices=["lite", "full"])
-    p.add_argument("--max-tasks", type=int, default=5)
-    p.add_argument("--max-steps", type=int, default=10)
-    p.add_argument("--max-turns", type=int, default=30)
+    p.add_argument("--max-tasks", type=int, default=230)
+    p.add_argument("--max-steps", type=int, default=230)
+    p.add_argument(
+        "--max-turns",
+        type=int,
+        default=0,
+        help="Max agent turns per rollout (0 means unlimited).",
+    )
     p.add_argument("--sandbox-backend", default="hf", choices=["docker", "e2b", "hf"])
     p.add_argument("--vllm-url", default="http://localhost:8000")
     p.add_argument("--agent", default="pi", choices=["pi", "opencode"])
     p.add_argument(
         "--num-generations", type=int, default=16,
-        help="Rollouts per prompt for group-relative advantage (GRPO). Polar used 16.",
+        help="Rollouts per prompt for group-relative advantage (GRPO).",
     )
     return p.parse_args()
 
@@ -354,12 +361,11 @@ def main() -> int:
             "model_init_kwargs": {"dtype": "bfloat16"},
             "max_completion_length": 2048,
             "max_steps": args.max_steps,
-            # Polar: rollout_batch_size=4. With single GPU trainer,
-            # batch_size=4 via gradient accumulation.
+            # Effective train batch is 4 via gradient accumulation.
             "per_device_train_batch_size": 1,
             "gradient_accumulation_steps": 4,
             "num_generations": args.num_generations,
-            # Polar: lr=1e-6, weight_decay=0.1
+            # Conservative optimizer settings for stability.
             "learning_rate": 1e-6,
             "weight_decay": 0.1,
             "temperature": 1.0,
