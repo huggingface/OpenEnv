@@ -28,9 +28,14 @@ COPY --chown=user . .
 # Install deps:
 # 1. Force-upgrade huggingface-hub (resolves vLLM vs hf-sandbox conflict).
 # 2. Force-install transformers >=5.2.0 (required by TRL v1.6.0 AsyncGRPO,
-#    and for native Qwen3.5-4B model type support).  --no-deps avoids
+#    and for native Qwen3.5-4B model type support). --no-deps avoids
 #    pulling vLLM's bundled transformers which may conflict.
-# 3. TRL emits a warning about vLLM >0.18 but functions correctly —
+# 3. Install Qwen3.5 fast-path kernel deps (latest known):
+#    - flash-linear-attention: provides `fla.ops.gated_delta_rule`
+#    NOTE: we intentionally do NOT install `causal-conv1d` in Spaces because
+#    its CUDA extension currently fails to load there (`libcudart.so.12`),
+#    which crashes model import. Qwen3.5 will fall back for conv1d.
+# 4. TRL emits a warning about vLLM >0.18 but functions correctly —
 #    the version check is advisory, not blocking.
 RUN uv pip install --system --no-cache "huggingface-hub>=1.5" && \
     uv pip install --system --no-cache --no-deps \
@@ -45,8 +50,10 @@ RUN uv pip install --system --no-cache "huggingface-hub>=1.5" && \
         "aiohttp>=3.13.5" \
         "fastmcp>=3.3.0" \
         "trackio>=0.25.0" \
-        "bitsandbytes>=0.43.0" && \
-    uv pip install --system --no-cache --no-deps "transformers>=5.2.0"
+        "bitsandbytes>=0.43.0" \
+        "flash-linear-attention>=0.5.0" && \
+    uv pip install --system --no-cache --no-deps "transformers>=5.2.0" && \
+    uv pip uninstall --system causal-conv1d || true
 
 # Runtime defaults
 ENV PYTHONPATH=$HOME/app/src:$HOME/app/envs \

@@ -32,6 +32,7 @@ import logging
 import os
 import sys
 import threading
+from importlib import metadata as importlib_metadata
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,10 @@ for _p in (_root, _root / "src", _root / "envs"):
 
 from datasets import Dataset  # noqa: E402
 from transformers import AutoTokenizer  # noqa: E402
+from transformers.utils.import_utils import (  # noqa: E402
+    is_causal_conv1d_available,
+    is_flash_linear_attention_available,
+)
 from trl.experimental.async_grpo import AsyncGRPOConfig, AsyncGRPOTrainer  # noqa: E402
 
 try:
@@ -155,6 +160,13 @@ def _int_env(name: str, default: int, *, min_value: int = 1) -> int:
     return value
 
 
+def _pkg_version(dist_name: str) -> str:
+    try:
+        return importlib_metadata.version(dist_name)
+    except importlib_metadata.PackageNotFoundError:
+        return "not-installed"
+
+
 def _derive_checkpoint_repo_id() -> str | None:
     explicit = os.environ.get("SWE_HUB_MODEL_ID", "").strip()
     if explicit:
@@ -243,6 +255,15 @@ def main() -> int:
     model = _env("SWE_MODEL")
     vllm_url = args.vllm_url
     vllm_key = os.environ.get("VLLM_API_KEY", "token").strip()
+
+    _log.info(
+        "qwen3.5 kernel deps: fla_available=%s causal_conv1d_available=%s fla_ver=%s causal_conv1d_ver=%s flash_attn_ver=%s",
+        is_flash_linear_attention_available(),
+        is_causal_conv1d_available(),
+        _pkg_version("flash-linear-attention"),
+        _pkg_version("causal-conv1d"),
+        _pkg_version("flash-attn"),
+    )
 
     # ── Load tasks ────────────────────────────────────────────────
     gym_tasks = load_swegym_tasks(args.task_variant)[: args.max_tasks]
@@ -342,9 +363,21 @@ def main() -> int:
             "learning_rate": 1e-6,
             "weight_decay": 0.1,
             "temperature": 1.0,
-            "optim": "adamw_bnb_8bit",
+            # bnb 8-bit optimizer is not yet compatible with FSDP2 DTensor step path.
+            # Use torch AdamW for multi-GPU FSDP2 stability.
+            "optim": "adamw_torch",
             "bf16": True,
             "gradient_checkpointing": True,
+            # FSDP2: make layer wrapping explicit so transformer class targeting is applied.
+            # Also force reshard_after_forward=True to avoid keeping full params resident.
+            "fsdp": "full_shard auto_wrap",
+            "fsdp_config": {
+                "fsdp_version": 2,
+                "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+                "fsdp_transformer_layer_cls_to_wrap": "Qwen3_5DecoderLayer",
+                "fsdp_reshard_after_forward": True,
+            },
+            "ddp_timeout": 7200,
             "max_staleness": 4,
             "weight_sync_steps": 1,
             "max_inflight_tasks": 2,
@@ -436,21 +469,22 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except SystemExit as exc:
         if exc.code == 0:
-            # Normal exit — sleep forever to prevent Space restart.
-            import time as _t
-
-            _log.info("training completed successfully; sleeping to hold Space alive")
-            while True:
-                _t.sleep(3600)
+            _log.info("training completed successfully")
         else:
-            # Crash — log and sleep forever so logs are preserved.
-            _log.exception("training crashed (exit code %s); sleeping to preserve logs", exc.code)
-            import time as _t
-
-            while True:
-                _t.sleep(3600)
+            _log.error("training failed with exit code %s", exc.code)
     except Exception:
-        _log.exception("unhandled exception in training; sleeping to preserve logs")
+        _log.exception("unhandled exception in training")
+
+    # Pause the Space to stop billing and prevent restart loops.
+    # Logs are preserved in the paused state for inspection.
+    try:
+        from huggingface_hub import HfApi as _HfApi
+
+        _space_id = os.environ.get("SPACE_ID", "rycerzes/swe-async-grpo-train")
+        _HfApi().pause_space(_space_id)
+        _log.info("paused Space %s", _space_id)
+    except Exception:
+        _log.warning("failed to pause Space; sleeping to preserve logs")
         import time as _t
 
         while True:

@@ -204,7 +204,7 @@ variables = {
     "TRACKIO_SPACE_ID": "rycerzes/swe-grpo-dashboard",
     "SWE_CHECKPOINT_TO_HUB": "1",
     "SWE_HUB_MODEL_ID": checkpoint_repo,
-    "SWE_RESUME_FROM_CHECKPOINT": "auto",
+    "SWE_RESUME_FROM_CHECKPOINT": "none",
     "SWE_CHECKPOINT_SAVE_STEPS": "2",
     "SWE_CHECKPOINT_SAVE_TOTAL_LIMIT": "2",
     "SWE_HUB_PRIVATE_REPO": "1",
@@ -316,14 +316,32 @@ preload_from_hub:
 Model: \`$MODEL\` | Tasks: $MAX_TASKS | Steps: $MAX_STEPS | Backend: $SANDBOX_BACKEND
 EOF
 
-    # Patch start.sh to pass our training args
+    # Patch start.sh to pass our training args.
+    # NOTE: Multi-GPU branch uses line continuations, so patching only the
+    # `exec ...train_swe_async_grpo.py` line misses it. Instead, inject at the
+    # shared `--vllm-url ...` anchor used by both single- and multi-GPU paths.
+    TRAIN_ARGS="--sandbox-backend $SANDBOX_BACKEND --max-tasks $MAX_TASKS --max-steps $MAX_STEPS --max-turns $MAX_TURNS --num-generations $NUM_GENERATIONS"
     cat >> "$STAGE_DIR/start.sh" << EOF
 
 # Auto-generated training args from deploy script
-# --sandbox-backend $SANDBOX_BACKEND --max-tasks $MAX_TASKS --max-steps $MAX_STEPS --max-turns $MAX_TURNS
+# $TRAIN_ARGS
 EOF
-    # Append deploy-time args to the trainer exec line (interpreter-agnostic).
-    sed -i "s|\(exec .*examples/mini_swe_env/train_swe_async_grpo.py\)|\1 --sandbox-backend $SANDBOX_BACKEND --max-tasks $MAX_TASKS --max-steps $MAX_STEPS --max-turns $MAX_TURNS --num-generations $NUM_GENERATIONS|" "$STAGE_DIR/start.sh"
+
+    TRAIN_ARGS="$TRAIN_ARGS" "${PYTHON_CMD[@]}" << 'PYEOF'
+from pathlib import Path
+import os
+
+path = Path(os.environ["STAGE_DIR"]) / "start.sh"
+text = path.read_text()
+anchor = '--vllm-url "http://127.0.0.1:${VLLM_PORT}" \\\n'
+replacement = f'{os.environ["TRAIN_ARGS"]} --vllm-url "http://127.0.0.1:${{VLLM_PORT}}" \\\n'
+count = text.count(anchor)
+if count == 0:
+    raise RuntimeError("Could not find trainer arg anchor in start.sh")
+text = text.replace(anchor, replacement)
+path.write_text(text)
+print(f"  ✓ Injected deploy args at {count} trainer command site(s)")
+PYEOF
 
     FILE_COUNT=$(find "$STAGE_DIR" -type f | wc -l)
     echo "  ✓ Staged $FILE_COUNT files"
