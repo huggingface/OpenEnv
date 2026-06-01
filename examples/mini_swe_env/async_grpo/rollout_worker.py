@@ -673,9 +673,16 @@ class SWERolloutWorker:
         all_lps: list[float] = []
 
         initial_prompt_ids: list[int] | None = None
-        # prev_base_ids: render of all messages so far WITHOUT add_generation_prompt.
-        # The training template guarantees this is prefix-preserving across turns.
-        prev_base_ids: list[int] | None = None
+        # prev_prompt_ids: the FULL prompt (with add_generation_prompt=True)
+        # used for the most recently completed turn.  Used for EOT-based
+        # interstitial extraction following Polar's prefix_merging approach
+        # (arXiv:2605.24220 §3.4.2).  The next turn's canonical_tail =
+        # next_prompt[len(prev_prompt_ids):] contains the canonical response
+        # copy + interstitial; we split at EOT to get only the interstitial.
+        prev_prompt_ids: list[int] | None = None
+        # The raw turn_ids from the most recent generation, needed to detect
+        # whether the response already ends with EOT (for correct slicing).
+        prev_turn_ids: list[int] | None = None
 
         turns = 0
         answer_called = False
@@ -722,44 +729,52 @@ class SWERolloutWorker:
                     all_ids.extend(current_prompt_ids)
                     all_mask.extend([0] * len(current_prompt_ids))
                     all_lps.extend([0.0] * len(current_prompt_ids))
-                elif prev_base_ids is not None:
+                elif prev_prompt_ids is not None:
                     # Subsequent turns: compute the interstitial (tool-result
                     # suffix) between the last generation and this turn's prompt.
                     #
-                    # We use Polar's approach (arXiv:2605.24220 §3.4.2):
-                    # The "base" render (add_generation_prompt=False) is
-                    # prefix-preserving across turns — guaranteed by TRL's
-                    # training chat template.  The suffix = tokens in the
-                    # current prompt that come AFTER the previous base.
-                    prev_len = len(prev_base_ids)
-
-                    # Prefix validation.
-                    if current_prompt_ids[:prev_len] != prev_base_ids:
-                        _log.warning(
-                            "prefix mismatch at turn %d (prev_base=%d tokens, "
-                            "first diff at idx %d). Using EOT fallback.",
-                            turns,
-                            prev_len,
-                            next(
-                                (
-                                    i
-                                    for i, (a, b) in enumerate(
-                                        zip(current_prompt_ids, prev_base_ids)
-                                    )
-                                    if a != b
-                                ),
-                                -1,
-                            ),
-                        )
-                        # Fallback: use Polar's EOT-based interstitial detection
-                        # on the canonical tail from the full prompt.
-                        suffix_ids = _slice_interstitial_fallback(
-                            current_prompt_ids,
-                            prev_base_ids,
-                            self._tokenizer.eos_token_id,
-                        )
+                    # Following Polar's prefix_merging (arXiv:2605.24220 §3.4.2)
+                    # and TRL's _get_tool_suffix_ids approach:
+                    #
+                    # canonical_tail = next_prompt[len(prev_prompt):]  contains:
+                    #   1. Canonical copy of prev response (may differ from raw
+                    #      turn_ids due to BPE non-canonicality)
+                    #   2. EOT token (<|im_end|>)
+                    #   3. True interstitial (tool result, user msg, gen prompt)
+                    #
+                    # We split at EOT to extract only the interstitial (#3),
+                    # avoiding the ~2× sequence bloat from duplicating responses.
+                    #
+                    # If the prefix breaks (due to message truncation changing
+                    # earlier content between turns), we find the longest common
+                    # prefix first, then EOT-split the remainder.
+                    prev_len = len(prev_prompt_ids)
+                    if (
+                        len(current_prompt_ids) >= prev_len
+                        and current_prompt_ids[:prev_len] == prev_prompt_ids
+                    ):
+                        canonical_tail = current_prompt_ids[prev_len:]
                     else:
-                        suffix_ids = current_prompt_ids[prev_len:]
+                        # Message truncation changed earlier content — find
+                        # the actual divergence point.
+                        common_len = 0
+                        for a, b in zip(current_prompt_ids, prev_prompt_ids):
+                            if a != b:
+                                break
+                            common_len += 1
+                        canonical_tail = current_prompt_ids[common_len:]
+                        if common_len < prev_len:
+                            _log.debug(
+                                "prefix diverged at turn %d: expected %d, "
+                                "common=%d (likely truncation drift)",
+                                turns, prev_len, common_len,
+                            )
+
+                    suffix_ids = _extract_interstitial_after_eot(
+                        canonical_tail=canonical_tail,
+                        prev_turn_ids=prev_turn_ids,
+                        eot_id=self._tokenizer.eos_token_id,
+                    )
 
                     all_ids.extend(suffix_ids)
                     all_mask.extend([0] * len(suffix_ids))
@@ -794,16 +809,16 @@ class SWERolloutWorker:
                 all_mask.extend([1] * len(turn_ids))
                 all_lps.extend(turn_lps)
 
-                # For next turn's suffix computation: compute the "base" render
-                # of all messages so far (WITHOUT add_generation_prompt).  This
-                # is prefix-preserving across turns — the next turn's prompt
-                # (rendered with add_gen=True) will start with these tokens.
+                # For next turn's suffix computation: save this turn's full
+                # prompt (with add_generation_prompt=True) as the reference.
+                # The next turn's prompt will extend this prefix (same messages
+                # plus the response + tool result), so canonical_tail =
+                # next_prompt[len(prev_prompt):] gives us the new content.
                 #
-                # This approach avoids retokenization drift at the
-                # add_generation_prompt boundary (e.g. <think>\n vs
-                # <think>\n\n</think>\n\n) which would cause prefix mismatches
-                # with the naive prev_prompt = prompt + turn_ids approach.
-                prev_base_ids = self._render_base_ids(messages, tools)
+                # This is Polar/TRL's approach: comparing canonical-vs-canonical
+                # server tokenizations avoids BPE drift from raw tokens.
+                prev_prompt_ids = current_prompt_ids
+                prev_turn_ids = turn_ids
 
                 # ── Build chat response for Pi ────────────────────
                 assistant_message = _parse_assistant_message(
@@ -931,38 +946,6 @@ class SWERolloutWorker:
             ids = self._tokenizer.apply_chat_template(messages, **kwargs)
         return cast(list[int], ids)
 
-    def _render_base_ids(
-        self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]] | None,
-    ) -> list[int]:
-        """Render messages WITHOUT add_generation_prompt.
-
-        The resulting token sequence is prefix-preserving: appending tool
-        results to the messages and re-rendering (with add_gen=True) will
-        produce a token sequence whose first ``len(base_ids)`` tokens match
-        exactly.  This property is what makes suffix computation reliable
-        across turns (see TITO blog, Polar §3.4.2, TRL's
-        ``is_chat_template_prefix_preserving``).
-        """
-        kwargs: dict[str, Any] = {
-            "add_generation_prompt": False,
-            "return_dict": False,
-        }
-        if tools:
-            kwargs["tools"] = tools
-        if self._chat_template:
-            kwargs["chat_template"] = self._chat_template
-
-        messages = _ensure_tool_call_arguments_parsed(messages)
-
-        try:
-            ids = self._tokenizer.apply_chat_template(messages, **kwargs)
-        except TypeError:
-            kwargs.pop("tools", None)
-            ids = self._tokenizer.apply_chat_template(messages, **kwargs)
-        return cast(list[int], ids)
-
     class ContextOverflowError(RuntimeError):
         """Raised when prompt + max_tokens exceeds max_model_len.
 
@@ -1031,47 +1014,70 @@ class SWERolloutWorker:
 # ── Helpers ────────────────────────────────────────────────────────────
 
 
-def _slice_interstitial_fallback(
-    current_prompt_ids: list[int],
-    prev_base_ids: list[int],
-    eos_token_id: int | None,
+def _extract_interstitial_after_eot(
+    *,
+    canonical_tail: list[int],
+    prev_turn_ids: list[int] | None,
+    eot_id: int | None,
 ) -> list[int]:
-    """Fallback interstitial extraction when prefix check fails.
+    """Extract the true interstitial from a canonical tail using EOT splitting.
 
-    Uses Polar's EOT-based detection: find the longest common prefix between
-    ``current_prompt_ids`` and ``prev_base_ids``, then return everything in
-    ``current_prompt_ids`` after that common prefix.  This handles edge cases
-    where the template isn't perfectly prefix-preserving (e.g. thinking-token
-    variations).
+    Following Polar's ``PrefixMergingBuilder._slice_interstitial`` and TRL's
+    ``_get_tool_suffix_ids`` EOS-trimming approach:
+
+    ``canonical_tail`` = next_prompt[len(prev_prompt):] contains:
+      1. Canonical re-rendering of the previous assistant response
+      2. EOT token (``<|im_end|>`` for Qwen/ChatML)
+      3. True interstitial (tool result, user turn, gen prompt)
+
+    We split at the first EOT to skip the canonical response copy (#1-#2)
+    and return only the interstitial (#3).
+
+    If ``prev_turn_ids`` already ends with EOT (natural stop), the EOT in
+    the canonical tail is a duplicate — skip it.  Otherwise (truncation),
+    include it so the stream closes the assistant turn.
+
+    Parameters
+    ----------
+    canonical_tail:
+        Tokens from next_prompt that come after prev_prompt.
+    prev_turn_ids:
+        The raw response token IDs from the previous generation.
+    eot_id:
+        The end-of-turn token ID (e.g. ``<|im_end|>`` / eos_token_id).
+
+    Returns
+    -------
+    list[int]
+        Only the interstitial tokens (tool results, user messages,
+        generation prompt for the next turn).
     """
-    # Find longest common prefix
-    common_len = 0
-    for a, b in zip(current_prompt_ids, prev_base_ids):
-        if a != b:
-            break
-        common_len += 1
+    if not canonical_tail:
+        return canonical_tail
 
-    # Return everything after the common prefix in current_prompt_ids
-    return current_prompt_ids[common_len:]
+    if eot_id is None:
+        raise ValueError(
+            "Cannot extract interstitial without eot_id (tokenizer.eos_token_id). "
+            "This would duplicate the previous response in the training stream."
+        )
 
+    # Find the first EOT in the canonical tail.  This marks the end of the
+    # canonical copy of the previous response.
+    try:
+        eot_pos = canonical_tail.index(eot_id)
+    except ValueError:
+        # No EOT found — edge case (e.g. truncated response without stop token).
+        # Return full tail as interstitial (conservative).
+        return canonical_tail
 
-def _strip_trailing_eos(ids: list[int], eos_token_id: int | None) -> list[int]:
-    """Strip trailing EOS token from generated token IDs.
-
-    vLLM includes the stop token (e.g. ``<|im_end|>``) in the returned
-    ``token_ids`` when ``finish_reason == 'stop'``.  The chat template will
-    re-render that same token as part of the canonical assistant block
-    (``{{- '<|im_end|>\n' }}``).  To avoid double-counting it in the prefix
-    computation, we strip it here.
-
-    This mirrors TRL's ``_get_tool_suffix_ids`` EOS-trimming logic and Polar's
-    interstitial boundary detection (Section 3.4.2 of arXiv:2605.24220).
-    """
-    if eos_token_id is None or not ids:
-        return ids
-    if ids[-1] == eos_token_id:
-        return ids[:-1]
-    return ids
+    # If the raw response already ended with EOT (model emitted stop token),
+    # the EOT in canonical_tail is a duplicate — skip past it.
+    # Otherwise (response was truncated), include the EOT to properly close
+    # the assistant turn in the training stream.
+    if prev_turn_ids and prev_turn_ids[-1] == eot_id:
+        return canonical_tail[eot_pos + 1:]
+    else:
+        return canonical_tail[eot_pos:]
 
 
 def _get_messages(intercept: dict[str, Any]) -> list[dict[str, Any]]:
