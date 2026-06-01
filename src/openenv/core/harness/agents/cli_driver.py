@@ -45,6 +45,11 @@ _log = logging.getLogger(__name__)
 Verifier = Callable[..., VerifyResult]
 
 
+def build_interception_rollout_url(base_url: str, rollout_id: str) -> str:
+    """Build OpenAI-compatible interception endpoint for one rollout."""
+    return f"{base_url.rstrip('/')}/rollout/{rollout_id}/v1"
+
+
 class _ConfigOverrideView:
     """Read-only attribute view with optional overrides."""
 
@@ -205,6 +210,9 @@ class CLIAgentSession(ResourceSession):
                     self._interception_queue.get,
                     timeout=min(remaining, 1.0),
                 )
+                # None sentinel = agent process exited (sent by /exit endpoint)
+                if request_id is None:
+                    return None
                 intercept = server.get_intercept(request_id)
                 if intercept is not None:
                     return intercept
@@ -322,8 +330,9 @@ class CLIAgentDriver:
             rollout_id = episode_id or f"rollout_{uuid.uuid4().hex[:8]}"
             interception_rollout_id = rollout_id
             interception_queue = self._interception_server.register_rollout(rollout_id)
-            base_url_override = (
-                f"{self._interception_base_url.rstrip('/')}/rollout/{rollout_id}/v1"
+            base_url_override = build_interception_rollout_url(
+                self._interception_base_url,
+                rollout_id,
             )
 
         agent_bg_job = self._start_agent(
@@ -501,6 +510,23 @@ class CLIAgentDriver:
         if self.mode == "interception_gate" and self._interception_server is not None:
             envs["OPENAI_API_KEY"] = self._interception_server.secret
             envs["ANTHROPIC_API_KEY"] = self._interception_server.secret
+
+            # Append an exit notification so the InterceptionServer detects
+            # agent exit immediately instead of waiting for the full timeout.
+            # The /exit endpoint enqueues a None sentinel on the request queue,
+            # causing next_request() to return None.
+            if base_url_override:
+                exit_url = f"{base_url_override.rstrip('/')}/exit"
+                auth_header = (
+                    "Authorization: Bearer "
+                    f"{self._interception_server.secret}"
+                )
+                cmd = (
+                    f"{{ {cmd} ; }} ; "
+                    f"curl -sf -X POST -H {shlex.quote(auth_header)} "
+                    f"{shlex.quote(exit_url)} || true"
+                )
+
         return sandbox.start_bg(cmd, envs=envs)
 
     def _write_pi_models_config(
@@ -631,4 +657,10 @@ class CLIAgentSessionFactory(ResourceSessionFactory):
         )
 
 
-__all__ = ["CLIAgentDriver", "CLIAgentSession", "CLIAgentSessionFactory", "Verifier"]
+__all__ = [
+    "CLIAgentDriver",
+    "CLIAgentSession",
+    "CLIAgentSessionFactory",
+    "Verifier",
+    "build_interception_rollout_url",
+]

@@ -166,7 +166,7 @@ PI_SPEC = CLIAgentSpec(
     setup=(
         "set -e && "
         "apt-get update -qq && apt-get install -y -qq curl ca-certificates gnupg && "
-        "curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && "
+        "curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && "
         "apt-get install -y -qq nodejs && "
         "curl -fsSL https://pi.dev/install.sh | sh && "
         "mkdir -p /home/user/logs/agent /home/user/task /home/user/workdir && "
