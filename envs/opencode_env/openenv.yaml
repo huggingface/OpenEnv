@@ -1,5 +1,5 @@
 spec_version: 1
-name: coding_agent_env
+name: opencode_env
 type: space
 runtime: fastapi
 app: server.app:app

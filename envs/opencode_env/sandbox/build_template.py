@@ -60,10 +60,10 @@ def build_template(name: str, *, skip_cache: bool = False) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="build_e2b_template")
-    p.add_argument("--name", default="coding-agent-rl")
+    p.add_argument("--name", default="opencode-rl")
     p.add_argument("--skip-cache", action="store_true")
     args = p.parse_args(argv)
-    _load_env(_REPO_ROOT / "envs" / "coding_agent_env" / "sandbox" / ".env")
+    _load_env(_REPO_ROOT / "envs" / "opencode_env" / "sandbox" / ".env")
     if not os.environ.get("E2B_API_KEY"):
         print("ERROR: E2B_API_KEY required.", file=sys.stderr)
         return 2

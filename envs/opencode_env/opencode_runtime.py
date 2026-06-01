@@ -16,34 +16,34 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .config import CodingAgentConfig, provider_npm_package
+from .config import OpenCodeConfig, provider_npm_package
 
 
-def opencode_config_path(config: CodingAgentConfig) -> str:
+def opencode_config_path(config: OpenCodeConfig) -> str:
     return f"{config.sandbox_home}/.config/opencode/opencode.json"
 
 
-def instruction_path(config: CodingAgentConfig) -> str:
+def instruction_path(config: OpenCodeConfig) -> str:
     return f"{config.sandbox_home}/task/instruction.md"
 
 
-def agent_log_path(config: CodingAgentConfig) -> str:
+def agent_log_path(config: OpenCodeConfig) -> str:
     return f"{config.sandbox_home}/logs/agent/opencode.jsonl"
 
 
-def system_prompt_path(config: CodingAgentConfig) -> str:
+def system_prompt_path(config: OpenCodeConfig) -> str:
     return f"{config.sandbox_home}/task/system.md"
 
 
-def verifier_reward_path(config: CodingAgentConfig) -> str:
+def verifier_reward_path(config: OpenCodeConfig) -> str:
     return f"{config.sandbox_home}/logs/verifier/reward.txt"
 
 
-def workdir_path(config: CodingAgentConfig) -> str:
+def workdir_path(config: OpenCodeConfig) -> str:
     return f"{config.sandbox_home}/workdir"
 
 
-def build_opencode_json(config: CodingAgentConfig) -> str:
+def build_opencode_json(config: OpenCodeConfig) -> str:
     """Return the serialized ``opencode.json`` the sandbox should install.
 
     Provider block is keyed by a stable internal name (``intercepted``) so the
@@ -90,7 +90,7 @@ def build_opencode_json(config: CodingAgentConfig) -> str:
     return json.dumps(doc, indent=2)
 
 
-def build_install_cmd(config: CodingAgentConfig) -> str:
+def build_install_cmd(config: OpenCodeConfig) -> str:
     """Return the shell command that installs OpenCode + ensures PATH.
 
     The upstream installer honors ``OPENCODE_VERSION=x.y.z`` for pinning;
@@ -110,7 +110,7 @@ def build_install_cmd(config: CodingAgentConfig) -> str:
     )
 
 
-def build_run_cmd(config: CodingAgentConfig) -> str:
+def build_run_cmd(config: OpenCodeConfig) -> str:
     """Return the shell command that launches OpenCode against a task."""
 
     format_flag = "--format json" if config.run_format == "json" else ""
@@ -123,7 +123,7 @@ def build_run_cmd(config: CodingAgentConfig) -> str:
 
 
 def build_env_vars(
-    config: CodingAgentConfig, *, base_url_override: str | None = None
+    config: OpenCodeConfig, *, base_url_override: str | None = None
 ) -> dict[str, str]:
     """Return env vars to set on the OpenCode process.
 
@@ -140,7 +140,7 @@ def build_env_vars(
     return env
 
 
-def _build_tools_block(config: CodingAgentConfig) -> dict[str, bool]:
+def _build_tools_block(config: OpenCodeConfig) -> dict[str, bool]:
     """Translate enabled/disabled lists into opencode's ``tools`` map."""
 
     if config.enabled_tools is not None:

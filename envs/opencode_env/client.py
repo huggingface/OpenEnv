@@ -4,17 +4,17 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Client for the deployed coding_agent_env server.
+"""Client for the deployed opencode_env server.
 
-The server exposes a single MCP tool ``run_rollout`` that runs one coding-agent
-rollout (OpenCode or Pi) in an E2B sandbox and returns a JSON-serialized
+The server exposes a single MCP tool ``run_rollout`` that runs one OpenCode
+rollout in an E2B sandbox and returns a JSON-serialized
 :class:`RolloutResult`.
 
 Example::
 
-    from coding_agent_env import CodingAgentEnv
+    from opencode_env import OpenCodeEnv
 
-    with CodingAgentEnv(base_url="https://your-space.hf.space") as env:
+    with OpenCodeEnv(base_url="https://your-space.hf.space") as env:
         env.reset()
         result = env.run_rollout(
             base_url="https://api.openai.com/v1",
@@ -41,8 +41,8 @@ except ImportError:  # pragma: no cover
     from models import RolloutResult  # type: ignore
 
 
-class CodingAgentEnv(MCPToolClient):
-    """Typed client for the coding_agent_env MCP server.
+class OpenCodeEnv(MCPToolClient):
+    """Typed client for the opencode_env MCP server.
 
     Inherits ``reset`` / ``call_tool`` / ``list_tools`` / ``from_docker_image``
     / context-manager semantics from :class:`MCPToolClient`.
@@ -51,8 +51,7 @@ class CodingAgentEnv(MCPToolClient):
     def run_rollout(
         self,
         *,
-        # Agent + endpoint — pass either shorthand endpoint or explicit fields.
-        agent: str = "opencode",  # "opencode" | "pi"
+        # Endpoint — pass either shorthand endpoint or explicit fields.
         endpoint: str = "",  # "vllm" | "openai" | "hf_router"
         base_url: str = "",
         api_key: str = "",
@@ -63,50 +62,48 @@ class CodingAgentEnv(MCPToolClient):
         verify: list[str] | None = None,
         # Bookkeeping / tunables
         task_id: str = "",
-        mode: str = "black_box",
+        mode: str = "transparent_proxy",
         disable_thinking: bool | None = None,
         max_tokens_cap: int = 4096,
         top_logprobs: int = 5,
         agent_timeout_s: float = 600.0,
         template: str = "",
     ) -> RolloutResult:
-        """Run one coding-agent rollout and return the typed result.
+        """Run one opencode rollout and return the typed result.
 
         Args:
-            agent: Harness CLI to run in sandbox (``"opencode"`` or ``"pi"``).
             base_url: OpenAI-compatible LLM endpoint (with trailing /v1).
             api_key: Bearer token for the LLM. Use ``"intercepted"`` for vLLM
                 if it doesn't enforce auth.
             model: Model id understood by the LLM endpoint
                 (e.g. ``"gpt-4o-mini"``, ``"Qwen/Qwen3.5-4B"``,
                 ``"Qwen/Qwen3-4B-Instruct-2507:nscale"``).
-            instruction: Prompt passed to the selected harness CLI.
-            setup: Bash commands run sequentially **before** the agent starts.
+            instruction: Prompt passed to OpenCode.
+            setup: Bash commands run sequentially **before** OpenCode starts.
                 Each command runs in the sandbox; non-zero exit aborts setup.
-            verify: Bash commands run sequentially **after** the agent exits.
+            verify: Bash commands run sequentially **after** OpenCode exits.
                 Reward = ``passed_count / total`` unless any command writes a
                 float to ``/home/user/logs/verifier/reward.txt`` (override).
             task_id: Echoed back in the result for traceability.
-            mode: ``"black_box"`` (agent talks directly to the LLM) or
-                ``"interception_gate"`` (LLM calls routed to trainer-side
-                InterceptionServer for trainer-owned generation).
+            mode: ``"transparent_proxy"`` (default, captures logprobs) or
+                ``"black_box"`` (OpenCode talks directly to the LLM).
             disable_thinking: Inject
                 ``chat_template_kwargs.enable_thinking=false`` on forwarded
                 requests. Needed for Qwen3.5 vLLM; harmless on Instruct
                 variants; rejected by OpenAI direct.
             max_tokens_cap: Clamp on per-turn ``max_tokens``.
-            top_logprobs: Reserved for trainer-owned interception workflows.
-            agent_timeout_s: Hard wall-clock budget for one agent run.
-            template: E2B template name (e.g. ``"coding-agent-rl"``). Empty
+            top_logprobs: Per-token top-k logprobs requested in
+                ``transparent_proxy`` mode.
+            agent_timeout_s: Hard wall-clock budget for one OpenCode run.
+            template: E2B template name (e.g. ``"opencode-rl"``). Empty
                 string uses the default (slow) base image.
 
         Returns:
-            A :class:`RolloutResult` with reward, file outputs,
+            A :class:`RolloutResult` with reward, proxy_turns, file outputs,
             setup/verify results, and diagnostic tails.
         """
         raw = self.call_tool(
             "run_rollout",
-            agent=agent,
             endpoint=endpoint,
             base_url=base_url,
             api_key=api_key,

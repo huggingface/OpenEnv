@@ -29,7 +29,7 @@ import pytest
 from openenv.core.harness.sandbox.base import ExecResult, SandboxHandle
 
 
-# Fake sandbox infrastructure (mirrors test_coding_agent_env.py pattern)
+# Fake sandbox infrastructure (mirrors test_opencode_env.py pattern)
 
 
 @dataclass

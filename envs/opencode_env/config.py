@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Configuration model for the coding-agent harness primitive."""
+"""Configuration model for the OpenCode harness primitive."""
 
 from __future__ import annotations
 
@@ -16,8 +16,8 @@ from pydantic import BaseModel, Field
 Provider = Literal["openai_compatible", "openai", "anthropic"]
 
 
-class CodingAgentConfig(BaseModel):
-    """All configuration required to launch one coding-agent rollout in a sandbox.
+class OpenCodeConfig(BaseModel):
+    """All configuration required to launch one OpenCode rollout in a sandbox.
 
     Field names are provider-agnostic. The primitive maps ``provider`` onto the
     correct ``opencode.json`` provider block (``@ai-sdk/openai-compatible``,
@@ -46,8 +46,17 @@ class CodingAgentConfig(BaseModel):
     extra_setup_shell: str | None = None
 
     # --- Model behavior --------------------------------------------------------
+    # Direct OpenCode config knobs (black_box / interception_gate).
     disable_thinking: bool = False
     max_tokens_cap: int | None = None
+
+    # --- Transparent-proxy logprob capture ------------------------------------
+    # Compatibility knobs for the HTTP env's logprob-capturing mode. The proxy
+    # requests OpenAI-compatible logprobs upstream, records them, and strips
+    # them before returning the response to OpenCode.
+    proxy_max_tokens_cap: int | None = 16384
+    proxy_top_logprobs: int = 5
+    proxy_disable_thinking: bool = False
 
     # --- Sandbox paths --------------------------------------------------------
     # Root directory inside the sandbox where the primitive writes config,

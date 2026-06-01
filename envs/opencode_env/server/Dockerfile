@@ -4,14 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 #
-# coding_agent_env Dockerfile — mirrors the standard OpenEnv multi-stage uv
+# opencode_env Dockerfile — mirrors the standard OpenEnv multi-stage uv
 # build used by echo_env / repl_env / jupyter_agent.
 #
 # Build:
-#   docker build -t coding-agent-env .
+#   docker build -t opencode-env .
 #
 # Run:
-#   docker run -p 8000:8000 -e E2B_API_KEY=e2b_... coding-agent-env
+#   docker run -p 8000:8000 -e E2B_API_KEY=e2b_... opencode-env
 
 ARG BASE_IMAGE=ghcr.io/meta-pytorch/openenv-base:latest
 FROM ${BASE_IMAGE} AS builder
