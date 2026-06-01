@@ -174,6 +174,15 @@ def _pkg_version(dist_name: str) -> str:
         return "not-installed"
 
 
+def _is_running_in_space() -> bool:
+    """Detect if we're running inside an HF Space (vs local/Slurm/cloud)."""
+    return bool(
+        os.environ.get("SPACE_HOST")
+        or os.environ.get("HF_SPACE_ID")
+        or os.environ.get("SPACE_ID")
+    )
+
+
 def _derive_checkpoint_repo_id() -> str | None:
     explicit = os.environ.get("SWE_HUB_MODEL_ID", "").strip()
     if explicit:
@@ -188,12 +197,7 @@ def _derive_checkpoint_repo_id() -> str | None:
 
 
 def _build_checkpoint_args() -> tuple[dict[str, Any], str | None, bool]:
-    in_space = bool(
-        os.environ.get("HF_SPACE_ID")
-        or os.environ.get("SPACE_ID")
-        or os.environ.get("SPACE_HOST")
-    )
-    enabled = _bool_env("SWE_CHECKPOINT_TO_HUB", default=in_space)
+    enabled = _bool_env("SWE_CHECKPOINT_TO_HUB", default=_is_running_in_space())
     if not enabled:
         return {}, None, False
 
@@ -471,27 +475,33 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    _exit_code: int | None = None
     try:
         raise SystemExit(main())
     except SystemExit as exc:
+        _exit_code = exc.code  # type: ignore[assignment]
         if exc.code == 0:
             _log.info("training completed successfully")
         else:
             _log.error("training failed with exit code %s", exc.code)
     except Exception:
+        _exit_code = 1
         _log.exception("unhandled exception in training")
 
-    # Pause the Space to stop billing and prevent restart loops.
-    # Logs are preserved in the paused state for inspection.
-    try:
-        from huggingface_hub import HfApi as _HfApi
+    # When running inside an HF Space, pause it to stop billing and
+    # prevent restart loops.  On local/Slurm runs this is a no-op.
+    if _is_running_in_space():
+        try:
+            from huggingface_hub import HfApi as _HfApi
 
-        _space_id = os.environ.get("SPACE_ID", "rycerzes/swe-async-grpo-train")
-        _HfApi().pause_space(_space_id)
-        _log.info("paused Space %s", _space_id)
-    except Exception:
-        _log.warning("failed to pause Space; sleeping to preserve logs")
-        import time as _t
+            _space_id = os.environ.get("SPACE_ID", "rycerzes/swe-async-grpo-train")
+            _HfApi().pause_space(_space_id)
+            _log.info("paused Space %s", _space_id)
+        except Exception:
+            _log.warning("failed to pause Space; sleeping to preserve logs")
+            import time as _t
 
-        while True:
-            _t.sleep(3600)
+            while True:
+                _t.sleep(3600)
+
+    raise SystemExit(_exit_code or 0)

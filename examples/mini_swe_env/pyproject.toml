@@ -1,0 +1,70 @@
+# Training dependencies for mini_swe_env async GRPO example.
+#
+# Install:
+#   cd examples/mini_swe_env
+#   uv sync
+#
+# Or from repo root:
+#   uv sync --project examples/mini_swe_env
+#
+# This installs everything needed to run train_swe_async_grpo.py locally
+# on hosted compute (Slurm, bare-metal, cloud VMs) with HF Sandbox for
+# agent execution.
+
+[project]
+name = "mini-swe-train"
+version = "0.1.0"
+description = "SWE Async GRPO training — local/hosted compute launcher"
+requires-python = ">=3.12"
+dependencies = [
+    "openenv-core>=0.3.0",
+    "openenv-mini-swe-env>=0.1.0",
+    # TRL fork with AsyncGRPOTrainer + async rollout parity
+    "trl @ git+https://github.com/rycerzes/trl@feat/async-grpo-parity",
+    # transformers >=5.2.0 required for native Qwen3.5 model support.
+    # Installed --no-deps to avoid pulling conflicting transitive deps.
+    "transformers>=5.2.0",
+    "accelerate>=1.13.0",
+    "peft>=0.15.0",
+    "datasets>=4.8.0",
+    "bitsandbytes>=0.43.0",
+
+    # vLLM 0.21+ for Qwen3.5 support + NCCL weight transfer protocol.
+    # NOTE: on systems where vllm is installed via pip (not the Docker
+    # image), uncomment the line below or install separately:
+    # "vllm>=0.21.0",
+
+    "hf-sandbox @ git+https://github.com/rycerzes/hf-sandbox@feat/named-tunnels",
+
+    "aiohttp>=3.13.5",
+    "fastmcp>=3.3.0",
+    "requests>=2.25.0",
+    "huggingface-hub>=1.5",
+
+    "trackio>=0.25.0",
+
+    "flash-linear-attention>=0.5.0",
+]
+
+[project.optional-dependencies]
+# vLLM is large and often installed system-wide or via container.
+# Include explicitly when needed.
+vllm = ["vllm>=0.21.0"]
+
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.14.0",
+]
+
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.uv]
+# Local path dependencies — resolved relative to this file.
+# openenv-core from repo root, mini_swe_env from envs/.
+
+[tool.uv.sources]
+openenv-core = { path = "../../", editable = true }
+openenv-mini-swe-env = { path = "../../envs/mini_swe_env", editable = true }
