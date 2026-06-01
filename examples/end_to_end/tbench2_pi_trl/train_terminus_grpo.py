@@ -26,22 +26,25 @@ import os
 from pathlib import Path
 
 from datasets import load_dataset
+from huggingface_hub import HfApi
 from terminus_env.client import TerminusEnv
 from terminus_env.harness import TerminusSessionFactory
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, TrainerCallback
 from trl.experimental.async_grpo import AsyncGRPOConfig, AsyncGRPOTrainer
 
 from pi_rollout_worker import TerminusPiRolloutWorker, WorkerConfig
 
 TASK_DATASET_ID = "burtenshaw/terminus-pi-trl-tasks"
-MODEL = "Qwen/Qwen3-4B"
+MODEL = "Qwen/Qwen3.6-27B"
+TRAINER_MODEL = os.environ.get("TERMINUS_TRAINER_MODEL", MODEL)
 ENV_URL = os.environ.get("TERMINUS_ENV_URL", "http://localhost:8000")
 OUTPUT_DIR = Path(os.environ.get("TERMINUS_OUTPUT_DIR", "/tmp/terminus-pi-trl-output"))
 HUB_MODEL_ID = os.environ.get(
     "TERMINUS_HUB_MODEL_ID",
-    "burtenshaw/terminus-pi-trl-async-grpo-qwen3-4b",
+    "burtenshaw/terminus-pi-trl-async-grpo-qwen3-6-27b",
 )
 TRACKIO_PROJECT = "terminus-pi-trl"
+MAX_STEPS = 4
 TRACKIO_SPACE_ID = os.environ.get(
     "TRACKIO_SPACE_ID",
     "burtenshaw/terminus-pi-trl-trackio",
@@ -95,6 +98,7 @@ def main() -> None:
                 max_inflight=task["num_generations"],
                 max_turns=task["max_turns"],
                 max_completion_tokens=task["max_completion_length"],
+                vllm_weight_name_prefix="language_model.",
             ),
         )
 
@@ -102,10 +106,10 @@ def main() -> None:
         return [0.0] * len(kwargs.get("prompts", []))
 
     trainer = AsyncGRPOTrainer(
-        model=MODEL,
+        model=TRAINER_MODEL,
         args=AsyncGRPOConfig(
             output_dir=str(OUTPUT_DIR),
-            max_steps=task["max_steps"],
+            max_steps=MAX_STEPS,
             per_device_train_batch_size=task["batch_size"],
             gradient_accumulation_steps=1,
             num_generations=task["num_generations"],
@@ -134,9 +138,31 @@ def main() -> None:
         reward_funcs=unused_reward,
         rollout_worker=worker,
     )
+
+    class SaveAndUploadCallback(TrainerCallback):
+        def __init__(self) -> None:
+            self.saved = False
+
+        def on_step_end(self, args, state, control, **kwargs):
+            if self.saved or state.global_step < MAX_STEPS:
+                return control
+            self.saved = True
+            state_dict = trainer.accelerator.get_state_dict(trainer.model)
+            if rank == 0:
+                trainer._save(str(OUTPUT_DIR), state_dict=state_dict)
+                del state_dict
+                api = HfApi()
+                api.create_repo(repo_id=HUB_MODEL_ID, repo_type="model", exist_ok=True)
+                api.upload_large_folder(
+                    repo_id=HUB_MODEL_ID,
+                    repo_type="model",
+                    folder_path=OUTPUT_DIR,
+                    num_workers=8,
+                )
+            return control
+
+    trainer.add_callback(SaveAndUploadCallback())
     trainer.train()
-    trainer.save_model()
-    trainer.push_to_hub(commit_message=f"Async GRPO Terminus run {RUN_NAME}")
 
 
 if __name__ == "__main__":

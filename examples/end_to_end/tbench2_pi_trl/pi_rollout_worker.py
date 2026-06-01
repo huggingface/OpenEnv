@@ -82,6 +82,7 @@ class WorkerConfig:
     request_timeout_s: float = 600.0
     server_timeout_s: float = 600.0
     idle_sleep_s: float = 0.25
+    vllm_weight_name_prefix: str = ""
 
 
 class InterceptionServer:
@@ -333,6 +334,12 @@ class TerminusPiRolloutWorker:
         items = list(iterator)
         if not items:
             return
+        if self._config.vllm_weight_name_prefix:
+            prefix = self._config.vllm_weight_name_prefix
+            items = [
+                (name if name.startswith(prefix) else f"{prefix}{name}", tensor)
+                for name, tensor in items
+            ]
         if self._model_update_group is None:
             raise RuntimeError("vLLM weight-transfer group is not initialized")
 
