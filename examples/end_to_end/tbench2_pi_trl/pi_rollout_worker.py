@@ -204,7 +204,6 @@ class InterceptionServer:
                     "messages": body.get("messages"),
                     "tools": body.get("tools"),
                     "body": body,
-                    "stream": bool(body.get("stream")),
                     "event": threading.Event(),
                     "response": None,
                 }
@@ -219,10 +218,7 @@ class InterceptionServer:
                 with outer._lock:
                     outer._intercepts.pop(request_id, None)
                 response = intercept["response"] or _error_response("empty response")
-                if intercept["stream"]:
-                    self._sse(response)
-                else:
-                    self._json(response)
+                self._json(response)
 
             def _json(self, payload: dict[str, Any], *, status: int = 200) -> None:
                 body = json.dumps(payload).encode("utf-8")
@@ -231,16 +227,6 @@ class InterceptionServer:
                 self.send_header("content-length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
-
-            def _sse(self, payload: dict[str, Any]) -> None:
-                self.send_response(200)
-                self.send_header("content-type", "text/event-stream")
-                self.send_header("cache-control", "no-cache")
-                self.end_headers()
-                for chunk in _stream_chunks(payload):
-                    self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode("utf-8"))
-                self.wfile.write(b"data: [DONE]\n\n")
-                self.wfile.flush()
 
         return Handler
 
@@ -301,8 +287,6 @@ class TerminusPiRolloutWorker:
         self._weight_sync_lock = threading.Lock()
         self._task_index = 0
         self._model_version = 0
-        self._failed = threading.Event()
-        self._exception: BaseException | None = None
         self._last_heartbeat_s = time.monotonic()
         self._model_update_group: Any | None = None
 
@@ -409,8 +393,6 @@ class TerminusPiRolloutWorker:
             self._model_version = version
 
     def check_health(self, stale_after_s: float) -> None:
-        if self._failed.is_set():
-            raise RuntimeError("Terminus PI rollout worker failed") from self._exception
         if not self._threads or not any(thread.is_alive() for thread in self._threads):
             raise RuntimeError("Terminus PI rollout worker is not running")
         age = time.monotonic() - self._last_heartbeat_s
@@ -544,10 +526,6 @@ class TerminusPiRolloutWorker:
             self._task_index += 1
             return task
 
-    def _current_model_version(self) -> int:
-        with self._lock:
-            return self._model_version
-
     def _rollout(self, task: Any, rollout_id: str) -> RolloutSample:
         session = self._session_factory.create(
             task=_session_task(task),
@@ -661,12 +639,14 @@ class TerminusPiRolloutWorker:
                     metrics[f"verify/{name}"] = float(value)
                 elif isinstance(value, (int, float)):
                     metrics[f"verify/{name}"] = float(value)
+            with self._lock:
+                model_version = self._model_version
             return RolloutSample(
                 input_ids=all_ids,
                 completion_mask=all_mask,
                 old_log_probs=all_logprobs,
                 advantage=reward,
-                model_version=self._current_model_version(),
+                model_version=model_version,
                 metrics=metrics,
             )
         finally:
@@ -735,23 +715,21 @@ def _parse_assistant_message(
     completion_ids: list[int],
     fallback_text: str,
 ) -> dict[str, Any]:
-    if parse_response is None:
-        return _assistant_message_from_text(fallback_text)
+    parsed: dict[str, Any] = {}
     try:
-        parsed = parse_response(tokenizer, completion_ids)
+        if parse_response is not None:
+            parsed = parse_response(tokenizer, completion_ids)
     except Exception:
-        return _assistant_message_from_text(fallback_text)
+        logger.debug("could not parse TRL response schema", exc_info=True)
     if not isinstance(parsed, dict):
-        return _assistant_message_from_text(fallback_text)
+        parsed = {}
     content = str(parsed.get("content") or "")
-    message = {"role": "assistant", "content": content}
     tool_calls = _normalize_tool_calls(parsed.get("tool_calls"))
     if not tool_calls:
         tool_calls = _terminal_tool_call_from_text(content or fallback_text)
     if tool_calls:
-        message["content"] = ""
-        message["tool_calls"] = tool_calls
-    return message
+        return {"role": "assistant", "content": "", "tool_calls": tool_calls}
+    return {"role": "assistant", "content": content or fallback_text}
 
 
 def _normalize_chat_messages(messages: list[Any]) -> list[dict[str, Any]]:
@@ -782,13 +760,6 @@ def _session_task(task: Any) -> Any:
     if not instruction:
         return task
     return {**task, "instruction": instruction}
-
-
-def _assistant_message_from_text(text: str) -> dict[str, Any]:
-    tool_calls = _terminal_tool_call_from_text(text)
-    if tool_calls:
-        return {"role": "assistant", "content": "", "tool_calls": tool_calls}
-    return {"role": "assistant", "content": text}
 
 
 def _terminal_tool_call_from_text(text: str) -> list[dict[str, Any]]:
@@ -863,47 +834,6 @@ def _chat_response(
             }
         ],
     }
-
-
-def _stream_chunks(response: dict[str, Any]) -> list[dict[str, Any]]:
-    chunks = []
-    for choice in response.get("choices", []):
-        message = choice.get("message") or {}
-        chunks.append(
-            {
-                "id": response.get("id", ""),
-                "object": "chat.completion.chunk",
-                "created": response.get("created", int(time.time())),
-                "model": response.get("model", ""),
-                "choices": [
-                    {
-                        "index": choice.get("index", 0),
-                        "delta": {
-                            "role": "assistant",
-                            "content": message.get("content"),
-                            "tool_calls": message.get("tool_calls"),
-                        },
-                        "finish_reason": None,
-                    }
-                ],
-            }
-        )
-        chunks.append(
-            {
-                "id": response.get("id", ""),
-                "object": "chat.completion.chunk",
-                "created": response.get("created", int(time.time())),
-                "model": response.get("model", ""),
-                "choices": [
-                    {
-                        "index": choice.get("index", 0),
-                        "delta": {},
-                        "finish_reason": choice.get("finish_reason"),
-                    }
-                ],
-            }
-        )
-    return chunks
 
 
 def _error_response(message: str) -> dict[str, Any]:
