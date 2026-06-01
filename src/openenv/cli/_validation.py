@@ -12,6 +12,7 @@ configured for multi-mode deployment (Docker, direct Python, notebooks, clusters
 """
 
 import ast
+import re
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -465,7 +466,18 @@ def _has_main_guard_call(app_content: str) -> bool:
     return False
 
 
-def _dockerfile_installs_openenv_core(env_path: Path) -> bool:
+_OPENENV_RUNTIME_DEP_RE = re.compile(
+    r"^openenv(?:\s*(?:$|[<>=!~@;])|\[)"
+)
+_LEGACY_OPENENV_CORE_DEP_RE = re.compile(
+    r"^openenv-core(?:\s*(?:$|[<>=!~@;])|\[)"
+)
+_OPENENV_DOCKER_INSTALL_RE = re.compile(
+    r"(?<![a-z0-9_.-])openenv(?:\s*(?:$|[<>=!~@;])|\[)"
+)
+
+
+def _dockerfile_installs_openenv_runtime(env_path: Path) -> bool:
     """Return True when a Docker deployment installs OpenEnv outside pyproject."""
     for dockerfile_path in (
         env_path / "server" / "Dockerfile",
@@ -483,6 +495,8 @@ def _dockerfile_installs_openenv_core(env_path: Path) -> bool:
             stripped = line.strip().lower()
             if not stripped or stripped.startswith("#"):
                 continue
+            if _OPENENV_DOCKER_INSTALL_RE.search(stripped):
+                return True
             if "openenv-core" in stripped:
                 return True
             if "git+https://github.com/meta-pytorch/openenv" in stripped:
@@ -540,16 +554,12 @@ def validate_multi_mode_deployment(env_path: Path) -> tuple[bool, list[str]]:
 
     # Check required dependencies
     deps = [dep.lower() for dep in pyproject.get("project", {}).get("dependencies", [])]
-    has_openenv = any(
-        dep.startswith("openenv") and not dep.startswith("openenv-core") for dep in deps
-    )
-    has_legacy_core = any(dep.startswith("openenv-core") for dep in deps)
-    has_dockerfile_core = _dockerfile_installs_openenv_core(env_path)
+    has_openenv = any(_OPENENV_RUNTIME_DEP_RE.match(dep) for dep in deps)
+    has_legacy_core = any(_LEGACY_OPENENV_CORE_DEP_RE.match(dep) for dep in deps)
+    has_dockerfile_core = _dockerfile_installs_openenv_runtime(env_path)
 
     if not (has_openenv or has_legacy_core or has_dockerfile_core):
-        issues.append(
-            "Missing required dependency: openenv-core>=0.2.0 (or openenv>=0.2.0)"
-        )
+        issues.append("Missing required dependency: openenv>=0.2.0")
 
     # Check server/app.py exists
     server_app = env_path / "server" / "app.py"

@@ -369,7 +369,7 @@ class EnvironmentDiscovery:
             logger.warning(f"Failed to get installed packages: {e}")
             return environments
 
-        # Filter for openenv-* packages (exclude openenv-core)
+        # Filter for openenv-* environment packages; ignore the legacy core wheel.
         for dist in distributions:
             package_name = dist.metadata["Name"]
 

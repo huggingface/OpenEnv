@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -20,6 +21,20 @@ import typer
 from .._cli_utils import console
 
 app = typer.Typer(help="Build Docker images for OpenEnv environments")
+
+_OPENENV_RUNTIME_DEP_RE = re.compile(
+    r"^openenv(?:\s*(?:$|[<>=!~@;])|\[)"
+)
+
+
+def _is_openenv_runtime_dependency(dep: str) -> bool:
+    """Return True for the OpenEnv runtime distribution, not openenv-* envs."""
+    normalized = dep.strip().lower()
+    return (
+        _OPENENV_RUNTIME_DEP_RE.match(normalized) is not None
+        or normalized.startswith("openenv-core")
+        or normalized.startswith("openenv_core")
+    )
 
 
 def _detect_build_context(env_path: Path) -> tuple[str, Path, Path | None]:
@@ -156,21 +171,17 @@ def _prepare_inrepo_build(env_path: Path, repo_root: Path, temp_dir: Path) -> Pa
                     pyproject = tomli.load(f)
                     deps = pyproject.get("project", {}).get("dependencies", [])
 
-                    # Replace openenv/openenv-core with local reference
+                    # Replace OpenEnv package references with local source.
                     new_deps = []
                     for dep in deps:
-                        if (
-                            dep.startswith("openenv-core")
-                            or dep.startswith("openenv_core")
-                            or dep.startswith("openenv")
-                        ):
+                        if _is_openenv_runtime_dependency(dep):
                             # Skip - we'll use local core
                             continue
                         new_deps.append(dep)
 
-                    # Write back with local core reference
+                    # Write back with local OpenEnv reference
                     pyproject["project"]["dependencies"] = new_deps + [
-                        "openenv-core @ file:///app/env/openenv"
+                        "openenv @ file:///app/env/openenv"
                     ]
 
                     # Write updated pyproject.toml

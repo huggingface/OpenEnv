@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Agent World Model Environment for OpenEnv - wraps 1,000 LLM-synthesized environments"
 requires-python = ">=3.10"
 dependencies = [
-    "openenv-core[core]>=0.2.2",
+    "openenv[core]>=0.2.2",
     "fastapi>=0.115.0",
     "pydantic>=2.0.0",
     "uvicorn>=0.24.0",

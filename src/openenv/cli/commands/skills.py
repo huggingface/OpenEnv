@@ -23,7 +23,7 @@ name: openenv-cli
 description: "OpenEnv CLI (`openenv`) for scaffolding, validating, building, and pushing OpenEnv environments."
 ---
 
-Install: `pip install openenv-core`
+Install: `pip install openenv`
 
 The OpenEnv CLI command `openenv` is available.
 Use `openenv --help` to view available commands.
@@ -72,7 +72,7 @@ def _build_skill_md() -> str:
     lines = _SKILL_YAML_PREFIX.splitlines()
     lines.append("")
     lines.append(
-        f"Generated with `openenv-core v{__version__}`. Run `openenv skills add --force` to regenerate."
+        f"Generated with `openenv v{__version__}`. Run `openenv skills add --force` to regenerate."
     )
     lines.extend(_SKILL_TIPS.splitlines())
     return "\n".join(lines).strip() + "\n"
