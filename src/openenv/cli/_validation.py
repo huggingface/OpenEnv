@@ -466,12 +466,8 @@ def _has_main_guard_call(app_content: str) -> bool:
     return False
 
 
-_OPENENV_RUNTIME_DEP_RE = re.compile(
-    r"^openenv(?:\s*(?:$|[<>=!~@;])|\[)"
-)
-_LEGACY_OPENENV_CORE_DEP_RE = re.compile(
-    r"^openenv-core(?:\s*(?:$|[<>=!~@;])|\[)"
-)
+_OPENENV_RUNTIME_DEP_RE = re.compile(r"^openenv(?:\s*(?:$|[<>=!~@;])|\[)")
+_LEGACY_OPENENV_CORE_DEP_RE = re.compile(r"^openenv-core(?:\s*(?:$|[<>=!~@;])|\[)")
 _OPENENV_DOCKER_INSTALL_RE = re.compile(
     r"(?<![a-z0-9_.-])openenv(?:\s*(?:$|[<>=!~@;])|\[)"
 )

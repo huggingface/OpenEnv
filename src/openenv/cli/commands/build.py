@@ -22,9 +22,7 @@ from .._cli_utils import console
 
 app = typer.Typer(help="Build Docker images for OpenEnv environments")
 
-_OPENENV_RUNTIME_DEP_RE = re.compile(
-    r"^openenv(?:\s*(?:$|[<>=!~@;])|\[)"
-)
+_OPENENV_RUNTIME_DEP_RE = re.compile(r"^openenv(?:\s*(?:$|[<>=!~@;])|\[)")
 
 
 def _is_openenv_runtime_dependency(dep: str) -> bool:
