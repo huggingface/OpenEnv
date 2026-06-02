@@ -34,8 +34,8 @@ nest_asyncio.apply()
 # ----------------
 #
 # OpenEnv is a **unified framework for building, sharing, and interacting with
-# reinforcement learning environments**. It's a collaborative effort between
-# Meta, Hugging Face, Unsloth, GPU Mode, and other industry leaders.
+# reinforcement learning environments**. It is openly governed by a technical
+# committee that includes Hugging Face, Unsloth, Reflection, and Meta PyTorch.
 #
 # **The Goal**: Make environment creation as easy and standardized as model
 # sharing on Hugging Face.
