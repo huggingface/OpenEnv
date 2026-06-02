@@ -2,6 +2,7 @@
 User Manager - Database operations for user management using SQLAlchemy
 """
 
+import hashlib
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -12,6 +13,13 @@ from database.session_utils import get_session, init_database
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
+
+
+def _token_fingerprint(token: Optional[str]) -> str:
+    """Return a short, non-reversible fingerprint of an access token"""
+    if not token:
+        return "<empty>"
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:8]
 
 
 class UserManager:
@@ -112,7 +120,12 @@ class UserManager:
             return self._format_user_response(user)
 
         except Exception as e:
-            logger.error(f"Error getting user by access token {static_token}: {e}")
+            # Never log the raw token; emit only a short fingerprint so we
+            # can correlate failures without leaking credentials to the log sink.
+            logger.error(
+                f"Error getting user by access token "
+                f"(fingerprint={_token_fingerprint(static_token)}): {type(e).__name__}"
+            )
             raise
         finally:
             session.close()
