@@ -17,7 +17,7 @@ __all__ = [
 
 def _load_package_version() -> str:
     """Resolve the installed distribution version for the OpenEnv package."""
-    for distribution_name in ("openenv-core", "openenv"):
+    for distribution_name in ("openenv", "openenv-core"):
         try:
             return metadata.version(distribution_name)
         except metadata.PackageNotFoundError:

@@ -37,7 +37,7 @@ Install pip dependencies — keep them as separate cells (don't merge into one `
 
 ```python
 !pip install -q trl
-!pip install -q openenv-core
+!pip install -q openenv
 !pip install -q --no-deps git+https://huggingface.co/spaces/sergiopaniego/reasoning_gym
 !pip install -Uq "transformers>=5.3.0"  # 5.3+ has the `environment_factory` integration TRL needs
 !pip install -q trackio jmespath

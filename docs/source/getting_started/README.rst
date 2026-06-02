@@ -43,7 +43,7 @@ You can run these tutorials locally:
 .. code-block:: bash
 
     # Install OpenEnv
-    pip install openenv-core
+    pip install openenv
 
     # Run the Python scripts
     python plot_01_introduction_quickstart.py

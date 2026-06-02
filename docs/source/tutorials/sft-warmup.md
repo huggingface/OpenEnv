@@ -46,7 +46,7 @@ bookkeeping. An OpenEnv environment gives you all three out of the box:
 
 ```python
 !pip install -q openai trl
-!pip install -q openenv-core
+!pip install -q openenv
 !pip install -q --no-deps git+https://huggingface.co/spaces/sergiopaniego/reasoning_gym
 !pip install -Uq "transformers>=5.3.0"
 ```

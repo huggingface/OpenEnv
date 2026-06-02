@@ -45,7 +45,7 @@ app = create_app(
 
 
 def _swap_in_custom_gradio_ui() -> None:
-    """Replace openenv-core's default web UI with the AWM Web Console.
+    """Replace openenv's default web UI with the AWM Web Console.
 
     The framework's ``gradio_builder`` parameter wraps our blocks inside a
     ``Playground | Custom`` TabbedInterface, which we don't want. Instead we

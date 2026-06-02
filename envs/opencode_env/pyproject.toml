@@ -15,7 +15,7 @@ description = "OpenCode coding-agent environment for OpenEnv — runs the OpenCo
 requires-python = ">=3.10"
 dependencies = [
     # Core OpenEnv (server + MCP). 0.3.0 ships the harness runtime.
-    "openenv-core[core]>=0.3.0",
+    "openenv[core]>=0.3.0",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.24.0",
     "pydantic>=2.0.0",

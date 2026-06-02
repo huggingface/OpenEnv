@@ -14,7 +14,7 @@ version = "0.1.0"
 description = "SETA-style coding tools environment for OpenEnv backed by E2B"
 requires-python = ">=3.10"
 dependencies = [
-    "openenv-core[core]>=0.2.2",
+    "openenv[core]>=0.2.2",
     "e2b-code-interpreter>=1.0.0",
     "fastapi>=0.115.0",
     "fastmcp>=3.0.0",

@@ -15,7 +15,7 @@ description = "Tbench2 Env environment for OpenEnv"
 requires-python = ">=3.10"
 dependencies = [
     # Core OpenEnv runtime (provides FastAPI server + HTTP client types)
-    "openenv-core[core]>=0.2.3",
+    "openenv[core]>=0.2.3",
     # Environment-specific dependencies
     "camel-ai>=0.2.90",
     # Docker-backed mode (optional, for full TB2.0 compatibility)
