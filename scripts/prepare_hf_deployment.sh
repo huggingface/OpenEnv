@@ -373,7 +373,7 @@ pin_openenv_refs_in_pyproject() {
         "/^[[:space:]]*\"/ s|git+https://github.com/meta-pytorch/OpenEnv.git\"|git+https://github.com/meta-pytorch/OpenEnv.git@$OPENENV_GIT_REF\"|g" \
         "$file_path"
     sed_inplace \
-        "/^[[:space:]]*\"/ s|\"openenv-core\\[core\\][^\"]*\"|\"openenv-core[core] @ git+https://github.com/meta-pytorch/OpenEnv.git@$OPENENV_GIT_REF\"|g" \
+        "/^[[:space:]]*\"/ s|\"openenv\\[core\\][^\"]*\"|\"openenv[core] @ git+https://github.com/meta-pytorch/OpenEnv.git@$OPENENV_GIT_REF\"|g" \
         "$file_path"
 }
 
@@ -425,7 +425,7 @@ create_environment_dockerfile() {
         "s|git+https://github.com/meta-pytorch/OpenEnv.git$|git+https://github.com/meta-pytorch/OpenEnv.git@$OPENENV_GIT_REF|g" \
         "$stage_dir/Dockerfile"
     sed_inplace \
-        "s|\"openenv-core\\[core\\][^\"]*\"|\"openenv-core[core] @ git+https://github.com/meta-pytorch/OpenEnv.git@$OPENENV_GIT_REF\"|g" \
+        "s|\"openenv\\[core\\][^\"]*\"|\"openenv[core] @ git+https://github.com/meta-pytorch/OpenEnv.git@$OPENENV_GIT_REF\"|g" \
         "$stage_dir/Dockerfile"
 
     # Some base images include older uv versions that fail on a subset of env
