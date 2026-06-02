@@ -125,14 +125,14 @@ wheels = [
 
 [[package]]
 name = "authlib"
-version = "1.6.11"
+version = "1.6.12"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/28/10/b325d58ffe86815b399334a101e63bc6fa4e1953921cb23703b48a0a0220/authlib-1.6.11.tar.gz", hash = "sha256:64db35b9b01aeccb4715a6c9a6613a06f2bd7be2ab9d2eb89edd1dfc7580a38f", size = 165359, upload-time = "2026-04-16T07:22:50.279Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d3/30/6691fdc63b35f54a5a65e04fa1e59d827f4d4e8f4a39678ba7d3088ce0c8/authlib-1.6.12.tar.gz", hash = "sha256:0656d8482f28fc8221929d5f35b2bde5d13e10555ebc06b4561b0d622e83b1bd", size = 165368, upload-time = "2026-05-04T08:11:31.826Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/57/2f/55fca558f925a51db046e5b929deb317ddb05afed74b22d89f4eca578980/authlib-1.6.11-py2.py3-none-any.whl", hash = "sha256:c8687a9a26451c51a34a06fa17bb97cb15bba46a6a626755e2d7f50da8bff3e3", size = 244469, upload-time = "2026-04-16T07:22:48.413Z" },
+    { url = "https://files.pythonhosted.org/packages/cd/51/9b0b5cd4cf683a02db937a6f9bbebcdc9c56558a7bb3763ce7d3512103c3/authlib-1.6.12-py2.py3-none-any.whl", hash = "sha256:e9229ad7fde610b139dd12f5edbe97eab9ee78bfb85691247e767727850b99ab", size = 244473, upload-time = "2026-05-04T08:11:30.354Z" },
 ]
 
 [[package]]
@@ -1543,8 +1543,8 @@ wheels = [
 ]
 
 [[package]]
-name = "openenv-core"
-version = "0.2.3"
+name = "openenv"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastapi" },
@@ -1563,9 +1563,9 @@ dependencies = [
     { name = "uvicorn" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/93/f3/41a5ed932a2507438c985e9d959dcaa1a6c46f293995c064348c0e52dd40/openenv_core-0.2.3.tar.gz", hash = "sha256:48aefd774474556297ce012b80f2ceb271db51253d7fd0838e6e2dcc329db0c3", size = 146944, upload-time = "2026-03-28T18:56:28.415Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/21/3c/6f142da4acd9e58b58e12d9f4f3ec1e4d21663a8e76c0f5bf8e358d711d2/openenv-0.3.0.tar.gz", hash = "sha256:016842cf6055984ea420c28cf587b8f137222b0df47b7a8f5d650682c893c4a2", size = 165141, upload-time = "2026-06-02T07:38:23.628Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2f/22/38c339e370d198008f2c17ebdda1ae8f23bb4e1509dc7ae8eab6dc9b9cbe/openenv_core-0.2.3-py3-none-any.whl", hash = "sha256:f75a20c94452057a5f53a86e6d71a9f6a461524c3d6a865aa9344d257a92b795", size = 174557, upload-time = "2026-03-28T18:56:26.874Z" },
+    { url = "https://files.pythonhosted.org/packages/3d/51/fd1f176873d86f74ec12c4bc29ec0ae65352709f9e5bc904161c16b812ca/openenv-0.3.0-py3-none-any.whl", hash = "sha256:894ae8f862a75c1ca3e09ad585f17d9c6773dd446044ff4a4eedc09257b3af6f", size = 194743, upload-time = "2026-06-02T07:38:22.23Z" },
 ]
 
 [package.optional-dependencies]
@@ -1583,7 +1583,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
-    { name = "openenv-core", extra = ["core"] },
+    { name = "openenv", extra = ["core"] },
     { name = "pydantic" },
     { name = "requests" },
     { name = "smolagents" },
@@ -1599,7 +1599,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0" },
-    { name = "openenv-core", extras = ["core"], specifier = ">=0.2.2" },
+    { name = "openenv", extras = ["core"], specifier = ">=0.2.2" },
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.3" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
