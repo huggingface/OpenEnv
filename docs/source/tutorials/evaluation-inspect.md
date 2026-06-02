@@ -1,6 +1,6 @@
 # Evaluating agents with Inspect AI
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/meta-pytorch/OpenEnv/blob/main/examples/evaluation_inspect.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/huggingface/OpenEnv/blob/main/examples/evaluation_inspect.ipynb)
 
 After training a model in an OpenEnv environment, you need to measure how it
 actually performs on a held-out set of episodes. OpenEnv integrates with
@@ -37,7 +37,7 @@ Run via InspectAIHarness → EvalResult with structured scores
 
 ```bash
 pip install "inspect-ai>=0.3.0"
-pip install "openenv @ git+https://github.com/meta-pytorch/OpenEnv.git"
+pip install "openenv @ git+https://github.com/huggingface/OpenEnv.git"
 ```
 
 `inspect-ai` is an optional dependency — `InspectAIHarness` is importable
@@ -276,9 +276,9 @@ def my_env_solver(base_url: str):
 
 ## Next steps
 
-- [End-to-end walkthrough](https://meta-pytorch.org/OpenEnv/tutorials/end-to-end-walkthrough.html) — full GRPO training loop that produces a model you can evaluate with this tutorial
-- [SFT warm-up tutorial](https://meta-pytorch.org/OpenEnv/tutorials/sft-warmup.html) — collect rollouts, filter by reward, and fine-tune a student model before running GRPO
-- [Rubrics tutorial](https://meta-pytorch.org/OpenEnv/tutorials/rubrics.html) — define reward functions inside
+- [End-to-end walkthrough](https://huggingface.github.io/OpenEnv/tutorials/end-to-end-walkthrough.html) — full GRPO training loop that produces a model you can evaluate with this tutorial
+- [SFT warm-up tutorial](https://huggingface.github.io/OpenEnv/tutorials/sft-warmup.html) — collect rollouts, filter by reward, and fine-tune a student model before running GRPO
+- [Rubrics tutorial](https://huggingface.github.io/OpenEnv/tutorials/rubrics.html) — define reward functions inside
   the environment using composable rubrics
 - [Inspect AI documentation](https://inspect.aisi.org.uk/) — full reference
   for tasks, solvers, scorers, and the log viewer

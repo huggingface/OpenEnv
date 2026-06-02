@@ -52,7 +52,7 @@ New to OpenEnv? Follow our recommended learning path:
 
 ## How Can I Contribute?
 
-We welcome contributions from the community! If you find a bug, have a feature request, or want to contribute a new environment, please open an issue or submit a pull request. The repository is hosted on GitHub at [meta-pytorch/OpenEnv](https://github.com/meta-pytorch/OpenEnv).
+We welcome contributions from the community! If you find a bug, have a feature request, or want to contribute a new environment, please open an issue or submit a pull request. The repository is hosted on GitHub at [huggingface/OpenEnv](https://github.com/huggingface/OpenEnv).
 
 ```{warning}
 OpenEnv is currently in an experimental stage. You should expect bugs, incomplete features, and APIs that may change in future versions. The project welcomes bug fixes, but to ensure coordination, please discuss significant changes before starting work. Signal your intention to contribute in the issue tracker by filing a new issue or claiming an existing one.

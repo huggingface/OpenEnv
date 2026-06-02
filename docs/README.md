@@ -154,7 +154,7 @@ The file `docs/source/_static/versions.json` lists all published versions. Each 
   {
     "name": "main",
     "version": "main",
-    "url": "https://meta-pytorch.org/OpenEnv/",
+    "url": "https://huggingface.github.io/OpenEnv/",
     "preferred": true
   }
 ]
@@ -173,14 +173,14 @@ When cutting a release:
 
 1. Ensure `pyproject.toml` has the release version (e.g. `0.2.0`)
 2. Build with `make html-stable` — this produces docs tagged as version `0.2`
-3. Deploy the output to a versioned path (e.g. `https://meta-pytorch.org/OpenEnv/0.2/`)
+3. Deploy the output to a versioned path (e.g. `https://huggingface.github.io/OpenEnv/0.2/`)
 4. Add an entry to `docs/source/_static/versions.json`:
 
 ```json
 {
   "name": "0.2",
   "version": "0.2",
-  "url": "https://meta-pytorch.org/OpenEnv/0.2/"
+  "url": "https://huggingface.github.io/OpenEnv/0.2/"
 }
 ```
 

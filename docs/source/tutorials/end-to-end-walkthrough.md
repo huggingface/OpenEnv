@@ -1,6 +1,6 @@
 # End-to-end OpenEnv walkthrough: train a reasoning agent with GRPO
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/meta-pytorch/OpenEnv/blob/main/examples/end_to_end_walkthrough.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/huggingface/OpenEnv/blob/main/examples/end_to_end_walkthrough.ipynb)
 
 In this tutorial you'll take a small open-weight model, an OpenEnv environment, and TRL, and run the full training pipeline end-to-end:
 
@@ -19,7 +19,7 @@ We pair **GRPO** with a **procedural** task on purpose. GRPO is a value-free RL 
 ## What you'll use
 
 - **Model**: [`Qwen/Qwen3-1.7B`](https://huggingface.co/Qwen/Qwen3-1.7B) — fits a single A100 (40 GB) at the settings below and is large enough for GRPO to move the needle. For smaller GPUs, swap to [`Qwen/Qwen3-0.6B`](https://huggingface.co/Qwen/Qwen3-0.6B).
-- **Environment**: [`reasoning_gym_env`](https://github.com/meta-pytorch/OpenEnv/tree/main/envs/reasoning_gym_env), an OpenEnv wrapper around the [Reasoning Gym](https://github.com/open-thought/reasoning-gym) library. Each episode is a single Q→A.
+- **Environment**: [`reasoning_gym_env`](https://github.com/huggingface/OpenEnv/tree/main/envs/reasoning_gym_env), an OpenEnv wrapper around the [Reasoning Gym](https://github.com/open-thought/reasoning-gym) library. Each episode is a single Q→A.
 - **Dataset**: `chain_sum` from Reasoning Gym — chains of integer additions like `Compute 17 + 4 + 22 + 9`. Procedurally generated, so every rollout sees a fresh problem.
 - **Trainer**: [TRL `GRPOTrainer`](https://huggingface.co/docs/trl/main/en/grpo_trainer) with `environment_factory`.
 
@@ -201,7 +201,7 @@ dataset = Dataset.from_dict(
 
 ## 7. Set the GRPO config
 
-These settings mirror the [Wordle GRPO tutorial](https://meta-pytorch.org/OpenEnv/tutorials/wordle-grpo.html) and are tuned for a single A100 (40 GB). Bigger GPUs can raise `per_device_train_batch_size` and `num_generations`; smaller GPUs should drop to Qwen3-0.6B and shrink `max_completion_length`.
+These settings mirror the [Wordle GRPO tutorial](https://huggingface.github.io/OpenEnv/tutorials/wordle-grpo.html) and are tuned for a single A100 (40 GB). Bigger GPUs can raise `per_device_train_batch_size` and `num_generations`; smaller GPUs should drop to Qwen3-0.6B and shrink `max_completion_length`.
 
 ```python
 from trl import GRPOConfig
@@ -308,7 +308,7 @@ else:
 A delta of **+10 to +30 pp** is what you should expect at this difficulty; outside that range:
 
 - **Δ ≈ 0 pp, initial already high (≥90%)** — `DATASET_CONFIG` is too easy; the model already solves it before training. Bump `min_terms` / `min_digits`.
-- **Δ ≈ 0 pp, initial very low (≤20%)** — task is too hard for the base model to ever stumble onto a correct answer, so GRPO has no positive rollouts to learn from. Lower `min_terms` / `min_digits`. If the reward stays near zero even at minimum difficulty, the bottleneck is likely **format compliance** rather than task difficulty — the model never produces a valid `<tool_call>` so the env cannot score it. See the [SFT warm-up tutorial](https://meta-pytorch.org/OpenEnv/tutorials/sft-warmup.html) for how to fix this before returning to GRPO.
+- **Δ ≈ 0 pp, initial very low (≤20%)** — task is too hard for the base model to ever stumble onto a correct answer, so GRPO has no positive rollouts to learn from. Lower `min_terms` / `min_digits`. If the reward stays near zero even at minimum difficulty, the bottleneck is likely **format compliance** rather than task difficulty — the model never produces a valid `<tool_call>` so the env cannot score it. See the [SFT warm-up tutorial](https://huggingface.github.io/OpenEnv/tutorials/sft-warmup.html) for how to fix this before returning to GRPO.
 - **Δ negative** — you trained past saturation: once `reward` plateaus, the KL penalty starts pulling the policy back toward the reference. Reduce `max_steps` so training stops while it's still net-improving.
 
 ```{note}
@@ -320,6 +320,6 @@ This delta is measured *during training* — same prompt format, same env, same 
 ## 11. Where to go next
 
 - **Swap the dataset.** `chain_sum` is one of ~100 datasets in [Reasoning Gym](https://github.com/open-thought/reasoning-gym) — try `simple_equations`, `letter_counting`, or `propositional_logic` by changing `DATASET_NAME` and re-running the same recipe.
-- **Try a different environment.** The same `environment_factory` shape works for any OpenEnv environment with a small tool surface — browse the [environment catalog](https://meta-pytorch.org/OpenEnv/environments.html) for ideas.
-- **Use SFT as a warm-start.** If format compliance is the bottleneck (initial reward near zero regardless of difficulty), the [SFT warm-up tutorial](https://meta-pytorch.org/OpenEnv/tutorials/sft-warmup.html) shows how to collect teacher rollouts, filter by reward, and fine-tune a student model — so GRPO starts with non-zero `reward_std` from the first batch.
-- **Read the other tutorials.** [Wordle GRPO](https://meta-pytorch.org/OpenEnv/tutorials/wordle-grpo.html) covers the multi-step variant; the full list is in the [tutorials index](https://meta-pytorch.org/OpenEnv/tutorials/index.html).
+- **Try a different environment.** The same `environment_factory` shape works for any OpenEnv environment with a small tool surface — browse the [environment catalog](https://huggingface.github.io/OpenEnv/environments.html) for ideas.
+- **Use SFT as a warm-start.** If format compliance is the bottleneck (initial reward near zero regardless of difficulty), the [SFT warm-up tutorial](https://huggingface.github.io/OpenEnv/tutorials/sft-warmup.html) shows how to collect teacher rollouts, filter by reward, and fine-tune a student model — so GRPO starts with non-zero `reward_std` from the first batch.
+- **Read the other tutorials.** [Wordle GRPO](https://huggingface.github.io/OpenEnv/tutorials/wordle-grpo.html) covers the multi-step variant; the full list is in the [tutorials index](https://huggingface.github.io/OpenEnv/tutorials/index.html).

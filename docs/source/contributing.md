@@ -10,7 +10,7 @@ We welcome contributions from the community! OpenEnv is an open-source project a
 
 ### 🐛 Report Bugs
 
-Found a bug? Please [open an issue](https://github.com/meta-pytorch/OpenEnv/issues/new) with:
+Found a bug? Please [open an issue](https://github.com/huggingface/OpenEnv/issues/new) with:
 
 - A clear description of the problem
 - Steps to reproduce
@@ -19,7 +19,7 @@ Found a bug? Please [open an issue](https://github.com/meta-pytorch/OpenEnv/issu
 
 ### 💡 Suggest Features
 
-Have an idea? Open a [feature request](https://github.com/meta-pytorch/OpenEnv/issues/new) describing:
+Have an idea? Open a [feature request](https://github.com/huggingface/OpenEnv/issues/new) describing:
 
 - The problem you're trying to solve
 - Your proposed solution
@@ -72,7 +72,7 @@ ruff check .
 
 ## Coordination
 
-Use the [OpenEnv repository](https://github.com/meta-pytorch/OpenEnv) to file
+Use the [OpenEnv repository](https://github.com/huggingface/OpenEnv) to file
 issues, discuss substantial changes, and submit pull requests.
 
 ## License

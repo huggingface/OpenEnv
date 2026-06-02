@@ -4,8 +4,8 @@ An e2e framework for creating, deploying and using isolated execution environmen
 
 [![PyPI](https://img.shields.io/pypi/v/openenv?color=blue)](https://pypi.org/project/openenv/)
 [![Discord](https://img.shields.io/badge/Discord-OpenEnv-7289da?style=flat&logo=discord&logoColor=white)](https://discord.gg/YsTYBh6PD9)
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/meta-pytorch/OpenEnv/blob/main/examples/OpenEnv_Tutorial.ipynb)
-[![Docs](https://img.shields.io/badge/Docs-Explore-blue?logo=readthedocs&logoColor=white)](https://meta-pytorch.org/OpenEnv/)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/huggingface/OpenEnv/blob/main/examples/OpenEnv_Tutorial.ipynb)
+[![Docs](https://img.shields.io/badge/Docs-Explore-blue?logo=readthedocs&logoColor=white)](https://huggingface.github.io/OpenEnv/)
 
 ---
 
@@ -70,7 +70,7 @@ with EchoEnv(base_url="https://openenv-echo-env.hf.space").sync() as client:
     print(result.observation.result)
 ```
 
-For a detailed quick start, check out the [docs page](https://meta-pytorch.org/OpenEnv/auto_getting_started/index.html).
+For a detailed quick start, check out the [docs page](https://huggingface.github.io/OpenEnv/auto_getting_started/index.html).
 
 ## OpenEnv on partner platforms:
 
@@ -99,11 +99,11 @@ The OpenEnv CLI (`openenv`) provides commands to initialize new environments and
 
 Below is a list of active and historical RFCs for OpenEnv. RFCs are proposals for major changes or features. Please review and contribute!
 
-- [RFC 001: Baseline API and Interface Specifications](https://github.com/meta-pytorch/OpenEnv/pull/26)
-- [RFC 002: Discoverability of environment tools by agents](https://github.com/meta-pytorch/OpenEnv/pull/32)
-- [RFC 003: Add MCP (Model Context Protocol) support](https://github.com/meta-pytorch/OpenEnv/pull/224)
-- [RFC 004: Add delayed rewards support for trajectory-based scoring](https://github.com/meta-pytorch/OpenEnv/pull/337)
-- [RFC 005: Agentic Harness Integration](https://github.com/meta-pytorch/OpenEnv/pull/387)
+- [RFC 001: Baseline API and Interface Specifications](https://github.com/huggingface/OpenEnv/pull/26)
+- [RFC 002: Discoverability of environment tools by agents](https://github.com/huggingface/OpenEnv/pull/32)
+- [RFC 003: Add MCP (Model Context Protocol) support](https://github.com/huggingface/OpenEnv/pull/224)
+- [RFC 004: Add delayed rewards support for trajectory-based scoring](https://github.com/huggingface/OpenEnv/pull/337)
+- [RFC 005: Agentic Harness Integration](https://github.com/huggingface/OpenEnv/pull/387)
 
 ## Architecture
 
@@ -301,7 +301,7 @@ For detailed options: `openenv init --help` and `openenv push --help`.
 
 ```bash
 # Clone the repository
-git clone https://github.com/meta-pytorch/OpenEnv.git
+git clone https://github.com/huggingface/OpenEnv.git
 cd OpenEnv
 
 # Install core package in editable mode
@@ -377,7 +377,7 @@ See the [Oumi example](https://github.com/oumi-ai/oumi/blob/main/notebooks/Oumi%
 | [Atari Environment](envs/atari_env/README.md) | Classic Arcade Learning Environment tasks for RL benchmarking. |
 | [FinRL Environment](envs/finrl_env/README.md) | Financial market simulations for algorithmic trading experiments. |
 
-> Browse the full catalog of community environments at [meta-pytorch.org/OpenEnv/environments](https://meta-pytorch.org/OpenEnv/environments.html).
+> Browse the full catalog of community environments at [huggingface.github.io/OpenEnv/environments](https://huggingface.github.io/OpenEnv/environments.html).
 
 ## Community Support & Acknowledgments
 This is an open and community-centric project. If you would like to add your name here, please put up a pull request and tag @jspisak for review. Ty!!
