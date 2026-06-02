@@ -13,13 +13,13 @@
 - [ ] `lint` passes (usort + ruff)
 
 ### TestPyPI validation (before merging)
-- [ ] Manual dispatch of `publish-pypi-core.yml` with `use_test_pypi=true` from this branch
-- [ ] `pip install --index-url https://test.pypi.org/simple/ openenv-core==X.Y.Z` installs cleanly
+- [ ] Manual dispatch of `publish-pypi.yml` with `use_test_pypi=true` from this branch
+- [ ] `pip install --index-url https://test.pypi.org/simple/ openenv==X.Y.Z` installs cleanly
 - [ ] `python -c "import openenv; print(openenv.__version__)"` prints `X.Y.Z`
 
 ### Post-merge steps (author only)
 - [ ] Tag `vX.Y.Z` pushed: `git tag -a vX.Y.Z -m "Release vX.Y.Z" && git push origin vX.Y.Z`
 - [ ] GitHub Release published (triggers real PyPI publish via `release: published`)
 - [ ] PyPI publish Actions job completed successfully
-- [ ] `pip install openenv-core==X.Y.Z` from production PyPI verified
+- [ ] `pip install openenv==X.Y.Z` from production PyPI verified
 - [ ] `auto-bump-version.yml` created `bump/X.Y.(Z+1).dev0` PR

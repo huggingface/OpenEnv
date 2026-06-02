@@ -3,7 +3,7 @@ requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "openenv-core"
+name = "openenv"
 version = "0.3.0"
 description = "A unified framework for reinforcement learning environments"
 readme = "README.md"
@@ -55,7 +55,7 @@ docs = [
     "sphinxcontrib.katex==0.9.11",
     "docutils>=0.18.1,<0.23",
     "sphinx-design==0.6.1",
-    "sphinxcontrib-mermaid==2.0.1",
+    "sphinxcontrib-mermaid==2.0.2",
     "myst-parser",
     "sphinxext-opengraph",
     "sphinx-sitemap==2.9.0",
@@ -65,8 +65,8 @@ docs = [
     "smolagents",
 ]
 all = [
-    "openenv-core[core]",
-    "openenv-core[cli]",
+    "openenv[core]",
+    "openenv[cli]",
 ]
 daytona = [
     "daytona>=0.136.0",

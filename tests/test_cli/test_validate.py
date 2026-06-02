@@ -50,7 +50,7 @@ def _write_minimal_valid_env(
         "[project]\n"
         'name = "test-env"\n'
         'version = "0.1.0"\n'
-        'dependencies = ["openenv-core>=0.2.0"]\n'
+        'dependencies = ["openenv>=0.2.0"]\n'
         "\n"
         "[project.scripts]\n"
         'server = "server.app:main"\n'
@@ -217,7 +217,29 @@ def test_validate_command_local_json_output(tmp_path: Path) -> None:
     assert payload["summary"]["failed_criteria"] == []
 
 
-def test_validate_command_accepts_dockerfile_managed_openenv_core(
+def test_validate_command_rejects_environment_package_as_runtime_dependency(
+    tmp_path: Path,
+) -> None:
+    """An openenv-* environment package is not the OpenEnv runtime package."""
+    env_dir = tmp_path / "test_env"
+    _write_minimal_valid_env(env_dir)
+    (env_dir / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "test-env"\n'
+        'version = "0.1.0"\n'
+        'dependencies = ["openenv-echo-env>=0.1.0"]\n'
+        "\n"
+        "[project.scripts]\n"
+        'server = "server.app:main"\n'
+    )
+
+    result = runner.invoke(app, ["validate", str(env_dir)])
+
+    assert result.exit_code != 0
+    assert "Missing required dependency: openenv>=0.2.0" in result.output
+
+
+def test_validate_command_accepts_dockerfile_managed_openenv_runtime(
     tmp_path: Path,
 ) -> None:
     """Local validation accepts envs that install OpenEnv in Dockerfile."""
@@ -233,7 +255,7 @@ def test_validate_command_accepts_dockerfile_managed_openenv_core(
         'server = "server.app:main"\n'
     )
     (env_dir / "server" / "Dockerfile").write_text(
-        'RUN pip install --no-cache-dir --no-deps "openenv-core[core]>=0.2.2"\n'
+        'RUN pip install --no-cache-dir --no-deps "openenv[core]>=0.2.2"\n'
     )
 
     result = runner.invoke(app, ["validate", str(env_dir), "--json"])

@@ -37,7 +37,7 @@ Run via InspectAIHarness → EvalResult with structured scores
 
 ```bash
 pip install "inspect-ai>=0.3.0"
-pip install "openenv-core @ git+https://github.com/meta-pytorch/OpenEnv.git"
+pip install "openenv @ git+https://github.com/meta-pytorch/OpenEnv.git"
 ```
 
 `inspect-ai` is an optional dependency — `InspectAIHarness` is importable

@@ -184,7 +184,7 @@ class TestEnvironmentDiscovery:
         mock_dist2.version = "0.2.0"
 
         mock_dist3 = Mock()
-        mock_dist3.metadata = {"Name": "openenv-core"}  # Should be filtered out
+        mock_dist3.metadata = {"Name": "openenv-core"}  # Legacy core wheel
         mock_dist3.version = "1.0.0"
 
         mock_distributions.return_value = [mock_dist1, mock_dist2, mock_dist3]
@@ -209,7 +209,7 @@ class TestEnvironmentDiscovery:
         discovery = EnvironmentDiscovery()
         envs = discovery._discover_installed_packages()
 
-        # Should discover 2 environments (not openenv-core)
+        # Should discover 2 environments, not the legacy core wheel
         assert len(envs) == 2
         assert "echo" in envs
         assert "coding" in envs

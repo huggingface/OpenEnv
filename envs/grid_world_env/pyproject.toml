@@ -11,7 +11,7 @@ authors = [
     {name = "Yuv Raj Pant", email = "yuvrajpant5@gmail.com"},
 ]
 dependencies = [
-    "openenv-core[core]>=0.2.2",
+    "openenv[core]>=0.2.2",
     "gymnasium",
     "numpy",
     # Server dependencies copied from echo_env

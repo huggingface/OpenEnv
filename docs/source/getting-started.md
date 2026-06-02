@@ -5,12 +5,12 @@ Install OpenEnv, load an environment, and run your first step.
 ## Install OpenEnv
 
 ```bash
-pip install openenv-core
+pip install openenv
 ```
 
 ```{note}
 This installs the `openenv` CLI and the `openenv.core` runtime. Environment
-projects can depend on `openenv-core[core]` when they only need the server and
+projects can depend on `openenv[core]` when they only need the server and
 client libraries.
 ```
 

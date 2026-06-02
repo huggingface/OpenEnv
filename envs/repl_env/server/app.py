@@ -96,7 +96,7 @@ def create_repl_environment() -> REPLEnvironment:
 # Create the app with web interface and README integration.
 _sig = inspect.signature(create_app)
 if "gradio_builder" in _sig.parameters:
-    # Each kwarg is guarded by inspect.signature so older openenv-core
+    # Each kwarg is guarded by inspect.signature so older openenv
     # releases that predate the param still boot this env.
     create_app_kwargs: dict = {
         "env_name": "repl_env",
@@ -121,7 +121,7 @@ if "gradio_builder" in _sig.parameters:
     )
 else:
     _logger.warning(
-        "Installed openenv-core does not support gradio_builder; "
+        "Installed openenv does not support gradio_builder; "
         "custom REPL Gradio tab will not be available."
     )
     app = create_app(
