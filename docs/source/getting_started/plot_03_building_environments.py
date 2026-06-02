@@ -44,7 +44,7 @@ if IN_COLAB:
     print("=" * 70)
 
     subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-q", "openenv-core"],
+        [sys.executable, "-m", "pip", "install", "-q", "openenv"],
         capture_output=True,
     )
     print("   OpenEnv installed!")
@@ -84,7 +84,7 @@ print()
 #
 # - Python 3.11+
 # - Docker Desktop or Docker Engine
-# - OpenEnv installed: ``pip install openenv-core``
+# - OpenEnv installed: ``pip install openenv``
 
 print("=" * 70)
 print("   PREREQUISITES")
@@ -118,7 +118,7 @@ try:
     else:
         print("✗ OpenEnv CLI: Not found")
 except Exception:
-    print("✗ OpenEnv CLI: Not found (install with: pip install openenv-core)")
+    print("✗ OpenEnv CLI: Not found (install with: pip install openenv)")
 
 print()
 

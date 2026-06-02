@@ -36,7 +36,7 @@ You'll also need:
 
 ```bash
 # Install required packages
-!pip install -q unsloth openenv-core trl
+!pip install -q unsloth openenv trl
 
 # For Google Colab, also run:
 !pip install -q "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"

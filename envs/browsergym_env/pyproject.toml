@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "BrowserGym Environment for OpenEnv - Web automation using Playwright"
 requires-python = ">=3.10"
 dependencies = [
-    "openenv-core[core]>=0.2.3",
+    "openenv[core]>=0.2.3",
     "browsergym-core==0.14.3",
     "browsergym-miniwob==0.14.3",
     "gymnasium>=0.29.0",

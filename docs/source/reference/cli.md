@@ -82,7 +82,7 @@ there is only one copy to update.
 openenv skills add --claude --global  # → ~/.claude/skills/openenv-cli/
 ```
 
-**Overwrite an existing installation** (e.g. after upgrading `openenv-core`):
+**Overwrite an existing installation** (e.g. after upgrading `openenv`):
 
 ```bash
 openenv skills add --claude --force

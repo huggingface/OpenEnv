@@ -107,7 +107,7 @@ def build_awm_gradio_app(
     if metadata is not None and getattr(metadata, "readme_content", None):
         readme_md = metadata.readme_content
 
-    # openenv-core 0.2.3 added a ``reset_kwargs`` parameter to
+    # openenv 0.2.3 added a ``reset_kwargs`` parameter to
     # ``WebInterfaceManager.reset_environment``. PyPI's 0.2.1 takes no args,
     # which silently drops scenario/task_idx — fall back to calling env.reset
     # directly and replicate the episode-state updates the manager would do.
