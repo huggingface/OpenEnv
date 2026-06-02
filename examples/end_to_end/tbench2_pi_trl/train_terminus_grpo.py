@@ -34,17 +34,16 @@ from trl.experimental.async_grpo import AsyncGRPOConfig, AsyncGRPOTrainer
 
 from pi_rollout_worker import TerminusPiRolloutWorker, WorkerConfig
 
-TASK_DATASET_ID = "burtenshaw/terminus-pi-trl-tasks"
-MODEL = "Qwen/Qwen3.6-27B"
+TASK_DATASET_ID = "burtenshaw/terminus-pi-trl-hard-tasks"
+MODEL = "Qwen/Qwen3.5-4B"
 TRAINER_MODEL = os.environ.get("TERMINUS_TRAINER_MODEL", MODEL)
 ENV_URL = os.environ.get("TERMINUS_ENV_URL", "http://localhost:8000")
 OUTPUT_DIR = Path(os.environ.get("TERMINUS_OUTPUT_DIR", "/tmp/terminus-pi-trl-output"))
 HUB_MODEL_ID = os.environ.get(
     "TERMINUS_HUB_MODEL_ID",
-    "burtenshaw/terminus-pi-trl-async-grpo-qwen3-6-27b",
+    "burtenshaw/terminus-pi-trl-async-grpo-qwen3-5-4b-hard",
 )
 TRACKIO_PROJECT = "terminus-pi-trl"
-MAX_STEPS = 4
 TRACKIO_SPACE_ID = os.environ.get(
     "TRACKIO_SPACE_ID",
     "burtenshaw/terminus-pi-trl-trackio",
@@ -64,6 +63,7 @@ def main() -> None:
 
     task_dataset = load_dataset(TASK_DATASET_ID, split="train")
     task = task_dataset[0]
+    max_steps = int(task["max_steps"])
     train_dataset = task_dataset.select_columns(["prompt"])
     session_factory = TerminusSessionFactory(
         client_factory=lambda: TerminusEnv(
@@ -109,7 +109,7 @@ def main() -> None:
         model=TRAINER_MODEL,
         args=AsyncGRPOConfig(
             output_dir=str(OUTPUT_DIR),
-            max_steps=MAX_STEPS,
+            max_steps=max_steps,
             per_device_train_batch_size=task["batch_size"],
             gradient_accumulation_steps=1,
             num_generations=task["num_generations"],
@@ -144,7 +144,7 @@ def main() -> None:
             self.saved = False
 
         def on_step_end(self, args, state, control, **kwargs):
-            if self.saved or state.global_step < MAX_STEPS:
+            if self.saved or state.global_step < max_steps:
                 return control
             self.saved = True
             state_dict = trainer.accelerator.get_state_dict(trainer.model)

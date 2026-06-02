@@ -219,6 +219,9 @@ class InterceptionServer:
                 with outer._lock:
                     outer._intercepts.pop(request_id, None)
                 response = intercept["response"] or _error_response("empty response")
+                if body.get("stream"):
+                    self._sse(response)
+                    return
                 self._json(response)
 
             def _json(self, payload: dict[str, Any], *, status: int = 200) -> None:
@@ -228,6 +231,56 @@ class InterceptionServer:
                 self.send_header("content-length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
+
+            def _sse(self, payload: dict[str, Any]) -> None:
+                self.send_response(200)
+                self.send_header("content-type", "text/event-stream")
+                self.send_header("cache-control", "no-cache")
+                self.end_headers()
+                for choice in payload.get("choices") or []:
+                    message = choice.get("message") or {}
+                    tool_calls = [
+                        {"index": index, **tool_call}
+                        for index, tool_call in enumerate(message.get("tool_calls") or [])
+                    ]
+                    self._sse_data(
+                        {
+                            "id": payload.get("id", ""),
+                            "object": "chat.completion.chunk",
+                            "created": payload.get("created", int(time.time())),
+                            "model": payload.get("model", ""),
+                            "choices": [
+                                {
+                                    "index": choice.get("index", 0),
+                                    "delta": {
+                                        "role": "assistant",
+                                        "content": message.get("content"),
+                                        "tool_calls": tool_calls or None,
+                                    },
+                                    "finish_reason": None,
+                                }
+                            ],
+                        }
+                    )
+                    self._sse_data(
+                        {
+                            "id": payload.get("id", ""),
+                            "object": "chat.completion.chunk",
+                            "created": payload.get("created", int(time.time())),
+                            "model": payload.get("model", ""),
+                            "choices": [
+                                {
+                                    "index": choice.get("index", 0),
+                                    "delta": {},
+                                    "finish_reason": choice.get("finish_reason") or "stop",
+                                }
+                            ],
+                        }
+                    )
+                self.wfile.write(b"data: [DONE]\n\n")
+
+            def _sse_data(self, payload: dict[str, Any]) -> None:
+                self.wfile.write(f"data: {json.dumps(payload)}\n\n".encode("utf-8"))
 
         return Handler
 
@@ -746,14 +799,41 @@ def _normalize_chat_messages(messages: list[Any]) -> list[dict[str, Any]]:
             continue
         item = dict(message)
         content = item.get("content")
-        if isinstance(content, list):
+        if content is None:
+            item["content"] = ""
+        elif isinstance(content, list):
             item["content"] = "\n".join(
                 str(part.get("text", ""))
                 for part in content
                 if isinstance(part, dict) and part.get("text") is not None
             )
+        tool_calls = item.get("tool_calls")
+        if isinstance(tool_calls, list):
+            item["tool_calls"] = _normalize_message_tool_calls(tool_calls)
         normalized.append(item)
     return normalized
+
+
+def _normalize_message_tool_calls(raw_tool_calls: list[Any]) -> list[dict[str, Any]]:
+    tool_calls = []
+    for raw_call in raw_tool_calls:
+        if not isinstance(raw_call, dict):
+            continue
+        call = dict(raw_call)
+        function = call.get("function")
+        if not isinstance(function, dict):
+            tool_calls.append(call)
+            continue
+        function = dict(function)
+        arguments = function.get("arguments")
+        if isinstance(arguments, str):
+            try:
+                function["arguments"] = json.loads(arguments)
+            except json.JSONDecodeError:
+                function["arguments"] = {"command": arguments}
+        call["function"] = function
+        tool_calls.append(call)
+    return tool_calls
 
 
 def _session_task(task: Any) -> Any:
@@ -828,6 +908,9 @@ def _chat_response(
     model: str,
     finish_reason: str | None,
 ) -> dict[str, Any]:
+    choice_finish_reason = (
+        "tool_calls" if assistant_message.get("tool_calls") else finish_reason or "stop"
+    )
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
         "object": "chat.completion",
@@ -837,7 +920,7 @@ def _chat_response(
             {
                 "index": 0,
                 "message": assistant_message,
-                "finish_reason": finish_reason or "stop",
+                "finish_reason": choice_finish_reason,
             }
         ],
     }
