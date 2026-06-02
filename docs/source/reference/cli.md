@@ -11,6 +11,30 @@ The `openenv` CLI provides a set of commands for building, validating, and pushi
    :show-inheritance:
 ```
 
+## `openenv import`
+
+Import a supported third-party source environment into a generated OpenEnv
+wrapper package. The command detects the source format from the directory
+contents, so ORS/OpenReward and Prime Intellect Verifiers sources do not
+require `--type` in the common case.
+
+The generated wrapper vendors the source tree into the package. The importer
+skips VCS/cache/build directories and common secret file patterns such as
+`.env`, `secrets.yaml`, and private key files; review the generated `vendor/`
+directory before publishing a wrapper.
+
+```bash
+openenv import path/to/source --name my_env --output-dir ./envs
+openenv import path/to/source --name my_env --output-dir ./envs --env-class MyEnv
+```
+
+```{eval-rst}
+.. automodule:: openenv.cli.commands.import_env
+   :members:
+   :undoc-members:
+   :show-inheritance:
+```
+
 ## `openenv build`
 
 ```{eval-rst}

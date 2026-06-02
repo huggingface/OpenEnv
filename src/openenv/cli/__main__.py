@@ -18,6 +18,7 @@ from openenv.cli.commands import (
     build,
     collect,
     fork,
+    import_env,
     init,
     push,
     serve,
@@ -34,6 +35,9 @@ app = typer.Typer(
 
 # Register commands
 app.command(name="init", help="Initialize a new OpenEnv environment")(init.init)
+app.command(name="import", help="Import a third-party environment into OpenEnv")(
+    import_env.import_env
+)
 app.command(name="build", help="Build Docker images for OpenEnv environments")(
     build.build
 )

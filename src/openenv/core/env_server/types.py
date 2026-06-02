@@ -245,6 +245,33 @@ class HealthResponse(BaseMessage):
     )
 
 
+class ListTasksRequest(BaseMessage):
+    """Request model for ORS-compatible task listing."""
+
+    split: str = Field(description="Task split name")
+
+
+class NumTasksRequest(BaseMessage):
+    """Request model for ORS-compatible task counts."""
+
+    split: str = Field(description="Task split name")
+
+
+class GetTaskRequest(BaseMessage):
+    """Request model for ORS-compatible task lookup."""
+
+    split: str = Field(description="Task split name")
+    index: int = Field(description="Task index within the split")
+
+
+class GetTaskRangeRequest(BaseMessage):
+    """Request model for ORS-compatible task range lookup."""
+
+    split: str = Field(description="Task split name")
+    start: Optional[int] = Field(default=None, description="Inclusive start index")
+    stop: Optional[int] = Field(default=None, description="Exclusive stop index")
+
+
 class WSResetMessage(BaseMessage):
     """WebSocket message to reset the environment."""
 

@@ -40,9 +40,13 @@ from pydantic import ValidationError
 from .interfaces import Environment
 from .mcp_environment import get_server_tools
 from .mcp_types import (
+    CallToolAction,
+    CallToolObservation,
     JsonRpcErrorCode,
     JsonRpcRequest,
     JsonRpcResponse,
+    ListToolsAction,
+    ListToolsObservation,
     McpMethod,
     WSMCPMessage,
     WSMCPResponse,
@@ -53,8 +57,12 @@ from .types import (
     Action,
     ConcurrencyConfig,
     EnvironmentMetadata,
+    GetTaskRangeRequest,
+    GetTaskRequest,
     HealthResponse,
     HealthStatus,
+    ListTasksRequest,
+    NumTasksRequest,
     Observation,
     ResetRequest,
     ResetResponse,
@@ -106,6 +114,18 @@ def _make_json_serializable(obj: Any) -> Any:
     return str(obj)
 
 
+async def _maybe_await(value: Any) -> Any:
+    """Await values returned by async task APIs while preserving sync APIs."""
+    if inspect.isawaitable(value):
+        return await value
+    return value
+
+
+def _overrides_method(method: Any, base_method: Any) -> bool:
+    """Return whether a bound method differs from the base implementation."""
+    return getattr(method, "__func__", method) is not base_method
+
+
 from .exceptions import (
     ConcurrencyConfigurationError,
     EnvironmentFactoryError,
@@ -150,6 +170,7 @@ class HTTPEnvServer:
         observation_cls: Type[Observation],
         max_concurrent_envs: Optional[int] = None,
         concurrency_config: Optional[ConcurrencyConfig] = None,
+        env_name: Optional[str] = None,
     ):
         """
         Initialize HTTP server wrapper.
@@ -163,6 +184,7 @@ class HTTPEnvServer:
                                  Mutually exclusive with concurrency_config.
             concurrency_config: Optional ConcurrencyConfig for advanced concurrency settings.
                                 Mutually exclusive with max_concurrent_envs.
+            env_name: Public environment name used by task/split endpoints.
 
         Raises:
             ValueError: If both max_concurrent_envs and concurrency_config are provided.
@@ -206,6 +228,7 @@ class HTTPEnvServer:
 
         self.action_cls = action_cls
         self.observation_cls = observation_cls
+        self.env_name = env_name or self._default_env_name()
 
         # Session management for WebSocket connections
         self._sessions: Dict[str, Optional[Environment]] = {}
@@ -230,6 +253,12 @@ class HTTPEnvServer:
             self._concurrency_config.session_timeout
         )
         self._reaper_task: Optional[asyncio.Task[None]] = None
+
+    def _default_env_name(self) -> str:
+        factory = self._env_factory
+        if inspect.isclass(factory):
+            return factory.__name__
+        return getattr(factory, "__name__", "environment")
 
     def _validate_concurrency_safety(self) -> None:
         """
@@ -610,7 +639,7 @@ class HTTPEnvServer:
             try:
                 kwargs = request.model_dump(exclude_unset=True)
 
-                is_async = _env.reset_async.__func__ is not Environment.reset_async
+                is_async = _overrides_method(_env.reset_async, Environment.reset_async)
 
                 if is_async:
                     sig = inspect.signature(_env.reset_async)
@@ -645,7 +674,7 @@ class HTTPEnvServer:
             try:
                 kwargs = request.model_dump(exclude_unset=True, exclude={"action"})
 
-                is_async = _env.step_async.__func__ is not Environment.step_async
+                is_async = _overrides_method(_env.step_async, Environment.step_async)
 
                 if is_async:
                     sig = inspect.signature(_env.step_async)
@@ -812,9 +841,40 @@ class HTTPEnvServer:
                 mcp_server = getattr(_env, "mcp_server", None)
                 mcp_session_factory = getattr(_env, "mcp_session", None)
 
+                async def call_mcp_style_step(action: Action) -> Observation:
+                    is_async = _overrides_method(
+                        _env.step_async, Environment.step_async
+                    )
+                    if is_async:
+                        return await _env.step_async(action)
+                    if managed_session_id:
+                        return await self._run_in_session_executor(
+                            managed_session_id,
+                            _env.step,
+                            action,
+                        )
+                    return await self._run_sync_in_thread_pool(_env.step, action)
+
+                supports_mcp_style_actions = self.action_cls in {
+                    CallToolAction,
+                    ListToolsAction,
+                }
+
                 if method == McpMethod.TOOLS_LIST:
                     # Check if environment is MCP-enabled
                     if mcp_client is None and mcp_server is None:
+                        if supports_mcp_style_actions:
+                            observation = await call_mcp_style_step(ListToolsAction())
+                            if isinstance(observation, ListToolsObservation):
+                                return JsonRpcResponse.success(
+                                    result={
+                                        "tools": [
+                                            tool.model_dump()
+                                            for tool in observation.tools
+                                        ]
+                                    },
+                                    request_id=request_id,
+                                )
                         return JsonRpcResponse.error_response(
                             JsonRpcErrorCode.INTERNAL_ERROR,
                             "Environment does not support MCP",
@@ -875,17 +935,29 @@ class HTTPEnvServer:
                     tool_name = params.get("name")
                     arguments = params.get("arguments", {})
 
-                    if mcp_client is None and mcp_server is None:
-                        return JsonRpcResponse.error_response(
-                            JsonRpcErrorCode.INTERNAL_ERROR,
-                            "Environment does not support MCP",
-                            request_id=request_id,
-                        )
-
                     if not tool_name:
                         return JsonRpcResponse.error_response(
                             JsonRpcErrorCode.INVALID_PARAMS,
                             "Missing 'name' in params",
+                            request_id=request_id,
+                        )
+
+                    if mcp_client is None and mcp_server is None:
+                        if supports_mcp_style_actions:
+                            observation = await call_mcp_style_step(
+                                CallToolAction(
+                                    tool_name=tool_name,
+                                    arguments=arguments,
+                                )
+                            )
+                            if isinstance(observation, CallToolObservation):
+                                return JsonRpcResponse.success(
+                                    result=_make_json_serializable(observation),
+                                    request_id=request_id,
+                                )
+                        return JsonRpcResponse.error_response(
+                            JsonRpcErrorCode.INTERNAL_ERROR,
+                            "Environment does not support MCP",
                             request_id=request_id,
                         )
 
@@ -960,6 +1032,96 @@ class HTTPEnvServer:
                     )
                 if should_close:
                     _env.close()
+
+        def _check_env_name(env_name: str) -> None:
+            if env_name.lower() != self.env_name.lower():
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"unknown environment {env_name!r}",
+                )
+
+        def _normalize_split(split: Any) -> Dict[str, Any]:
+            if hasattr(split, "model_dump"):
+                return cast(Dict[str, Any], split.model_dump())
+            if isinstance(split, dict):
+                return _make_json_serializable(split)
+            if isinstance(split, str):
+                split_type = (
+                    split if split in {"train", "validation", "test"} else "validation"
+                )
+                return {"name": split, "type": split_type}
+            return {"name": str(split), "type": "validation"}
+
+        async def _call_task_method(method_name: str, *args: Any) -> Any:
+            _env = self._env_factory()
+            try:
+                method = getattr(_env, method_name, None)
+                if not callable(method):
+                    raise NotImplementedError
+                return await _maybe_await(method(*args))
+            except NotImplementedError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_501_NOT_IMPLEMENTED,
+                    detail=f"{method_name} is not supported for this environment",
+                ) from e
+            except IndexError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid task index",
+                ) from e
+            finally:
+                _env.close()
+
+        @app.get("/list_environments", tags=["Task API"])
+        async def list_environments() -> list[str]:
+            return [self.env_name]
+
+        @app.get("/{env_name}/splits", tags=["Task API"])
+        async def list_splits(env_name: str) -> list[Dict[str, Any]]:
+            _check_env_name(env_name)
+            splits = await _call_task_method("list_splits")
+            return [_normalize_split(split) for split in splits]
+
+        @app.post("/{env_name}/tasks", tags=["Task API"])
+        async def list_tasks(
+            env_name: str,
+            request: ListTasksRequest,
+        ) -> Dict[str, Any]:
+            _check_env_name(env_name)
+            tasks = await _call_task_method("list_tasks", request.split)
+            return {
+                "tasks": _make_json_serializable(tasks),
+                "env_name": self.env_name,
+            }
+
+        @app.post("/{env_name}/num_tasks", tags=["Task API"])
+        async def num_tasks(
+            env_name: str,
+            request: NumTasksRequest,
+        ) -> Dict[str, Any]:
+            _check_env_name(env_name)
+            count = await _call_task_method("num_tasks", request.split)
+            return {"num_tasks": count}
+
+        @app.post("/{env_name}/task", tags=["Task API"])
+        async def get_task(
+            env_name: str,
+            request: GetTaskRequest,
+        ) -> Dict[str, Any]:
+            _check_env_name(env_name)
+            task = await _call_task_method("get_task", request.split, request.index)
+            return {"task": _make_json_serializable(task)}
+
+        @app.post("/{env_name}/task_range", tags=["Task API"])
+        async def get_task_range(
+            env_name: str,
+            request: GetTaskRangeRequest,
+        ) -> Dict[str, Any]:
+            _check_env_name(env_name)
+            tasks = await _call_task_method(
+                "get_task_range", request.split, request.start, request.stop
+            )
+            return {"tasks": _make_json_serializable(tasks)}
 
         # Register MCP WebSocket endpoint (available in both production and simulation modes)
         @app.websocket("/mcp")
@@ -1354,9 +1516,9 @@ all schema information needed to interact with the environment.
                                 case "reset":
                                     msg = WSResetMessage(**message_dict)
 
-                                    is_async = (
-                                        session_env.reset_async.__func__
-                                        is not Environment.reset_async
+                                    is_async = _overrides_method(
+                                        session_env.reset_async,
+                                        Environment.reset_async,
                                     )
 
                                     if is_async:
@@ -1392,9 +1554,9 @@ all schema information needed to interact with the environment.
                                         msg.data, self.action_cls
                                     )
 
-                                    is_async = (
-                                        session_env.step_async.__func__
-                                        is not Environment.step_async
+                                    is_async = _overrides_method(
+                                        session_env.step_async,
+                                        Environment.step_async,
                                     )
 
                                     if is_async:
@@ -1586,7 +1748,12 @@ def create_app(
     else:
         # Use standard FastAPI app without web interface
         return create_fastapi_app(
-            env, action_cls, observation_cls, max_concurrent_envs, concurrency_config
+            env,
+            action_cls,
+            observation_cls,
+            max_concurrent_envs,
+            concurrency_config,
+            env_name=env_name,
         )
 
 
@@ -1596,6 +1763,7 @@ def create_fastapi_app(
     observation_cls: Type[Observation],
     max_concurrent_envs: Optional[int] = None,
     concurrency_config: Optional[ConcurrencyConfig] = None,
+    env_name: Optional[str] = None,
 ) -> FastAPI:
     """
     Create a FastAPI application with comprehensive documentation.
@@ -1608,6 +1776,7 @@ def create_fastapi_app(
                              Mutually exclusive with concurrency_config.
         concurrency_config: Optional ConcurrencyConfig for advanced concurrency settings.
                             Mutually exclusive with max_concurrent_envs.
+        env_name: Optional environment name for task/split endpoints.
 
     Returns:
         FastAPI application instance
@@ -1685,6 +1854,7 @@ HTTP API for interacting with OpenEnv environments through a standardized interf
         observation_cls,
         max_concurrent_envs,
         concurrency_config=concurrency_config,
+        env_name=env_name,
     )
     server.register_routes(app)
     return app
