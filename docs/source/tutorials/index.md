@@ -6,9 +6,9 @@ The Getting Started Series walks you from zero to deploying your own environment
 
 | Part | What it covers | Notebook |
 |------|---------------|----------|
-| [1 — Introduction & Quick Start](../tutorials/index) | What OpenEnv is, why it exists, and your first environment in under 10 minutes | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/huggingface/OpenEnv/blob/main/examples/openenv_introduction_quickstart.ipynb) |
-| [2 — Using Environments](../tutorials/index) | Connect to environments, create policies, run evaluations | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/huggingface/OpenEnv/blob/main/examples/openenv_using_environments.ipynb) |
-| [3 — Building Environments](../tutorials/index) | Create a custom environment from scratch | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/huggingface/OpenEnv/blob/main/examples/openenv_building_environments.ipynb) |
+| 1 — Introduction & Quick Start | What OpenEnv is, why it exists, and your first environment in under 10 minutes | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/huggingface/OpenEnv/blob/main/examples/openenv_introduction_quickstart.ipynb) |
+| 2 — Using Environments | Connect to environments, create policies, run evaluations | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/huggingface/OpenEnv/blob/main/examples/openenv_using_environments.ipynb) |
+| 3 — Building Environments | Create a custom environment from scratch | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/huggingface/OpenEnv/blob/main/examples/openenv_building_environments.ipynb) |
 | [4 — Packaging & Deploying](../getting_started/environment-builder) | Package with Docker and deploy to Hugging Face | — |
 | [5 — Contributing to Hugging Face](../getting_started/contributing-envs) | Publish, fork, and share environments on the Hub | — |
 
