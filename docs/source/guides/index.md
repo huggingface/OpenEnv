@@ -2,27 +2,25 @@
 
 Practical how-to guides for working with OpenEnv. These guides are task-oriented and help you accomplish specific goals.
 
-::::{grid} 1 2 2 3
-:gutter: 3
-
-:::{grid-item-card} 🔌 Using Environments
-Learn how to connect to and interact with OpenEnv environments.
-
-[Concepts →](concepts.md)
-:::
-
-:::{grid-item-card} 🛠️ Building Environments
-Create your own custom environments for agentic training.
-
-[Your First Environment →](first-environment.md)
-:::
-
-:::{grid-item-card} 🧠 Training
-Integrate OpenEnv with RL frameworks for agent training.
-
-[RL Integration →](rl-integration.md)
-:::
-::::
+<div class="mt-6">
+  <div class="w-full flex flex-col space-y-4 md:space-y-0 md:grid md:grid-cols-3 md:gap-4">
+    <a class="!no-underline border dark:border-gray-700 p-5 rounded-lg shadow hover:shadow-md" href="concepts">
+      <div class="font-bold mb-2">🔌 Using Environments</div>
+      <p>Learn how to connect to and interact with OpenEnv environments.</p>
+      <p class="text-sm font-medium">Concepts →</p>
+    </a>
+    <a class="!no-underline border dark:border-gray-700 p-5 rounded-lg shadow hover:shadow-md" href="first-environment">
+      <div class="font-bold mb-2">🛠️ Building Environments</div>
+      <p>Create your own custom environments for agentic training.</p>
+      <p class="text-sm font-medium">Your First Environment →</p>
+    </a>
+    <a class="!no-underline border dark:border-gray-700 p-5 rounded-lg shadow hover:shadow-md" href="rl-integration">
+      <div class="font-bold mb-2">🧠 Training</div>
+      <p>Integrate OpenEnv with RL frameworks for agent training.</p>
+      <p class="text-sm font-medium">RL Integration →</p>
+    </a>
+  </div>
+</div>
 
 ## Using Environments
 

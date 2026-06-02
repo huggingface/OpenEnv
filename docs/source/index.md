@@ -8,33 +8,34 @@
 
 Training RL agents—especially in agentic settings like code generation, web browsing, or game playing—requires environments that are:
 
-::::{grid} 1 2 2 3
-:gutter: 3
-
-:::{grid-item-card} 🎮 Gymnasium-Style APIs
-Familiar `step()`, `reset()`, and `state()` interface for seamless integration with existing RL frameworks.
-:::
-
-:::{grid-item-card} Container-First Design
-Package environments as containers for consistent, reproducible deployments across any infrastructure.
-:::
-
-:::{grid-item-card} HTTP-Native
-Deploy environments as HTTP services for distributed training and remote execution.
-:::
-
-:::{grid-item-card} Secure Isolation
-Run untrusted agent code safely with sandboxed execution environments.
-:::
-
-:::{grid-item-card} Rich Environment Library
-Pre-built environments for games, coding, web browsing, and more.
-:::
-
-:::{grid-item-card} CLI Tools
-Powerful command-line interface for environment management and deployment.
-:::
-::::
+<div class="mt-6">
+  <div class="w-full flex flex-col space-y-4 md:space-y-0 md:grid md:grid-cols-3 md:gap-4">
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">🎮 Gymnasium-Style APIs</div>
+      <p>Familiar <code>step()</code>, <code>reset()</code>, and <code>state()</code> interface for seamless integration with existing RL frameworks.</p>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Container-First Design</div>
+      <p>Package environments as containers for consistent, reproducible deployments across any infrastructure.</p>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">HTTP-Native</div>
+      <p>Deploy environments as HTTP services for distributed training and remote execution.</p>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Secure Isolation</div>
+      <p>Run untrusted agent code safely with sandboxed execution environments.</p>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Rich Environment Library</div>
+      <p>Pre-built environments for games, coding, web browsing, and more.</p>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">CLI Tools</div>
+      <p>Powerful command-line interface for environment management and deployment.</p>
+    </div>
+  </div>
+</div>
 
 ## Getting Started
 
@@ -42,7 +43,7 @@ New to OpenEnv? Follow our recommended learning path:
 
 1. **[Getting Started Series](tutorials/index)** — A 5-part series covering what OpenEnv is, how to use and build environments, and how to contribute. No GPU required.
 
-2. **[Build Your Own Environment](auto_getting_started/environment-builder)** — The complete reference guide for creating, packaging, and deploying custom environments with Docker and Hugging Face Hub.
+2. **[Build Your Own Environment](getting_started/environment-builder)** — The complete reference guide for creating, packaging, and deploying custom environments with Docker and Hugging Face Hub.
 
 3. **[Simulation vs Production Mode](guides/simulation-vs-production)** — Understand when to use the training loop, when to expose MCP directly, and how tools behave in each mode.
 

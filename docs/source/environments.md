@@ -6,592 +6,277 @@ The environments listed here may not reflect the latest additions. For the offic
 
 The OpenEnv community has built a catalog of ready-to-run environments that cover deterministic smoke tests, full developer workflows, and multi-step reasoning challenges. Explore the surface area below and jump directly into the guides for each environment.
 
-`````{grid} 1 2 3 3
-:gutter: 3
-
-````{grid-item-card} Echo
-:class-card: sd-border-1
-
-Minimal observation/action loop for verifying client integrations, CI pipelines, and onboarding flows in seconds.
-
-+++
-```{button-link} environments/echo.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-```{button-link} https://huggingface.co/spaces/openenv/echo_env
-:color: warning
-:outline:
-
-🤗 Hugging Face
-```
-````
-
-````{grid-item-card} Coding
-:class-card: sd-border-1
-
-Secure sandbox with filesystem access and evaluation hooks for executing generated code and building autonomous dev workflows.
-
-+++
-```{button-link} environments/coding.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-```{button-link} https://huggingface.co/spaces/openenv/coding_env
-:color: warning
-:outline:
-
-🤗 Hugging Face
-```
-````
-
-````{grid-item-card} Jupyter
-:class-card: sd-border-1
-
-Notebook-style coding environment backed by E2B with setup/verify hooks and a web UI for interactive runs.
-
-+++
-```{button-link} environments/jupyter.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-````
-
-````{grid-item-card} Terminus
-:class-card: sd-border-1
-
-Terminal-first coding environment with high-contrast shell output and session controls for execute/verify/close flows.
-
-+++
-```{button-link} environments/terminus.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-````
-
-````{grid-item-card} Coding Tools
-:class-card: sd-border-1
-
-SETA-style multi-tool coding environment with shell, file editing, search, todos, and submit verification.
-
-+++
-```{button-link} environments/coding_tools.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-````
-
-````{grid-item-card} Chat
-:class-card: sd-border-1
-
-Message-driven loop tailored for conversational agents that need structured turns, safety rails, and message attribution.
-
-+++
-```{button-link} environments/chat.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-```{button-link} https://huggingface.co/spaces/openenv/chat_env
-:color: warning
-:outline:
-
-🤗 Hugging Face
-```
-````
-
-````{grid-item-card} Atari
-:class-card: sd-border-1
-
-Classic Arcade Learning Environment tasks packaged for fast benchmarking of reinforcement-learning style agents.
-
-+++
-```{button-link} environments/atari.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-```{button-link} https://huggingface.co/spaces/openenv/atari_env
-:color: warning
-:outline:
-
-🤗 Hugging Face
-```
-````
-
-````{grid-item-card} OpenSpiel
-:class-card: sd-border-1
-
-Multi-agent, game-theory workloads powered by DeepMind's OpenSpiel suite, ideal for search and self-play experiments.
-
-+++
-```{button-link} environments/openspiel.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-```{button-link} https://huggingface.co/spaces/openenv/openspiel_env
-:color: warning
-:outline:
-
-🤗 Hugging Face
-```
-````
-
-````{grid-item-card} SUMO-RL
-:class-card: sd-border-1
-
-Traffic control scenarios with SUMO simulators for agents that reason about continuous control and scheduling.
-
-+++
-```{button-link} environments/sumo.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-````
-
-````{grid-item-card} FinRL
-:class-card: sd-border-1
-
-Financial market simulations with portfolio APIs, perfect for RLHF strategies and algorithmic trading experiments.
-
-+++
-```{button-link} environments/finrl.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-````
-
-````{grid-item-card} TextArena
-:class-card: sd-border-1
-
-Multi-task text arena for language-game competitions such as Wordle, reasoning puzzles, and program synthesis.
-
-+++
-```{button-link} environments/textarena.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-```{button-link} https://huggingface.co/spaces/burtenshaw/textarena_env
-:color: warning
-:outline:
-
-🤗 Hugging Face
-```
-````
-
-````{grid-item-card} Git
-:class-card: sd-border-1
-
-Teaches agents to navigate repositories, inspect diffs, and land changes via Git-native operations.
-
-+++
-```{button-link} environments/git.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-````
-
-````{grid-item-card} DIPG Safety
-:class-card: sd-border-1
-
-Safety-critical diagnostics from the DIPG benchmark, highlighting guardrails, adversarial prompts, and risk scoring.
-
-+++
-```{button-link} environments/dipg.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-```{button-link} https://huggingface.co/spaces/surfiniaburger/dipg-gym
-:color: warning
-:outline:
-
-🤗 Hugging Face
-```
-````
-
-````{grid-item-card} Snake
-:class-card: sd-border-1
-
-Classic snake game environment for RL research with configurable grids, partial observability, and customizable rewards.
-
-+++
-```{button-link} environments/snake.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-```{button-link} https://huggingface.co/spaces/Crashbandicoote2/snake_env
-:color: warning
-:outline:
-
-🤗 Hugging Face
-```
-````
-
-````{grid-item-card} Web Search
-:class-card: sd-border-1
-
-Web search environment for RL research with configurable grids, partial observability, and customizable rewards.
-
-+++
-```{button-link} environments/websearch.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-```{button-link} https://huggingface.co/spaces/lawhy/web_search
-:color: warning
-:outline:
-
-🤗 Hugging Face
-```
-````
-
-````{grid-item-card} BrowserGym
-:class-card: sd-border-1
-
-Browser automation environment for web agents with DOM interaction, navigation, and multi-step task completion.
-
-+++
-```{button-link} environments/browsergym.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-```{button-link} https://huggingface.co/spaces/burtenshaw/browsergym-v2
-:color: warning
-:outline:
-
-🤗 Hugging Face
-```
-````
-
-````{grid-item-card} KernRL
-:class-card: sd-border-1
-
-RL environment for GPU kernel optimization. Train LLM agents to write fast CUDA/Triton kernels that beat baseline implementations.
-
-+++
-```{button-link} environments/kernrl.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-````
-
-````{grid-item-card} Calendar
-:class-card: sd-border-1
-
-Calendar tool-use environment exposing a Calendar Gym through the OpenEnv reset/step/state interface for scheduling agents.
-
-+++
-```{button-link} environments/calendar.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-````
-
-````{grid-item-card} CARLA
-:class-card: sd-border-1
-
-Embodied evaluation environment for testing LLM decision-making in a full 3D driving simulator with irreversible consequences and ethical trolley scenarios.
-
-+++
-```{button-link} environments/carla.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-```{button-link} https://huggingface.co/spaces/sergiopaniego/carla-env
-:color: warning
-:outline:
-
-🤗 Hugging Face
-```
-````
-
-````{grid-item-card} Chess
-:class-card: sd-border-1
-
-Chess RL environment powered by the moonfish engine with configurable opponents, position evaluation, and full chess rules.
-
-+++
-```{button-link} environments/chess.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-````
-
-````{grid-item-card} Connect4
-:class-card: sd-border-1
-
-Classic Connect Four board game environment for training agents on turn-based strategy with a 6×7 grid.
-
-+++
-```{button-link} environments/connect4.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-````
-
-````{grid-item-card} DM Control
-:class-card: sd-border-1
-
-Generic OpenEnv wrapper for dm_control.suite, providing access to all MuJoCo-based continuous control tasks like cartpole, walker, and humanoid.
-
-+++
-```{button-link} environments/dm_control.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-````
-
-````{grid-item-card} FinQA
-:class-card: sd-border-1
-
-Financial question-answering environment that evaluates LLMs on complex financial questions using tool calls on SEC 10-K filing data.
-
-+++
-```{button-link} environments/finqa.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-````
-
-````{grid-item-card} Grid World
-:class-card: sd-border-1
-
-Simple 5×5 grid world RL testbed and step-by-step guide for building new OpenEnv environments from scratch.
-
-+++
-```{button-link} environments/grid_world.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-```{button-link} https://huggingface.co/spaces/yuvrajpant56/grid_world_env
-:color: warning
-:outline:
-
-🤗 Hugging Face
-```
-````
-
-````{grid-item-card} Julia
-:class-card: sd-border-1
-
-Julia code execution environment with test result tracking and reward calculation for RL training on Julia programming tasks.
-
-+++
-```{button-link} environments/julia.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-````
-
-````{grid-item-card} Maze
-:class-card: sd-border-1
-
-Gridworld maze where agents navigate from start to exit while avoiding walls, with configurable 8×8 layouts.
-
-+++
-```{button-link} environments/maze.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-````
-
-````{grid-item-card} OpenApp
-:class-card: sd-border-1
-
-Web application simulation wrapping the OpenApps framework and BrowserGym for training UI agents on calendar, todo, messenger, and maps apps.
-
-+++
-```{button-link} environments/openapp.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-````
-
-````{grid-item-card} Reasoning Gym
-:class-card: sd-border-1
-
-Integrates the Reasoning Gym library to provide single-step reasoning tasks with configurable datasets and scoring.
-
-+++
-```{button-link} environments/reasoning_gym.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-````
-
-````{grid-item-card} REPL
-:class-card: sd-border-1
-
-Python REPL environment for code execution tasks based on the Recursive Language Models paradigm with sandboxed execution and context loading.
-
-+++
-```{button-link} environments/repl.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-````
-
-````{grid-item-card} TB2
-:class-card: sd-border-1
-
-OpenEnv wrapper for Terminal-Bench 2 tasks with local and Docker execution modes for terminal-based agent evaluation.
-
-+++
-```{button-link} environments/tbench2.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-````
-
-````{grid-item-card} Unity
-:class-card: sd-border-1
-
-OpenEnv wrapper for Unity ML-Agents environments, providing access to Unity's RL environments through HTTP/WebSocket interfaces.
-
-+++
-```{button-link} environments/unity.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-````
-
-````{grid-item-card} Wildfire
-:class-card: sd-border-1
-
-Autonomous wildfire-control simulation where agents contain spreading fires using water, firebreaks, and timing under dynamic conditions.
-
-+++
-```{button-link} environments/wildfire.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-````
-
-````{grid-item-card} Agent World Model
-:class-card: sd-border-1
-
-AgentWorldModel-1K — 1,000 synthetic MCP tool-use environments with 10,000 tasks for large-scale agentic RL training.
-
-+++
-```{button-link} environments/agent_world_model.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-```{button-link} https://huggingface.co/spaces/ChilleD/agent_world_model_env
-:color: warning
-:outline:
-
-🤗 Hugging Face
-```
-````
-
-````{grid-item-card} Opencode
-:class-card: sd-border-1
-
-`opencode_env` runs the OpenCode coding agent inside an isolated E2B sandbox against any OpenAI-compatible LLM endpoint, optionally capturing per-token logpr...
-
-+++
-```{button-link} environments/opencode.html
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-````
-
-`````
+<div class="mt-6">
+  <div class="w-full flex flex-col space-y-4 md:space-y-0 md:grid md:grid-cols-3 md:gap-4">
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Echo</div>
+      <p class="text-sm">Minimal observation/action loop for verifying client integrations, CI pipelines, and onboarding flows in seconds.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/echo" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+        <a href="https://huggingface.co/spaces/openenv/echo_env" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">🤗 HF</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Coding</div>
+      <p class="text-sm">Secure sandbox with filesystem access and evaluation hooks for executing generated code and building autonomous dev workflows.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/coding" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+        <a href="https://huggingface.co/spaces/openenv/coding_env" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">🤗 HF</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Jupyter</div>
+      <p class="text-sm">Notebook-style coding environment backed by E2B with setup/verify hooks and a web UI for interactive runs.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/jupyter" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Terminus</div>
+      <p class="text-sm">Terminal-first coding environment with high-contrast shell output and session controls for execute/verify/close flows.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/terminus" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Coding Tools</div>
+      <p class="text-sm">SETA-style multi-tool coding environment with shell, file editing, search, todos, and submit verification.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/coding_tools" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Chat</div>
+      <p class="text-sm">Message-driven loop tailored for conversational agents that need structured turns, safety rails, and message attribution.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/chat" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+        <a href="https://huggingface.co/spaces/openenv/chat_env" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">🤗 HF</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Atari</div>
+      <p class="text-sm">Classic Arcade Learning Environment tasks packaged for fast benchmarking of reinforcement-learning style agents.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/atari" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+        <a href="https://huggingface.co/spaces/openenv/atari_env" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">🤗 HF</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">OpenSpiel</div>
+      <p class="text-sm">Multi-agent, game-theory workloads powered by DeepMind's OpenSpiel suite, ideal for search and self-play experiments.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/openspiel" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+        <a href="https://huggingface.co/spaces/openenv/openspiel_env" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">🤗 HF</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">SUMO-RL</div>
+      <p class="text-sm">Traffic control scenarios with SUMO simulators for agents that reason about continuous control and scheduling.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/sumo" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">FinRL</div>
+      <p class="text-sm">Financial market simulations with portfolio APIs, perfect for RLHF strategies and algorithmic trading experiments.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/finrl" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">TextArena</div>
+      <p class="text-sm">Multi-task text arena for language-game competitions such as Wordle, reasoning puzzles, and program synthesis.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/textarena" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+        <a href="https://huggingface.co/spaces/burtenshaw/textarena_env" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">🤗 HF</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Git</div>
+      <p class="text-sm">Teaches agents to navigate repositories, inspect diffs, and land changes via Git-native operations.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/git" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">DIPG Safety</div>
+      <p class="text-sm">Safety-critical diagnostics from the DIPG benchmark, highlighting guardrails, adversarial prompts, and risk scoring.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/dipg" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+        <a href="https://huggingface.co/spaces/surfiniaburger/dipg-gym" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">🤗 HF</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Snake</div>
+      <p class="text-sm">Classic snake game environment for RL research with configurable grids, partial observability, and customizable rewards.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/snake" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+        <a href="https://huggingface.co/spaces/Crashbandicoote2/snake_env" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">🤗 HF</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Web Search</div>
+      <p class="text-sm">Web search environment for RL research with configurable grids, partial observability, and customizable rewards.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/websearch" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+        <a href="https://huggingface.co/spaces/lawhy/web_search" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">🤗 HF</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">BrowserGym</div>
+      <p class="text-sm">Browser automation environment for web agents with DOM interaction, navigation, and multi-step task completion.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/browsergym" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+        <a href="https://huggingface.co/spaces/burtenshaw/browsergym-v2" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">🤗 HF</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">KernRL</div>
+      <p class="text-sm">RL environment for GPU kernel optimization. Train LLM agents to write fast CUDA/Triton kernels that beat baseline implementations.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/kernrl" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Calendar</div>
+      <p class="text-sm">Calendar tool-use environment exposing a Calendar Gym through the OpenEnv reset/step/state interface for scheduling agents.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/calendar" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">CARLA</div>
+      <p class="text-sm">Embodied evaluation environment for testing LLM decision-making in a full 3D driving simulator with irreversible consequences and ethical trolley scenarios.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/carla" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+        <a href="https://huggingface.co/spaces/sergiopaniego/carla-env" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">🤗 HF</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Chess</div>
+      <p class="text-sm">Chess RL environment powered by the moonfish engine with configurable opponents, position evaluation, and full chess rules.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/chess" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Connect4</div>
+      <p class="text-sm">Classic Connect Four board game environment for training agents on turn-based strategy with a 6×7 grid.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/connect4" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">DM Control</div>
+      <p class="text-sm">Generic OpenEnv wrapper for dm_control.suite, providing access to all MuJoCo-based continuous control tasks like cartpole, walker, and humanoid.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/dm_control" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">FinQA</div>
+      <p class="text-sm">Financial question-answering environment that evaluates LLMs on complex financial questions using tool calls on SEC 10-K filing data.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/finqa" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Grid World</div>
+      <p class="text-sm">Simple 5×5 grid world RL testbed and step-by-step guide for building new OpenEnv environments from scratch.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/grid_world" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+        <a href="https://huggingface.co/spaces/yuvrajpant56/grid_world_env" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">🤗 HF</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Julia</div>
+      <p class="text-sm">Julia code execution environment with test result tracking and reward calculation for RL training on Julia programming tasks.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/julia" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Maze</div>
+      <p class="text-sm">Gridworld maze where agents navigate from start to exit while avoiding walls, with configurable 8×8 layouts.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/maze" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">OpenApp</div>
+      <p class="text-sm">Web application simulation wrapping the OpenApps framework and BrowserGym for training UI agents on calendar, todo, messenger, and maps apps.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/openapp" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Reasoning Gym</div>
+      <p class="text-sm">Integrates the Reasoning Gym library to provide single-step reasoning tasks with configurable datasets and scoring.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/reasoning_gym" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">REPL</div>
+      <p class="text-sm">Python REPL environment for code execution tasks based on the Recursive Language Models paradigm with sandboxed execution and context loading.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/repl" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">TB2</div>
+      <p class="text-sm">OpenEnv wrapper for Terminal-Bench 2 tasks with local and Docker execution modes for terminal-based agent evaluation.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/tbench2" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Unity</div>
+      <p class="text-sm">OpenEnv wrapper for Unity ML-Agents environments, providing access to Unity's RL environments through HTTP/WebSocket interfaces.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/unity" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Wildfire</div>
+      <p class="text-sm">Autonomous wildfire-control simulation where agents contain spreading fires using water, firebreaks, and timing under dynamic conditions.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/wildfire" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Agent World Model</div>
+      <p class="text-sm">AgentWorldModel-1K — 1,000 synthetic MCP tool-use environments with 10,000 tasks for large-scale agentic RL training.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/agent_world_model" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+        <a href="https://huggingface.co/spaces/ChilleD/agent_world_model_env" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">🤗 HF</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Opencode</div>
+      <p class="text-sm"><code>opencode_env</code> runs the OpenCode coding agent inside an isolated E2B sandbox against any OpenAI-compatible LLM endpoint, optionally capturing per-token logprobs.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/opencode" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
+  </div>
+</div>
 
 ```{tip}
-Want to publish your own environment? Head over to the [Build Your Own Environment](auto_getting_started/environment-builder.md) guide for a step-by-step walkthrough.
+Want to publish your own environment? Head over to the [Build Your Own Environment](getting_started/environment-builder.md) guide for a step-by-step walkthrough.
 ```
 
 ## Community Environments
 
-`````{grid} 1 2 3 3
-:gutter: 3
-
-````{grid-item-card} RLVE Gym
-:class-card: sd-border-1
-
-A suite of 400 environments that procedurally generate reasoning problems for LM training with configurable difficulty.
-
-+++
-```{button-link} https://huggingface.co/spaces/ZhiyuanZeng/RLVE_Gym/blob/main/README.md
-:color: primary
-:outline:
-
-{octicon}`file;1em` Docs
-```
-```{button-link} https://huggingface.co/spaces/ZhiyuanZeng/RLVE_Gym
-:color: warning
-:outline:
-
-🤗 Hugging Face
-```
-````
-
-`````
+<div class="mt-6">
+  <div class="w-full flex flex-col space-y-4 md:space-y-0 md:grid md:grid-cols-3 md:gap-4">
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">RLVE Gym</div>
+      <p class="text-sm">A suite of 400 environments that procedurally generate reasoning problems for LM training with configurable difficulty.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="https://huggingface.co/spaces/ZhiyuanZeng/RLVE_Gym/blob/main/README.md" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+        <a href="https://huggingface.co/spaces/ZhiyuanZeng/RLVE_Gym" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">🤗 HF</a>
+      </div>
+    </div>
+  </div>
+</div>

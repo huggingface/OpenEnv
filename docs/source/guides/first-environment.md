@@ -1,7 +1,7 @@
 # Your First Environment
 
 :::{note}
-This page is a condensed preview. For the end-to-end walk-through — including Docker packaging, `openenv.yaml`, and Hugging Face Space deployment — see the [full environment builder guide](../auto_getting_started/environment-builder.md).
+This page is a condensed preview. For the end-to-end walk-through — including Docker packaging, `openenv.yaml`, and Hugging Face Space deployment — see the [full environment builder guide](../getting_started/environment-builder.md).
 :::
 
 ## Overview
@@ -52,4 +52,4 @@ class EchoEnvironment(Environment[EchoAction, EchoObservation, EchoState]):
 
 - [Environment Anatomy](environment-anatomy.md) - Deep dive into structure
 - [Deployment](deployment.md) - Deploy to Docker and HF Spaces
-- [Full Guide](../auto_getting_started/environment-builder.md) - Complete documentation
+- [Full Guide](../getting_started/environment-builder.md) - Complete documentation
