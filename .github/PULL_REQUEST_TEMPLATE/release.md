@@ -6,6 +6,7 @@
 - [ ] `pyproject.toml` version changed from `X.Y.Z.dev0` → `X.Y.Z` (no `.dev0` suffix)
 - [ ] `hf-staging/` is NOT in this PR's diff
 - [ ] No `print()`, `breakpoint()`, or `TODO` in release-critical paths
+- [ ] Release notes updated for user-facing changes, including project coordination or governance changes
 
 ### CI gates (must be green before merge)
 - [ ] `test` passes on Python 3.11

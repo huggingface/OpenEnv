@@ -88,12 +88,15 @@ In addition to making it easier for researchers and RL framework writers, we als
 
 The OpenEnv CLI (`openenv`) provides commands to initialize new environments and deploy them to Hugging Face Spaces.
 
+OpenEnv is openly governed by a technical committee that includes Hugging Face, Unsloth, Reflection, and Meta PyTorch. The committee coordinates project direction, major technical decisions, RFCs, and release planning through the public issue tracker, pull requests, and RFC process.
+
 > ⚠️ **Early Development Warning** OpenEnv is currently in an experimental
 > stage. You should expect bugs, incomplete features, and APIs that may change
-> in future versions. The project welcomes bugfixes, but to make sure things are
-> well coordinated you should discuss any significant change before starting the
-> work. It's recommended that you signal your intention to contribute in the
-> issue tracker, either by filing a new issue or by claiming an existing one.
+> in future versions. The project welcomes bugfixes, but significant changes
+> should be discussed before implementation so the technical committee and
+> community can coordinate scope, compatibility, and release timing. It's
+> recommended that you signal your intention to contribute in the issue tracker,
+> either by filing a new issue or by claiming an existing one.
 
 ### RFCs
 
@@ -380,9 +383,9 @@ See the [Oumi example](https://github.com/oumi-ai/oumi/blob/main/notebooks/Oumi%
 > Browse the full catalog of community environments at [meta-pytorch.org/OpenEnv/environments](https://meta-pytorch.org/OpenEnv/environments.html).
 
 ## Community Support & Acknowledgments
-This is an open and community-centric project. If you would like to add your name here, please put up a pull request and tag @jspisak for review. Ty!!
+This is an open and community-centric project, governed in public by a technical committee that includes Hugging Face, Unsloth, Reflection, and Meta PyTorch. If you would like to add your project or organization here, please open a pull request for maintainer review.
 
-Supporters include: Meta-PyTorch, Hugging Face, [Scaler AI Labs](https://scalerailabs.com), [Patronus AI](https://patronus.ai), [Surge AI](https://surgehq.ai), [LastMile AI](https://www.lastmileai.dev), Unsloth AI, Reflection AI, vLLM, SkyRL (UC-Berkeley), LightningAI, Axolotl AI, Stanford Scaling Intelligence Lab, Mithril, [OpenMined](https://openmined.org/), [Fleet AI](https://fleetai.com), [Halluminate](https://halluminate.ai/), [Turing](https://www.turing.com/), [Scale AI](https://scale.com/), [Scorecard](https://www.scorecard.io/) ..
+Supporters include: Meta-PyTorch, Hugging Face, [Scaler AI Labs](https://scalerailabs.com), [Patronus AI](https://patronus.ai), [Surge AI](https://surgehq.ai), [LastMile AI](https://www.lastmileai.dev), Unsloth, Reflection, vLLM, SkyRL (UC-Berkeley), LightningAI, Axolotl AI, Stanford Scaling Intelligence Lab, Mithril, [OpenMined](https://openmined.org/), [Fleet AI](https://fleetai.com), [Halluminate](https://halluminate.ai/), [Turing](https://www.turing.com/), [Scale AI](https://scale.com/), [Scorecard](https://www.scorecard.io/) ..
 
 And we'd also like to acknowledge the team at Farama Foundation as the OpenEnv API was heavily inspired by the work you all have done on Gymnasium. Cheers!
 
