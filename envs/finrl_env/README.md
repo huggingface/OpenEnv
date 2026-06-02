@@ -19,7 +19,7 @@ First, build the base image (from OpenEnv root):
 
 ```bash
 cd OpenEnv
-docker build -t envtorch-base:latest -f src/core/containers/images/Dockerfile .
+docker build -t envtorch-base:latest -f src/openenv/core/containers/images/Dockerfile .
 ```
 
 Then build the FinRL environment image:
@@ -311,7 +311,7 @@ model.learn(total_timesteps=10000)
 
 2. Build base image if missing:
    ```bash
-   docker build -t envtorch-base:latest -f src/core/containers/images/Dockerfile .
+   docker build -t envtorch-base:latest -f src/openenv/core/containers/images/Dockerfile .
    ```
 
 ### Import errors

@@ -27,7 +27,9 @@ LICENSE file in the root directory of this source tree.
 
 # OpenApp Environment
 
+<div align="center">
 <img src="assets/OpenApps_OpenEnv_RL.png" alt="OpenApps Environment" width="800"/>
+</div>
 
 *A web application simulation environment for OpenEnv that wraps the [OpenApps](https://github.com/facebookresearch/OpenApps) framework and BrowserGym.*
 

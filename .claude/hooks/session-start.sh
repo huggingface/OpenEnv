@@ -1,5 +1,5 @@
 #!/bin/bash
-# SessionStart hook: Show context and set mode based on location
+# SessionStart hook: Show context and set mode based on TDD state
 
 echo ""
 
@@ -10,29 +10,44 @@ fi
 
 TOPLEVEL=$(git rev-parse --show-toplevel)
 
-# Check if in worktree
-if [[ "$TOPLEVEL" == *".worktrees"* ]]; then
+# Source TDD state helpers
+source "$(dirname "$0")/tdd-state.sh"
+
+if is_tdd_active; then
+    # TDD mode activated via /work-on-issue
+    ISSUE=$(get_tdd_issue)
     FEATURE=$(basename "$TOPLEVEL")
+    BRANCH=$(git branch --show-current 2>/dev/null)
+
+    echo "==================================================================="
+    echo "  TDD MODE ACTIVE  (issue #${ISSUE:-?})"
+    echo "==================================================================="
+    echo "  Worktree: $FEATURE"
+    echo "  Branch: $BRANCH"
+    echo ""
+    echo "  Direct code edits blocked."
+    echo ""
+    echo "  Workflow:"
+    echo "    /write-tests    ->  create failing tests"
+    echo "    /implement      ->  make tests pass"
+    echo "    /update-docs    ->  fix stale docs"
+    echo "    /simplify       ->  clean up (optional)"
+    echo "    /pre-submit-pr  ->  validate before commit"
+    echo ""
+    echo "  Say \"skip TDD\" to bypass blocking"
+    echo "==================================================================="
+elif [[ "$TOPLEVEL" == *".worktrees"* ]]; then
+    # In a worktree but TDD not activated
+    FEATURE=$(basename "$TOPLEVEL")
+    BRANCH=$(git branch --show-current 2>/dev/null)
+
     echo "==================================================================="
     echo "  WORKTREE: $FEATURE"
     echo "==================================================================="
-
-    # Try to find issue number from branch name
-    BRANCH=$(git branch --show-current 2>/dev/null)
-    if [[ "$BRANCH" =~ ([0-9]+) ]]; then
-        echo "  Issue: #${BASH_REMATCH[1]}"
-    fi
     echo "  Branch: $BRANCH"
     echo ""
-    echo "  TDD MODE ACTIVE - Direct code edits blocked"
-    echo ""
-    echo "  Workflow:"
-    echo "    /write-tests  ->  create failing tests"
-    echo "    /implement    ->  make tests pass"
-    echo "    /simplify     ->  clean up (optional)"
-    echo "    /pre-submit-pr   ->  validate before commit"
-    echo ""
-    echo "  Say \"skip TDD\" to bypass blocking"
+    echo "  Direct edits allowed. To enable TDD enforcement:"
+    echo "    /work-on-issue #<N>  ->  start TDD workflow"
     echo "==================================================================="
 else
     echo "==================================================================="

@@ -1,0 +1,14 @@
+# Core dependencies for CARLA environment server
+fastapi==0.115.0
+uvicorn==0.30.6
+pydantic==2.9.2
+websockets==13.1
+
+# Navigation agents dependencies
+numpy==1.26.4
+shapely==2.0.6
+networkx==3.4.2
+
+# CARLA client (installed separately in Dockerfiles via: pip install carla-ue5-api==0.10.0)
+
+# OpenEnv core (installed from GitHub in Dockerfiles)

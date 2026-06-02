@@ -11,7 +11,7 @@
 # It includes the minimal dependencies needed to run HTTP environment servers
 # and uv for fast dependency management.
 #
-# Build from repo root: docker build -t openenv-base:latest -f src/core/containers/images/Dockerfile .
+# Build from repo root: docker build -t openenv-base:latest -f src/openenv/core/containers/images/Dockerfile .
 # Tag:   docker tag openenv-base:latest openenv-base:0.2.0
 #
 
@@ -46,6 +46,9 @@ COPY --from=builder /usr/local/bin/uv /usr/local/bin/uvx /usr/local/bin/
 
 # Copy installed Python packages from builder
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+
+# Copy console scripts installed by pip (uvicorn, fastapi, etc.)
+COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/fastapi /usr/local/bin/
 
 # Set working directory
 WORKDIR /app

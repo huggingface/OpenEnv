@@ -17,15 +17,17 @@ from typing import Any, Dict
 try:
     # In-repo imports (when running from OpenEnv repository)
     from openenv.core.client_types import StepResult
-    from openenv.core.env_server.types import State
     from openenv.core.env_client import EnvClient
+    from openenv.core.env_server.types import State
+
     from .models import SnakeAction, SnakeObservation
 except ImportError:
+    from models import SnakeAction, SnakeObservation
+
     # Standalone imports (when environment is standalone with openenv from pip)
     from openenv.core.client_types import StepResult
-    from openenv.core.env_server.types import State
     from openenv.core.env_client import EnvClient
-    from models import SnakeAction, SnakeObservation
+    from openenv.core.env_server.types import State
 
 
 class SnakeEnv(EnvClient[SnakeAction, SnakeObservation, State]):

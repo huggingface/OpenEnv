@@ -358,7 +358,11 @@ class UnityEnv(EnvClient[UnityAction, UnityObservation, UnityState]):
         if cwd:
             src_path = str(cwd / "src")
             existing_path = env.get("PYTHONPATH", "")
-            env["PYTHONPATH"] = f"{src_path}:{cwd}:{existing_path}" if existing_path else f"{src_path}:{cwd}"
+            env["PYTHONPATH"] = (
+                f"{src_path}:{cwd}:{existing_path}"
+                if existing_path
+                else f"{src_path}:{cwd}"
+            )
 
         # Start the server
         cmd = [

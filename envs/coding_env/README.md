@@ -17,42 +17,53 @@ A Python code execution environment that runs arbitrary Python code and returns 
 
 ## Quick Start
 
-The simplest way to use the Coding environment is through the `CodingEnv` class:
+The simplest way to use the Coding environment is through the `CodingEnv` class. The client is **async by default**:
 
 ```python
-from envs.coding_env import CodeAction, CodingEnv
+import asyncio
+from coding_env import CodeAction, CodingEnv
 
-try:
+async def main():
     # Create environment from Docker image
-    coding_env = CodingEnv.from_docker_image("coding-env:latest")
+    client = await CodingEnv.from_docker_image("coding-env:latest")
 
-    # Reset
-    result = coding_env.reset()
-    print(f"Reset complete: exit_code={result.observation.exit_code}")
+    async with client:
+        # Reset
+        result = await client.reset()
+        print(f"Reset complete: exit_code={result.observation.exit_code}")
 
-    # Execute Python code
-    code_samples = [
-        "print('Hello, World!')",
-        "x = 5 + 3\nprint(f'Result: {x}')",
-        "import math\nprint(math.pi)"
-    ]
+        # Execute Python code
+        code_samples = [
+            "print('Hello, World!')",
+            "x = 5 + 3\nprint(f'Result: {x}')",
+            "import math\nprint(math.pi)"
+        ]
 
-    for code in code_samples:
-        result = coding_env.step(CodeAction(code=code))
-        print(f"Code: {code}")
-        print(f"  → stdout: {result.observation.stdout.strip()}")
-        print(f"  → exit_code: {result.observation.exit_code}")
+        for code in code_samples:
+            result = await client.step(CodeAction(code=code))
+            print(f"Code: {code}")
+            print(f"  → stdout: {result.observation.stdout.strip()}")
+            print(f"  → exit_code: {result.observation.exit_code}")
 
-finally:
-    # Always clean up
-    coding_env.close()
+asyncio.run(main())
 ```
 
-That's it! The `CodingEnv.from_docker_image()` method handles:
+For **synchronous usage**, use the `.sync()` wrapper:
+
+```python
+from coding_env import CodeAction, CodingEnv
+
+with CodingEnv(base_url="http://localhost:8000").sync() as client:
+    result = client.reset()
+    result = client.step(CodeAction(code="print('Hello!')"))
+    print(result.observation.stdout)
+```
+
+The `CodingEnv.from_docker_image()` method handles:
 - Starting the Docker container
 - Waiting for the server to be ready
 - Connecting to the environment
-- Container cleanup when you call `close()`
+- Container cleanup when the context manager exits
 
 ## Building the Docker Image
 
@@ -88,17 +99,20 @@ docker build -t coding-env:latest -f envs/coding_env/server/Dockerfile .
 If you already have a Coding environment server running, you can connect directly:
 
 ```python
-from envs.coding_env import CodingEnv
+from coding_env import CodeAction, CodingEnv
 
-# Connect to existing server
-coding_env = CodingEnv(base_url="<ENV_HTTP_URL_HERE>")
+# Async usage
+async with CodingEnv(base_url="http://localhost:8000") as client:
+    result = await client.reset()
+    result = await client.step(CodeAction(code="print('Hello!')"))
 
-# Use as normal
-result = coding_env.reset()
-result = coding_env.step(CodeAction(code="print('Hello!')"))
+# Sync usage
+with CodingEnv(base_url="http://localhost:8000").sync() as client:
+    result = client.reset()
+    result = client.step(CodeAction(code="print('Hello!')"))
 ```
 
-Note: When connecting to an existing server, `coding_env.close()` will NOT stop the server.
+Note: When connecting to an existing server, closing the client will NOT stop the server.
 
 ## Development & Testing
 

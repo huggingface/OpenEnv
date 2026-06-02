@@ -30,10 +30,10 @@ OpenEnv uses Test-Driven Development (TDD) enforced through Claude Code hooks.
 ### Quick Start
 
 ```bash
-# From main repo, start working on an issue
+# Start working on an issue with TDD enforcement
 /work-on-issue #42
 
-# Or manually create a worktree
+# Or create a plain worktree (no TDD — free editing)
 .claude/scripts/worktree-create.sh my-feature
 cd .worktrees/my-feature
 ```
@@ -42,29 +42,44 @@ cd .worktrees/my-feature
 
 1. **Red**: `/write-tests` - Create failing tests that encode requirements
 2. **Green**: `/implement` - Write minimal code to make tests pass
-3. **Refactor**: `/simplify` - Clean up without changing behavior
-4. **Validate**: `/pre-submit-pr` - Ensure everything passes before PR
+3. **Docs**: `/update-docs` - Fix stale references across the repo
+4. **Refactor**: `/simplify` - Clean up without changing behavior
+5. **Validate**: `/pre-submit-pr` - Ensure everything passes before PR
 
 ### When to Use TDD Mode
 
-**Use TDD (worktrees) for:**
+TDD is opt-in — it is activated only by `/work-on-issue`, not by being in a worktree.
+
+**Use TDD (`/work-on-issue`) for:**
 - New features with clear acceptance criteria
 - Bug fixes where you can write a failing test first
 - Refactoring where tests ensure nothing breaks
 
-**Skip TDD (stay in main repo) for:**
+**Skip TDD (stay in main repo or use a plain worktree) for:**
 - Quick exploration and prototyping
 - Documentation updates
 - Simple config changes
 - Discussing approaches before implementing
 
+### Multi-Issue Work
+
+For parallel work on a batch of issues:
+```bash
+/sprint 67,68,69
+```
+This uses Agent Teams (if enabled) to work on all issues in parallel,
+each in its own worktree with TDD enforcement, then creates stacked PRs.
+Without Agent Teams, it prepares worktrees and requirements for manual work.
+
 ### Bypassing TDD
 
-In a worktree, say "skip TDD" in your message to bypass the edit blocking.
+When TDD is active, say "skip TDD" in your message to bypass the edit blocking.
 This is useful for:
 - Fixing typos in code you just wrote
 - Making quick adjustments during iteration
 - Emergency hotfixes
+
+To deactivate TDD entirely: `bash .claude/hooks/tdd-deactivate.sh`
 
 ## When to Write an RFC
 

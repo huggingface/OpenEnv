@@ -172,10 +172,10 @@ From the repository root:
 
 ```bash
 # Build base image first (if not already built)
-docker build -t openenv-base:latest -f src/core/containers/images/Dockerfile .
+docker build -t openenv-base:latest -f src/openenv/core/containers/images/Dockerfile .
 
 # Build snake environment image
-docker build -t snake-env:latest -f src/envs/snake_env/server/Dockerfile .
+docker build -t snake-env:latest -f envs/snake_env/server/Dockerfile .
 ```
 
 The Dockerfile uses `pip install` with `requirements.txt` for maximum compatibility.
@@ -261,7 +261,7 @@ uv run --project . server
 Ensure the base image is built first:
 
 ```bash
-docker build -t openenv-base:latest -f src/core/containers/images/Dockerfile .
+docker build -t openenv-base:latest -f src/openenv/core/containers/images/Dockerfile .
 ```
 
 ## Citation

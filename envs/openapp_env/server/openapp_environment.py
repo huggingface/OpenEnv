@@ -28,12 +28,21 @@ try:
     # In-repo imports (when running from OpenEnv repository)
     from openenv.core.env_server.interfaces import Environment
     from openenv.core.env_server.types import State
+
     from ..models import OpenAppAction, OpenAppObservation
 except ImportError:
-    # Standalone imports (when environment is standalone with openenv-core from pip)
-    from openenv.core.env_server.interfaces import Environment
-    from openenv.core.env_server.types import State
-    from openapp_env.models import OpenAppAction, OpenAppObservation
+    try:
+        from openapp_env.models import OpenAppAction, OpenAppObservation
+
+        # Standalone imports when openenv is available.
+        from openenv.core.env_server.interfaces import Environment
+        from openenv.core.env_server.types import State
+    except ImportError:
+        from openapp_env.models import OpenAppAction, OpenAppObservation
+
+        # Backward-compatible standalone imports when only openenv_core is available.
+        from openenv_core.env_server.interfaces import Environment
+        from openenv_core.env_server.types import State
 
 
 class GenericOpenAppsTask:
@@ -60,8 +69,8 @@ class GenericOpenAppsTask:
             **kwargs: Additional arguments (ignored)
         """
         try:
-            from browsergym.core.task import AbstractBrowserTask
             import playwright.sync_api
+            from browsergym.core.task import AbstractBrowserTask
         except ImportError:
             raise ImportError(
                 "BrowserGym is required. Install with: pip install browsergym"
@@ -81,9 +90,7 @@ class GenericOpenAppsTask:
         self.timezone_id = None
         self.geolocation = None
 
-    def setup(
-        self, page: "playwright.sync_api.Page"
-    ) -> Tuple[str, Dict[str, Any]]:
+    def setup(self, page: "playwright.sync_api.Page") -> Tuple[str, Dict[str, Any]]:
         """
         Set up the task by navigating to the base URL.
 
@@ -116,9 +123,7 @@ class GenericOpenAppsTask:
         # Generic task never completes automatically
         return 0.0, False, "", {}
 
-    def cheat(
-        self, page: "playwright.sync_api.Page", chat_messages: list[str]
-    ) -> None:
+    def cheat(self, page: "playwright.sync_api.Page", chat_messages: list[str]) -> None:
         """Cheat method (no-op for generic task)."""
         pass
 
@@ -421,7 +426,7 @@ class OpenAppEnvironment(Environment):
 
         try:
             # Check if bid is a CSS selector (starts with # or other CSS selector chars)
-            if bid.startswith('#') or bid.startswith('.') or bid.startswith('['):
+            if bid.startswith("#") or bid.startswith(".") or bid.startswith("["):
                 # Use Playwright directly for CSS selectors
                 return self._execute_click_playwright(bid)
 
@@ -452,7 +457,7 @@ class OpenAppEnvironment(Environment):
 
         try:
             # Check if bid is a CSS selector (starts with # or other CSS selector chars)
-            if bid.startswith('#') or bid.startswith('.') or bid.startswith('['):
+            if bid.startswith("#") or bid.startswith(".") or bid.startswith("["):
                 # Use Playwright directly for CSS selectors
                 return self._execute_fill_playwright(bid, text)
 

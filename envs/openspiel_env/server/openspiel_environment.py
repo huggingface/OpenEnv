@@ -18,18 +18,20 @@ from typing import Any, Dict
 try:
     # In-repo imports (when running from OpenEnv repository)
     from openenv.core.env_server.interfaces import Environment
+
     from ..models import OpenSpielAction, OpenSpielObservation, OpenSpielState
     from .opponent_policies import get_opponent_policy, OpponentPolicy
 except ImportError:
+    from models import OpenSpielAction, OpenSpielObservation, OpenSpielState
+
     # Standalone imports (when environment is standalone with openenv from pip)
     from openenv.core.env_server.interfaces import Environment
-    from models import OpenSpielAction, OpenSpielObservation, OpenSpielState
     from server.opponent_policies import get_opponent_policy, OpponentPolicy
 
 # Import OpenSpiel
 try:
-    from open_spiel.python import rl_environment
     import pyspiel
+    from open_spiel.python import rl_environment
 except ImportError as e:
     raise ImportError(
         "OpenSpiel is not installed. "
@@ -64,6 +66,8 @@ class OpenSpielEnvironment(Environment):
         >>> print(obs.reward)
     """
 
+    SUPPORTS_CONCURRENT_SESSIONS = True
+
     def __init__(
         self,
         game_name: str = "catch",
@@ -80,9 +84,7 @@ class OpenSpielEnvironment(Environment):
 
         # Create OpenSpiel environment
         try:
-            self._ospiel_env = rl_environment.Environment(
-                game_name, **self.game_params
-            )
+            self._ospiel_env = rl_environment.Environment(game_name, **self.game_params)
         except Exception as e:
             raise ValueError(
                 f"Failed to create OpenSpiel game '{game_name}': {e}"
@@ -261,7 +263,9 @@ class OpenSpielEnvironment(Environment):
 
         # Create observation
         obs = OpenSpielObservation(
-            info_state=info_state.tolist() if hasattr(info_state, "tolist") else list(info_state),
+            info_state=info_state.tolist()
+            if hasattr(info_state, "tolist")
+            else list(info_state),
             legal_actions=legal_actions,
             game_phase=game_phase,
             current_player_id=current_player_id,

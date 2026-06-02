@@ -14,9 +14,8 @@ via WebSocket for persistent sessions.
 from typing import Any, Dict
 
 from openenv.core.client_types import StepResult
-
-from openenv.core.env_server.types import State
 from openenv.core.env_client import EnvClient
+from openenv.core.env_server.types import State
 
 from .models import FinRLAction, FinRLObservation
 

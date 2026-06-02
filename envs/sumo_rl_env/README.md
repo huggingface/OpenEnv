@@ -48,7 +48,7 @@ env.close()
 cd OpenEnv
 
 # Build base image first (if not already built)
-docker build -t envtorch-base:latest -f src/core/containers/images/Dockerfile .
+docker build -t envtorch-base:latest -f src/openenv/core/containers/images/Dockerfile .
 
 # Build SUMO-RL environment
 docker build -f envs/sumo_rl_env/server/Dockerfile -t sumo-rl-env:latest .

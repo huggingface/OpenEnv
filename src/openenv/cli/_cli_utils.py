@@ -44,21 +44,24 @@ def validate_env_structure(env_dir: Path, strict: bool = False) -> List[str]:
         if not (env_dir / file).exists():
             raise FileNotFoundError(f"Required file missing: {file}")
 
-    # Required directories
-    server_dir = env_dir / "server"
-    if not server_dir.exists() or not server_dir.is_dir():
-        raise FileNotFoundError("Required directory missing: server/")
+    # Dockerfile: must exist in server/ or at env root
+    has_root_dockerfile = (env_dir / "Dockerfile").exists()
+    has_server_dockerfile = (env_dir / "server" / "Dockerfile").exists()
 
-    # Server directory required files
-    server_required = [
-        "server/__init__.py",
-        "server/app.py",
-        "server/Dockerfile",
-    ]
+    if not has_root_dockerfile and not has_server_dockerfile:
+        raise FileNotFoundError(
+            "Required file missing: server/Dockerfile or Dockerfile at env root"
+        )
 
-    for file in server_required:
-        if not (env_dir / file).exists():
-            raise FileNotFoundError(f"Required file missing: {file}")
+    # When no root Dockerfile, require the traditional server/ layout
+    if not has_root_dockerfile:
+        server_dir = env_dir / "server"
+        if not server_dir.exists() or not server_dir.is_dir():
+            raise FileNotFoundError("Required directory missing: server/")
+
+        for file in ["server/__init__.py", "server/app.py"]:
+            if not (env_dir / file).exists():
+                raise FileNotFoundError(f"Required file missing: {file}")
 
     # Check for dependency management (pyproject.toml required)
     has_pyproject = (env_dir / "pyproject.toml").exists()

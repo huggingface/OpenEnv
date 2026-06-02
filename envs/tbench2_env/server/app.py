@@ -26,6 +26,10 @@ Usage:
 
     # Or run directly:
     python -m server.app
+
+Environment Variables:
+    TB2_MODE: Execution mode - "local" (default), "docker", or "auto"
+    MAX_CONCURRENT_ENVS: Maximum concurrent WebSocket sessions (default: 8)
 """
 
 import os
@@ -39,11 +43,14 @@ try:
 
     from .tbench2_env_environment import Tbench2DockerEnvironment, Tbench2Environment
 except Exception as e:  # pragma: no cover
+    from models import Tbench2Action, Tbench2Observation
+
     # Standalone imports (when environment is standalone with openenv from pip)
     from openenv.core.env_server.http_server import create_app
-    from server.tbench2_env_environment import Tbench2DockerEnvironment, Tbench2Environment
-
-    from models import Tbench2Action, Tbench2Observation
+    from server.tbench2_env_environment import (
+        Tbench2DockerEnvironment,
+        Tbench2Environment,
+    )
 
     _IMPORT_ERROR = e
 
@@ -64,12 +71,14 @@ else:
 
 
 # Create the app with web interface and README integration
+max_concurrent = int(os.getenv("MAX_CONCURRENT_ENVS", "8"))
+
 app = create_app(
     _DEFAULT_ENVIRONMENT,
     Tbench2Action,
     Tbench2Observation,
     env_name="tbench2_env" + _ENV_SUFFIX,
-    max_concurrent_envs=1,  # increase this number to allow more concurrent WebSocket sessions
+    max_concurrent_envs=max_concurrent,
 )
 
 

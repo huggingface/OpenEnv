@@ -33,9 +33,9 @@ Example:
 from __future__ import annotations
 
 import logging
-from typing import Type, Dict, Any
+from typing import Any, Dict, Type
 
-from ._discovery import get_discovery, _is_hub_url
+from ._discovery import _is_hub_url, get_discovery
 from .auto_env import AutoEnv
 
 logger = logging.getLogger(__name__)
@@ -153,9 +153,9 @@ class AutoAction:
 
             if not available_envs:
                 raise ValueError(
-                    f"No OpenEnv environments found.\n"
-                    f"Install an environment with: pip install openenv-<env-name>\n"
-                    f"Or specify a HuggingFace Hub repository: AutoAction.from_env('openenv/echo_env')"
+                    "No OpenEnv environments found.\n"
+                    "Install an environment with: pip install openenv-<env-name>\n"
+                    "Or specify a HuggingFace Hub repository: AutoAction.from_env('openenv/echo_env')"
                 )
 
             # Try to suggest similar environment names

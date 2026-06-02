@@ -1,10 +1,10 @@
 #!/bin/bash
-# PostToolUse hook for TodoWrite: Remind about TDD workflow in worktrees
+# PostToolUse hook for TodoWrite: Remind about TDD workflow when TDD is active
 
-# Check if in worktree
-TOPLEVEL=$(git rev-parse --show-toplevel 2>/dev/null)
-if [[ "$TOPLEVEL" != *".worktrees"* ]]; then
-    exit 0  # Not in worktree, no reminder needed
+# Check if TDD is active
+source "$(dirname "$0")/tdd-state.sh"
+if ! is_tdd_active; then
+    exit 0  # TDD not active, no reminder needed
 fi
 
 # Soft reminder about the workflow

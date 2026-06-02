@@ -7,8 +7,40 @@
 """Core environment interfaces and types."""
 
 from .base_transforms import CompositeTransform, NullTransform
-from .http_server import HTTPEnvServer, create_app, create_fastapi_app
+from .exceptions import (
+    ConcurrencyConfigurationError,
+    EnvironmentFactoryError,
+    OpenEnvError,
+    SessionCapacityError,
+    SessionCreationError,
+    SessionNotFoundError,
+)
+from .http_server import create_app, create_fastapi_app, HTTPEnvServer
 from .interfaces import Environment, Message, ModelTokenizer, Transform
+
+try:
+    from .mcp_environment import MCPEnvironment
+except ModuleNotFoundError:
+    MCPEnvironment = None  # type: ignore[assignment]
+
+from .mcp_types import (
+    CallToolAction,
+    CallToolObservation,
+    JsonRpcError,
+    # JSON-RPC types
+    JsonRpcErrorCode,
+    JsonRpcRequest,
+    JsonRpcResponse,
+    ListToolsAction,
+    ListToolsObservation,
+    McpMethod,
+    RESERVED_TOOL_NAMES,
+    Tool,
+    ToolError,
+    ToolErrorType,
+    WSMCPMessage,
+    WSMCPResponse,
+)
 from .route_config import GetEndpointConfig
 from .serialization import (
     deserialize_action,
@@ -17,45 +49,32 @@ from .serialization import (
 )
 from .types import (
     Action,
-    Observation,
-    State,
-    SchemaResponse,
-    HealthResponse,
     BaseMessage,
-    WSIncomingMessage,
-    WSResetMessage,
-    WSStepMessage,
-    WSStateMessage,
-    WSCloseMessage,
-    WSObservationResponse,
-    WSStateResponse,
-    WSErrorResponse,
     ConcurrencyConfig,
+    HealthResponse,
+    HealthStatus,
+    Observation,
+    SchemaResponse,
     ServerCapacityStatus,
+    ServerMode,
     SessionInfo,
+    State,
+    WSCloseMessage,
+    WSErrorCode,
+    WSErrorResponse,
+    WSIncomingMessage,
+    WSObservationResponse,
+    WSResetMessage,
+    WSStateMessage,
+    WSStateResponse,
+    WSStepMessage,
 )
-from .exceptions import (
-    OpenEnvError,
-    ConcurrencyConfigurationError,
-    SessionCapacityError,
-    SessionNotFoundError,
-    SessionCreationError,
-    EnvironmentFactoryError,
-)
-from .web_interface import create_web_interface_app, WebInterfaceManager
-from .mcp_types import (
-    Tool,
-    ToolError,
-    ToolErrorType,
-    ListToolsAction,
-    CallToolAction,
-    ListToolsObservation,
-    CallToolObservation,
-    WSMCPMessage,
-    WSMCPResponse,
-    RESERVED_TOOL_NAMES,
-)
-from .mcp_environment import MCPEnvironment
+
+try:
+    from .web_interface import create_web_interface_app, WebInterfaceManager
+except ModuleNotFoundError:
+    create_web_interface_app = None  # type: ignore[assignment]
+    WebInterfaceManager = None  # type: ignore[assignment]
 
 __all__ = [
     # Core interfaces
@@ -69,6 +88,10 @@ __all__ = [
     "State",
     "SchemaResponse",
     "HealthResponse",
+    # Enums
+    "HealthStatus",
+    "ServerMode",
+    "WSErrorCode",
     # WebSocket message types
     "BaseMessage",
     "WSIncomingMessage",
@@ -118,4 +141,10 @@ __all__ = [
     "WSMCPResponse",
     "RESERVED_TOOL_NAMES",
     "MCPEnvironment",
+    # JSON-RPC types
+    "JsonRpcErrorCode",
+    "JsonRpcError",
+    "JsonRpcRequest",
+    "JsonRpcResponse",
+    "McpMethod",
 ]

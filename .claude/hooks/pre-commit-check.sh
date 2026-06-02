@@ -10,10 +10,10 @@ if [[ "$COMMAND" != *"git commit"* ]]; then
     exit 0
 fi
 
-# Check if in worktree (where we enforce the workflow more strictly)
-TOPLEVEL=$(git rev-parse --show-toplevel 2>/dev/null)
-if [[ "$TOPLEVEL" != *".worktrees"* ]]; then
-    exit 0  # In main repo, just allow
+# Only warn when TDD is active
+source "$(dirname "$0")/tdd-state.sh"
+if ! is_tdd_active; then
+    exit 0  # TDD not active, just allow
 fi
 
 # Soft warning - don't block, just remind

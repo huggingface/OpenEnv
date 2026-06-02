@@ -28,7 +28,6 @@ from openenv.auto._discovery import (
     reset_discovery,
 )
 from openenv.auto.auto_action import AutoAction
-
 from openenv.auto.auto_env import AutoEnv
 
 
@@ -376,8 +375,9 @@ class TestUvPipDetection:
 
     def test_get_pip_command_falls_back_to_pip(self):
         """Test _get_pip_command returns pip when uv is not available."""
-        from openenv.auto.auto_env import _get_pip_command
         import sys
+
+        from openenv.auto.auto_env import _get_pip_command
 
         with patch("openenv.auto.auto_env._has_uv", return_value=False):
             cmd = _get_pip_command()
@@ -394,8 +394,9 @@ class TestUserConfirmation:
 
     def test_confirm_skipped_with_env_var(self):
         """Test confirmation is skipped when OPENENV_TRUST_REMOTE_CODE is set."""
-        from openenv.auto.auto_env import _confirm_remote_install
         import os
+
+        from openenv.auto.auto_env import _confirm_remote_install
 
         with patch.dict(os.environ, {"OPENENV_TRUST_REMOTE_CODE": "1"}):
             result = _confirm_remote_install("test/repo")
@@ -403,8 +404,9 @@ class TestUserConfirmation:
 
     def test_confirm_skipped_with_env_var_true(self):
         """Test confirmation is skipped when OPENENV_TRUST_REMOTE_CODE=true."""
-        from openenv.auto.auto_env import _confirm_remote_install
         import os
+
+        from openenv.auto.auto_env import _confirm_remote_install
 
         with patch.dict(os.environ, {"OPENENV_TRUST_REMOTE_CODE": "true"}):
             result = _confirm_remote_install("test/repo")
@@ -412,8 +414,9 @@ class TestUserConfirmation:
 
     def test_confirm_returns_false_in_non_interactive(self):
         """Test confirmation returns False in non-interactive mode."""
-        from openenv.auto.auto_env import _confirm_remote_install
         import os
+
+        from openenv.auto.auto_env import _confirm_remote_install
 
         with (
             patch.dict(os.environ, {}, clear=True),
@@ -426,8 +429,9 @@ class TestUserConfirmation:
 
     def test_confirm_prompts_user_when_interactive(self):
         """Test confirmation prompts user in interactive mode."""
-        from openenv.auto.auto_env import _confirm_remote_install
         import os
+
+        from openenv.auto.auto_env import _confirm_remote_install
 
         with (
             patch.dict(os.environ, {}, clear=True),
@@ -440,8 +444,9 @@ class TestUserConfirmation:
 
     def test_confirm_user_declines(self):
         """Test confirmation returns False when user declines."""
-        from openenv.auto.auto_env import _confirm_remote_install
         import os
+
+        from openenv.auto.auto_env import _confirm_remote_install
 
         with (
             patch.dict(os.environ, {}, clear=True),
@@ -1062,8 +1067,8 @@ class TestDockerIntegration:
 
         This test uses GenericEnvClient with skip_install=True for pure MCP environments.
         """
-        from openenv.core.generic_client import GenericEnvClient
         from openenv.core.env_server.mcp_types import CallToolAction
+        from openenv.core.generic_client import GenericEnvClient
 
         # Start Docker container using GenericEnvClient (MCP-first approach)
         env = GenericEnvClient.from_docker_image("echo-env:latest")

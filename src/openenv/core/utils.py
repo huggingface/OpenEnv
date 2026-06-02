@@ -6,6 +6,38 @@
 
 """Utility functions for OpenEnv core."""
 
+import asyncio
+import concurrent.futures
+
+
+def run_async_safely(coro):
+    """
+    Run an async coroutine safely from any context.
+
+    This handles the case where we may already be inside an async event loop
+    (e.g., when called from an async framework). In that case, asyncio.run()
+    would fail, so we use a ThreadPoolExecutor to run in a separate thread.
+
+    Args:
+        coro: The coroutine to run
+
+    Returns:
+        The result of the coroutine
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop is not None:
+        # Already in async context - run in a thread pool
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            future = pool.submit(asyncio.run, coro)
+            return future.result()
+    else:
+        # No async context - use asyncio.run() directly
+        return asyncio.run(coro)
+
 
 def convert_to_ws_url(url: str) -> str:
     """

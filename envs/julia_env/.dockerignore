@@ -1,0 +1,36 @@
+# Docker image exports - these should never be in the container
+*.tar
+julia-env.tar
+
+# Log files
+*.log
+0126llama8b_julia_log_off1
+
+# Python cache
+.venv
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+
+# Git
+.git
+.gitignore
+
+# IDE and tools
+.vscode/
+.idea/
+.claude/
+.omc/
+
+# Environment files
+.env
+.env.*
+
+# Build artifacts
+build/
+dist/
+
+# Test scripts (not needed in production image)
+test_*.sh

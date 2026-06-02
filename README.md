@@ -11,14 +11,14 @@ An e2e framework for creating, deploying and using isolated execution environmen
 
 **🚀 Featured Example:** Train LLMs to play BlackJack using [torchforge](https://github.com/meta-pytorch/torchforge) (PyTorch's agentic RL framework): [`examples/grpo_blackjack/`](examples/grpo_blackjack/)
 
-**🔥 GPU Mode Tutorial:** End to end tutorial from [GPU Mode](gpu-mode-tutorial/README.md) blog post.
+**🔥 Zero to Hero Tutorial:** End to end tutorial from our [GPU Mode](tutorial/README.md) lecture and other hackathons.
 
 ## Quick Start
 
-Install the OpenEnv core package:
+Install the OpenEnv package:
 
 ```bash
-pip install openenv-core
+pip install openenv
 ```
 
 Install an environment client (e.g., Echo):
@@ -30,25 +30,47 @@ pip install git+https://huggingface.co/spaces/openenv/echo_env
 Then use the environment:
 
 ```python
-from echo_env import EchoAction, EchoEnv
+import asyncio
+from echo_env import CallToolAction, EchoEnv
 
-# Connect to a running Space
-client = EchoEnv(base_url="https://openenv-echo-env.hf.space")
+async def main():
+    # Connect to a running Space (async context manager)
+    async with EchoEnv(base_url="https://openenv-echo-env.hf.space") as client:
+        # Reset the environment
+        result = await client.reset()
+        print(result.observation.echoed_message)  # "Echo environment ready!"
 
-# Reset the environment
-result = client.reset()
-print(result.observation.echoed_message)  # "Echo environment ready!"
+        # Send messages
+        result = await client.step(
+            CallToolAction(
+                tool_name="echo_message",
+                arguments={"message": "Hello, World!"},
+            )
+        )
+        print(result.observation.result)  # "Hello, World!"
+        print(result.reward)
 
-# Send messages
-result = client.step(EchoAction(message="Hello, World!"))
-print(result.observation.echoed_message)  # "Hello, World!"
-print(result.reward)  # 1.3 (based on message length)
-
-# Cleanup
-client.close()
+asyncio.run(main())
 ```
 
-For a detailed quick start, check out the [docs page](https://meta-pytorch.org/OpenEnv/quickstart/).
+**Synchronous usage** is also supported via the `.sync()` wrapper:
+
+```python
+from echo_env import CallToolAction, EchoEnv
+
+# Use .sync() for synchronous context manager
+with EchoEnv(base_url="https://openenv-echo-env.hf.space").sync() as client:
+    result = client.reset()
+    result = client.step(
+        CallToolAction(
+            tool_name="echo_message",
+            arguments={"message": "Hello, World!"},
+        )
+    )
+    print(result.observation.result)
+```
+
+For a detailed quick start, check out the [docs page](https://meta-pytorch.org/OpenEnv/auto_getting_started/index.html).
 
 ## OpenEnv on partner platforms:
 
@@ -78,6 +100,10 @@ The OpenEnv CLI (`openenv`) provides commands to initialize new environments and
 Below is a list of active and historical RFCs for OpenEnv. RFCs are proposals for major changes or features. Please review and contribute!
 
 - [RFC 001: Baseline API and Interface Specifications](https://github.com/meta-pytorch/OpenEnv/pull/26)
+- [RFC 002: Discoverability of environment tools by agents](https://github.com/meta-pytorch/OpenEnv/pull/32)
+- [RFC 003: Add MCP (Model Context Protocol) support](https://github.com/meta-pytorch/OpenEnv/pull/224)
+- [RFC 004: Add delayed rewards support for trajectory-based scoring](https://github.com/meta-pytorch/OpenEnv/pull/337)
+- [RFC 005: Agentic Harness Integration](https://github.com/meta-pytorch/OpenEnv/pull/387)
 
 ## Architecture
 
@@ -140,6 +166,8 @@ Base class for implementing environment logic:
 
 #### 3. EnvClient (Client-Side)
 Base class for environment communication:
+- **Async by default**: Use `async with` and `await` for all operations
+- **Sync wrapper**: Call `.sync()` to get a `SyncEnvClient` for synchronous usage
 - Handles WebSocket connections to environment server
 - Contains a utility to spin up a docker container locally for the corresponding environment
 - Type-safe action/observation parsing
@@ -221,10 +249,22 @@ See [`envs/README.md`](envs/README.md) for a complete guide on building environm
 
 To use an environment:
 1. Install the client: `pip install git+https://huggingface.co/spaces/openenv/echo-env`
-2. Import: `from echo_env import EchoAction, EchoEnv`
-3. Create client: `client = EchoEnv(base_url="https://openenv-echo-env.hf.space")`
-4. Interact: `client.reset()`, `client.step(action)`, `client.state()`
-5. Cleanup: `client.close()`
+2. Import: `from echo_env import CallToolAction, EchoEnv`
+3. Use async (recommended) or sync API:
+
+**Async (recommended):**
+```python
+async with EchoEnv(base_url="...") as client:
+    result = await client.reset()
+    result = await client.step(action)
+```
+
+**Sync (via `.sync()` wrapper):**
+```python
+with EchoEnv(base_url="...").sync() as client:
+    result = client.reset()
+    result = client.step(action)
+```
 
 See example scripts in `examples/` directory.
 
@@ -329,27 +369,20 @@ See the [Oumi example](https://github.com/oumi-ai/oumi/blob/main/notebooks/Oumi%
 
 ## Example Environments
 
-### Echo Environment
-A simple environment that echoes back messages with metadata. Perfect for:
-- Testing the HTTP server infrastructure
-- Learning the framework basics
-- Verifying container deployment
+| Environment | Description |
+|---|---|
+| [Echo Environment](envs/echo_env/README.md) | Echoes back messages with metadata. Ideal for testing HTTP server infrastructure, learning framework basics, and verifying container deployment. |
+| [Coding Environment](envs/coding_env/README.md) | Sandboxed Python code execution via smolagents. Captures stdout/stderr/exit codes, supports persistent episode context, and provides detailed error handling. |
+| [Chess Environment](envs/chess_env/README.md) | Chess RL environment with configurable opponents and full rules support. |
+| [Atari Environment](envs/atari_env/README.md) | Classic Arcade Learning Environment tasks for RL benchmarking. |
+| [FinRL Environment](envs/finrl_env/README.md) | Financial market simulations for algorithmic trading experiments. |
 
-See: [`envs/echo_env/README.md`](envs/echo_env/README.md)
-
-### Coding Environment
-Executes arbitrary Python code in a sandboxed environment. Features:
-- Safe code execution using smolagents
-- Capture stdout, stderr, and exit codes
-- Persistent execution context within episodes
-- Error handling with detailed messages
-
-See: [`envs/coding_env/README.md`](envs/coding_env/README.md)
+> Browse the full catalog of community environments at [meta-pytorch.org/OpenEnv/environments](https://meta-pytorch.org/OpenEnv/environments.html).
 
 ## Community Support & Acknowledgments
 This is an open and community-centric project. If you would like to add your name here, please put up a pull request and tag @jspisak for review. Ty!!
 
-Supporters include: Meta-PyTorch, Hugging Face, [Patronus AI](https://patronus.ai), [Surge AI](https://surgehq.ai), [LastMile AI](https://www.lastmileai.dev), Unsloth AI, Reflection AI, vLLM, SkyRL (UC-Berkeley), LightningAI, Axolotl AI, Stanford Scaling Intelligence Lab, Mithril, [OpenMined](https://openmined.org/), [Fleet AI](https://fleetai.com), [Halluminate](https://halluminate.ai/), [Turing](https://www.turing.com/), [Scale AI](https://scale.com/) ..
+Supporters include: Meta-PyTorch, Hugging Face, [Scaler AI Labs](https://scalerailabs.com), [Patronus AI](https://patronus.ai), [Surge AI](https://surgehq.ai), [LastMile AI](https://www.lastmileai.dev), Unsloth AI, Reflection AI, vLLM, SkyRL (UC-Berkeley), LightningAI, Axolotl AI, Stanford Scaling Intelligence Lab, Mithril, [OpenMined](https://openmined.org/), [Fleet AI](https://fleetai.com), [Halluminate](https://halluminate.ai/), [Turing](https://www.turing.com/), [Scale AI](https://scale.com/), [Scorecard](https://www.scorecard.io/) ..
 
 And we'd also like to acknowledge the team at Farama Foundation as the OpenEnv API was heavily inspired by the work you all have done on Gymnasium. Cheers!
 

@@ -6,13 +6,11 @@
 
 """Tests for the openenv __main__ module."""
 
-import sys
 from unittest.mock import patch
 
 import pytest
+from openenv.cli.__main__ import main
 from typer.testing import CliRunner
-
-from openenv.cli.__main__ import app, main
 
 
 runner = CliRunner()

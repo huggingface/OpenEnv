@@ -19,12 +19,12 @@ Tests cover:
 8. AutoAction with skip_install parameter
 """
 
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
-
-from openenv.core.generic_client import GenericEnvClient, GenericAction
 from openenv.core.client_types import StepResult
+from openenv.core.generic_client import GenericAction, GenericEnvClient
+from openenv.core.sync_client import SyncEnvClient
 
 
 # ============================================================================
@@ -194,10 +194,11 @@ class TestGenericEnvClientParseState:
 class TestGenericEnvClientFromDockerImage:
     """Test from_docker_image class method."""
 
-    def test_from_docker_image_creates_client(self, mock_provider):
+    @pytest.mark.asyncio
+    async def test_from_docker_image_creates_client(self, mock_provider):
         """Test that from_docker_image creates a connected client."""
-        with patch.object(GenericEnvClient, "connect", return_value=None):
-            client = GenericEnvClient.from_docker_image(
+        with patch.object(GenericEnvClient, "connect", new_callable=AsyncMock):
+            client = await GenericEnvClient.from_docker_image(
                 image="coding-env:latest",
                 provider=mock_provider,
             )
@@ -206,10 +207,11 @@ class TestGenericEnvClientFromDockerImage:
             mock_provider.start_container.assert_called_once_with("coding-env:latest")
             mock_provider.wait_for_ready.assert_called_once()
 
-    def test_from_docker_image_with_env_vars(self, mock_provider):
+    @pytest.mark.asyncio
+    async def test_from_docker_image_with_env_vars(self, mock_provider):
         """Test from_docker_image with environment variables."""
-        with patch.object(GenericEnvClient, "connect", return_value=None):
-            client = GenericEnvClient.from_docker_image(
+        with patch.object(GenericEnvClient, "connect", new_callable=AsyncMock):
+            client = await GenericEnvClient.from_docker_image(
                 image="coding-env:latest",
                 provider=mock_provider,
                 env_vars={"DEBUG": "1"},
@@ -224,10 +226,11 @@ class TestGenericEnvClientFromDockerImage:
 class TestGenericEnvClientFromEnv:
     """Test from_env class method (HuggingFace registry)."""
 
-    def test_from_env_with_docker(self, mock_provider):
+    @pytest.mark.asyncio
+    async def test_from_env_with_docker(self, mock_provider):
         """Test from_env with use_docker=True pulls from HF registry."""
-        with patch.object(GenericEnvClient, "connect", return_value=None):
-            client = GenericEnvClient.from_env(
+        with patch.object(GenericEnvClient, "connect", new_callable=AsyncMock):
+            client = await GenericEnvClient.from_env(
                 "user/my-env",
                 use_docker=True,
                 provider=mock_provider,
@@ -298,6 +301,10 @@ class TestAutoEnvSkipInstall:
         """Test skip_install=True with HF Space not running uses Docker."""
         from openenv.auto.auto_env import AutoEnv
 
+        # Create an async mock for from_env (since GenericEnvClient.from_env is now async)
+        async def mock_from_env_async(*args, **kwargs):
+            return GenericEnvClient(base_url="http://localhost:8000")
+
         with (
             patch.object(AutoEnv, "_check_space_availability", return_value=False),
             patch.object(
@@ -308,10 +315,10 @@ class TestAutoEnvSkipInstall:
             patch.object(
                 GenericEnvClient,
                 "from_env",
-                return_value=GenericEnvClient(base_url="http://localhost:8000"),
+                side_effect=mock_from_env_async,
             ) as mock_from_env,
         ):
-            client = AutoEnv.from_env(
+            AutoEnv.from_env(
                 "user/my-env",
                 skip_install=True,
             )
@@ -338,7 +345,7 @@ class TestAutoEnvSkipInstall:
         """Test skip_install=True for local env with docker_image."""
         from openenv.auto.auto_env import AutoEnv
 
-        with patch.object(GenericEnvClient, "connect", return_value=None):
+        with patch.object(GenericEnvClient, "connect", new_callable=AsyncMock):
             client = AutoEnv.from_env(
                 "echo",
                 docker_image="echo-env:latest",
@@ -351,8 +358,8 @@ class TestAutoEnvSkipInstall:
 
     def test_skip_install_false_still_works(self):
         """Test that skip_install=False (default) still works as before."""
-        from openenv.auto.auto_env import AutoEnv
         from openenv.auto._discovery import EnvironmentInfo, reset_discovery
+        from openenv.auto.auto_env import AutoEnv
 
         reset_discovery()
 
@@ -456,6 +463,72 @@ class TestGenericEnvClientImports:
         assert GC3 is GenericEnvClient
 
 
+class TestSyncEnvClientImports:
+    """Test that SyncEnvClient can be imported from various locations."""
+
+    def test_import_from_core(self):
+        """Test import from openenv.core."""
+        from openenv.core import SyncEnvClient as SC1
+
+        assert SC1 is SyncEnvClient
+
+    def test_import_from_openenv(self):
+        """Test import from openenv package."""
+        from openenv import SyncEnvClient as SC2
+
+        assert SC2 is SyncEnvClient
+
+    def test_import_from_sync_client_module(self):
+        """Test direct import from module."""
+        from openenv.core.sync_client import SyncEnvClient as SC3
+
+        assert SC3 is SyncEnvClient
+
+
+class TestSyncEnvClientWrapper:
+    """Test SyncEnvClient wrapper functionality."""
+
+    def test_sync_method_returns_sync_client(self):
+        """Test that .sync() returns a SyncEnvClient."""
+        client = GenericEnvClient(base_url="http://localhost:8000")
+        sync_client = client.sync()
+
+        assert isinstance(sync_client, SyncEnvClient)
+        assert sync_client._async is client
+
+    def test_sync_client_has_async_client_property(self):
+        """Test that SyncEnvClient exposes async_client property."""
+        async_client = GenericEnvClient(base_url="http://localhost:8000")
+        sync_client = async_client.sync()
+
+        assert sync_client.async_client is async_client
+
+    def test_sync_client_delegates_payload_methods(self):
+        """Test that SyncEnvClient delegates _step_payload to async client."""
+        async_client = GenericEnvClient(base_url="http://localhost:8000")
+        sync_client = async_client.sync()
+
+        action = {"code": "print('hello')"}
+        payload = sync_client._step_payload(action)
+
+        assert payload == action
+
+    def test_sync_client_delegates_parse_result(self):
+        """Test that SyncEnvClient delegates _parse_result to async client."""
+        async_client = GenericEnvClient(base_url="http://localhost:8000")
+        sync_client = async_client.sync()
+
+        payload = {
+            "observation": {"output": "hello"},
+            "reward": 1.0,
+            "done": False,
+        }
+        result = sync_client._parse_result(payload)
+
+        assert result.observation == {"output": "hello"}
+        assert result.reward == 1.0
+
+
 # ============================================================================
 # Context Manager Tests
 # ============================================================================
@@ -464,16 +537,49 @@ class TestGenericEnvClientImports:
 class TestGenericEnvClientContextManager:
     """Test context manager functionality."""
 
-    def test_context_manager_enter_exit(self):
-        """Test that context manager works correctly."""
+    @pytest.mark.asyncio
+    async def test_async_context_manager_enter_exit(self):
+        """Test that async context manager works correctly."""
         with (
             patch.object(
-                GenericEnvClient, "connect", return_value=None
+                GenericEnvClient, "connect", new_callable=AsyncMock
             ) as mock_connect,
-            patch.object(GenericEnvClient, "close", return_value=None) as mock_close,
+            patch.object(
+                GenericEnvClient, "close", new_callable=AsyncMock
+            ) as mock_close,
         ):
-            with GenericEnvClient(base_url="http://localhost:8000") as client:
+            async with GenericEnvClient(base_url="http://localhost:8000") as client:
                 assert isinstance(client, GenericEnvClient)
+                mock_connect.assert_called_once()
+
+            mock_close.assert_called_once()
+
+    def test_sync_context_manager_raises_error(self):
+        """Test that sync context manager raises helpful error."""
+        client = GenericEnvClient(base_url="http://localhost:8000")
+
+        with pytest.raises(TypeError) as exc_info:
+            with client:
+                pass
+
+        assert "async by default" in str(exc_info.value)
+        assert ".sync()" in str(exc_info.value)
+
+    def test_sync_wrapper_context_manager(self):
+        """Test SyncEnvClient context manager works correctly."""
+        with (
+            patch.object(
+                GenericEnvClient, "connect", new_callable=AsyncMock
+            ) as mock_connect,
+            patch.object(
+                GenericEnvClient, "close", new_callable=AsyncMock
+            ) as mock_close,
+        ):
+            async_client = GenericEnvClient(base_url="http://localhost:8000")
+            sync_client = async_client.sync()
+
+            with sync_client as client:
+                assert isinstance(client, SyncEnvClient)
                 mock_connect.assert_called_once()
 
             mock_close.assert_called_once()
@@ -516,8 +622,8 @@ class TestGenericEnvClientIntegration:
             )
 
     def test_generic_client_with_local_server(self, local_echo_server):
-        """Test GenericEnvClient with a real local server."""
-        with GenericEnvClient(base_url=local_echo_server) as client:
+        """Test GenericEnvClient with a real local server using sync wrapper."""
+        with GenericEnvClient(base_url=local_echo_server).sync() as client:
             # Reset
             result = client.reset()
             assert result is not None
@@ -534,8 +640,8 @@ class TestGenericEnvClientIntegration:
             )
 
     def test_generic_client_multiple_steps(self, local_echo_server):
-        """Test multiple steps with GenericEnvClient."""
-        with GenericEnvClient(base_url=local_echo_server) as client:
+        """Test multiple steps with GenericEnvClient using sync wrapper."""
+        with GenericEnvClient(base_url=local_echo_server).sync() as client:
             client.reset()
 
             messages = ["First", "Second", "Third"]
@@ -544,8 +650,8 @@ class TestGenericEnvClientIntegration:
                 assert msg in result.observation.get("echoed_message", "")
 
     def test_generic_client_state(self, local_echo_server):
-        """Test getting state with GenericEnvClient."""
-        with GenericEnvClient(base_url=local_echo_server) as client:
+        """Test getting state with GenericEnvClient using sync wrapper."""
+        with GenericEnvClient(base_url=local_echo_server).sync() as client:
             client.reset()
 
             # Execute some steps
@@ -558,6 +664,25 @@ class TestGenericEnvClientIntegration:
             assert isinstance(state, dict)
             # State should have step_count
             assert "step_count" in state or len(state) > 0
+
+    @pytest.mark.asyncio
+    async def test_generic_client_async_with_local_server(self, local_echo_server):
+        """Test GenericEnvClient with async API."""
+        async with GenericEnvClient(base_url=local_echo_server) as client:
+            # Reset
+            result = await client.reset()
+            assert result is not None
+            assert isinstance(result.observation, dict)
+
+            # Step with dict action
+            action = {"message": "Hello from async GenericEnvClient!"}
+            step_result = await client.step(action)
+
+            assert step_result is not None
+            assert isinstance(step_result.observation, dict)
+            assert "Hello from async GenericEnvClient!" in step_result.observation.get(
+                "echoed_message", ""
+            )
 
 
 @pytest.mark.integration
@@ -597,23 +722,24 @@ class TestGenericEnvClientDocker:
         if not result.stdout.strip():
             pytest.skip("Docker image 'echo-env:latest' not found")
 
-    def test_generic_client_from_docker_image(self, check_docker_and_image):
+    @pytest.mark.asyncio
+    async def test_generic_client_from_docker_image(self, check_docker_and_image):
         """Test GenericEnvClient.from_docker_image() with real Docker."""
-        client = GenericEnvClient.from_docker_image("echo-env:latest")
+        client = await GenericEnvClient.from_docker_image("echo-env:latest")
 
         try:
             # Reset
-            result = client.reset()
+            result = await client.reset()
             assert result is not None
             assert isinstance(result.observation, dict)
 
             # Step
-            step_result = client.step({"message": "Docker test!"})
+            step_result = await client.step({"message": "Docker test!"})
             assert "Docker test!" in step_result.observation.get("echoed_message", "")
 
             print("GenericEnvClient.from_docker_image() works!")
         finally:
-            client.close()
+            await client.close()
 
 
 # ============================================================================
@@ -751,8 +877,8 @@ class TestAutoActionSkipInstall:
 
     def test_skip_install_false_still_works(self):
         """Test that skip_install=False (default) still works as before."""
-        from openenv.auto.auto_action import AutoAction
         from openenv.auto._discovery import EnvironmentInfo, reset_discovery
+        from openenv.auto.auto_action import AutoAction
 
         reset_discovery()
 
@@ -797,8 +923,8 @@ class TestAutoEnvAutoActionSkipInstallIntegration:
 
     def test_both_skip_install_returns_generic_types(self):
         """Test that both AutoEnv and AutoAction with skip_install work together."""
-        from openenv.auto.auto_env import AutoEnv
         from openenv.auto.auto_action import AutoAction
+        from openenv.auto.auto_env import AutoEnv
 
         with patch.object(AutoEnv, "_check_server_availability", return_value=True):
             # Get client without installing package
@@ -827,10 +953,11 @@ class TestAutoEnvAutoActionSkipInstallIntegration:
         This documents the expected behavior - if user uses skip_install
         on AutoEnv but not on AutoAction, AutoAction will try to install.
         """
-        from openenv.auto.auto_env import AutoEnv
-        from openenv.auto.auto_action import AutoAction
-        from openenv.auto._discovery import reset_discovery
         import os
+
+        from openenv.auto._discovery import reset_discovery
+        from openenv.auto.auto_action import AutoAction
+        from openenv.auto.auto_env import AutoEnv
 
         reset_discovery()
 

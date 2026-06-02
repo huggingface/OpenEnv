@@ -39,25 +39,23 @@ if [ "$BRANCH" = "main" ] || [ "$BRANCH" = "master" ]; then
 fi
 echo "On branch: $BRANCH"
 
-# === Worktree Check (SOFT WARNING) ===
+# === Import Sort + Format Check ===
 echo ""
-echo "=== Worktree Check ==="
-TOPLEVEL=$(git rev-parse --show-toplevel 2>/dev/null)
-if [ -f "$TOPLEVEL/.git" ]; then
-    echo "Working in worktree: $TOPLEVEL"
+echo "=== Import Sort + Format Check ==="
+# Run the arc f pipeline: usort then ruff format
+uv run usort format src/ tests/ >/dev/null 2>&1
+uv run ruff format src/ tests/ >/dev/null 2>&1
+CHANGED=$(git diff --name-only -- '*.py' 2>/dev/null || true)
+if [ -n "$CHANGED" ]; then
+    echo "Files need formatting (usort + ruff format):"
+    echo "$CHANGED"
+    echo ""
+    echo "Auto-formatting and staging changes..."
+    git add $CHANGED
+    echo "Fixed! Changes staged."
 else
-    echo "NOTE: Not in a worktree (working in main clone)"
-    echo "  Consider using worktrees for feature development"
+    echo "Import sort + format check passed!"
 fi
-
-# === Format Check ===
-echo ""
-echo "=== Format Check ==="
-uv run ruff format src/ tests/ --check || {
-    echo "Format check failed. Run 'uv run ruff format src/ tests/' to fix."
-    exit 1
-}
-echo "Format check passed!"
 
 # === Lint Check ===
 echo ""
@@ -120,13 +118,46 @@ echo "Running pre-push checks..."
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 FAILED=0
 
-# 1. Format check
+# 0. BLOCK PUSHES TO MAIN/MASTER (most critical check)
 echo ""
-echo "=== Format Check ==="
-uv run ruff format src/ tests/ --check || {
-    echo "Format check failed. Run 'uv run ruff format src/ tests/' to fix."
+echo "=== Protected Branch Check ==="
+# Read the remote and refs being pushed from stdin
+while read local_ref local_sha remote_ref remote_sha; do
+    # Extract branch name from remote ref (refs/heads/main -> main)
+    remote_branch="${remote_ref#refs/heads/}"
+
+    if [ "$remote_branch" = "main" ] || [ "$remote_branch" = "master" ]; then
+        echo "ERROR: Direct push to '$remote_branch' is blocked!"
+        echo ""
+        echo "  You are trying to push to a protected branch."
+        echo "  Create a PR instead:"
+        echo ""
+        echo "    # Push to a feature branch"
+        echo "    git push -u origin HEAD:feature/your-branch-name"
+        echo ""
+        echo "    # Then create a PR"
+        echo "    gh pr create"
+        echo ""
+        echo "  To bypass (not recommended): git push --no-verify"
+        exit 1
+    fi
+done
+echo "Not pushing to protected branch - OK"
+
+# 1. Import sort + format check
+echo ""
+echo "=== Import Sort + Format Check ==="
+uv run usort format src/ tests/ >/dev/null 2>&1
+uv run ruff format src/ tests/ >/dev/null 2>&1
+CHANGED_FMT=$(git diff --name-only -- '*.py' 2>/dev/null || true)
+if [ -n "$CHANGED_FMT" ]; then
+    echo "Files not properly formatted:"
+    echo "$CHANGED_FMT"
+    echo ""
+    echo "Run: uv run usort format src/ tests/ && uv run ruff format src/ tests/"
+    git checkout -- $CHANGED_FMT 2>/dev/null || true
     FAILED=1
-}
+fi
 
 # 2. Lint check
 echo ""
@@ -169,12 +200,32 @@ else
     echo "Client-server separation maintained"
 fi
 
-# 6. Check for conflicts with main (warning only, non-blocking)
+# 6. Check branch freshness with main (warning only, non-blocking)
 echo ""
-echo "=== Conflict Check with main ==="
+echo "=== Branch Freshness Check ==="
 # Fetch latest main silently
 git fetch origin main --quiet 2>/dev/null || true
 
+# Check how many commits behind main we are
+BEHIND_COUNT=$(git rev-list --count HEAD..origin/main 2>/dev/null || echo "0")
+if [ "$BEHIND_COUNT" -gt 0 ]; then
+    echo "WARNING: Your branch is $BEHIND_COUNT commit(s) behind main!"
+    echo ""
+    echo "  GitHub will show 'This branch is out-of-date with the base branch'"
+    echo ""
+    echo "  To update before pushing:"
+    echo "    git fetch origin main"
+    echo "    git merge origin/main"
+    echo "    git push"
+    echo ""
+    echo "  Pushing anyway (update before merging PR)"
+else
+    echo "Branch is up to date with main"
+fi
+
+# 7. Check for conflicts with main (warning only, non-blocking)
+echo ""
+echo "=== Conflict Check with main ==="
 # Try a test merge to detect conflicts (then abort)
 MERGE_OUTPUT=$(git merge --no-commit --no-ff origin/main 2>&1) || true
 MERGE_EXIT=$?
@@ -233,9 +284,9 @@ echo ""
 echo "Git hooks installed successfully!"
 echo ""
 echo "Hooks installed:"
-echo "  - pre-commit: branch check, worktree warning, format, lint, check-debug"
+echo "  - pre-commit: branch check, usort+format, lint, check-debug"
 echo "  - commit-msg: issue reference reminder (soft warning)"
-echo "  - pre-push: format, lint, tests, check-debug, invariant checks, conflict detection"
+echo "  - pre-push: usort+format, lint, tests, check-debug, invariant checks, conflict detection"
 echo "  - post-merge: worktree cleanup reminder"
 echo ""
 echo "To skip hooks temporarily: git commit/push --no-verify"

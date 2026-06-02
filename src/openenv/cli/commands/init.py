@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import random
 import shutil
 import subprocess
@@ -220,7 +219,6 @@ def _create_template_replacements(env_name: str) -> Dict[str, str]:
     - camelCase for variable names
     - snake_case for module names, file paths
     """
-    env_pascal = _snake_to_pascal(env_name)
     env_prefix = _get_env_prefix(env_name)
     env_camel = _snake_to_camel(env_name)
     env_title = _snake_to_title(env_name)

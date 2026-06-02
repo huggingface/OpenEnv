@@ -24,9 +24,9 @@ import json
 import logging
 import re
 import tempfile
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Type, Any
+from typing import Any, Dict, Optional, Type
 
 import yaml
 
@@ -369,7 +369,7 @@ class EnvironmentDiscovery:
             logger.warning(f"Failed to get installed packages: {e}")
             return environments
 
-        # Filter for openenv-* packages (exclude openenv-core)
+        # Filter for openenv-* environment packages; ignore the legacy core wheel.
         for dist in distributions:
             package_name = dist.metadata["Name"]
 

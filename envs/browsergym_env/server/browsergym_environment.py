@@ -14,13 +14,12 @@ from typing import Any, Dict, Optional
 from uuid import uuid4
 
 import gymnasium as gym
-
-from openenv.core.env_server.interfaces import Environment
 from browsergym_env.models import (
     BrowserGymAction,
     BrowserGymObservation,
     BrowserGymState,
 )
+from openenv.core.env_server.interfaces import Environment
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +41,9 @@ def _get_axtree_txt(obs: Dict[str, Any]) -> str:
 
             return flatten_axtree_to_str(obs["axtree_object"])
         except ImportError:
-            logger.warning("browsergym.utils.obs not available, cannot convert axtree_object to text")
+            logger.warning(
+                "browsergym.utils.obs not available, cannot convert axtree_object to text"
+            )
         except Exception as e:
             logger.warning(f"Failed to convert axtree_object to text: {e}")
 
@@ -67,7 +68,9 @@ def _get_pruned_html(obs: Dict[str, Any]) -> str:
             dom_str = flatten_dom_to_str(obs["dom_object"])
             return prune_html(dom_str)
         except ImportError:
-            logger.warning("browsergym.utils.obs not available, cannot convert dom_object to pruned_html")
+            logger.warning(
+                "browsergym.utils.obs not available, cannot convert dom_object to pruned_html"
+            )
         except Exception as e:
             logger.warning(f"Failed to convert dom_object to pruned_html: {e}")
 
@@ -91,6 +94,9 @@ class BrowserGymEnvironment(Environment):
     This environment wraps BrowserGym's Gymnasium-compatible environments to
     provide unified access to multiple web navigation benchmarks.
     """
+
+    SUPPORTS_CONCURRENT_SESSIONS = True
+    REQUIRES_SINGLE_THREAD_EXECUTOR = True
 
     def __init__(
         self,
@@ -244,7 +250,9 @@ class BrowserGymEnvironment(Environment):
 
         # Execute action in gym environment
         try:
-            obs, reward, terminated, truncated, info = self.gym_env.step(action.action_str)
+            obs, reward, terminated, truncated, info = self.gym_env.step(
+                action.action_str
+            )
 
             self._last_obs = obs
             self._last_info = info
@@ -320,7 +328,10 @@ class BrowserGymEnvironment(Environment):
                             goal_texts.append(content)
                         elif isinstance(content, list):
                             for item in content:
-                                if isinstance(item, dict) and item.get("type") == "text":
+                                if (
+                                    isinstance(item, dict)
+                                    and item.get("type") == "text"
+                                ):
                                     goal_texts.append(item.get("text", ""))
                 goal = " ".join(goal_texts)
             # Fallback to legacy goal field
@@ -346,7 +357,9 @@ class BrowserGymEnvironment(Environment):
         if isinstance(obs, dict):
             # Include useful fields but exclude large raw objects
             browsergym_metadata["browsergym_obs"] = {
-                k: v for k, v in obs.items() if k not in ("dom_object", "axtree_object", "screenshot")
+                k: v
+                for k, v in obs.items()
+                if k not in ("dom_object", "axtree_object", "screenshot")
             }
         browsergym_metadata["browsergym_info"] = info
 
@@ -372,4 +385,7 @@ class BrowserGymEnvironment(Environment):
     def close(self) -> None:
         """Clean up environment resources."""
         if hasattr(self, "gym_env"):
-            self.gym_env.close()
+            try:
+                self.gym_env.close()
+            except Exception as exc:  # noqa: BLE001 - browsergym/playwright cleanup
+                logger.warning("BrowserGym cleanup failed: %s", exc)

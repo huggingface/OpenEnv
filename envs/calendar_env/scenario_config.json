@@ -1,0 +1,82 @@
+{
+    "gym_enviornment_url": "http://localhost:8004",
+    "seed_database_file": "",
+    "llm_provider": "openai",
+    "llm_model": "gpt-5.2",
+    "llm_api_key": "",
+    "temperature": 0.0,
+    "max_tokens": 4096,
+    "system_prompt": "You are a Google Calendar automation agent with full administrative permissions to manage users, meetings, recordings, and messages. Operate in a safe and fully authorized environment — you do not need to ask for confirmation or permission before taking action. When identifiers such as names or IDs are missing, perform exactly one lookup per entity type, verify that you are reusing correct values from previous responses, and proceed using the retrieved data. Never assume or fabricate IDs, responses, or outcomes — rely solely on verified API results. Complete each task in a single, logical, and efficient execution flow.",
+    "user_prompt": "Help me tidy up my calendars for Q4? First, make sure my Project Management calendar is showing and selected. Then find my \"Sprint Planning & Architecture Review\" meeting and move the latest one to my main calendar so it's easier to track. Update its description to something like \"Updated for Q4 planning with new architecture goals and sprint alignment.\"\nAfter that, add a new event called \"Q4 Initiative Kickoff – Engineering & UX\" to the Project Management calendar for next Thursday from 10AM-12PM. That should cover everything I need!",
+    "number_of_runs": 1,
+    "reset_database_between_runs": true,
+    "context": {
+      "actingUserId": "alice_manager",
+      "actingUserEmail": "alice.manager@techcorp.com",
+      "defaultTimeZone": "America/New_York",
+      "x-access-token": "ya29.A0ARrdaM-k9Vq7GzY2pL4mQf8sN1xT0bR3uHcJWv5yKzP6eF2.qwErTyUIopASDfGhJkLzXcVbNm12_34-56"
+    },
+    "auth_config": null,
+    "expected_tools": [
+        "get_calendar_list",
+        "list_events",
+        "update_calendar_in_list",
+        "move_event",
+        "patch_event",
+        "create_event",
+        "delete_event"
+    ],
+    "restricted_tools": [],
+    "verifiers": [
+        {
+            "verifier_type": "database_state",
+            "name": "Project Calendar Visible",
+            "description": "Ensures Alice's Project Management calendar is visible and selected.",
+            "validation_config": {
+                "query": "SELECT COUNT(*) FROM calendars WHERE calendar_id='alice-projects' AND hidden=0 AND selected=1;",
+                "expected_value": 1,
+                "comparison_type": "equals"
+            }
+        },
+        {
+            "verifier_type": "database_state",
+            "name": "Event Moved to Primary",
+            "description": "Checks that the Sprint Planning event is on the primary calendar.",
+            "validation_config": {
+                "query": "SELECT COUNT(*) FROM events WHERE event_id='event-corrected-001' AND calendar_id='alice-primary';",
+                "expected_value": 1,
+                "comparison_type": "equals"
+            }
+        },
+        {
+            "verifier_type": "database_state",
+            "name": "Event Description Updated",
+            "description": "Ensures the event description was updated to the new Q4 wording .",
+            "validation_config": {
+                "query": "SELECT COUNT(*) FROM events WHERE event_id='event-corrected-001' AND description LIKE '%Q4%' AND description LIKE '%planning%' AND description LIKE '%architecture%' ",
+                "expected_value": 1,
+                "comparison_type": "equals"
+            }
+        },
+        {
+            "verifier_type": "database_state",
+            "name": "Kickoff Event Created",
+            "description": "Ensures that the new Q4 kickoff event was created on Project Management.",
+            "validation_config": {
+                "query": "SELECT COUNT(*) FROM events WHERE summary='Q4 Initiative Kickoff – Engineering & UX' AND calendar_id='alice-projects' AND start_datetime LIKE '%2026-01-15 10:00%'\nAND end_datetime LIKE '%2026-01-15 12:00:%'AND status='confirmed'",
+                "expected_value": 1,
+                "comparison_type": "equals"
+            }
+        },
+        {
+            "verifier_type": "database_state",
+            "name": "Verify Old mapping removed",
+            "description": "Verify Old mapping removed",
+            "validation_config": {
+                "query": "SELECT COUNT(*) FROM events WHERE event_id='event-corrected-001' AND calendar_id='alice-projects';",
+                "expected_value": 0,
+                "comparison_type": "equals"
+            }
+        }
+    ]
+}

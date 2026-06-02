@@ -10,24 +10,41 @@ Environment client for persistent sessions.
 This module provides a WebSocket-based client that maintains a persistent connection
 to an environment server, enabling efficient multi-step interactions without
 the overhead of HTTP request/response cycles.
+
+The client is async by default. For synchronous usage, use the `.sync()` method
+to get a `SyncEnvClient` wrapper.
+
+Example (async):
+    >>> async with GenericEnvClient(base_url="ws://localhost:8000") as env:
+    ...     result = await env.reset()
+    ...     result = await env.step({"code": "print('hello')"})
+
+Example (sync wrapper):
+    >>> env = GenericEnvClient(base_url="ws://localhost:8000").sync()
+    >>> with env:
+    ...     result = env.reset()
+    ...     result = env.step({"code": "print('hello')"})
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Generic, Optional, Type, TYPE_CHECKING, TypeVar
 
-from .client_types import StepResult, StateT
+from .client_types import StateT, StepResult
 from .containers.runtime import LocalDockerProvider, UVProvider
 from .utils import convert_to_ws_url
 
 if TYPE_CHECKING:
-    from .containers.runtime import ContainerProvider, RuntimeProvider
-    from websockets.sync.client import ClientConnection
+    from websockets.asyncio.client import ClientConnection
 
-from websockets.sync.client import connect as ws_connect
+    from .containers.runtime import ContainerProvider, RuntimeProvider
+    from .sync_client import SyncEnvClient
+
+from websockets.asyncio.client import connect as ws_connect
 
 ActT = TypeVar("ActT")
 ObsT = TypeVar("ObsT")
@@ -36,26 +53,36 @@ EnvClientT = TypeVar("EnvClientT", bound="EnvClient")
 
 class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
     """
-    Environment client for persistent sessions.
+    Async environment client for persistent sessions.
 
     This client maintains a persistent WebSocket connection to an environment
     server, enabling efficient multi-step interactions. Each client instance
     corresponds to a dedicated environment session on the server.
 
+    The client is async by default. For synchronous usage, use the `.sync()`
+    method to get a `SyncEnvClient` wrapper.
+
     Features:
     - Lower latency for sequential interactions
     - Session state is maintained server-side
     - Better suited for long-running episodes
+    - Async by default for modern Python async/await patterns
 
-    Example:
+    Example (async):
         >>> from envs.coding_env.client import CodingEnv
         >>>
-        >>> # Connect to a server
-        >>> with CodingEnv(base_url="ws://localhost:8000") as env:
-        ...     result = env.reset(seed=42)
+        >>> # Connect to a server using async context manager
+        >>> async with CodingEnv(base_url="ws://localhost:8000") as env:
+        ...     result = await env.reset(seed=42)
         ...     while not result.done:
         ...         action = agent.predict(result.observation)
-        ...         result = env.step(action)
+        ...         result = await env.step(action)
+
+    Example (sync wrapper):
+        >>> env = CodingEnv(base_url="ws://localhost:8000").sync()
+        >>> with env:
+        ...     result = env.reset(seed=42)
+        ...     result = env.step(action)
     """
 
     def __init__(
@@ -63,7 +90,9 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         base_url: str,
         connect_timeout_s: float = 10.0,
         message_timeout_s: float = 60.0,
+        max_message_size_mb: float = 100.0,
         provider: Optional["ContainerProvider | RuntimeProvider"] = None,
+        mode: Optional[str] = None,
     ):
         """
         Initialize environment client.
@@ -73,19 +102,49 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
                      Will be converted to ws:// if http:// is provided.
             connect_timeout_s: Timeout for establishing WebSocket connection
             message_timeout_s: Timeout for receiving responses to messages
+            max_message_size_mb: Maximum WebSocket message size in megabytes.
+                                Default 100MB to handle large observations (screenshots, DOM, etc.)
             provider: Optional container/runtime provider for lifecycle management.
                      Can be a ContainerProvider (Docker) or RuntimeProvider (UV).
+            mode: Communication mode: 'simulation' for Gym-style API (default) or
+                 'production' for MCP JSON-RPC protocol. Can also be set via the
+                 OPENENV_CLIENT_MODE environment variable. Constructor parameter
+                 takes precedence over environment variable. Case-insensitive.
         """
+        # Determine mode (constructor > env var > default)
+        if mode is None:
+            mode = os.environ.get("OPENENV_CLIENT_MODE", "simulation")
+
+        # Normalize and validate mode
+        mode = mode.lower()
+        if mode not in ("simulation", "production"):
+            raise ValueError(
+                f"Invalid mode: '{mode}'. Must be 'simulation' or 'production'. "
+                f"Set via constructor parameter or OPENENV_CLIENT_MODE environment variable."
+            )
+
+        # Store mode (use object.__setattr__ to bypass immutability)
+        object.__setattr__(self, "_mode", mode)
+
         # Convert HTTP URL to WebSocket URL
         ws_url = convert_to_ws_url(base_url)
 
         self._ws_url = f"{ws_url}/ws"
         self._connect_timeout = connect_timeout_s
         self._message_timeout = message_timeout_s
+        self._max_message_size = int(
+            max_message_size_mb * 1024 * 1024
+        )  # Convert MB to bytes
         self._provider = provider
         self._ws: Optional[ClientConnection] = None
 
-    def connect(self) -> "EnvClient":
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Prevent modification of _mode after initialization."""
+        if name == "_mode" and hasattr(self, "_mode"):
+            raise AttributeError("Cannot modify mode after initialization")
+        super().__setattr__(name, value)
+
+    async def connect(self) -> "EnvClient":
         """
         Establish WebSocket connection to the server.
 
@@ -114,9 +173,10 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
                 )
 
         try:
-            self._ws = ws_connect(
+            self._ws = await ws_connect(
                 self._ws_url,
                 open_timeout=self._connect_timeout,
+                max_size=self._max_message_size,
             )
         except Exception as e:
             raise ConnectionError(f"Failed to connect to {self._ws_url}: {e}") from e
@@ -130,41 +190,41 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
 
         return self
 
-    def disconnect(self) -> None:
+    async def disconnect(self) -> None:
         """Close the WebSocket connection."""
         if self._ws is not None:
             try:
                 # Send close message
-                self._send({"type": "close"})
+                await self._send({"type": "close"})
             except Exception:
                 pass  # Best effort
             try:
-                self._ws.close()
+                await self._ws.close()
             except Exception:
                 pass
             self._ws = None
 
-    def _ensure_connected(self) -> None:
+    async def _ensure_connected(self) -> None:
         """Ensure WebSocket connection is established."""
         if self._ws is None:
-            self.connect()
+            await self.connect()
 
-    def _send(self, message: Dict[str, Any]) -> None:
+    async def _send(self, message: Dict[str, Any]) -> None:
         """Send a message over the WebSocket."""
-        self._ensure_connected()
+        await self._ensure_connected()
         assert self._ws is not None
-        self._ws.send(json.dumps(message))
+        await self._ws.send(json.dumps(message))
 
-    def _receive(self) -> Dict[str, Any]:
+    async def _receive(self) -> Dict[str, Any]:
         """Receive and parse a message from the WebSocket."""
         assert self._ws is not None
-        raw = self._ws.recv(timeout=self._message_timeout)
+        raw = await asyncio.wait_for(self._ws.recv(), timeout=self._message_timeout)
         return json.loads(raw)
 
-    def _send_and_receive(self, message: Dict[str, Any]) -> Dict[str, Any]:
+    async def _send_and_receive(self, message: Dict[str, Any]) -> Dict[str, Any]:
         """Send a message and wait for response."""
-        self._send(message)
-        response = self._receive()
+        await self._send(message)
+        response = await self._receive()
 
         # Check for error response
         if response.get("type") == "error":
@@ -177,7 +237,7 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         return response
 
     @classmethod
-    def from_docker_image(
+    async def from_docker_image(
         cls: Type[EnvClientT],
         image: str,
         provider: Optional["ContainerProvider"] = None,
@@ -205,12 +265,12 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
 
         # Create and connect client
         client = cls(base_url=base_url, provider=provider)
-        client.connect()
+        await client.connect()
 
         return client
 
     @classmethod
-    def from_env(
+    async def from_env(
         cls: Type[EnvClientT],
         repo_id: str,
         *,
@@ -241,13 +301,13 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
 
         Examples:
             >>> # Pull and run from HF Docker registry
-            >>> env = MyEnv.from_env("openenv/echo-env")
+            >>> env = await MyEnv.from_env("openenv/echo-env")
             >>>
             >>> # Run locally with UV (clones the space)
-            >>> env = MyEnv.from_env("openenv/echo-env", use_docker=False)
+            >>> env = await MyEnv.from_env("openenv/echo-env", use_docker=False)
             >>>
             >>> # Run from a local checkout
-            >>> env = MyEnv.from_env(
+            >>> env = await MyEnv.from_env(
             ...     "openenv/echo-env",
             ...     use_docker=False,
             ...     project_path="/path/to/local/checkout"
@@ -270,7 +330,7 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
             docker_provider.wait_for_ready(base_url)
 
             client = cls(base_url=base_url, provider=docker_provider)
-            client.connect()
+            await client.connect()
             return client
         else:
             # UV mode: clone and run with uv
@@ -291,7 +351,7 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
             provider.wait_for_ready()
 
             client = cls(base_url=base_url, provider=provider)
-            client.connect()
+            await client.connect()
             return client
 
     @abstractmethod
@@ -309,7 +369,7 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         """Convert a JSON response from the state endpoint to a State object."""
         raise NotImplementedError
 
-    def reset(self, **kwargs: Any) -> StepResult[ObsT]:
+    async def reset(self, **kwargs: Any) -> StepResult[ObsT]:
         """
         Reset the environment with optional parameters.
 
@@ -326,10 +386,10 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
             "type": "reset",
             "data": kwargs,
         }
-        response = self._send_and_receive(message)
+        response = await self._send_and_receive(message)
         return self._parse_result(response.get("data", {}))
 
-    def step(self, action: ActT, **kwargs: Any) -> StepResult[ObsT]:
+    async def step(self, action: ActT, **kwargs: Any) -> StepResult[ObsT]:
         """
         Execute an action in the environment.
 
@@ -344,10 +404,10 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
             "type": "step",
             "data": self._step_payload(action),
         }
-        response = self._send_and_receive(message)
+        response = await self._send_and_receive(message)
         return self._parse_result(response.get("data", {}))
 
-    def state(self) -> StateT:
+    async def state(self) -> StateT:
         """
         Get the current environment state from the server.
 
@@ -355,17 +415,17 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
             State object with environment state information
         """
         message = {"type": "state"}
-        response = self._send_and_receive(message)
+        response = await self._send_and_receive(message)
         return self._parse_state(response.get("data", {}))
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """
         Close the WebSocket connection and clean up resources.
 
         If this client was created via from_docker_image() or from_env(),
         this will also stop and remove the associated container/process.
         """
-        self.disconnect()
+        await self.disconnect()
 
         if self._provider is not None:
             # Handle both ContainerProvider and RuntimeProvider
@@ -374,11 +434,51 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
             elif hasattr(self._provider, "stop"):
                 self._provider.stop()
 
-    def __enter__(self) -> "EnvClient":
-        """Enter context manager, ensuring connection is established."""
-        self.connect()
+    async def __aenter__(self) -> "EnvClient":
+        """Enter async context manager, ensuring connection is established."""
+        await self.connect()
         return self
 
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Exit async context manager, closing connection."""
+        await self.close()
+
+    def __enter__(self) -> "EnvClient":
+        """Sync context manager entry - raises error suggesting async usage."""
+        raise TypeError(
+            "EnvClient is async by default. Use 'async with' instead of 'with', "
+            "or call .sync() to get a synchronous wrapper:\n"
+            "  async with client:  # async usage\n"
+            "  with client.sync():  # sync wrapper"
+        )
+
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Exit context manager, closing connection."""
-        self.close()
+        """Sync context manager exit - should not be reached."""
+        pass  # pragma: no cover
+
+    def sync(self) -> "SyncEnvClient":
+        """
+        Return a synchronous wrapper around this async client.
+
+        Use this method when you need synchronous access to the environment
+        without async/await syntax. This is useful for:
+        - Integration with synchronous codebases
+        - Interactive/REPL usage
+        - Stopping async from "infecting" the call stack
+
+        Returns:
+            SyncEnvClient wrapper that provides synchronous methods
+
+        Example:
+            >>> # Create async client and get sync wrapper
+            >>> async_client = GenericEnvClient(base_url="http://localhost:8000")
+            >>> sync_client = async_client.sync()
+            >>>
+            >>> # Use synchronous API
+            >>> with sync_client:
+            ...     result = sync_client.reset()
+            ...     result = sync_client.step({"code": "print('hello')"})
+        """
+        from .sync_client import SyncEnvClient
+
+        return SyncEnvClient(self)

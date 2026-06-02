@@ -8,10 +8,11 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
-import tempfile
 import sys
+import tempfile
 from pathlib import Path
 from typing import Annotated
 
@@ -20,6 +21,18 @@ import typer
 from .._cli_utils import console
 
 app = typer.Typer(help="Build Docker images for OpenEnv environments")
+
+_OPENENV_RUNTIME_DEP_RE = re.compile(r"^openenv(?:\s*(?:$|[<>=!~@;])|\[)")
+
+
+def _is_openenv_runtime_dependency(dep: str) -> bool:
+    """Return True for the OpenEnv runtime distribution, not openenv-* envs."""
+    normalized = dep.strip().lower()
+    return (
+        _OPENENV_RUNTIME_DEP_RE.match(normalized) is not None
+        or normalized.startswith("openenv-core")
+        or normalized.startswith("openenv_core")
+    )
 
 
 def _detect_build_context(env_path: Path) -> tuple[str, Path, Path | None]:
@@ -131,11 +144,19 @@ def _prepare_inrepo_build(env_path: Path, repo_root: Path, temp_dir: Path) -> Pa
     build_dir = temp_dir / env_path.name
     shutil.copytree(env_path, build_dir, symlinks=True)
 
-    # Copy OpenEnv package to temp directory
+    # Copy OpenEnv package metadata + sources to temp directory.
+    # Keep the src/ layout since pyproject.toml uses package-dir = {"" = "src"}.
     package_src = repo_root / "src" / "openenv"
+    package_dest = build_dir / "openenv"
     if package_src.exists():
-        package_dest = build_dir / "openenv"
-        shutil.copytree(package_src, package_dest, symlinks=True)
+        package_dest.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(package_src, package_dest / "src" / "openenv", symlinks=True)
+
+        for filename in ("pyproject.toml", "README.md"):
+            src_file = repo_root / filename
+            if src_file.exists():
+                shutil.copy2(src_file, package_dest / filename)
+
         console.print(f"[cyan]Copied OpenEnv package to:[/cyan] {package_dest}")
 
         # Update pyproject.toml to reference local OpenEnv copy
@@ -148,19 +169,15 @@ def _prepare_inrepo_build(env_path: Path, repo_root: Path, temp_dir: Path) -> Pa
                     pyproject = tomli.load(f)
                     deps = pyproject.get("project", {}).get("dependencies", [])
 
-                    # Replace openenv/openenv-core with local reference
+                    # Replace OpenEnv package references with local source.
                     new_deps = []
                     for dep in deps:
-                        if (
-                            dep.startswith("openenv-core")
-                            or dep.startswith("openenv_core")
-                            or dep.startswith("openenv")
-                        ):
+                        if _is_openenv_runtime_dependency(dep):
                             # Skip - we'll use local core
                             continue
                         new_deps.append(dep)
 
-                    # Write back with local core reference
+                    # Write back with local OpenEnv reference
                     pyproject["project"]["dependencies"] = new_deps + [
                         "openenv @ file:///app/env/openenv"
                     ]

@@ -7,12 +7,11 @@
 """Tests for MCPEnvironment base class."""
 
 import pytest
-
 from openenv.core.env_server.mcp_types import (
-    ListToolsAction,
     CallToolAction,
-    ListToolsObservation,
     CallToolObservation,
+    ListToolsAction,
+    ListToolsObservation,
     RESERVED_TOOL_NAMES,
 )
 

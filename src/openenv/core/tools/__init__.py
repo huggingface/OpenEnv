@@ -7,7 +7,12 @@
 """Core tools for code execution and other utilities."""
 
 from .git_server_client import GitServerClient, RepoInfo
-from .local_python_executor import PyExecutor
+
+try:
+    from .local_python_executor import PyExecutor
+except ModuleNotFoundError:
+    # smolagents is optional for environments that only need Git tooling.
+    PyExecutor = None  # type: ignore[assignment]
 
 __all__ = [
     "PyExecutor",

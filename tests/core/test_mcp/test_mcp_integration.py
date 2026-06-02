@@ -13,20 +13,17 @@ These tests verify:
 3. WebSocket MCP tools/list and tools/call endpoints
 """
 
-import asyncio
 import json
 from typing import Any, Optional
 
 import pytest
 from fastmcp import FastMCP
-
 from openenv.core.env_server.mcp_environment import MCPEnvironment
 from openenv.core.env_server.mcp_types import (
     CallToolAction,
     CallToolObservation,
     ListToolsAction,
     ListToolsObservation,
-    Tool,
 )
 from openenv.core.env_server.types import Action, Observation, State
 
@@ -48,7 +45,12 @@ class MinimalMCPEnvironment(MCPEnvironment):
         super().__init__(mcp_server)
         self._state = State(episode_id="test-episode", step_count=0)
 
-    def reset(self, seed: Optional[int] = None, episode_id: Optional[str] = None):
+    def reset(
+        self,
+        seed: Optional[int] = None,
+        episode_id: Optional[str] = None,
+        **kwargs: Any,
+    ):
         self._state = State(
             episode_id=episode_id or "test-episode",
             step_count=0,
@@ -298,11 +300,11 @@ class TestWebSocketMCP:
     def app(self):
         """Create a FastAPI app with EchoEnvironment for WebSocket testing."""
         from echo_env.server.echo_environment import EchoEnvironment
+        from openenv.core.env_server.http_server import create_fastapi_app
         from openenv.core.env_server.mcp_types import (
             CallToolAction,
             CallToolObservation,
         )
-        from openenv.core.env_server.http_server import create_fastapi_app
 
         return create_fastapi_app(
             env=EchoEnvironment,
@@ -434,5 +436,5 @@ class TestWebSocketMCP:
             # Verify error response
             assert response["type"] == "mcp"
             assert "error" in response["data"]
-            assert response["data"]["error"]["code"] == -32600
+            assert response["data"]["error"]["code"] == -32602
             assert "name" in response["data"]["error"]["message"].lower()

@@ -24,11 +24,9 @@ from __future__ import annotations
 import json
 import logging
 import traceback
-from typing import Any
-
-from smolagents import LocalPythonExecutor
 
 from openenv.core.env_server.types import CodeExecResult
+from smolagents import LocalPythonExecutor
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -151,7 +149,7 @@ class PyExecutor:
 
             return CodeExecResult(stdout=stdout, stderr=stderr, exit_code=exit_code)
 
-        except Exception as e:
+        except Exception:
             # Any unexpected exception from the LocalPythonExecutor is
             # returned with a full traceback to make debugging easier.
             tb = traceback.format_exc()

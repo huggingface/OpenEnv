@@ -7,29 +7,55 @@
 """
 MCP Client classes for tool-calling environments.
 
-This module provides client classes for interacting with MCP-enabled environments:
+This module provides async client classes for interacting with MCP-enabled environments:
 - MCPClientBase: Base class with shared tool discovery
 - MCPToolClient: Client for tool-calling style (one tool per step)
 
 These clients abstract away the MCP protocol details, providing a clean interface
-for listing and calling tools on remote environments.
+for listing and calling tools on remote environments. All clients are async by default.
 
-Example:
+Architecture Overview::
+
+    ┌─────────────────────────────────────────────────────────┐
+    │                    HTTPEnvServer                        │
+    ├─────────────────────────────────────────────────────────┤
+    │  Simulation Mode (default):                             │
+    │    /ws    → OpenEnv protocol (reset/step/state)         │
+    │    /mcp   → MCP JSON-RPC (tools/list, tools/call)       │
+    │    /reset, /step, /state → HTTP endpoints               │
+    ├─────────────────────────────────────────────────────────┤
+    │  Production Mode (use_production_mode=True):                     │
+    │    /mcp   → MCP JSON-RPC (tools/list, tools/call)       │
+    │    Bypasses step() for direct tool access               │
+    └─────────────────────────────────────────────────────────┘
+
+    Client Usage:
+      MCPToolClient (default)     → /ws (step-based, with rewards)
+      MCPToolClient (production)    → /mcp (direct tool access, no rewards)
+
+Example (async):
     >>> from openenv.core.mcp_client import MCPToolClient
     >>>
-    >>> with MCPToolClient(base_url="http://localhost:8000") as env:
+    >>> async with MCPToolClient(base_url="http://localhost:8000") as env:
     ...     # Discover available tools
-    ...     tools = env.list_tools()
+    ...     tools = await env.list_tools()
     ...     print([t.name for t in tools])
     ...
     ...     # Call a tool
-    ...     result = env.call_tool("echo_message", message="Hello!")
+    ...     result = await env.call_tool("echo_message", message="Hello!")
     ...     print(result)
+
+Example (sync wrapper):
+    >>> env = MCPToolClient(base_url="http://localhost:8000").sync()
+    >>> with env:
+    ...     tools = env.list_tools()
+    ...     result = env.call_tool("echo_message", message="Hello!")
 """
 
+import asyncio
 from typing import Any, Dict, List, Optional
 
-from .client_types import StepResult, StateT
+from .client_types import StepResult
 from .env_client import EnvClient
 from .env_server.mcp_types import (
     CallToolAction,
@@ -60,6 +86,7 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
         connect_timeout_s: float = 10.0,
         message_timeout_s: float = 60.0,
         provider: Optional[Any] = None,
+        mode: Optional[str] = None,
     ):
         """
         Initialize MCP client.
@@ -69,16 +96,91 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
             connect_timeout_s: Timeout for establishing WebSocket connection.
             message_timeout_s: Timeout for receiving responses to messages.
             provider: Optional container/runtime provider for lifecycle management.
+            mode: Communication mode. Must be 'production' for MCP clients. Defaults to 'production'.
         """
+        # MCPClientBase defaults to production mode, but allow override for validation
+        if mode is None:
+            mode = "production"
+
+        # Validate that mode is production
+        mode_lower = mode.lower()
+        if mode_lower != "production":
+            raise ValueError(
+                f"MCPToolClient only supports 'production' mode, got '{mode}'. "
+                f"Use GenericEnvClient for simulation mode."
+            )
+
         super().__init__(
             base_url=base_url,
             connect_timeout_s=connect_timeout_s,
             message_timeout_s=message_timeout_s,
             provider=provider,
+            mode=mode,
         )
         self._tools_cache: Optional[List[Tool]] = None
+        self.use_production_mode = False
+        self._production_session_id: Optional[str] = None
+        self._production_session_lock = asyncio.Lock()
+        self._jsonrpc_request_id = 0
+        self._http_client: Optional[Any] = None  # lazily-created httpx.AsyncClient
 
-    def list_tools(self, use_cache: bool = True) -> List[Tool]:
+    def _next_request_id(self) -> int:
+        """Generate a monotonically increasing JSON-RPC request id."""
+        self._jsonrpc_request_id += 1
+        return self._jsonrpc_request_id
+
+    def _production_mcp_url(self) -> str:
+        """Build HTTP MCP endpoint URL from the client's websocket URL."""
+        url = self._ws_url.replace("ws://", "http://").replace("wss://", "https://")
+        if url.endswith("/ws"):
+            url = url[: -len("/ws")]
+        return url.rstrip("/") + "/mcp"
+
+    async def _get_http_client(self) -> Any:
+        """Return a shared httpx.AsyncClient, creating one lazily."""
+        if self._http_client is None:
+            import httpx
+
+            self._http_client = httpx.AsyncClient()
+        return self._http_client
+
+    async def _production_mcp_request(
+        self, method: str, params: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Send a JSON-RPC request to HTTP /mcp and return parsed JSON response."""
+        client = await self._get_http_client()
+        response = await client.post(
+            self._production_mcp_url(),
+            json={
+                "jsonrpc": "2.0",
+                "method": method,
+                "params": params or {},
+                "id": self._next_request_id(),
+            },
+            timeout=self._message_timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def _ensure_production_session(self) -> str:
+        """Create and cache a persistent HTTP MCP session id if needed."""
+        async with self._production_session_lock:
+            if self._production_session_id is not None:
+                return self._production_session_id
+
+            data = await self._production_mcp_request("openenv/session/create")
+            if "error" in data:
+                message = data.get("error", {}).get("message", "unknown error")
+                raise RuntimeError(f"Failed to create MCP session: {message}")
+
+            session_id = data.get("result", {}).get("session_id")
+            if not session_id:
+                raise RuntimeError("Failed to create MCP session: missing session_id")
+
+            self._production_session_id = session_id
+            return session_id
+
+    async def list_tools(self, use_cache: bool = True) -> List[Tool]:
         """
         Discover available tools from the environment.
 
@@ -90,15 +192,50 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
             List of Tool objects with name, description, and input_schema.
 
         Example:
-            >>> tools = env.list_tools()
+            >>> tools = await env.list_tools()
             >>> for tool in tools:
             ...     print(f"{tool.name}: {tool.description}")
         """
         if use_cache and self._tools_cache is not None:
             return self._tools_cache
 
-        result = self.step(ListToolsAction())
-        self._tools_cache = result.observation.tools
+        # Use production mode HTTP endpoint if enabled.
+        # Some tests instantiate with __new__ and skip __init__, so default missing flag to False.
+        if getattr(self, "use_production_mode", False):
+            try:
+                session_id = await self._ensure_production_session()
+                data = await self._production_mcp_request(
+                    "tools/list",
+                    {"session_id": session_id},
+                )
+                if "error" in data:
+                    message = data.get("error", {}).get("message", "unknown error")
+                    raise RuntimeError(f"list_tools failed: {message}")
+                if "result" in data and "tools" in data["result"]:
+                    tools = [
+                        Tool(
+                            name=t.get("name", ""),
+                            description=t.get("description", ""),
+                            input_schema=t.get(
+                                "input_schema", t.get("inputSchema", {})
+                            ),
+                        )
+                        for t in data["result"]["tools"]
+                    ]
+                    self._tools_cache = tools
+                    return tools
+            except Exception:
+                # If HTTP request fails, return empty list
+                pass
+            return []
+
+        result = await self.step(ListToolsAction())
+        if isinstance(result.observation, ListToolsObservation):
+            self._tools_cache = result.observation.tools
+            return self._tools_cache
+
+        # Unexpected observation type; keep API stable with an empty tool list.
+        self._tools_cache = []
         return self._tools_cache
 
     def _step_payload(self, action: Any) -> Dict[str, Any]:
@@ -172,10 +309,39 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
             step_count=payload.get("step_count", 0),
         )
 
+    async def close(self) -> None:
+        """
+        Close client resources.
+
+        In production MCP mode, this also closes the server-side persistent
+        MCP session (best effort) before closing websocket/provider resources.
+        """
+        if self._production_session_id is not None:
+            try:
+                await self._production_mcp_request(
+                    "openenv/session/close",
+                    {"session_id": self._production_session_id},
+                )
+            except Exception:
+                # Best effort cleanup - do not mask normal close behavior
+                pass
+            finally:
+                self._production_session_id = None
+
+        if self._http_client is not None:
+            try:
+                await self._http_client.aclose()
+            except Exception:
+                pass
+            finally:
+                self._http_client = None
+
+        await super().close()
+
 
 class MCPToolClient(MCPClientBase):
     """
-    Client for tool-calling style MCP interactions.
+    Async client for tool-calling style MCP interactions.
 
     Each step invokes a single tool. Use this for traditional function-calling
     agent patterns where the agent decides which tool to call next.
@@ -184,29 +350,35 @@ class MCPToolClient(MCPClientBase):
     - `list_tools()`: Get all available tools with their schemas
     - `call_tool(name, **kwargs)`: Invoke a tool by name with arguments
 
-    Example:
-        >>> with MCPToolClient(base_url="http://localhost:8000") as env:
+    Example (async):
+        >>> async with MCPToolClient(base_url="http://localhost:8000") as env:
         ...     # Reset the environment
-        ...     env.reset()
+        ...     await env.reset()
         ...
         ...     # Discover available tools
-        ...     tools = env.list_tools()
+        ...     tools = await env.list_tools()
         ...     print([t.name for t in tools])  # ['echo_message', 'echo_with_length']
         ...
         ...     # Call a tool directly
-        ...     result = env.call_tool("echo_message", message="Hello!")
+        ...     result = await env.call_tool("echo_message", message="Hello!")
         ...     print(result)  # "Hello!"
         ...
         ...     # Or use the full action interface
         ...     from openenv.core.env_server.mcp_types import CallToolAction
-        ...     step_result = env.step(CallToolAction(
+        ...     step_result = await env.step(CallToolAction(
         ...         tool_name="echo_with_length",
         ...         arguments={"message": "Test"}
         ...     ))
         ...     print(step_result.observation.result)
+
+    Example (sync wrapper):
+        >>> env = MCPToolClient(base_url="http://localhost:8000").sync()
+        >>> with env:
+        ...     tools = env.list_tools()
+        ...     result = env.call_tool("echo_message", message="Hello!")
     """
 
-    def call_tool(self, name: str, **kwargs: Any) -> Any:
+    async def call_tool(self, name: str, **kwargs: Any) -> Any:
         """
         Call a tool by name.
 
@@ -225,14 +397,34 @@ class MCPToolClient(MCPClientBase):
             RuntimeError: If the server returns an error response.
 
         Example:
-            >>> result = env.call_tool("add", a=5, b=3)
+            >>> result = await env.call_tool("add", a=5, b=3)
             >>> print(result)  # 8
             >>>
-            >>> result = env.call_tool("greet", name="Claude")
+            >>> result = await env.call_tool("greet", name="Claude")
             >>> print(result)  # "Hello, Claude!"
         """
+        if getattr(self, "use_production_mode", False):
+            session_id = await self._ensure_production_session()
+            data = await self._production_mcp_request(
+                "tools/call",
+                {
+                    "name": name,
+                    "arguments": kwargs,
+                    "session_id": session_id,
+                },
+            )
+
+            if "error" in data:
+                message = data.get("error", {}).get("message", "unknown error")
+                raise RuntimeError(f"Tool '{name}' failed: {message}")
+
+            result = data.get("result")
+            if isinstance(result, dict) and "data" in result:
+                return result["data"]
+            return result
+
         action = CallToolAction(tool_name=name, arguments=kwargs)
-        result = self.step(action)
+        result = await self.step(action)
         obs = result.observation
 
         # Check for transport/framework errors
@@ -257,7 +449,7 @@ class MCPToolClient(MCPClientBase):
         # Fallback for unexpected observation types
         return obs
 
-    def get_tool(self, name: str) -> Optional[Tool]:
+    async def get_tool(self, name: str) -> Optional[Tool]:
         """
         Get a specific tool by name.
 
@@ -268,18 +460,18 @@ class MCPToolClient(MCPClientBase):
             The Tool object if found, None otherwise.
 
         Example:
-            >>> tool = env.get_tool("echo_message")
+            >>> tool = await env.get_tool("echo_message")
             >>> if tool:
             ...     print(tool.description)
             ...     print(tool.input_schema)
         """
-        tools = self.list_tools()
+        tools = await self.list_tools()
         for tool in tools:
             if tool.name == name:
                 return tool
         return None
 
-    def has_tool(self, name: str) -> bool:
+    async def has_tool(self, name: str) -> bool:
         """
         Check if a tool exists.
 
@@ -289,4 +481,4 @@ class MCPToolClient(MCPClientBase):
         Returns:
             True if the tool exists, False otherwise.
         """
-        return self.get_tool(name) is not None
+        return await self.get_tool(name) is not None

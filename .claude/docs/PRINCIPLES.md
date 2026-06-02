@@ -33,6 +33,9 @@ These decisions are documented in RFCs and should not be changed without a new R
 | **MCP as universal standard** | All agent-environment tool interaction via MCP | 003 |
 | **WebSocket for step loop** | Lower latency than HTTP per-step | 002 |
 | **Two-interface model** | WebSocket for orchestration, MCP for agent tools | 001 |
+| **One env = one trajectory** | Batching via environment stacking, not multiplexing | 004 |
+
+**One env = one trajectory**: Environments do not support multiplexed trajectories. To generate batches, stack multiple environment instances. Helpers like `EnvPool` orchestrate batch collection across the stack. Multiplexing is left to future work.
 
 ## When to Revisit These Principles
 

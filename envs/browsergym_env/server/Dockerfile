@@ -1,53 +1,35 @@
-# Use public Python base image for HuggingFace compatibility
-FROM python:3.11-slim
+# Use the matching Playwright Python image for browsergym-core 0.14.3.
+FROM mcr.microsoft.com/playwright/python:v1.44.0-jammy
 
 # Set working directory
 WORKDIR /app/env
 
-# Install system dependencies for Playwright and browsers
+# Install only the extra packages this env still needs on top of the Playwright image.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Playwright browser dependencies
-    libnss3 \
-    libnspr4 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libdrm2 \
-    libdbus-1-3 \
-    libxkbcommon0 \
-    libatspi2.0-0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libxrandr2 \
-    libgbm1 \
-    libpango-1.0-0 \
-    libcairo2 \
-    libasound2 \
-    libxshmfence1 \
     fonts-unifont \
     fonts-noto-color-emoji \
-    # Additional dependencies
     git \
-    wget \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy environment files first (for better caching)
+# Build context should be envs/browsergym_env/ (not server/ or repo root)
 COPY . .
 
 # Make start script executable
 RUN chmod +x /app/env/server/start.sh
 
-# Install Python dependencies using pip install -e . (from pyproject.toml)
-RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir uv
+RUN uv pip install --system --no-cache -e .
 
-# Install Playwright browsers (Chromium by default)
-# Use python -m since playwright command might not be in PATH
+# Ensure the installed Playwright package has a matching Chromium runtime.
 RUN python -m playwright install chromium
 
-# Install MiniWoB++ tasks
-RUN git clone --depth 1 https://github.com/Farama-Foundation/miniwob-plusplus.git /app/miniwob-plusplus
+# Install MiniWoB++ from a pinned snapshot to avoid flaky Hub-time git clones.
+ARG MINIWOB_COMMIT=7fd85d71a4b60325c6585396ec4f48377d049838
+RUN mkdir -p /app/miniwob-plusplus && \
+    curl -L "https://github.com/Farama-Foundation/miniwob-plusplus/archive/${MINIWOB_COMMIT}.tar.gz" \
+    | tar -xz --strip-components=1 -C /app/miniwob-plusplus
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1

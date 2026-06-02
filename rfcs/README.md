@@ -87,6 +87,12 @@ Each RFC should include the following sections:
 ### MCP Integration
 - [003-mcp-support.md](./003-mcp-support.md) - MCP Support: Traditional Tool Calling
 
+### Reward & Evaluation
+- [004-rubrics.md](./004-rubrics.md) - Rubric System for Reward Computation
+
+### Agentic Harnesses
+- [005-agentic-harnesses.md](./005-agentic-harnesses.md) - Agentic Harness Integration (OpenClaw, Claude Code, etc.)
+
 ## Questions?
 
 For questions about the RFC process, reach out to the core team or open a discussion in the project repository.

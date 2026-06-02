@@ -1,0 +1,46 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openenv-calendar-env"
+version = "0.1.0"
+description = "Calendar environment for OpenEnv with MCP tool access"
+requires-python = ">=3.10"
+dependencies = [
+    "openenv>=0.2.0",
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.27.0",
+    "pydantic>=2.5.0",
+    "mcp",
+    "httpx>=0.25.2",
+    "python-dotenv>=1.0.0",
+    "sqlalchemy>=2.0.0",
+    "python-dateutil>=2.8.0",
+    "jsonschema>=4.0.0",
+    "requests>=2.32.5",
+    "websockets",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+]
+
+[project.scripts]
+server = "calendar_env.server.app:main"
+
+[tool.setuptools]
+include-package-data = true
+packages = ["calendar_env", "calendar_env.server"]
+package-dir = { "calendar_env" = ".", "calendar_env.server" = "server" }
+
+[tool.setuptools.package-data]
+calendar_env = ["**/*.yaml", "**/*.yml", "**/*.md"]

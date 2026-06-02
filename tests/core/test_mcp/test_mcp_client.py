@@ -14,11 +14,10 @@ These tests verify the MCPToolClient class functionality including:
 4. Error handling for tool failures
 """
 
-import json
-import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock
 
-from openenv.core.mcp_client import MCPClientBase, MCPToolClient
+import pytest
+from openenv.core.client_types import StepResult
 from openenv.core.env_server.mcp_types import (
     CallToolAction,
     CallToolObservation,
@@ -28,7 +27,7 @@ from openenv.core.env_server.mcp_types import (
     ToolError,
     ToolErrorType,
 )
-from openenv.core.client_types import StepResult
+from openenv.core.mcp_client import MCPClientBase, MCPToolClient
 
 
 # =============================================================================
@@ -190,22 +189,23 @@ class TestMCPClientBase:
 class TestMCPToolClient:
     """Tests for MCPToolClient class."""
 
-    def test_call_tool_success(self, mock_tools):
+    @pytest.mark.asyncio
+    async def test_call_tool_success(self, mock_tools):
         """Test call_tool returns result on success."""
         client = MCPToolClient.__new__(MCPToolClient)
         client._ws = None
         client._tools_cache = None
 
-        # Mock the step method
+        # Mock the step method (now async)
         mock_obs = CallToolObservation(
             tool_name="add",
             result=8,
             error=None,
             done=False,
         )
-        client.step = MagicMock(return_value=StepResult(observation=mock_obs))
+        client.step = AsyncMock(return_value=StepResult(observation=mock_obs))
 
-        result = client.call_tool("add", a=5, b=3)
+        result = await client.call_tool("add", a=5, b=3)
 
         assert result == 8
         client.step.assert_called_once()
@@ -214,13 +214,14 @@ class TestMCPToolClient:
         assert call_args.tool_name == "add"
         assert call_args.arguments == {"a": 5, "b": 3}
 
-    def test_call_tool_raises_on_error(self):
+    @pytest.mark.asyncio
+    async def test_call_tool_raises_on_error(self):
         """Test call_tool raises RuntimeError on tool error."""
         client = MCPToolClient.__new__(MCPToolClient)
         client._ws = None
         client._tools_cache = None
 
-        # Mock the step method to return an error
+        # Mock the step method to return an error (now async)
         mock_obs = CallToolObservation(
             tool_name="invalid_tool",
             result=None,
@@ -230,77 +231,83 @@ class TestMCPToolClient:
             ),
             done=False,
         )
-        client.step = MagicMock(return_value=StepResult(observation=mock_obs))
+        client.step = AsyncMock(return_value=StepResult(observation=mock_obs))
 
         with pytest.raises(RuntimeError) as exc_info:
-            client.call_tool("invalid_tool")
+            await client.call_tool("invalid_tool")
 
         assert "invalid_tool" in str(exc_info.value)
         assert "not found" in str(exc_info.value).lower()
 
-    def test_list_tools_caching(self, mock_tools):
+    @pytest.mark.asyncio
+    async def test_list_tools_caching(self, mock_tools):
         """Test list_tools caches results."""
         client = MCPToolClient.__new__(MCPToolClient)
         client._ws = None
         client._tools_cache = None
+        client.use_production_mode = False
 
-        # Mock the step method
+        # Mock the step method (now async)
         mock_obs = ListToolsObservation(tools=mock_tools, done=False)
-        client.step = MagicMock(return_value=StepResult(observation=mock_obs))
+        client.step = AsyncMock(return_value=StepResult(observation=mock_obs))
 
         # First call should invoke step
-        tools1 = client.list_tools()
+        tools1 = await client.list_tools()
         assert len(tools1) == 2
         assert client.step.call_count == 1
 
         # Second call should use cache
-        tools2 = client.list_tools()
+        tools2 = await client.list_tools()
         assert len(tools2) == 2
         assert client.step.call_count == 1  # Not called again
 
         # Force refresh should invoke step again
-        tools3 = client.list_tools(use_cache=False)
+        tools3 = await client.list_tools(use_cache=False)
         assert len(tools3) == 2
         assert client.step.call_count == 2
 
-    def test_get_tool_found(self, mock_tools):
+    @pytest.mark.asyncio
+    async def test_get_tool_found(self, mock_tools):
         """Test get_tool returns tool when found."""
         client = MCPToolClient.__new__(MCPToolClient)
         client._ws = None
         client._tools_cache = mock_tools
 
-        tool = client.get_tool("add")
+        tool = await client.get_tool("add")
 
         assert tool is not None
         assert tool.name == "add"
         assert tool.description == "Add two numbers"
 
-    def test_get_tool_not_found(self, mock_tools):
+    @pytest.mark.asyncio
+    async def test_get_tool_not_found(self, mock_tools):
         """Test get_tool returns None when not found."""
         client = MCPToolClient.__new__(MCPToolClient)
         client._ws = None
         client._tools_cache = mock_tools
 
-        tool = client.get_tool("nonexistent")
+        tool = await client.get_tool("nonexistent")
 
         assert tool is None
 
-    def test_has_tool_true(self, mock_tools):
+    @pytest.mark.asyncio
+    async def test_has_tool_true(self, mock_tools):
         """Test has_tool returns True when tool exists."""
         client = MCPToolClient.__new__(MCPToolClient)
         client._ws = None
         client._tools_cache = mock_tools
 
-        assert client.has_tool("add") is True
-        assert client.has_tool("greet") is True
+        assert await client.has_tool("add") is True
+        assert await client.has_tool("greet") is True
 
-    def test_has_tool_false(self, mock_tools):
+    @pytest.mark.asyncio
+    async def test_has_tool_false(self, mock_tools):
         """Test has_tool returns False when tool doesn't exist."""
         client = MCPToolClient.__new__(MCPToolClient)
         client._ws = None
         client._tools_cache = mock_tools
 
-        assert client.has_tool("nonexistent") is False
+        assert await client.has_tool("nonexistent") is False
 
 
 # =============================================================================

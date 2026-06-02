@@ -1,7 +1,6 @@
 import pytest
-
+from textarena_env.models import TextArenaAction, TextArenaMessage
 from textarena_env.server.environment import TextArenaEnvironment
-from textarena_env.models import TextArenaMessage, TextArenaAction
 
 
 def test_convert_messages_coalesces_consecutive_characters():

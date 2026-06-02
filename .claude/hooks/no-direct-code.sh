@@ -1,13 +1,13 @@
 #!/bin/bash
-# PreToolUse hook for Edit/Write: Block direct code edits in worktree mode
+# PreToolUse hook for Edit/Write: Block direct code edits in TDD mode
 #
-# Design: Only block in worktrees (focused work mode).
-# In main repo, allow direct edits (exploration mode).
+# Design: Only block when TDD is activated via /work-on-issue.
+# Worktrees without TDD marker and the main repo allow direct edits.
 
-# Check if in worktree
-TOPLEVEL=$(git rev-parse --show-toplevel 2>/dev/null)
-if [[ "$TOPLEVEL" != *".worktrees"* ]]; then
-    exit 0  # Not in worktree, allow all edits
+# Check if TDD is active (marker file from /work-on-issue)
+source "$(dirname "$0")/tdd-state.sh"
+if ! is_tdd_active; then
+    exit 0  # TDD not active, allow all edits
 fi
 
 # Read JSON from stdin (hook input format)
@@ -35,13 +35,14 @@ if [[ "$FILE_PATH" != */src/* ]] && [[ "$FILE_PATH" != */envs/* ]]; then
 fi
 
 # Block with helpful message
-cat >&2 << 'EOF'
+ISSUE=$(get_tdd_issue)
+cat >&2 << EOF
 
 ===================================================================
-  WORKTREE MODE: Direct code edit blocked
+  TDD MODE: Direct code edit blocked  (issue #${ISSUE:-?})
 ===================================================================
 
-In worktrees, use the TDD workflow:
+In TDD mode, use the TDD workflow:
 
   1. /write-tests  ->  tester writes failing tests
   2. /implement    ->  implementer makes tests pass

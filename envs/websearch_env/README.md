@@ -88,7 +88,8 @@ That's it! The `WebSearchEnvironment.from_docker_image()` method handles:
 Before using the environment, you need to build the Docker image:
 
 ```bash
-# From project root
+# From the websearch_env directory
+cd envs/websearch_env
 docker build -t web_search-env:latest -f server/Dockerfile .
 ```
 

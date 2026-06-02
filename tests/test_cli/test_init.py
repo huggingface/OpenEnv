@@ -7,14 +7,10 @@
 """Tests for the openenv init command."""
 
 import os
-import tempfile
 from pathlib import Path
 
-import pytest
-import typer
-from typer.testing import CliRunner
-
 from openenv.cli.__main__ import app
+from typer.testing import CliRunner
 
 
 runner = CliRunner()

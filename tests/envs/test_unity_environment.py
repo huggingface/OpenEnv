@@ -27,7 +27,6 @@ Running Tests:
 """
 
 import os
-import shutil
 import subprocess
 import sys
 import time
@@ -40,7 +39,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 
 # Check if mlagents-envs is installed
 try:
-    import mlagents_envs
+    import mlagents_envs  # noqa: F401
 
     MLAGENTS_INSTALLED = True
 except ImportError:

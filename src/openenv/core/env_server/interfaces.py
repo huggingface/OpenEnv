@@ -4,10 +4,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import inspect
 from abc import ABC, abstractmethod
-from typing import Any, Generic, Optional, Protocol, TypedDict, TypeVar
+from typing import Any, Generic, Optional, Protocol, TYPE_CHECKING, TypeVar
 
-from .types import Action, Observation, State, EnvironmentMetadata
+from typing_extensions import TypedDict
+
+from .types import Action, EnvironmentMetadata, Observation, State
+
+if TYPE_CHECKING:
+    from openenv.core.rubrics import Rubric
 
 ActT = TypeVar("ActT", bound=Action)
 ObsT = TypeVar("ObsT", bound=Observation)
@@ -94,6 +100,8 @@ class Environment(ABC, Generic[ActT, ObsT, StateT]):
 
     Args:
         transform: Optional transform to apply to observations
+        rubric: Optional rubric for reward computation. When provided, the
+            rubric's output can be used to set the observation's reward in step().
 
     Class Attributes:
         SUPPORTS_CONCURRENT_SESSIONS: Whether this environment supports concurrent sessions.
@@ -105,13 +113,32 @@ class Environment(ABC, Generic[ActT, ObsT, StateT]):
             - The environment uses proper session isolation (e.g., unique working dirs)
             - No shared mutable state exists between instances
             - External resources (databases, APIs) can handle concurrent access
+
+    Attributes:
+        rubric: Optional rubric for computing rewards. Environments can set this
+            in __init__ and use it in step() to compute observation rewards.
+            Training infrastructure can access it for introspection:
+                for name, r in env.rubric.named_rubrics():
+                    print(f"{name}: {r.last_score}")
+
+    See RFC 004 for rubric design: rfcs/004-rubrics.md
     """
 
     # Class-level flag indicating whether this environment supports concurrent sessions
     SUPPORTS_CONCURRENT_SESSIONS: bool = False
 
-    def __init__(self, transform: Optional[Transform[ObsT]] = None):
+    REQUIRES_SINGLE_THREAD_EXECUTOR: bool = False
+
+    # Optional rubric for reward computation
+    rubric: Optional["Rubric"]
+
+    def __init__(
+        self,
+        transform: Optional[Transform[ObsT]] = None,
+        rubric: Optional["Rubric"] = None,
+    ):
         self.transform = transform
+        self.rubric = rubric
 
     @abstractmethod
     def reset(
@@ -184,6 +211,84 @@ class Environment(ABC, Generic[ActT, ObsT, StateT]):
         if self.transform is not None:
             return self.transform(observation)
         return observation
+
+    def _apply_rubric(self, action: ActT, observation: ObsT) -> float:
+        """Apply rubric if one is provided.
+
+        Args:
+            action: The action taken by the agent.
+            observation: The resulting observation.
+
+        Returns:
+            Reward value from the rubric, or 0.0 if no rubric is set.
+
+        Usage in step():
+            def step(self, action: MyAction, ...) -> MyObservation:
+                # ... execute action and create observation ...
+                observation.reward = self._apply_rubric(action, observation)
+                return observation
+        """
+        if self.rubric is not None:
+            return self.rubric(action, observation)
+        return 0.0
+
+    async def _apply_rubric_async(self, action: ActT, observation: ObsT) -> float:
+        """Apply rubric asynchronously if one is provided.
+
+        Args:
+            action: The action taken by the agent.
+            observation: The resulting observation.
+
+        Returns:
+            Reward value from the rubric, or 0.0 if no rubric is set.
+
+        Usage in step_async():
+            async def step_async(self, action: MyAction, ...) -> MyObservation:
+                # ... execute action and create observation ...
+                observation.reward = await self._apply_rubric_async(action, observation)
+                return observation
+        """
+        if self.rubric is not None:
+            result = self.rubric(action, observation)
+            # If rubric returns a coroutine, await it
+            if inspect.iscoroutine(result):
+                return await result
+            return result
+        return 0.0
+
+    def _reset_rubric(self) -> None:
+        """Reset the rubric state if one is provided.
+
+        Call this in reset() to clear any trajectory state in the rubric.
+
+        Usage in reset():
+            def reset(self, ...) -> MyObservation:
+                self._reset_rubric()
+                # ... create initial observation ...
+                return observation
+        """
+        if self.rubric is not None:
+            self.rubric.reset()
+
+    async def _reset_rubric_async(self) -> None:
+        """Reset the rubric state asynchronously if one is provided.
+
+        Call this in reset_async() to clear any trajectory state in the rubric.
+
+        Usage in reset_async():
+            async def reset_async(self, ...) -> MyObservation:
+                await self._reset_rubric_async()
+                # ... create initial observation ...
+                return observation
+        """
+        if self.rubric is not None:
+            # Check if rubric has async reset method
+            if hasattr(self.rubric, "reset_async"):
+                result = self.rubric.reset_async()
+                if inspect.iscoroutine(result):
+                    await result
+            else:
+                self.rubric.reset()
 
     def close(self) -> None:
         """Clean up resources used by the environment.

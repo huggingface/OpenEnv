@@ -17,15 +17,17 @@ from typing import Dict
 try:
     # In-repo imports (when running from OpenEnv repository)
     from openenv.core.client_types import StepResult
-    from openenv.core.env_server.types import State
     from openenv.core.env_client import EnvClient
+    from openenv.core.env_server.types import State
+
     from .models import WebSearchAction, WebSearchObservation
 except ImportError:
+    from models import WebSearchAction, WebSearchObservation
+
     # Standalone imports (when environment is standalone with openenv from pip)
     from openenv.core.client_types import StepResult
-    from openenv.core.env_server.types import State
     from openenv.core.env_client import EnvClient
-    from models import WebSearchAction, WebSearchObservation
+    from openenv.core.env_server.types import State
 
 
 class WebSearchEnv(EnvClient[WebSearchAction, WebSearchObservation, State]):

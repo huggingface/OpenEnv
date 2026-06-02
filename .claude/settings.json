@@ -22,6 +22,10 @@
           {
             "type": "command",
             "command": ".claude/hooks/pre-commit-check.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/pre-pr-check.sh"
           }
         ]
       },
@@ -51,7 +55,7 @@
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "First, perform quick checks to avoid unnecessary TDD evaluation:\n\n1. SKIP CHECK: If the user's message contains phrases like 'skip TDD', 'no TDD', 'just discussing', 'exploration only', or similar opt-out language, return 'stop' immediately.\n\n2. EDIT CHECK: Look at Claude's actions in this turn. Did Claude edit any implementation files (*.py files in src/ or envs/)? If NO implementation files were edited, return 'stop' immediately.\n\n3. TDD EVALUATION: Only if implementation files were edited AND no opt-out phrase was used, evaluate TDD compliance: (a) Did tests for the edited functionality exist first? (b) If starting new work, were requirements gathered and tests written before implementing? (c) If creating a PR or commit, is it linked to a GitHub issue?\n\nReturn 'continue' with corrective instructions if TDD was violated. Return 'stop' if workflow was followed or checks 1-2 passed."
+            "prompt": "First, perform quick checks to avoid unnecessary TDD evaluation:\n\n0. TDD CONTEXT CHECK: Look at the session start output. If there is NO 'TDD MODE ACTIVE' banner and the session was not initiated via /work-on-issue, return 'stop' immediately. TDD enforcement only applies when explicitly activated.\n\n1. SKIP CHECK: If the user's message contains phrases like 'skip TDD', 'no TDD', 'just discussing', 'exploration only', or similar opt-out language, return 'stop' immediately.\n\n2. EDIT CHECK: Look at Claude's actions in this turn. Did Claude edit any implementation files (*.py files in src/ or envs/)? If NO implementation files were edited, return 'stop' immediately.\n\n3. TDD EVALUATION: Only if implementation files were edited AND no opt-out phrase was used, evaluate TDD compliance: (a) Did tests for the edited functionality exist first? (b) If starting new work, were requirements gathered and tests written before implementing? (c) If creating a PR or commit, is it linked to a GitHub issue?\n\nReturn 'continue' with corrective instructions if TDD was violated. Return 'stop' if workflow was followed or checks 0-2 passed."
           }
         ]
       }
@@ -72,6 +76,15 @@
           {
             "type": "command",
             "command": ".claude/hooks/after-implementer.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "docs-updater",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/after-docs-updater.sh"
           }
         ]
       },

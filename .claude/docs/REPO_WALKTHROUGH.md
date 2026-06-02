@@ -15,7 +15,7 @@ OpenEnv/
 ├── envs/                     # Example environments (not installed, used via PYTHONPATH)
 ├── tests/                    # Test suite
 ├── examples/                 # Usage examples and tutorials
-├── docs/                     # Documentation (MkDocs)
+├── docs/                     # Documentation (Sphinx)
 ├── rfcs/                     # Design documents and architectural decisions
 ├── scripts/                  # Utility scripts
 │
@@ -48,8 +48,9 @@ src/
 │   │   │
 │   │   ├── containers/           # Container lifecycle management
 │   │   │   ├── runtime/              # Provider implementations
-│   │   │   │   ├── local_docker.py       # LocalDockerProvider
-│   │   │   │   └── uv_provider.py        # UVProvider (for local dev)
+│   │   │   │   ├── providers.py           # ContainerProvider/RuntimeProvider ABCs + LocalDockerProvider
+│   │   │   │   ├── daytona_provider.py    # DaytonaProvider (Daytona cloud sandboxes)
+│   │   │   │   └── uv_provider.py         # UVProvider (for local dev)
 │   │   │   └── images/               # Base Docker images
 │   │   │       └── Dockerfile            # openenv-base image
 │   │   │
@@ -100,6 +101,7 @@ envs/
 ├── sumo_rl_env/              # Traffic simulation (SUMO)
 ├── connect4_env/             # Connect Four game
 ├── dipg_safety_env/          # Safety-focused environment
+├── reasoning_gym_env/        # Reasoning problems and puzzles
 └── websearch_env/            # Web search environment
 ```
 
@@ -146,46 +148,91 @@ rfcs/
 ├── skills/                   # Auto-discovered skills
 │   ├── alignment-review/
 │   │   └── SKILL.md              # Two-tier code review
+│   ├── implement/
+│   │   └── SKILL.md              # Make tests pass (Green phase)
 │   ├── pre-submit-pr/
 │   │   └── SKILL.md              # PR readiness validation
-│   └── rfc-check/
-│       └── SKILL.md              # RFC requirement analysis
+│   ├── rfc-check/
+│   │   └── SKILL.md              # RFC requirement analysis
+│   ├── simplify/
+│   │   └── SKILL.md              # Refactor after tests pass
+│   ├── sprint/
+│   │   └── SKILL.md              # Parallel multi-issue batch (Agent Teams)
+│   ├── update-docs/
+│   │   └── SKILL.md              # Fix stale docs after API changes
+│   ├── watch-pr/
+│   │   └── SKILL.md              # Monitor CI + Greptile review after PR
+│   ├── work-on-issue/
+│   │   └── SKILL.md              # Start TDD on a single issue
+│   └── write-tests/
+│       └── SKILL.md              # Write failing tests (Red phase)
 │
 ├── agents/                   # Specialized subagents
 │   ├── alignment-reviewer.md     # Review for bugs + alignment
+│   ├── build-validator.md        # Validate builds
+│   ├── docs-updater.md           # Fix stale docs after API changes
 │   ├── env-validator.md          # Validate environments e2e
+│   ├── implementer.md            # Make tests pass with minimal code
+│   ├── issue-worker.md           # Extract requirements from GitHub issues
 │   ├── openenv-architect.md      # Design new features
-│   └── build-validator.md        # Validate builds
+│   ├── pr-planner.md             # Plan stacked PRs for complex features
+│   └── tester.md                 # Write high-signal, failing tests
 │
 └── hooks/                    # Automation scripts
     ├── lint.sh                   # Run ruff format check
     ├── test.sh                   # Run pytest
-    └── check-debug.sh            # Find debug code
+    ├── check-debug.sh            # Find debug code
+    ├── post-push-pr.sh           # Validate PR after push (freshness, CI, conflicts)
+    ├── tdd-state.sh              # Shared TDD state helpers (is_tdd_active, activate, deactivate)
+    ├── tdd-deactivate.sh         # Standalone TDD deactivation script
+    ├── install.sh                # Install git hooks (pre-commit, pre-push, etc.)
+    ├── session-start.sh          # SessionStart banner (3-state: TDD/worktree/explore)
+    ├── no-direct-code.sh         # PreToolUse: block direct edits when TDD active
+    ├── pre-commit-check.sh       # PreToolUse: warn on git commit in TDD mode
+    ├── pre-pr-check.sh           # PreToolUse: block gh pr create if branch stale
+    ├── delegate-todos.sh         # PostToolUse: TDD workflow reminder on TodoWrite
+    ├── after-tester.sh           # SubagentStop: next steps after tester
+    ├── after-implementer.sh      # SubagentStop: next steps after implementer
+    ├── ci-wait.sh                # CI polling: block until checks complete or timeout
+    └── after-docs-updater.sh     # SubagentStop: next steps after docs-updater
 ```
 
 ## Documentation (`docs/`)
 
-MkDocs-based documentation:
+Sphinx-based documentation:
 
 ```
 docs/
-├── mkdocs.yml                # MkDocs configuration
-├── index.md                  # Home page
-├── quickstart.md             # Getting started guide
-├── core.md                   # Core library documentation
-├── cli.md                    # CLI reference
-├── environment-builder.md    # How to create environments
+├── Makefile                  # Sphinx build targets (html, html-noplot, html-stable)
+├── README.md                 # Local build instructions
 │
-├── environments/             # Per-environment documentation
-│   ├── echo.md
-│   ├── coding.md
-│   └── ...
-│
-├── tutorials/                # Step-by-step guides
-│   ├── openenv-tutorial.md
-│   └── wordle-grpo.md
-│
-└── styles/                   # Custom CSS
+└── source/                   # Sphinx source root
+    ├── conf.py               # Sphinx configuration
+    ├── index.md              # Home page
+    ├── core.md               # Core API reference (autodoc)
+    ├── cli.md                # CLI reference (autodoc)
+    ├── auto_discovery.md     # Auto-discovery API docs
+    ├── customizing-web-ui.md # Web UI customization guide
+    ├── environments.md       # Environments catalog page
+    │
+    ├── environments/         # Per-environment documentation
+    │   ├── echo.md
+    │   ├── coding.md
+    │   └── ...
+    │
+    ├── getting_started/      # Sphinx Gallery executable tutorials
+    │   ├── plot_01_introduction_quickstart.py
+    │   ├── plot_02_using_environments.py
+    │   ├── plot_03_building_environments.py
+    │   ├── contributing-envs.md
+    │   └── environment-builder.md
+    │
+    ├── tutorials/            # Additional tutorials
+    │   ├── openenv-tutorial.md
+    │   ├── wordle-grpo.md
+    │   └── rl-training-2048.md
+    │
+    └── _static/              # Static assets (versions.json, etc.)
 ```
 
 ## Key Files to Know

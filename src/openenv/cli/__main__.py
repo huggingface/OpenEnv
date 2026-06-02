@@ -14,8 +14,16 @@ following the Hugging Face CLI pattern.
 import sys
 
 import typer
-
-from openenv.cli.commands import build, init, push, serve, validate
+from openenv.cli.commands import (
+    build,
+    collect,
+    fork,
+    init,
+    push,
+    serve,
+    skills,
+    validate,
+)
 
 # Create the main CLI app
 app = typer.Typer(
@@ -39,6 +47,19 @@ app.command(
 app.command(name="serve", help="Serve environments locally (TODO: Phase 4)")(
     serve.serve
 )
+app.command(
+    name="fork",
+    help="Fork (duplicate) a Hugging Face Space to your account",
+)(fork.fork)
+app.add_typer(
+    skills.app,
+    name="skills",
+    help="Manage OpenEnv skills for AI assistants",
+)
+app.command(
+    name="collect",
+    help="Collect rollouts from a deployed OpenEnv environment",
+)(collect.collect)
 
 
 # Entry point for setuptools

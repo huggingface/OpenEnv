@@ -169,14 +169,10 @@ class UnityMLAgentsEnvironment(Environment):
             else float(os.environ.get("UNITY_TIME_SCALE", "1.0"))
         )
         self._width = (
-            width
-            if width is not None
-            else int(os.environ.get("UNITY_WIDTH", "1280"))
+            width if width is not None else int(os.environ.get("UNITY_WIDTH", "1280"))
         )
         self._height = (
-            height
-            if height is not None
-            else int(os.environ.get("UNITY_HEIGHT", "720"))
+            height if height is not None else int(os.environ.get("UNITY_HEIGHT", "720"))
         )
         self._quality_level = (
             quality_level
@@ -286,7 +282,9 @@ class UnityMLAgentsEnvironment(Environment):
             "is_discrete": spec.is_discrete(),
             "is_continuous": spec.is_continuous(),
             "discrete_size": spec.discrete_size,
-            "discrete_branches": list(spec.discrete_branches) if spec.is_discrete() else [],
+            "discrete_branches": list(spec.discrete_branches)
+            if spec.is_discrete()
+            else [],
             "continuous_size": spec.continuous_size,
         }
 
@@ -295,12 +293,14 @@ class UnityMLAgentsEnvironment(Environment):
         specs = self._behavior_spec.observation_specs
         obs_info = []
         for i, spec in enumerate(specs):
-            obs_info.append({
-                "index": i,
-                "shape": list(spec.shape),
-                "dimension_property": str(spec.dimension_property),
-                "observation_type": str(spec.observation_type),
-            })
+            obs_info.append(
+                {
+                    "index": i,
+                    "shape": list(spec.shape),
+                    "dimension_property": str(spec.dimension_property),
+                    "observation_type": str(spec.observation_type),
+                }
+            )
         return {"observations": obs_info, "count": len(specs)}
 
     def _get_observation(
@@ -349,6 +349,7 @@ class UnityMLAgentsEnvironment(Environment):
                 # Encode as base64 PNG
                 try:
                     from PIL import Image
+
                     img = Image.fromarray(img_array)
                     buffer = io.BytesIO()
                     img.save(buffer, format="PNG")
@@ -449,7 +450,9 @@ class UnityMLAgentsEnvironment(Environment):
             # No agents need decisions, just step
             self._unity_env.step()
             self._state.step_count += 1
-            decision_steps, terminal_steps = self._unity_env.get_steps(self._behavior_name)
+            decision_steps, terminal_steps = self._unity_env.get_steps(
+                self._behavior_name
+            )
             return self._get_observation(
                 decision_steps=decision_steps,
                 terminal_steps=terminal_steps,
@@ -473,7 +476,9 @@ class UnityMLAgentsEnvironment(Environment):
 
         # Handle continuous actions
         if action.continuous_actions is not None:
-            continuous = np.array([action.continuous_actions] * n_agents, dtype=np.float32)
+            continuous = np.array(
+                [action.continuous_actions] * n_agents, dtype=np.float32
+            )
             if continuous.ndim == 1:
                 continuous = continuous.reshape(n_agents, -1)
             action_tuple.add_continuous(continuous)

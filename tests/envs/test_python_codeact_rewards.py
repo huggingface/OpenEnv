@@ -16,6 +16,9 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
+# Skip entire module if smolagents is not installed (optional dependency)
+pytest.importorskip("smolagents", reason="smolagents is not installed")
+
 
 from envs.coding_env.models import CodeAction
 from envs.coding_env.server.python_codeact_env import PythonCodeActEnv

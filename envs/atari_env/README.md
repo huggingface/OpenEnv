@@ -58,31 +58,39 @@ And many more! For a complete list, see [ALE documentation](https://ale.farama.o
 - Python 3.11+
 - ale-py installed: `pip install ale-py`
 
+The client is **async by default**:
+
 ```python
-from envs.atari_env import AtariEnv, AtariAction
+import asyncio
+from atari_env import AtariEnv, AtariAction
 
-# Start local server manually
-# python -m envs.atari_env.server.app
+async def main():
+    # Start local server manually: python -m atari_env.server.app
+    async with AtariEnv(base_url="http://localhost:8000") as env:
+        # Reset environment
+        result = await env.reset()
+        print(f"Screen shape: {result.observation.screen_shape}")
+        print(f"Legal actions: {result.observation.legal_actions}")
 
-# Connect to local server
-env = AtariEnv(base_url="http://localhost:8000")
+        # Take actions
+        for _ in range(10):
+            result = await env.step(AtariAction(action_id=2, game_name="pong"))
+            print(f"Reward: {result.reward}, Done: {result.done}")
+            if result.done:
+                break
 
-# Reset environment
-result = env.reset()
-print(f"Screen shape: {result.observation.screen_shape}")
-print(f"Legal actions: {result.observation.legal_actions}")
-print(f"Lives: {result.observation.lives}")
+asyncio.run(main())
+```
 
-# Take actions
-for _ in range(10):
-    action_id = 2  # UP action
-    result = env.step(AtariAction(action_id=action_id, game_name="pong"))
-    print(f"Reward: {result.reward}, Done: {result.done}")
-    if result.done:
-        break
+For **synchronous usage**, use the `.sync()` wrapper:
 
-# Cleanup
-env.close()
+```python
+from atari_env import AtariEnv, AtariAction
+
+with AtariEnv(base_url="http://localhost:8000").sync() as env:
+    result = env.reset()
+    result = env.step(AtariAction(action_id=2, game_name="pong"))
+    print(f"Reward: {result.reward}")
 ```
 
 ### Option 2: Docker (Recommended)
@@ -124,20 +132,23 @@ docker run -p 8000:8000 \
 **Use with from_docker_image():**
 
 ```python
-from envs.atari_env import AtariEnv, AtariAction
+import asyncio
 import numpy as np
+from atari_env import AtariEnv, AtariAction
 
-# Automatically starts container
-env = AtariEnv.from_docker_image("atari-env:latest")
+async def main():
+    # Automatically starts container
+    client = await AtariEnv.from_docker_image("atari-env:latest")
 
-result = env.reset()
-result = env.step(AtariAction(action_id=2))  # UP
+    async with client:
+        result = await client.reset()
+        result = await client.step(AtariAction(action_id=2))  # UP
 
-# Reshape screen for visualization
-screen = np.array(result.observation.screen).reshape(result.observation.screen_shape)
-print(f"Screen shape: {screen.shape}")  # (210, 160, 3) for RGB
+        # Reshape screen for visualization
+        screen = np.array(result.observation.screen).reshape(result.observation.screen_shape)
+        print(f"Screen shape: {screen.shape}")  # (210, 160, 3) for RGB
 
-env.close()  # Stops container
+asyncio.run(main())
 ```
 
 ## Observation Types
@@ -279,39 +290,42 @@ class AtariState(State):
 #!/usr/bin/env python3
 """Example training loop with Atari environment."""
 
+import asyncio
 import numpy as np
-from envs.atari_env import AtariEnv, AtariAction
+from atari_env import AtariEnv, AtariAction
 
-# Start environment
-env = AtariEnv.from_docker_image("atari-env:latest")
+async def train():
+    # Start environment
+    client = await AtariEnv.from_docker_image("atari-env:latest")
 
-# Training loop
-for episode in range(10):
-    result = env.reset()
-    episode_reward = 0
-    steps = 0
+    async with client:
+        # Training loop
+        for episode in range(10):
+            result = await client.reset()
+            episode_reward = 0
+            steps = 0
 
-    while not result.done:
-        # Random policy (replace with your RL agent)
-        action_id = np.random.choice(result.observation.legal_actions)
+            while not result.done:
+                # Random policy (replace with your RL agent)
+                action_id = np.random.choice(result.observation.legal_actions)
 
-        # Take action
-        result = env.step(AtariAction(action_id=action_id))
+                # Take action
+                result = await client.step(AtariAction(action_id=action_id))
 
-        episode_reward += result.reward or 0
-        steps += 1
+                episode_reward += result.reward or 0
+                steps += 1
 
-        # Reshape screen for processing
-        screen = np.array(result.observation.screen).reshape(
-            result.observation.screen_shape
-        )
+                # Reshape screen for processing
+                screen = np.array(result.observation.screen).reshape(
+                    result.observation.screen_shape
+                )
 
-        # Your RL training code here
-        # ...
+                # Your RL training code here
+                # ...
 
-    print(f"Episode {episode}: reward={episode_reward:.2f}, steps={steps}")
+            print(f"Episode {episode}: reward={episode_reward:.2f}, steps={steps}")
 
-env.close()
+asyncio.run(train())
 ```
 
 ## Testing
@@ -323,19 +337,17 @@ env.close()
 pip install ale-py fastapi uvicorn requests
 
 # Start server
-cd /Users/sanyambhutani/OpenEnv/OpenEnv
-export PYTHONPATH=/Users/sanyambhutani/OpenEnv/OpenEnv/src
-python -m envs.atari_env.server.app
+export PYTHONPATH=src:envs
+python -m atari_env.server.app
 
-# Test from another terminal
+# Test from another terminal (using sync wrapper for simplicity)
 python -c "
-from envs.atari_env import AtariEnv, AtariAction
-env = AtariEnv(base_url='http://localhost:8000')
-result = env.reset()
-print(f'Initial obs: {result.observation.screen_shape}')
-result = env.step(AtariAction(action_id=2))
-print(f'After step: reward={result.reward}, done={result.done}')
-env.close()
+from atari_env import AtariEnv, AtariAction
+with AtariEnv(base_url='http://localhost:8000').sync() as env:
+    result = env.reset()
+    print(f'Initial obs: {result.observation.screen_shape}')
+    result = env.step(AtariAction(action_id=2))
+    print(f'After step: reward={result.reward}, done={result.done}')
 "
 ```
 

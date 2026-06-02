@@ -25,9 +25,8 @@ import json
 import logging
 import traceback
 
-from smolagents import LocalPythonExecutor
-
 from openenv.core.env_server.types import CodeExecResult
+from smolagents import LocalPythonExecutor
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())

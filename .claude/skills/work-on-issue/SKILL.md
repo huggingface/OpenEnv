@@ -43,11 +43,17 @@ After receiving requirements, run this command:
 
 Where `<short-description>` is 2-3 words from the goal (e.g., `add-mcp-tools`).
 
-### Step 4: Change to Worktree
+### Step 4: Activate TDD Enforcement
 
-The worktree is created at `.worktrees/issue-<NUMBER>-<short-description>/`.
+Activate TDD enforcement in the new worktree. This uses `tdd-state.sh`'s
+direct-execution mode so it works in a single Bash call:
 
-Note: You are now in TDD mode. Direct code edits will be blocked.
+```bash
+cd .worktrees/issue-<NUMBER>-<short-description> && bash .claude/hooks/tdd-state.sh activate <NUMBER>
+```
+
+This writes `.tdd-session.json` to the worktree root, which all hooks check.
+Without this step, hooks would not block direct edits.
 
 ### Step 5: Create Todos
 
@@ -76,7 +82,7 @@ DO NOT stop and wait for user input. Start the TDD cycle now.
 ## When to Use
 
 - Starting work on a GitHub issue
-- You want TDD enforcement (worktree mode)
+- You want TDD enforcement (opt-in via this skill)
 - You want isolated work (no branch switching)
 
 ## When NOT to Use
@@ -96,7 +102,7 @@ Step 2: Spawn issue-worker → get requirements
     ↓
 Step 3: Create worktree issue-42-<name>
     ↓
-Step 4: Now in TDD mode
+Step 4: Activate TDD enforcement (.tdd-session.json)
     ↓
 Step 5: Create todos from acceptance criteria
     ↓

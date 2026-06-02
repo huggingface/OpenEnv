@@ -1,0 +1,44 @@
+/* OpenEnv-specific overrides on top of pytorch_sphinx_theme2. */
+
+/*
+ * Hide the version switcher globally until OpenEnv publishes versioned
+ * releases. With only `main` in versions.json the dropdown is useless
+ * everywhere it appears (top navbar on desktop, primary sidebar header
+ * on mobile). Removing it from `navbar_start` in conf.py kills only the
+ * desktop placement, so CSS catches the rest.
+ */
+.version-switcher__container {
+  display: none !important;
+}
+
+/*
+ * Paint a visible "×" on the cookie banner's close button.
+ *
+ * The theme ships an empty <button class="close-button"> with a
+ * transparent background and a border whose colour matches the banner
+ * background — so the dismiss control is effectively invisible and users
+ * cannot tell how to close the banner. The click handler itself works
+ * (jQuery handler in the bundled theme.js plus our cookie-banner.js
+ * fallback), so we only need to make the hit target legible.
+ */
+.cookie-banner-wrapper .close-button {
+  width: 24px;
+  height: 24px;
+  border: none;
+  color: var(--pst-color-text-base);
+  font-size: 20px;
+  line-height: 1;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.cookie-banner-wrapper .close-button::before {
+  content: "\00d7"; /* U+00D7 MULTIPLICATION SIGN, rendered as ×. */
+}
+.cookie-banner-wrapper .close-button:hover,
+.cookie-banner-wrapper .close-button:focus-visible {
+  color: var(--pst-color-primary);
+  outline: 2px solid var(--pst-color-primary);
+  outline-offset: 2px;
+}

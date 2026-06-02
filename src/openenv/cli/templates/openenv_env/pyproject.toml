@@ -16,8 +16,8 @@ requires-python = ">=3.10"
 dependencies = [
     # Core OpenEnv runtime (provides FastAPI server + HTTP client types)
     # install from github
-    # "openenv-core[core] @ git+https://github.com/meta-pytorch/OpenEnv.git",
-    "openenv-core[core]>=0.2.0",
+    # "openenv[core] @ git+https://github.com/meta-pytorch/OpenEnv.git",
+    "openenv[core]>=0.2.2",
     # Environment-specific dependencies
     # Add all dependencies needed for your environment here
     # Examples:

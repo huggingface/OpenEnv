@@ -4,12 +4,51 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, Dict, Optional, Union, Literal, Annotated
-from pydantic import BaseModel, Field, ConfigDict, model_validator
+from enum import Enum
+from typing import Annotated, Any, Dict, Literal, Optional, Union
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # Type aliases
 Scalar = Union[int, float, bool]
+
+
+# =============================================================================
+# Enums for Type Safety
+# =============================================================================
+
+
+class ServerMode(str, Enum):
+    """Server operation mode."""
+
+    SIMULATION = "simulation"
+    PRODUCTION = "production"
+
+
+class HealthStatus(str, Enum):
+    """Server health status values."""
+
+    HEALTHY = "healthy"
+    UNHEALTHY = "unhealthy"
+    DEGRADED = "degraded"
+
+
+class WSErrorCode(str, Enum):
+    """WebSocket error codes for structured error handling."""
+
+    INVALID_JSON = "INVALID_JSON"
+    UNKNOWN_TYPE = "UNKNOWN_TYPE"
+    VALIDATION_ERROR = "VALIDATION_ERROR"
+    EXECUTION_ERROR = "EXECUTION_ERROR"
+    CAPACITY_REACHED = "CAPACITY_REACHED"
+    FACTORY_ERROR = "FACTORY_ERROR"
+    SESSION_ERROR = "SESSION_ERROR"
+
+
+# =============================================================================
+# Core Types
+# =============================================================================
 
 
 class Action(BaseModel):
@@ -200,7 +239,10 @@ class SchemaResponse(BaseMessage):
 class HealthResponse(BaseMessage):
     """Response model for health check endpoint."""
 
-    status: str = Field(description="Health status of the environment server")
+    status: HealthStatus = Field(
+        default=HealthStatus.HEALTHY,
+        description="Health status of the environment server",
+    )
 
 
 class WSResetMessage(BaseMessage):
@@ -248,7 +290,9 @@ class WSObservationResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    type: str = Field(default="observation", description="Response type")
+    type: Literal["observation"] = Field(
+        default="observation", description="Response type"
+    )
     data: Dict[str, Any] = Field(description="Observation data")
 
 
@@ -257,7 +301,7 @@ class WSStateResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    type: str = Field(default="state", description="Response type")
+    type: Literal["state"] = Field(default="state", description="Response type")
     data: Dict[str, Any] = Field(description="State data")
 
 
@@ -266,7 +310,7 @@ class WSErrorResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    type: str = Field(default="error", description="Response type")
+    type: Literal["error"] = Field(default="error", description="Response type")
     data: Dict[str, Any] = Field(description="Error details including message and code")
 
 

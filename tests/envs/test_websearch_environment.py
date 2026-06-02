@@ -1,5 +1,6 @@
 import os
 import sys
+
 import pytest
 
 # Add the project root to the path for envs imports
@@ -7,11 +8,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 
 # Skip entire module if websearch dependencies are not available
 try:
-    from envs.websearch_env.server import WebSearchEnvironment
     from envs.websearch_env.models import WebSearchAction, WebSearchObservation
+    from envs.websearch_env.server import WebSearchEnvironment
 
     WEBSEARCH_AVAILABLE = True
-except ImportError as e:
+except ImportError:
     WEBSEARCH_AVAILABLE = False
     WebSearchEnvironment = None
     WebSearchAction = None

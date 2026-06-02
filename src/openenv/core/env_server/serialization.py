@@ -14,14 +14,28 @@ HTTP server and web interface implementations.
 
 from typing import Any, Dict, Type
 
+from .mcp_types import CallToolAction, ListToolsAction
 from .types import Action, Observation
+
+# MCP action types keyed by their "type" discriminator value.
+# These are checked before the environment's own action_cls so that
+# ListToolsAction / CallToolAction payloads are never rejected by an
+# unrelated Pydantic model.
+_MCP_ACTION_TYPES: Dict[str, Type[Action]] = {
+    "list_tools": ListToolsAction,
+    "call_tool": CallToolAction,
+}
 
 
 def deserialize_action(action_data: Dict[str, Any], action_cls: Type[Action]) -> Action:
     """
     Convert JSON dict to Action instance using Pydantic validation.
 
-    This is a basic deserialization that works for most environments.
+    MCP action types (``list_tools``, ``call_tool``) are recognised
+    automatically via the ``"type"`` discriminator field, regardless of
+    the environment's configured ``action_cls``.  All other payloads
+    fall through to ``action_cls.model_validate()``.
+
     For special cases (e.g., tensor fields, custom type conversions),
     use deserialize_action_with_preprocessing().
 
@@ -38,6 +52,17 @@ def deserialize_action(action_data: Dict[str, Any], action_cls: Type[Action]) ->
     Note:
         This uses Pydantic's model_validate() for automatic validation.
     """
+    # Route MCP action types before falling through to the env action_cls.
+    # Only intercept when action_cls is the generic Action base or itself an
+    # MCP type (i.e. the server hosts an MCP environment).  This avoids
+    # silently bypassing env-specific validation for non-MCP environments
+    # that happen to use "call_tool" / "list_tools" as a type discriminator.
+    action_type = action_data.get("type")
+    if action_type in _MCP_ACTION_TYPES:
+        mcp_cls = _MCP_ACTION_TYPES[action_type]
+        if action_cls is Action or action_cls in _MCP_ACTION_TYPES.values():
+            return mcp_cls.model_validate(action_data)
+
     return action_cls.model_validate(action_data)
 
 
@@ -62,6 +87,15 @@ def deserialize_action_with_preprocessing(
     Raises:
         ValidationError: If action_data is invalid for the action class
     """
+    # Route MCP action types before preprocessing (they don't need it).
+    # Same guard as deserialize_action: only intercept when action_cls is
+    # the generic Action base or itself an MCP type.
+    action_type = action_data.get("type")
+    if action_type in _MCP_ACTION_TYPES:
+        mcp_cls = _MCP_ACTION_TYPES[action_type]
+        if action_cls is Action or action_cls in _MCP_ACTION_TYPES.values():
+            return mcp_cls.model_validate(action_data)
+
     processed_data = {}
 
     for key, value in action_data.items():

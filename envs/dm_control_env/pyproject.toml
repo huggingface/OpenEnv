@@ -1,0 +1,48 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openenv-dmcontrol-env"
+version = "0.1.0"
+description = "dm_control Environment for OpenEnv - wraps MuJoCo-based continuous control tasks (cartpole, walker, humanoid, etc.)"
+requires-python = ">=3.10"
+dependencies = [
+    # Core OpenEnv dependencies
+    "openenv[core] @ git+https://github.com/meta-pytorch/OpenEnv.git",
+    "fastapi>=0.115.0",
+    "pydantic>=2.0.0",
+    "uvicorn>=0.24.0",
+    "requests>=2.31.0",
+    # dm_control dependencies
+    "mujoco>=3.0.0",
+    "dm_control>=1.0.0",
+    "numpy>=1.20.0",
+    # Optional: for pixel observations
+    "pillow>=9.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+]
+interactive = [
+    # For interactive examples with keyboard control
+    "pygame>=2.0.0",
+]
+
+[project.scripts]
+# Server entry point - enables running via: uv run --project . server
+server = "dm_control_env.server.app:main"
+
+[tool.setuptools]
+include-package-data = true
+packages = ["dm_control_env", "dm_control_env.server"]
+package-dir = { "dm_control_env" = ".", "dm_control_env.server" = "server" }

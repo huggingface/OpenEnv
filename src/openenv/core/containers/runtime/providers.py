@@ -233,6 +233,7 @@ class LocalDockerProvider(ContainerProvider):
             TimeoutError: If container doesn't become ready
         """
         import time
+
         import requests
 
         start_time = time.time()
@@ -468,6 +469,7 @@ class DockerSwarmProvider(ContainerProvider):
         replicas may still be starting when this returns.
         """
         import time
+
         import requests
 
         deadline = time.time() + timeout_s

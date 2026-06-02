@@ -1,0 +1,38 @@
+Resource    , API Endpoint                                       , Description
+Acl         , DELETE /calendars/calendarId/acl/ruleId            , Deletes an access control rule
+Acl         , GET /calendars/calendarId/acl/ruleId               , Returns an access control rule
+Acl         , POST /calendars/calendarId/acl                     , Creates an access control rule
+Acl         , GET /calendars/calendarId/acl                      , Returns rules in the access control list
+Acl         , PATCH /calendars/calendarId/acl/ruleId             , Updates an access control rule
+Acl         , PUT /calendars/calendarId/acl/ruleId               , Updates an access control rule
+Acl         , POST /calendars/calendarId/acl/watch               , Watch for changes to ACL resources
+CalendarList, DELETE /users/me/calendarList/calendarId           , Removes a calendar from user's list
+CalendarList, GET /users/me/calendarList/calendarId              , Returns a calendar from user's list
+CalendarList, POST /users/me/calendarList                        , Inserts an existing calendar into user's list
+CalendarList, GET /users/me/calendarList                         , Returns calendars on user's calendar list
+CalendarList, PATCH /users/me/calendarList/calendarId            , Updates an existing calendar
+CalendarList, PUT /users/me/calendarList/calendarId              , Updates an existing calendar
+CalendarList, POST /users/me/calendarList/watch                  , Watch for changes to CalendarList resources
+Calendars   , POST /calendars/calendarId/clear                   , Clears a primary calendar
+Calendars   , DELETE /calendars/calendarId                       , Deletes a secondary calendar
+Calendars   , GET /calendars/calendarId                          , Returns metadata for a calendar
+Calendars   , POST /calendars                                    , Creates a secondary calendar
+Calendars   , PATCH /calendars/calendarId                        , Updates calendar metadata
+Calendars   , PUT /calendars/calendarId                          , Updates calendar metadata
+Channels    , POST /channels/stop                                , Stop watching resources through this channel
+Colors      , GET /colors                                        , Returns the color definitions for calendars and events
+Events      , DELETE /calendars/calendarId/events/eventId        , Deletes an event
+Events      , GET /calendars/calendarId/events/eventId           , Returns an event
+Events      , POST /calendars/calendarId/events/import           , Imports an event
+Events      , POST /calendars/calendarId/events                  , Creates an event
+Events      , POST /calendars/calendarId/events/eventId/instances, Returns instances of the recurring event
+Events      , GET /calendars/calendarId/events                   , Returns events on the specified calendar
+Events      , POST /calendars/calendarId/events/eventId/move     , Moves an event to another calendar
+Events      , PATCH /calendars/calendarId/events/eventId         , Updates an event
+Events      , POST /calendars/calendarId/events/quickAdd         , Creates an event based on a simple text string
+Events      , PUT /calendars/calendarId/events/eventId           , Updates an event
+Events      , POST /calendars/calendarId/events/watch            , Watch for changes to Events resources
+Freebusy    , POST /freeBusy                                     , Returns free/busy information for a set of calendars
+Settings    , GET /users/me/settings/setting                     , Returns a single user setting
+Settings    , GET /users/me/settings                             , Returns all user settings
+Settings    , POST /users/me/settings/watch                      , Watch for changes to Settings resources

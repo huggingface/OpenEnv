@@ -16,19 +16,17 @@ Tests cover:
 5. Helper functions (_normalize_env_name, _is_hub_url, etc.)
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
-from pathlib import Path
+from unittest.mock import Mock, patch
 
 from openenv.auto._discovery import (
+    _create_env_info_from_package,
+    _infer_class_name,
+    _is_hub_url,
+    _normalize_env_name,
     EnvironmentDiscovery,
     EnvironmentInfo,
     get_discovery,
     reset_discovery,
-    _normalize_env_name,
-    _is_hub_url,
-    _infer_class_name,
-    _create_env_info_from_package,
 )
 
 
@@ -186,7 +184,7 @@ class TestEnvironmentDiscovery:
         mock_dist2.version = "0.2.0"
 
         mock_dist3 = Mock()
-        mock_dist3.metadata = {"Name": "openenv-core"}  # Should be filtered out
+        mock_dist3.metadata = {"Name": "openenv-core"}  # Legacy core wheel
         mock_dist3.version = "1.0.0"
 
         mock_distributions.return_value = [mock_dist1, mock_dist2, mock_dist3]
@@ -211,7 +209,7 @@ class TestEnvironmentDiscovery:
         discovery = EnvironmentDiscovery()
         envs = discovery._discover_installed_packages()
 
-        # Should discover 2 environments (not openenv-core)
+        # Should discover 2 environments, not the legacy core wheel
         assert len(envs) == 2
         assert "echo" in envs
         assert "coding" in envs

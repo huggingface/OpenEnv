@@ -83,7 +83,7 @@ docker exec openenv-gitea curl -X POST \
   }'
 
 # 3. Build Docker images
-docker build -t openenv-base:latest -f src/core/containers/images/Dockerfile .
+docker build -t openenv-base:latest -f src/openenv/core/containers/images/Dockerfile .
 docker build -t git-env:latest -f envs/git_env/server/Dockerfile .
 
 # 4. Install Python dependencies

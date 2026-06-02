@@ -18,11 +18,166 @@ Key design decisions:
 """
 
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .types import Action, Observation, BaseMessage
+from .types import Action, BaseMessage, Observation
+
+
+# =============================================================================
+# JSON-RPC 2.0 Types
+# =============================================================================
+
+
+class JsonRpcErrorCode(int, Enum):
+    """
+    Standard JSON-RPC 2.0 error codes.
+
+    See: https://www.jsonrpc.org/specification#error_object
+    """
+
+    # Standard JSON-RPC errors
+    PARSE_ERROR = -32700  # Invalid JSON was received
+    INVALID_REQUEST = -32600  # JSON is not a valid Request object
+    METHOD_NOT_FOUND = -32601  # Method does not exist / is not available
+    INVALID_PARAMS = -32602  # Invalid method parameter(s)
+    INTERNAL_ERROR = -32603  # Internal JSON-RPC error
+
+    # Server errors (reserved for implementation-defined errors)
+    SERVER_ERROR = -32000  # Generic server error
+
+
+class McpMethod(str, Enum):
+    """Supported MCP method names."""
+
+    TOOLS_LIST = "tools/list"
+    TOOLS_CALL = "tools/call"
+
+
+class JsonRpcError(BaseModel):
+    """
+    JSON-RPC 2.0 error object.
+
+    See: https://www.jsonrpc.org/specification#error_object
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: int = Field(description="Error code indicating the error type")
+    message: str = Field(description="Short description of the error")
+    data: Optional[Any] = Field(
+        default=None, description="Additional error information"
+    )
+
+    @classmethod
+    def from_code(
+        cls, code: JsonRpcErrorCode, message: Optional[str] = None, data: Any = None
+    ) -> "JsonRpcError":
+        """Create an error from a standard error code."""
+        default_messages = {
+            JsonRpcErrorCode.PARSE_ERROR: "Parse error",
+            JsonRpcErrorCode.INVALID_REQUEST: "Invalid Request",
+            JsonRpcErrorCode.METHOD_NOT_FOUND: "Method not found",
+            JsonRpcErrorCode.INVALID_PARAMS: "Invalid params",
+            JsonRpcErrorCode.INTERNAL_ERROR: "Internal error",
+            JsonRpcErrorCode.SERVER_ERROR: "Server error",
+        }
+        return cls(
+            code=code.value,
+            message=message or default_messages.get(code, "Unknown error"),
+            data=data,
+        )
+
+
+class JsonRpcRequest(BaseModel):
+    """
+    JSON-RPC 2.0 request object.
+
+    See: https://www.jsonrpc.org/specification#request_object
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    jsonrpc: Literal["2.0"] = Field(description="JSON-RPC version, must be '2.0'")
+    method: str = Field(description="Name of the method to be invoked")
+    params: Dict[str, Any] = Field(
+        default_factory=dict, description="Parameter values for the method"
+    )
+    id: Optional[Union[str, int]] = Field(
+        default=None, description="Request identifier established by the client"
+    )
+
+
+class JsonRpcResponse(BaseModel):
+    """
+    JSON-RPC 2.0 response object.
+
+    Per JSON-RPC 2.0 spec, a response has either 'result' or 'error', not both.
+    This model excludes None values during serialization to comply with the spec.
+
+    See: https://www.jsonrpc.org/specification#response_object
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    jsonrpc: Literal["2.0"] = Field(default="2.0", description="JSON-RPC version")
+    result: Optional[Any] = Field(
+        default=None, description="Result of the method invocation"
+    )
+    error: Optional[JsonRpcError] = Field(
+        default=None, description="Error object if method invocation failed"
+    )
+    id: Optional[Union[str, int]] = Field(
+        default=None, description="Request identifier from the request"
+    )
+
+    def model_dump(self, **kwargs) -> Dict[str, Any]:
+        """Serialize to dict, excluding result or error when None (JSON-RPC compliance)."""
+        # Always include jsonrpc and id, but only include result OR error
+        data: Dict[str, Any] = {"jsonrpc": self.jsonrpc, "id": self.id}
+        if self.error is not None:
+            data["error"] = (
+                self.error.model_dump()
+                if hasattr(self.error, "model_dump")
+                else self.error
+            )
+        else:
+            # Only include result if there's no error
+            data["result"] = self.result
+        return data
+
+    def model_dump_json(self, **kwargs) -> str:
+        """Serialize to JSON string, excluding result or error when None (JSON-RPC compliance)."""
+        import json
+
+        return json.dumps(self.model_dump())
+
+    @classmethod
+    def success(
+        cls, result: Any, request_id: Optional[Union[str, int]] = None
+    ) -> "JsonRpcResponse":
+        """Create a success response."""
+        return cls(result=result, id=request_id)
+
+    @classmethod
+    def error_response(
+        cls,
+        code: JsonRpcErrorCode,
+        message: Optional[str] = None,
+        data: Any = None,
+        request_id: Optional[Union[str, int]] = None,
+    ) -> "JsonRpcResponse":
+        """Create an error response from a standard error code."""
+        return cls(
+            error=JsonRpcError.from_code(code, message, data),
+            id=request_id,
+        )
+
+
+# =============================================================================
+# MCP Tool Types
+# =============================================================================
 
 
 class Tool(BaseModel):

@@ -12,6 +12,8 @@ This implementation provides a single-agent interface by wrapping the
 multi-agent marlenv environment.
 """
 
+from typing import Any
+
 from uuid import uuid4
 
 import gym
@@ -28,9 +30,14 @@ try:
 except ImportError:
     from models import SnakeAction, SnakeObservation
 
-    # Standalone imports (when environment is standalone with openenv-core from pip)
-    from openenv_core.env_server.interfaces import Environment
-    from openenv_core.env_server.types import State
+    try:
+        # Standalone imports with the current openenv package namespace
+        from openenv.core.env_server.interfaces import Environment
+        from openenv.core.env_server.types import State
+    except ImportError:
+        # Backward-compatible standalone imports with the legacy namespace
+        from openenv_core.env_server.interfaces import Environment
+        from openenv_core.env_server.types import State
 
 
 class SingleAgentWrapper(gym.Wrapper):
@@ -44,15 +51,15 @@ class SingleAgentWrapper(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)
         # Unwrap observation and action spaces for single agent
-        if hasattr(env.observation_space, '__getitem__'):
+        if hasattr(env.observation_space, "__getitem__"):
             self.observation_space = env.observation_space[0]
-        if hasattr(env.action_space, '__getitem__'):
+        if hasattr(env.action_space, "__getitem__"):
             self.action_space = env.action_space[0]
 
     def reset(self, **kwargs):
         obs = self.env.reset(**kwargs)
         # Remove first dimension if it's a multi-agent array (num_agents, H, W, C)
-        if hasattr(obs, 'shape') and len(obs.shape) == 4 and obs.shape[0] == 1:
+        if hasattr(obs, "shape") and len(obs.shape) == 4 and obs.shape[0] == 1:
             return obs[0]  # Return (H, W, C)
         # Return first agent's observation if it's a list
         if isinstance(obs, list):
@@ -65,7 +72,7 @@ class SingleAgentWrapper(gym.Wrapper):
 
         # Unwrap returns for single agent
         # Handle observation: remove first dimension if shape is (1, H, W, C)
-        if hasattr(obs, 'shape') and len(obs.shape) == 4 and obs.shape[0] == 1:
+        if hasattr(obs, "shape") and len(obs.shape) == 4 and obs.shape[0] == 1:
             obs = obs[0]  # Convert (1, H, W, C) -> (H, W, C)
         elif isinstance(obs, list):
             obs = obs[0]
@@ -77,6 +84,36 @@ class SingleAgentWrapper(gym.Wrapper):
         done = bool(done)
 
         return obs, reward, done, info
+
+
+def _json_safe(value: Any) -> Any:
+    """Convert marlenv metadata into JSON-serializable Python types."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, np.generic):
+        return value.item()
+
+    tolist = getattr(value, "tolist", None)
+    if callable(tolist):
+        try:
+            return tolist()
+        except Exception:
+            pass
+
+    item = getattr(value, "item", None)
+    if callable(item):
+        try:
+            return item()
+        except Exception:
+            pass
+
+    return str(value)
 
 
 class SnakeEnvironment(Environment):
@@ -232,7 +269,7 @@ class SnakeEnvironment(Environment):
             alive=not done,
             done=done,
             reward=float(reward),
-            metadata={"info": info},
+            metadata={"info": _json_safe(info)},
         )
 
     @property

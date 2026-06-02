@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "grid_world_env"
+version = "0.1.0"
+description = "A simple Grid World environment for OpenEnv"
+requires-python = ">=3.12"
+authors = [
+    {name = "Yuv Raj Pant", email = "yuvrajpant5@gmail.com"},
+]
+dependencies = [
+    "openenv[core]>=0.2.2",
+    "gymnasium",
+    "numpy",
+    # Server dependencies copied from echo_env
+    "fastapi>=0.115.0",
+    "pydantic>=2.0.0",
+    "uvicorn>=0.24.0",
+    "requests>=2.33.0",
+]
+
+[project.scripts]
+server = "grid_world_env.server.app:main"
+
+# CRITICAL: This mapping tells Python that "grid_world_env" lives in the current folder "."
+[tool.setuptools]
+include-package-data = true
+packages = ["grid_world_env", "grid_world_env.server"]
+package-dir = { "grid_world_env" = ".", "grid_world_env.server" = "server" }
+
+# CRITICAL: This tells uv to look for openenv two folders up
+[tool.uv.sources]
+openenv = { path = "../../", editable = true }

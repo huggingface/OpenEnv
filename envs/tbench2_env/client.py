@@ -19,11 +19,11 @@ try:
 
     from .models import Tbench2Action, Tbench2Observation, Tbench2State
 except ImportError:
+    from models import Tbench2Action, Tbench2Observation, Tbench2State
+
     # Standalone imports (when environment is standalone with openenv from pip)
     from openenv.core.client_types import StepResult
     from openenv.core.env_client import EnvClient
-
-    from models import Tbench2Action, Tbench2Observation, Tbench2State
 
 
 class Tbench2Env(EnvClient[Tbench2Action, Tbench2Observation, Tbench2State]):
