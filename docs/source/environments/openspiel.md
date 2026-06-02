@@ -1,1 +1,2 @@
-../../environments/openspiel.md
+```{include} ../../../envs/openspiel_env/README.md
+```

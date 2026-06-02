@@ -1,1 +1,2 @@
-../../environments/dipg.md
+```{include} ../../../envs/dipg_safety_env/README.md
+```

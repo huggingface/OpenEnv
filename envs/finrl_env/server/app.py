@@ -162,7 +162,7 @@ def get_config():
     }
 
 
-if __name__ == "__main__":
+def main():
     import uvicorn
 
     print("=" * 60)
@@ -177,3 +177,7 @@ if __name__ == "__main__":
     print("=" * 60)
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+if __name__ == "__main__":
+    main()

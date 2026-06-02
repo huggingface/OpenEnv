@@ -6,7 +6,12 @@
 
 """Tests for the REPL Environment."""
 
+import importlib
+import os
+import subprocess
+import sys
 import time
+from pathlib import Path
 
 import pytest
 
@@ -37,6 +42,50 @@ class TestPythonExecutor:
         result = executor.execute("print('hello world')")
         assert result["success"]
         assert "hello world" in result["stdout"]
+
+    def test_server_package_import_from_env_root(self, monkeypatch):
+        """Importing `server.repl_environment` from env root should work."""
+        env_root = Path(__file__).resolve().parents[2] / "envs" / "repl_env"
+        monkeypatch.syspath_prepend(str(env_root))
+
+        for module_name in [
+            "server",
+            "server.python_executor",
+            "server.repl_environment",
+        ]:
+            sys.modules.pop(module_name, None)
+
+        module = importlib.import_module("server.repl_environment")
+        assert hasattr(module, "REPLEnvironment")
+
+    def test_server_app_imports_from_env_root_without_path_rewrite(self):
+        """Importing server.app from env root should work without bundled-src hacks."""
+        env_root = Path(__file__).resolve().parents[2] / "envs" / "repl_env"
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+
+        result = subprocess.run(
+            [
+                "uv",
+                "run",
+                "--project",
+                ".",
+                "python",
+                "-c",
+                (
+                    "import importlib; "
+                    "importlib.import_module('server.app'); "
+                    "print('ok')"
+                ),
+            ],
+            cwd=env_root,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        assert result.stdout.strip().splitlines()[-1] == "ok"
 
     def test_stderr_capture(self):
         """Test stderr is captured correctly via exception handling.

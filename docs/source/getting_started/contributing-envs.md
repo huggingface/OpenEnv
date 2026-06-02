@@ -19,7 +19,7 @@ This guide covers three workflows:
 Before you start, make sure you have:
 
 - Python 3.11+ and [`uv`](https://github.com/astral-sh/uv) installed
-- The OpenEnv CLI: `pip install openenv-core[cli]` (or install from source)
+- The OpenEnv CLI: `pip install openenv[cli]` (or install from source)
 - A [Hugging Face account](https://huggingface.co/join) with a [write token](https://huggingface.co/settings/tokens)
 
 Authenticate with the Hub:
@@ -187,6 +187,6 @@ openenv push --repo-id openenv/echo-env --create-pr
 ## Next Steps
 
 - [Build your own environment from scratch](environment-builder.md)
-- [Customize the web UI](../customizing-web-ui.md)
+- [Customize the web UI](../guides/customizing-web-ui.md)
 - [Browse available environments](../environments.md)
 - [End-to-end tutorial](../tutorials/openenv-tutorial.md)

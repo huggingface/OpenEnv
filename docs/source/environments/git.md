@@ -1,1 +1,2 @@
-../../environments/git.md
+```{include} ../../../envs/git_env/README.md
+```

@@ -1,1 +1,2 @@
-../../environments/echo.md
+```{include} ../../../envs/echo_env/README.md
+```

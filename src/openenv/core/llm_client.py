@@ -134,6 +134,9 @@ class OpenAIClient(LLMClient):
         system_prompt: Optional system message prepended to every request.
         temperature: Default sampling temperature.
         max_tokens: Default max tokens in the response.
+        use_max_completion_tokens: Use max_completion_tokens instead of
+            max_tokens. Required for newer OpenAI models (gpt-5-mini, o1, o3).
+            Not supported by self-hosted OpenAI-compatible endpoints.
     """
 
     def __init__(
@@ -145,12 +148,17 @@ class OpenAIClient(LLMClient):
         system_prompt: str | None = None,
         temperature: float = 0.0,
         max_tokens: int = 256,
+        use_max_completion_tokens: bool = False,
     ):
         super().__init__(endpoint, port)
         self.model = model
         self.system_prompt = system_prompt
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self._tokens_param = (
+            "max_completion_tokens" if use_max_completion_tokens else "max_tokens"
+        )
+        self._omit_temperature = use_max_completion_tokens
 
         self._client = AsyncOpenAI(
             base_url=f"{self.base_url}/v1",
@@ -172,12 +180,14 @@ class OpenAIClient(LLMClient):
             messages.append({"role": "system", "content": self.system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        response = await self._client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=kwargs.get("temperature", self.temperature),
-            max_tokens=kwargs.get("max_tokens", self.max_tokens),
-        )
+        call_kwargs: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            self._tokens_param: kwargs.get("max_tokens", self.max_tokens),
+        }
+        if not self._omit_temperature:
+            call_kwargs["temperature"] = kwargs.get("temperature", self.temperature)
+        response = await self._client.chat.completions.create(**call_kwargs)
         return response.choices[0].message.content or ""
 
     async def complete_with_tools(
@@ -189,9 +199,10 @@ class OpenAIClient(LLMClient):
         create_kwargs: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
-            "temperature": kwargs.get("temperature", self.temperature),
-            "max_tokens": kwargs.get("max_tokens", self.max_tokens),
+            self._tokens_param: kwargs.get("max_tokens", self.max_tokens),
         }
+        if not self._omit_temperature:
+            create_kwargs["temperature"] = kwargs.get("temperature", self.temperature)
         openai_tools = _mcp_tools_to_openai(tools)
         if openai_tools:
             create_kwargs["tools"] = openai_tools
@@ -315,6 +326,13 @@ _HOSTED_PROVIDERS: dict[str, tuple[str, int, type[LLMClient]]] = {
     "anthropic": ("https://api.anthropic.com", 443, AnthropicClient),
 }
 
+# Models that require max_completion_tokens instead of max_tokens and do not
+# accept an explicit temperature parameter. Checked by prefix to cover versioned
+# names such as "o1-2024-12-17" or "gpt-5-mini-2026-01-15".
+_MAX_COMPLETION_TOKENS_PREFIXES: frozenset[str] = frozenset(
+    {"gpt-5-mini", "o1", "o3", "o4-mini"}
+)
+
 
 def create_llm_client(
     provider: str,
@@ -345,6 +363,11 @@ def create_llm_client(
             f"Supported: {sorted(_HOSTED_PROVIDERS)}"
         )
     endpoint, port, cls = _HOSTED_PROVIDERS[key]
+    extra: dict[str, Any] = {}
+    if cls is OpenAIClient and any(
+        model.startswith(prefix) for prefix in _MAX_COMPLETION_TOKENS_PREFIXES
+    ):
+        extra["use_max_completion_tokens"] = True
     return cls(
         endpoint,
         port,
@@ -353,6 +376,7 @@ def create_llm_client(
         system_prompt=system_prompt,
         temperature=temperature,
         max_tokens=max_tokens,
+        **extra,
     )
 
 

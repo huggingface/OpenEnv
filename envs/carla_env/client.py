@@ -74,7 +74,9 @@ class CarlaEnv(EnvClient[CarlaAction, CarlaObservation, CarlaState]):
         """Parse JSON response to StepResult."""
         observation = CarlaObservation(**payload["observation"])
         return StepResult(
-            observation=observation, reward=payload.get("reward"), done=observation.done
+            observation=observation,
+            reward=payload.get("reward"),
+            done=payload.get("done", False),
         )
 
     def _parse_state(self, payload: Dict[str, Any]) -> CarlaState:

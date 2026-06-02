@@ -45,6 +45,7 @@ max_turns = int(max_turns_env) if max_turns_env is not None else None
 download_nltk = os.getenv("TEXTARENA_DOWNLOAD_NLTK", "1") in {"1", "true", "True"}
 
 extra_kwargs = _parse_env_kwargs()
+max_concurrent = int(os.getenv("MAX_CONCURRENT_ENVS", "8"))
 
 
 # Factory function to create TextArenaEnvironment instances
@@ -61,7 +62,7 @@ def create_textarena_environment():
 
 # Create the FastAPI app
 # Pass the factory function instead of an instance for WebSocket session support.
-# When ENABLE_WEB_INTERFACE=true and openenv-core supports it, the Gradio UI has
+# When ENABLE_WEB_INTERFACE=true and openenv supports it, the Gradio UI has
 # two tabs: Playground (default) and Custom (Wordle HTML block). See server/gradio_ui.py.
 _logger = logging.getLogger(__name__)
 _sig = inspect.signature(create_app)
@@ -71,11 +72,12 @@ if "gradio_builder" in _sig.parameters:
         TextArenaAction,
         TextArenaObservation,
         env_name="textarena_env",
+        max_concurrent_envs=max_concurrent,
         gradio_builder=build_textarena_gradio_app,
     )
 else:
     _logger.warning(
-        "Installed openenv-core does not support gradio_builder; "
+        "Installed openenv does not support gradio_builder; "
         "custom Gradio tab will not be available."
     )
     app = create_app(
@@ -83,6 +85,7 @@ else:
         TextArenaAction,
         TextArenaObservation,
         env_name="textarena_env",
+        max_concurrent_envs=max_concurrent,
     )
 
 

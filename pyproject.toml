@@ -3,8 +3,8 @@ requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "openenv-core"
-version = "0.2.3.dev0"
+name = "openenv"
+version = "0.3.0"
 description = "A unified framework for reinforcement learning environments"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -52,21 +52,21 @@ cli = [
 docs = [
     "sphinx==7.2.6",
     "pytorch-sphinx-theme2",
-    "sphinxcontrib.katex==0.9.10",
-    "docutils>=0.18.1,<0.21",
+    "sphinxcontrib.katex==0.9.11",
+    "docutils>=0.18.1,<0.23",
     "sphinx-design==0.6.1",
-    "sphinxcontrib-mermaid==1.0.0",
+    "sphinxcontrib-mermaid==2.0.2",
     "myst-parser",
     "sphinxext-opengraph",
-    "sphinx-sitemap==2.7.1",
+    "sphinx-sitemap==2.9.0",
     "sphinx-gallery>=0.14.0",
     "matplotlib",
     "nest-asyncio",
     "smolagents",
 ]
 all = [
-    "openenv-core[core]",
-    "openenv-core[cli]",
+    "openenv[core]",
+    "openenv[cli]",
 ]
 daytona = [
     "daytona>=0.136.0",
@@ -86,8 +86,12 @@ include-package-data = true
 [tool.setuptools.package-data]
 "openenv.cli" = ["templates/**/*"]
 
+[tool.setuptools.exclude-package-data]
+"*" = ["*.pyc", "*.pyo", "__pycache__/*"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
+exclude = ["*.__pycache__", "*.__pycache__.*"]
 
 [tool.coverage.run]
 omit = [

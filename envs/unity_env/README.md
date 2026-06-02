@@ -610,7 +610,7 @@ This approach is useful when:
 - `mlagents` (installed from source via git)
 - `numpy>=1.20.0`
 - `pillow>=9.0.0` (for visual observations)
-- `openenv-core[core]>=0.2.0`
+- `openenv[core]>=0.2.0`
 
 ## References
 

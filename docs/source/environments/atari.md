@@ -1,1 +1,2 @@
-../../environments/atari.md
+```{include} ../../../envs/atari_env/README.md
+```

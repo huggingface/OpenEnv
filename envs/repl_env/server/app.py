@@ -33,18 +33,23 @@ Usage:
 Environment Variables:
     HF_TOKEN: Fallback HuggingFace API token (client token takes priority)
     LLM_MODEL: Model to use for llm_query/llm_query_batched (default: Qwen/Qwen3.5-9B)
+    MAX_CONCURRENT_ENVS: Maximum concurrent WebSocket sessions (default: 8)
 """
 
+import inspect
+import logging
 import os
 
 try:
     from openenv.core.env_server.http_server import create_app
 
     from ..models import REPLAction, REPLObservation
+    from .gradio_ui import build_repl_gradio_app
     from .repl_environment import REPLEnvironment
 except ImportError:
     from models import REPLAction, REPLObservation
     from openenv.core.env_server.http_server import create_app
+    from server.gradio_ui import build_repl_gradio_app
     from server.repl_environment import REPLEnvironment
 
 
@@ -56,7 +61,10 @@ REPL_MAX_OUTPUT_LENGTH = int(os.environ.get("REPL_MAX_OUTPUT_LENGTH", "8192"))
 REPL_CONTEXT_PREVIEW_LENGTH = int(os.environ.get("REPL_CONTEXT_PREVIEW_LENGTH", "500"))
 REPL_RLM_MAX_DEPTH = int(os.environ.get("REPL_RLM_MAX_DEPTH", "2"))
 REPL_RLM_MAX_ITERATIONS = int(os.environ.get("REPL_RLM_MAX_ITERATIONS", "30"))
+MAX_CONCURRENT_ENVS = int(os.environ.get("MAX_CONCURRENT_ENVS", "8"))
 # ==========================================
+
+_logger = logging.getLogger(__name__)
 
 # Log LLM configuration
 if HF_TOKEN:
@@ -85,14 +93,44 @@ def create_repl_environment() -> REPLEnvironment:
     )
 
 
-# Create the app with web interface and README integration
-app = create_app(
-    create_repl_environment,
-    REPLAction,
-    REPLObservation,
-    env_name="repl_env",
-    max_concurrent_envs=8,
-)
+# Create the app with web interface and README integration.
+_sig = inspect.signature(create_app)
+if "gradio_builder" in _sig.parameters:
+    # Each kwarg is guarded by inspect.signature so older openenv
+    # releases that predate the param still boot this env.
+    create_app_kwargs: dict = {
+        "env_name": "repl_env",
+        "max_concurrent_envs": MAX_CONCURRENT_ENVS,
+        "gradio_builder": build_repl_gradio_app,
+    }
+    if "custom_tab_name" in _sig.parameters:
+        create_app_kwargs["custom_tab_name"] = "REPL"
+    if "custom_tab_primary" in _sig.parameters:
+        create_app_kwargs["custom_tab_primary"] = True
+    if "show_default_tab" in _sig.parameters:
+        create_app_kwargs["show_default_tab"] = False
+    if "title_override" in _sig.parameters:
+        create_app_kwargs["title_override"] = (
+            "OpenEnv REPL — Recursive Language Model playground"
+        )
+    app = create_app(
+        create_repl_environment,
+        REPLAction,
+        REPLObservation,
+        **create_app_kwargs,
+    )
+else:
+    _logger.warning(
+        "Installed openenv does not support gradio_builder; "
+        "custom REPL Gradio tab will not be available."
+    )
+    app = create_app(
+        create_repl_environment,
+        REPLAction,
+        REPLObservation,
+        env_name="repl_env",
+        max_concurrent_envs=MAX_CONCURRENT_ENVS,
+    )
 
 
 def main():

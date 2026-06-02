@@ -201,7 +201,8 @@ uv run usort format src/ tests/
 uv run ruff format src/ tests/
 
 # Build documentation locally
-mkdocs serve --config-file docs/mkdocs.yml
+cd docs && make html
+# Preview: cd docs/_build/html && python -m http.server 8000
 
 # Build Docker images
 docker build -t openenv-base:latest -f src/openenv/core/containers/images/Dockerfile .

@@ -1,5 +1,5 @@
-# Use the official Playwright Python image so browser binaries are already present.
-FROM mcr.microsoft.com/playwright/python:v1.58.0-noble
+# Use the matching Playwright Python image for browsergym-core 0.14.3.
+FROM mcr.microsoft.com/playwright/python:v1.44.0-jammy
 
 # Set working directory
 WORKDIR /app/env
@@ -19,8 +19,11 @@ COPY . .
 # Make start script executable
 RUN chmod +x /app/env/server/start.sh
 
-# Install Python dependencies using pip install -e . (from pyproject.toml)
-RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir uv
+RUN uv pip install --system --no-cache -e .
+
+# Ensure the installed Playwright package has a matching Chromium runtime.
+RUN python -m playwright install chromium
 
 # Install MiniWoB++ from a pinned snapshot to avoid flaky Hub-time git clones.
 ARG MINIWOB_COMMIT=7fd85d71a4b60325c6585396ec4f48377d049838

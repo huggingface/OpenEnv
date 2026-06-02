@@ -14,11 +14,11 @@ version = "0.1.0"
 description = "FinRL Environment for OpenEnv - stock trading via FinRL"
 requires-python = ">=3.10"
 dependencies = [
-    "openenv-core[core]>=0.2.2",
+    "openenv[core]>=0.2.2",
     "fastapi>=0.115.0",
     "pydantic>=2.0.0",
     "uvicorn>=0.24.0",
-    "requests>=2.31.0",
+    "requests>=2.33.0",
     "finrl==0.3.7",
     "alpaca-trade-api>=3.0.0",
     "exchange_calendars>=4.5,<4.6",
@@ -35,7 +35,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0.0",
+    "pytest>=9.0.3",
     "pytest-cov>=4.0.0",
 ]
 
@@ -43,8 +43,8 @@ dev = [
 server = "finrl_env.server.app:main"
 
 [tool.uv]
-# alpaca-trade-api is EOL and pins websockets<11, conflicting with openenv-core.
-# Override to use the version openenv-core requires; alpaca-trade-api still works
+# alpaca-trade-api is EOL and pins websockets<11, conflicting with openenv.
+# Override to use the version openenv requires; alpaca-trade-api still works
 # at runtime with a newer websockets.
 override-dependencies = [
     "websockets>=15.0.1",

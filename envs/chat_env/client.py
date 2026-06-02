@@ -13,7 +13,6 @@ via WebSocket for persistent sessions.
 
 from typing import Any, Dict
 
-import torch
 from openenv.core.client_types import StepResult
 from openenv.core.env_client import EnvClient
 from openenv.core.env_server.interfaces import Message
@@ -28,8 +27,7 @@ class ChatEnv(EnvClient[ChatAction, ChatObservation, ChatState]):
     This client maintains a persistent WebSocket connection to the environment
     server, enabling efficient multi-step interactions with lower latency.
 
-    Note: Since ChatEnvironment works with PyTorch tensors, the client
-    serializes tokens as lists for transport and deserializes them back to tensors.
+    The client transports token ids as plain JSON lists.
 
     Example:
         >>> # Connect to a running server
@@ -38,8 +36,7 @@ class ChatEnv(EnvClient[ChatAction, ChatObservation, ChatState]):
         ...     print(result.observation.messages)
         ...
         ...     # Send an action with tokens
-        ...     import torch
-        ...     tokens = torch.tensor([[1, 2, 3, 4, 5]])
+        ...     tokens = [1, 2, 3, 4, 5]
         ...     result = client.step(ChatAction(tokens=tokens))
         ...     print(result.observation.messages)
         ...     print(result.reward)
@@ -49,7 +46,7 @@ class ChatEnv(EnvClient[ChatAction, ChatObservation, ChatState]):
         >>> client = ChatEnv.from_docker_image("chat-env:latest")
         >>> try:
         ...     result = client.reset()
-        ...     result = client.step(ChatAction(tokens=torch.tensor([[1, 2, 3]])))
+        ...     result = client.step(ChatAction(tokens=[1, 2, 3]))
         ... finally:
         ...     client.close()
     """
@@ -58,23 +55,14 @@ class ChatEnv(EnvClient[ChatAction, ChatObservation, ChatState]):
         """
         Convert ChatAction to JSON payload for step request.
 
-        Since PyTorch tensors can't be directly serialized to JSON,
-        we convert them to nested lists.
-
         Args:
             action: ChatAction instance with tokens
 
         Returns:
             Dictionary representation suitable for JSON encoding
         """
-        # Convert tensor to list for JSON serialization
-        if isinstance(action.tokens, torch.Tensor):
-            tokens_list = action.tokens.tolist()
-        else:
-            tokens_list = action.tokens
-
         return {
-            "tokens": tokens_list,
+            "tokens": action.tokens,
             "metadata": action.metadata,
         }
 
@@ -90,15 +78,8 @@ class ChatEnv(EnvClient[ChatAction, ChatObservation, ChatState]):
         """
         obs_data = payload.get("observation", {})
 
-        # Convert tokens list back to tensor
         tokens_data = obs_data.get("tokens", [])
-        if isinstance(tokens_data, list):
-            if tokens_data:
-                tokens = torch.tensor(tokens_data)
-            else:
-                tokens = torch.tensor([])
-        else:
-            tokens = torch.tensor([])
+        tokens = tokens_data if isinstance(tokens_data, list) else []
 
         # Parse messages
         messages = obs_data.get("messages", [])
@@ -130,14 +111,11 @@ class ChatEnv(EnvClient[ChatAction, ChatObservation, ChatState]):
         # Parse history messages
         history_messages = payload.get("history_messages", [])
 
-        # Parse history tokens - convert lists back to tensors
+        # Parse history tokens
         history_tokens_data = payload.get("history_tokens", [])
         history_tokens = []
         for token_list in history_tokens_data:
-            if token_list:
-                history_tokens.append(torch.tensor(token_list))
-            else:
-                history_tokens.append(torch.tensor([]))
+            history_tokens.append(token_list if isinstance(token_list, list) else [])
 
         return ChatState(
             episode_id=payload.get("episode_id"),
@@ -176,8 +154,6 @@ class ChatEnv(EnvClient[ChatAction, ChatObservation, ChatState]):
             raise ValueError("Message content cannot be None")
 
         # Tokenize the message
-        tokens = tokenizer.apply_chat_template(
-            conversation=[message], tokenize=True, return_tensors="pt"
-        )
+        tokens = tokenizer.apply_chat_template(conversation=[message], tokenize=True)
 
         return ChatAction(tokens=tokens)

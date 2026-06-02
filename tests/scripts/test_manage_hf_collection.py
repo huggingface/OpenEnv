@@ -370,13 +370,155 @@ class TestAddSpacesToCollection:
         assert result == 1  # Only first one succeeded
 
 
+class TestRemoveSpacesFromCollection:
+    """Tests for collection reconciliation removals."""
+
+    def test_remove_spaces_dry_run(self):
+        """Dry-run reconcile should report removals without mutating the API."""
+        mock_api = Mock()
+        current_items = []
+
+        keep_item = Mock()
+        keep_item.item_id = "openenv/repl"
+        keep_item.item_object_id = "obj-keep"
+        current_items.append(keep_item)
+
+        stale_item = Mock()
+        stale_item.item_id = "third-party/example"
+        stale_item.item_object_id = "obj-stale"
+        current_items.append(stale_item)
+
+        result = manage_hf_collection.remove_spaces_from_collection(
+            mock_api,
+            "openenv/environment-hub-test",
+            current_items=current_items,
+            target_space_ids=["openenv/repl"],
+            dry_run=True,
+        )
+
+        assert result == 1
+        mock_api.delete_collection_item.assert_not_called()
+
+    def test_remove_spaces_success(self):
+        """Reconcile should delete collection entries that are not in the target set."""
+        mock_api = Mock()
+
+        keep_item = Mock()
+        keep_item.item_id = "openenv/repl"
+        keep_item.item_object_id = "obj-keep"
+
+        stale_item = Mock()
+        stale_item.item_id = "third-party/example"
+        stale_item.item_object_id = "obj-stale"
+
+        result = manage_hf_collection.remove_spaces_from_collection(
+            mock_api,
+            "openenv/environment-hub-test",
+            current_items=[keep_item, stale_item],
+            target_space_ids=["openenv/repl"],
+            dry_run=False,
+        )
+
+        assert result == 1
+        mock_api.delete_collection_item.assert_called_once_with(
+            collection_slug="openenv/environment-hub-test",
+            item_object_id="obj-stale",
+            missing_ok=True,
+        )
+
+
+class TestResolveCollectionSlug:
+    """Tests for resolving explicit collection slugs."""
+
+    def test_resolve_collection_slug_canonicalizes_explicit_alias(self):
+        """Explicit user-facing slugs should resolve to the canonical Hub slug."""
+        mock_api = Mock()
+        mock_collection = Mock()
+        mock_collection.slug = (
+            "openenv/openenv-environment-hub-69a154b16387f8b33a978dd7"
+        )
+        mock_api.get_collection.return_value = mock_collection
+
+        result = manage_hf_collection.resolve_collection_slug(
+            mock_api,
+            namespace="openenv",
+            title="OpenEnv Environment Hub",
+            description="desc",
+            explicit_slug="openenv/openenv-environment-hub",
+            private=False,
+            dry_run=False,
+        )
+
+        assert result == "openenv/openenv-environment-hub-69a154b16387f8b33a978dd7"
+        mock_api.get_collection.assert_called_once_with(
+            "openenv/openenv-environment-hub"
+        )
+        mock_api.update_collection_metadata.assert_called_once_with(
+            collection_slug="openenv/openenv-environment-hub-69a154b16387f8b33a978dd7",
+            title="OpenEnv Environment Hub",
+            description="desc",
+            private=False,
+        )
+
+    def test_resolve_collection_slug_falls_back_to_explicit_alias_on_lookup_failure(
+        self,
+    ):
+        """Lookup failures should fall back to the user-provided explicit slug."""
+        mock_api = Mock()
+        mock_api.get_collection.side_effect = Exception("lookup failed")
+
+        result = manage_hf_collection.resolve_collection_slug(
+            mock_api,
+            namespace="openenv",
+            title="OpenEnv Environment Hub",
+            description="desc",
+            explicit_slug="openenv/openenv-environment-hub",
+            private=False,
+            dry_run=False,
+        )
+
+        assert result == "openenv/openenv-environment-hub"
+        mock_api.update_collection_metadata.assert_called_once_with(
+            collection_slug="openenv/openenv-environment-hub",
+            title="OpenEnv Environment Hub",
+            description="desc",
+            private=False,
+        )
+
+    def test_resolve_collection_slug_updates_existing_collection_metadata(self):
+        """Existing collections should have description/title refreshed on reuse."""
+        mock_api = Mock()
+        mock_collection = Mock()
+        mock_collection.slug = "openenv/openenv-environment-hub-123"
+        mock_collection.title = "OpenEnv Environment Hub"
+        mock_api.list_collections.return_value = [mock_collection]
+
+        result = manage_hf_collection.resolve_collection_slug(
+            mock_api,
+            namespace="openenv",
+            title="OpenEnv Environment Hub",
+            description="validated canonicals",
+            explicit_slug=None,
+            private=False,
+            dry_run=False,
+        )
+
+        assert result == "openenv/openenv-environment-hub-123"
+        mock_api.update_collection_metadata.assert_called_once_with(
+            collection_slug="openenv/openenv-environment-hub-123",
+            title="OpenEnv Environment Hub",
+            description="validated canonicals",
+            private=False,
+        )
+
+
 class TestMain:
     """Tests for the main function."""
 
     @patch("manage_hf_collection.setup_api")
     @patch("manage_hf_collection.resolve_collection_slug")
-    @patch("manage_hf_collection.get_collection_spaces")
-    @patch("manage_hf_collection.discover_openenv_spaces")
+    @patch("manage_hf_collection.get_collection_items")
+    @patch("manage_hf_collection.discover_canonical_openenv_spaces")
     @patch("manage_hf_collection.add_spaces_to_collection")
     @patch("sys.argv", ["manage_hf_collection.py", "--dry-run"])
     def test_main_dry_run(
@@ -391,7 +533,9 @@ class TestMain:
         mock_api = Mock()
         mock_setup_api.return_value = mock_api
         mock_resolve_slug.return_value = "openenv/environment-hub-test"
-        mock_get_collection.return_value = {"owner1/space1"}
+        mock_item = Mock()
+        mock_item.item_id = "owner1/space1"
+        mock_get_collection.return_value = [mock_item]
         mock_discover.return_value = ["owner1/space1", "owner2/space2"]
         mock_add_spaces.return_value = 1
 
@@ -404,8 +548,50 @@ class TestMain:
 
     @patch("manage_hf_collection.setup_api")
     @patch("manage_hf_collection.resolve_collection_slug")
-    @patch("manage_hf_collection.get_collection_spaces")
-    @patch("manage_hf_collection.discover_openenv_spaces")
+    @patch("manage_hf_collection.get_collection_items")
+    @patch("manage_hf_collection.discover_canonical_openenv_spaces")
+    @patch("manage_hf_collection.remove_spaces_from_collection")
+    @patch("manage_hf_collection.add_spaces_to_collection")
+    @patch("sys.argv", ["manage_hf_collection.py", "--reconcile"])
+    def test_main_reconcile_removes_stale_spaces(
+        self,
+        mock_add_spaces,
+        mock_remove_spaces,
+        mock_discover,
+        mock_get_collection_items,
+        mock_resolve_slug,
+        mock_setup_api,
+    ):
+        """Reconcile mode should remove spaces outside the resolved target set."""
+        mock_api = Mock()
+        mock_setup_api.return_value = mock_api
+        mock_resolve_slug.return_value = "openenv/environment-hub-test"
+
+        keep_item = Mock()
+        keep_item.item_id = "owner1/space1"
+        keep_item.item_object_id = "obj-keep"
+
+        stale_item = Mock()
+        stale_item.item_id = "owner2/space2"
+        stale_item.item_object_id = "obj-stale"
+
+        mock_get_collection_items.return_value = [keep_item, stale_item]
+        mock_discover.return_value = ["owner1/space1"]
+        mock_add_spaces.return_value = 0
+        mock_remove_spaces.return_value = 1
+
+        manage_hf_collection.main()
+
+        mock_remove_spaces.assert_called_once()
+        _, kwargs = mock_remove_spaces.call_args
+        assert kwargs["collection_slug"] == "openenv/environment-hub-test"
+        assert kwargs["target_space_ids"] == ["owner1/space1"]
+        assert kwargs["current_items"] == [keep_item, stale_item]
+
+    @patch("manage_hf_collection.setup_api")
+    @patch("manage_hf_collection.resolve_collection_slug")
+    @patch("manage_hf_collection.get_collection_items")
+    @patch("manage_hf_collection.discover_canonical_openenv_spaces")
     @patch("manage_hf_collection.add_spaces_to_collection")
     @patch("sys.argv", ["manage_hf_collection.py"])
     def test_main_finds_new_spaces(
@@ -420,7 +606,11 @@ class TestMain:
         mock_api = Mock()
         mock_setup_api.return_value = mock_api
         mock_resolve_slug.return_value = "openenv/environment-hub-test"
-        mock_get_collection.return_value = {"owner1/space1", "owner2/space2"}
+        item1 = Mock()
+        item1.item_id = "owner1/space1"
+        item2 = Mock()
+        item2.item_id = "owner2/space2"
+        mock_get_collection.return_value = [item1, item2]
         mock_discover.return_value = ["owner1/space1", "owner2/space2", "owner3/space3"]
         mock_add_spaces.return_value = 1
 
@@ -434,8 +624,8 @@ class TestMain:
 
     @patch("manage_hf_collection.setup_api")
     @patch("manage_hf_collection.resolve_collection_slug")
-    @patch("manage_hf_collection.get_collection_spaces")
-    @patch("manage_hf_collection.discover_openenv_spaces")
+    @patch("manage_hf_collection.get_collection_items")
+    @patch("manage_hf_collection.discover_canonical_openenv_spaces")
     @patch("manage_hf_collection.add_spaces_to_collection")
     @patch("sys.argv", ["manage_hf_collection.py", "--verbose"])
     def test_main_verbose(
@@ -450,7 +640,7 @@ class TestMain:
         mock_api = Mock()
         mock_setup_api.return_value = mock_api
         mock_resolve_slug.return_value = "openenv/environment-hub-test"
-        mock_get_collection.return_value = set()
+        mock_get_collection.return_value = []
         mock_discover.return_value = []
         mock_add_spaces.return_value = 0
 
@@ -459,14 +649,44 @@ class TestMain:
 
         mock_setup_api.assert_called_once()
 
+    @patch("manage_hf_collection.setup_api")
+    @patch("manage_hf_collection.resolve_collection_slug")
+    @patch("manage_hf_collection.get_collection_items")
+    @patch("manage_hf_collection.discover_openenv_spaces")
+    @patch("manage_hf_collection.discover_canonical_openenv_spaces")
+    @patch("manage_hf_collection.add_spaces_to_collection")
+    @patch("sys.argv", ["manage_hf_collection.py", "--global-scope", "tagged"])
+    def test_main_tagged_scope_uses_tag_discovery(
+        self,
+        mock_add_spaces,
+        mock_discover_canonical,
+        mock_discover_tagged,
+        mock_get_collection,
+        mock_resolve_slug,
+        mock_setup_api,
+    ):
+        """Tagged scope should keep the old broad-discovery behavior when requested."""
+        mock_api = Mock()
+        mock_setup_api.return_value = mock_api
+        mock_resolve_slug.return_value = "openenv/environment-hub-test"
+        mock_get_collection.return_value = []
+        mock_discover_tagged.return_value = ["owner1/space1"]
+        mock_discover_canonical.return_value = ["openenv/repl"]
+        mock_add_spaces.return_value = 1
+
+        manage_hf_collection.main()
+
+        mock_discover_tagged.assert_called_once_with(mock_api, "openenv")
+        mock_discover_canonical.assert_not_called()
+
 
 class TestIdempotency:
     """Tests to verify idempotent behavior."""
 
     @patch("manage_hf_collection.setup_api")
     @patch("manage_hf_collection.resolve_collection_slug")
-    @patch("manage_hf_collection.get_collection_spaces")
-    @patch("manage_hf_collection.discover_openenv_spaces")
+    @patch("manage_hf_collection.get_collection_items")
+    @patch("manage_hf_collection.discover_canonical_openenv_spaces")
     @patch("manage_hf_collection.add_spaces_to_collection")
     @patch("sys.argv", ["manage_hf_collection.py"])
     def test_no_new_spaces_does_nothing(
@@ -481,7 +701,11 @@ class TestIdempotency:
         mock_api = Mock()
         mock_setup_api.return_value = mock_api
         mock_resolve_slug.return_value = "openenv/environment-hub-test"
-        mock_get_collection.return_value = {"owner1/space1", "owner2/space2"}
+        item1 = Mock()
+        item1.item_id = "owner1/space1"
+        item2 = Mock()
+        item2.item_id = "owner2/space2"
+        mock_get_collection.return_value = [item1, item2]
         mock_discover.return_value = ["owner1/space1", "owner2/space2"]
         mock_add_spaces.return_value = 0
 
