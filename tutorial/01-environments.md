@@ -1117,13 +1117,18 @@ OpenEnv includes 3 complete examples:
 
 ### 🎓 Community & Support
 
-**Supported by amazing organizations:**
+**Openly governed by a technical committee including:**
 
-- 🔥 Meta PyTorch
 - 🤗 Hugging Face
-- ⚡ Unsloth AI
-- 🌟 Reflection AI
+- ⚡ Unsloth
+- 🌟 Reflection
+- 🔥 Meta PyTorch
+
+**Supported by amazing organizations and contributors.**
+
 - 🚀 And many more!
+
+Technical direction, RFCs, and release planning are coordinated in public through the OpenEnv repository.
 
 **License**: BSD 3-Clause (very permissive!)
 
@@ -1138,4 +1143,3 @@ OpenEnv includes 3 complete examples:
 3. 🎮 **Explore** other OpenSpiel games
 4. 🛠️ **Build** your own environment integration
 5. 💬 **Share** what you build with the community!
-
