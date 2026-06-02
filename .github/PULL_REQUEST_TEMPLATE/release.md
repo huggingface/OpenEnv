@@ -11,15 +11,16 @@
 - [ ] `test` passes on Python 3.11
 - [ ] `test` passes on Python 3.12
 - [ ] `lint` passes (usort + ruff)
+- [ ] `Package CI` builds, checks, and smoke-tests wheel/sdist installs
 
 ### TestPyPI validation (before merging)
-- [ ] Manual dispatch of `publish-pypi.yml` with `use_test_pypi=true` from this branch
-- [ ] `pip install --index-url https://test.pypi.org/simple/ openenv==X.Y.Z` installs cleanly
-- [ ] `python -c "import openenv; print(openenv.__version__)"` prints `X.Y.Z`
+- [ ] Manual dispatch of `publish-testpypi.yml` from this branch
+- [ ] TestPyPI workflow published a unique pre/dev version such as `X.Y.Z.devN` or `X.Y.ZrcN`
+- [ ] TestPyPI workflow verified `pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ openenv==X.Y.Z.devN`
 
 ### Post-merge steps (author only)
 - [ ] Tag `vX.Y.Z` pushed: `git tag -a vX.Y.Z -m "Release vX.Y.Z" && git push origin vX.Y.Z`
-- [ ] GitHub Release published (triggers real PyPI publish via `release: published`)
-- [ ] PyPI publish Actions job completed successfully
+- [ ] `publish-pypi.yml` completed successfully from the tag
+- [ ] GitHub Release was created by the successful PyPI publish workflow
 - [ ] `pip install openenv==X.Y.Z` from production PyPI verified
 - [ ] `auto-bump-version.yml` created `bump/X.Y.(Z+1).dev0` PR
