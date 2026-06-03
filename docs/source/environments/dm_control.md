@@ -4,8 +4,8 @@
 A generic OpenEnv environment for [dm_control.suite](https://github.com/google-deepmind/dm_control), providing access to all MuJoCo-based continuous control tasks.
 
 <p align="center">
-  <img src="assets/cartpole.png" width="45%" alt="Cartpole Balance"/>
-  <img src="assets/quadruped.png" width="45%" alt="Quadruped Walk"/>
+  <img src="https://raw.githubusercontent.com/huggingface/OpenEnv/main/envs/dm_control_env/assets/cartpole.png" width="45%" alt="Cartpole Balance"/>
+  <img src="https://raw.githubusercontent.com/huggingface/OpenEnv/main/envs/dm_control_env/assets/quadruped.png" width="45%" alt="Quadruped Walk"/>
 </p>
 
 ## Supported Environments

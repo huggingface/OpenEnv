@@ -12,7 +12,7 @@ LICENSE file in the root directory of this source tree.
 # OpenApp Environment
 
 <div align="center">
-<img src="assets/OpenApps_OpenEnv_RL.png" alt="OpenApps Environment" width="800"/>
+<img src="https://raw.githubusercontent.com/huggingface/OpenEnv/main/envs/openapp_env/assets/OpenApps_OpenEnv_RL.png" alt="OpenApps Environment" width="800"/>
 </div>
 
 *A web application simulation environment for OpenEnv that wraps the [OpenApps](https://github.com/facebookresearch/OpenApps) framework and BrowserGym.*
@@ -24,7 +24,7 @@ LICENSE file in the root directory of this source tree.
 The OpenApp environment provides a simulated web application ecosystem where agents can interact with various apps (calendar, todo, messenger, maps) using browser-based actions.
 
 <div align="center">
-<img src="assets/openapps-demo.gif" alt="OpenApps Demo" width="800"/>
+<img src="https://raw.githubusercontent.com/huggingface/OpenEnv/main/envs/openapp_env/assets/openapps-demo.gif" alt="OpenApps Demo" width="800"/>
 </div>
 
 This environment is ideal for:

@@ -12,8 +12,8 @@ LICENSE file in the root directory of this source tree.
 OpenEnv wrapper for [Unity ML-Agents](https://github.com/Unity-Technologies/ml-agents) environments. This environment provides access to Unity's reinforcement learning environments through a standardized HTTP/WebSocket interface.
 
 <div align="center">
-  <img src="assets/unity_pushblock.gif" alt="PushBlock" width="400"/>
-  <img src="assets/unity_3dball.gif" alt="3DBall" width="400"/>
+  <img src="https://raw.githubusercontent.com/huggingface/OpenEnv/main/envs/unity_env/assets/unity_pushblock.gif" alt="PushBlock" width="400"/>
+  <img src="https://raw.githubusercontent.com/huggingface/OpenEnv/main/envs/unity_env/assets/unity_3dball.gif" alt="3DBall" width="400"/>
 </div>
 
 ## Supported Environments

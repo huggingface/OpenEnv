@@ -25,6 +25,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENVS_DIR = os.path.join(ROOT, "envs")
 DOCS_ENVS_DIR = os.path.join(ROOT, "docs", "source", "environments")
+GITHUB_RAW_BASE = "https://raw.githubusercontent.com/huggingface/OpenEnv/main"
 
 SKIP_DIRS = {"README.md"}
 
@@ -107,6 +108,10 @@ def generate_stub(env_dir):
     with open(readme_path) as f:
         content = f.read()
     content = _strip_frontmatter(content)
+    # Rewrite relative assets/ paths to absolute GitHub raw URLs so images
+    # render correctly when the README is inlined into the doc-builder site.
+    base_url = f"{GITHUB_RAW_BASE}/envs/{env_dir}"
+    content = re.sub(r'(src=["\'])assets/', rf'\1{base_url}/assets/', content)
     return f"<!-- openenv-source: {env_dir} -->\n{content}"
 
 
