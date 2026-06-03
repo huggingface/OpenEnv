@@ -127,16 +127,21 @@ class MCPEnvironment(Environment):
         ValueError: If any tool in the MCP server uses a reserved name
             (reset, step, state, close).
 
-    Example:
-        >>> from fastmcp import FastMCP
-        >>> mcp = FastMCP("calculator")
-        >>> @mcp.tool()
-        ... def add(a: int, b: int) -> int:
-        ...     return a + b
-        >>> env = MyMCPEnvironment(mcp)
-        >>> obs = env.step(ListToolsAction())
-        >>> obs.tools[0].name
-        'add'
+    Examples:
+
+        ```python
+        from fastmcp import FastMCP
+
+        mcp = FastMCP("calculator")
+
+        @mcp.tool()
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        env = MyMCPEnvironment(mcp)
+        obs = env.step(ListToolsAction())
+        obs.tools[0].name  # 'add'
+        ```
     """
 
     def __init__(self, mcp_server: Any, transform: Optional[Any] = None) -> None:

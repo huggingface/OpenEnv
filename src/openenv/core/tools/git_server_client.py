@@ -43,19 +43,23 @@ class GitServerClient:
         password: Gitea password for authentication
         workspace_dir: Local workspace directory for cloning repos
 
-    Example:
-        >>> # Connect to shared Gitea (credentials from environment)
-        >>> import os
-        >>> client = GitServerClient(
-        ...     gitea_url=os.getenv("GITEA_URL"),
-        ...     username=os.getenv("GITEA_USERNAME"),
-        ...     password=os.getenv("GITEA_PASSWORD")
-        ... )
-        >>> client.wait_for_ready()
-        >>> # Clone repo to workspace
-        >>> path = client.clone_to_workspace("my-repo", commit="abc123")
-        >>> # Fast reset to base state
-        >>> client.reset_workspace("my-repo", commit="abc123")
+    Examples:
+
+        ```python
+        import os
+
+        # Connect to shared Gitea (credentials from environment)
+        client = GitServerClient(
+            gitea_url=os.getenv("GITEA_URL"),
+            username=os.getenv("GITEA_USERNAME"),
+            password=os.getenv("GITEA_PASSWORD")
+        )
+        client.wait_for_ready()
+        # Clone repo to workspace
+        path = client.clone_to_workspace("my-repo", commit="abc123")
+        # Fast reset to base state
+        client.reset_workspace("my-repo", commit="abc123")
+        ```
     """
 
     def __init__(

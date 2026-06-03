@@ -191,10 +191,13 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
         Returns:
             List of Tool objects with name, description, and input_schema.
 
-        Example:
-            >>> tools = await env.list_tools()
-            >>> for tool in tools:
-            ...     print(f"{tool.name}: {tool.description}")
+        Examples:
+
+            ```python
+            tools = await env.list_tools()
+            for tool in tools:
+                print(f"{tool.name}: {tool.description}")
+            ```
         """
         if use_cache and self._tools_cache is not None:
             return self._tools_cache
@@ -396,12 +399,15 @@ class MCPToolClient(MCPClientBase):
         Raises:
             RuntimeError: If the server returns an error response.
 
-        Example:
-            >>> result = await env.call_tool("add", a=5, b=3)
-            >>> print(result)  # 8
-            >>>
-            >>> result = await env.call_tool("greet", name="Claude")
-            >>> print(result)  # "Hello, Claude!"
+        Examples:
+
+            ```python
+            result = await env.call_tool("add", a=5, b=3)
+            print(result)  # 8
+
+            result = await env.call_tool("greet", name="Claude")
+            print(result)  # "Hello, Claude!"
+            ```
         """
         if getattr(self, "use_production_mode", False):
             session_id = await self._ensure_production_session()
@@ -459,11 +465,14 @@ class MCPToolClient(MCPClientBase):
         Returns:
             The Tool object if found, None otherwise.
 
-        Example:
-            >>> tool = await env.get_tool("echo_message")
-            >>> if tool:
-            ...     print(tool.description)
-            ...     print(tool.input_schema)
+        Examples:
+
+            ```python
+            tool = await env.get_tool("echo_message")
+            if tool:
+                print(tool.description)
+                print(tool.input_schema)
+            ```
         """
         tools = await self.list_tools()
         for tool in tools:

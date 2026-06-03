@@ -10,17 +10,20 @@ Synchronous wrapper for async EnvClient.
 This module provides a SyncEnvClient that wraps an async EnvClient,
 allowing synchronous usage while the underlying client uses async I/O.
 
-Example:
-    >>> from openenv.core import GenericEnvClient
-    >>>
-    >>> # Create async client and get sync wrapper
-    >>> async_client = GenericEnvClient(base_url="http://localhost:8000")
-    >>> sync_client = async_client.sync()
-    >>>
-    >>> # Use synchronous API
-    >>> with sync_client:
-    ...     result = sync_client.reset()
-    ...     result = sync_client.step({"code": "print('hello')"})
+Examples:
+
+    ```python
+    from openenv.core import GenericEnvClient
+
+    # Create async client and get sync wrapper
+    async_client = GenericEnvClient(base_url="http://localhost:8000")
+    sync_client = async_client.sync()
+
+    # Use synchronous API
+    with sync_client:
+        result = sync_client.reset()
+        result = sync_client.step({"code": "print('hello')"})
+    ```
 """
 
 from __future__ import annotations
@@ -56,15 +59,18 @@ class SyncEnvClient(Generic[ActT, ObsT, StateT]):
         `close()` explicitly. `__del__` is best-effort only and may not run
         reliably (for example, during interpreter shutdown).
 
-    Example:
-        >>> # From an async client
-        >>> async_client = GenericEnvClient(base_url="http://localhost:8000")
-        >>> sync_client = async_client.sync()
-        >>>
-        >>> # Use synchronous context manager
-        >>> with sync_client:
-        ...     result = sync_client.reset()
-        ...     result = sync_client.step({"action": "test"})
+    Examples:
+
+        ```python
+        # From an async client
+        async_client = GenericEnvClient(base_url="http://localhost:8000")
+        sync_client = async_client.sync()
+
+        # Use synchronous context manager
+        with sync_client:
+            result = sync_client.reset()
+            result = sync_client.step({"action": "test"})
+        ```
 
     Attributes:
         _async: The wrapped async EnvClient instance

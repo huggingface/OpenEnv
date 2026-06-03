@@ -90,12 +90,15 @@ class UVProvider(RuntimeProvider):
         env_vars: Environment variables to pass through to the spawned process
         context_timeout_s: How long to wait for the environment to become ready
 
-    Example:
-        >>> provider = UVProvider(project_path="/path/to/env")
-        >>> base_url = provider.start()
-        >>> print(base_url)  # http://localhost:8000
-        >>> # Use the environment via base_url
-        >>> provider.stop()
+    Examples:
+
+        ```python
+        provider = UVProvider(project_path="/path/to/env")
+        base_url = provider.start()
+        print(base_url)  # http://localhost:8000
+        # Use the environment via base_url
+        provider.stop()
+        ```
     """
 
     def __init__(

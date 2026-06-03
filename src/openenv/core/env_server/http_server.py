@@ -124,23 +124,26 @@ class HTTPEnvServer:
     - Action deserialization: Converts JSON dict to Action subclass
     - Observation serialization: Converts Observation subclass to JSON dict
 
-    Example:
-        >>> from core.env_server import HTTPEnvServer
-        >>> from envs.coding_env.server import CodeExecutionEnvironment
-        >>> from envs.coding_env.models import CodeAction, CodeObservation
-        >>>
-        >>> # Pass environment class (factory pattern)
-        >>> server = HTTPEnvServer(
-        ...     env=CodeExecutionEnvironment,
-        ...     action_cls=CodeAction,
-        ...     observation_cls=CodeObservation,
-        ...     max_concurrent_envs=4,
-        ... )
-        >>>
-        >>> # Register routes with FastAPI
-        >>> from fastapi import FastAPI
-        >>> app = FastAPI()
-        >>> server.register_routes(app)
+    Examples:
+
+        ```python
+        from core.env_server import HTTPEnvServer
+        from envs.coding_env.server import CodeExecutionEnvironment
+        from envs.coding_env.models import CodeAction, CodeObservation
+
+        # Pass environment class (factory pattern)
+        server = HTTPEnvServer(
+            env=CodeExecutionEnvironment,
+            action_cls=CodeAction,
+            observation_cls=CodeObservation,
+            max_concurrent_envs=4,
+        )
+
+        # Register routes with FastAPI
+        from fastapi import FastAPI
+        app = FastAPI()
+        server.register_routes(app)
+        ```
     """
 
     def __init__(

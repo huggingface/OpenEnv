@@ -30,12 +30,15 @@ class ContainerProvider(ABC):
     The provider manages a single container lifecycle and provides the base URL
     for connecting to it.
 
-    Example:
-        >>> provider = LocalDockerProvider()
-        >>> base_url = provider.start_container("echo-env:latest")
-        >>> print(base_url)  # http://localhost:8000
-        >>> # Use the environment via base_url
-        >>> provider.stop_container()
+    Examples:
+
+        ```python
+        provider = LocalDockerProvider()
+        base_url = provider.start_container("echo-env:latest")
+        print(base_url)  # http://localhost:8000
+        # Use the environment via base_url
+        provider.stop_container()
+        ```
     """
 
     @abstractmethod
@@ -96,11 +99,14 @@ class LocalDockerProvider(ContainerProvider):
     This provider runs containers on the local machine using Docker.
     Useful for development and testing.
 
-    Example:
-        >>> provider = LocalDockerProvider()
-        >>> base_url = provider.start_container("echo-env:latest")
-        >>> # Container running on http://localhost:<random-port>
-        >>> provider.stop_container()
+    Examples:
+
+        ```python
+        provider = LocalDockerProvider()
+        base_url = provider.start_container("echo-env:latest")
+        # Container running on http://localhost:<random-port>
+        provider.stop_container()
+        ```
     """
 
     def __init__(self):
@@ -597,11 +603,14 @@ class KubernetesProvider(ContainerProvider):
     This provider creates pods in a Kubernetes cluster and exposes them
     via services or port-forwarding.
 
-    Example:
-        >>> provider = KubernetesProvider(namespace="envtorch-dev")
-        >>> base_url = provider.start_container("echo-env:latest")
-        >>> # Pod running in k8s, accessible via service or port-forward
-        >>> provider.stop_container()
+    Examples:
+
+        ```python
+        provider = KubernetesProvider(namespace="envtorch-dev")
+        base_url = provider.start_container("echo-env:latest")
+        # Pod running in k8s, accessible via service or port-forward
+        provider.stop_container()
+        ```
     """
 
     pass
@@ -616,11 +625,14 @@ class RuntimeProvider(ABC):
     The provider manages a single runtime lifecycle and provides the base URL
     for connecting to it.
 
-    Example:
-        >>> provider = UVProvider(project_path="/path/to/env")
-        >>> base_url = provider.start()
-        >>> print(base_url)  # http://localhost:8000
-        >>> provider.stop()
+    Examples:
+
+        ```python
+        provider = UVProvider(project_path="/path/to/env")
+        base_url = provider.start()
+        print(base_url)  # http://localhost:8000
+        provider.stop()
+        ```
     """
 
     @abstractmethod

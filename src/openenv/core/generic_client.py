@@ -32,24 +32,27 @@ class GenericEnvClient(EnvClient[Dict[str, Any], Dict[str, Any], Dict[str, Any]]
     The trade-off is that you lose type safety and IDE autocomplete for actions
     and observations. Instead of typed objects, you work with plain dictionaries.
 
-    Example:
-        >>> # Direct connection to a running server (no installation needed)
-        >>> with GenericEnvClient(base_url="http://localhost:8000") as env:
-        ...     result = env.reset()
-        ...     result = env.step({"code": "print('hello')"})
-        ...     print(result.observation)  # Dict[str, Any]
-        ...     print(result.observation.get("output"))
+    Examples:
 
-        >>> # From local Docker image
-        >>> env = GenericEnvClient.from_docker_image("coding-env:latest")
-        >>> result = env.reset()
-        >>> result = env.step({"code": "x = 1 + 2"})
-        >>> env.close()
+        ```python
+        # Direct connection to a running server (no installation needed)
+        with GenericEnvClient(base_url="http://localhost:8000") as env:
+            result = env.reset()
+            result = env.step({"code": "print('hello')"})
+            print(result.observation)  # Dict[str, Any]
+            print(result.observation.get("output"))
 
-        >>> # From HuggingFace Hub (pulls Docker image, no pip install)
-        >>> env = GenericEnvClient.from_env("user/my-env", use_docker=True)
-        >>> result = env.reset()
-        >>> env.close()
+        # From local Docker image
+        env = GenericEnvClient.from_docker_image("coding-env:latest")
+        result = env.reset()
+        result = env.step({"code": "x = 1 + 2"})
+        env.close()
+
+        # From HuggingFace Hub (pulls Docker image, no pip install)
+        env = GenericEnvClient.from_env("user/my-env", use_docker=True)
+        result = env.reset()
+        env.close()
+        ```
 
     Note:
         GenericEnvClient inherits `from_docker_image()` and `from_env()` from
@@ -129,17 +132,20 @@ class GenericAction(Dict[str, Any]):
     readable when working with GenericEnvClient. It behaves exactly like a
     dict but signals intent that this is an action for an environment.
 
-    Example:
-        >>> # Without GenericAction (works fine)
-        >>> env.step({"code": "print('hello')"})
+    Examples:
 
-        >>> # With GenericAction (more explicit)
-        >>> action = GenericAction(code="print('hello')")
-        >>> env.step(action)
+        ```python
+        # Without GenericAction (works fine)
+        env.step({"code": "print('hello')"})
 
-        >>> # With multiple fields
-        >>> action = GenericAction(code="x = 1", timeout=30, metadata={"tag": "test"})
-        >>> env.step(action)
+        # With GenericAction (more explicit)
+        action = GenericAction(code="print('hello')")
+        env.step(action)
+
+        # With multiple fields
+        action = GenericAction(code="x = 1", timeout=30, metadata={"tag": "test"})
+        env.step(action)
+        ```
 
     Note:
         GenericAction is just a dict with a constructor that accepts keyword
@@ -154,10 +160,12 @@ class GenericAction(Dict[str, Any]):
         Args:
             **kwargs: Action fields as keyword arguments
 
-        Example:
-            >>> action = GenericAction(code="print(1)", timeout=30)
-            >>> action["code"]
-            'print(1)'
+        Examples:
+
+            ```python
+            action = GenericAction(code="print(1)", timeout=30)
+            action["code"]  # 'print(1)'
+            ```
         """
         super().__init__(kwargs)
 
