@@ -417,9 +417,9 @@ class MCPEnvironment(Environment):
                 Additional arguments passed to handlers.
 
         Returns:
-            [`~openenv.core.env_server.types.Observation`]: ListToolsObservation for
-            ListToolsAction, CallToolObservation for CallToolAction, or a
-            subclass-defined Observation for other actions.
+            [`~openenv.core.env_server.types.Observation`]: [`~openenv.core.env_server.mcp_types.ListToolsObservation`] for
+            [`~openenv.core.env_server.mcp_types.ListToolsAction`], [`~openenv.core.env_server.mcp_types.CallToolObservation`] for
+            [`~openenv.core.env_server.mcp_types.CallToolAction`], or a subclass-defined Observation for other actions.
         """
         if isinstance(action, ListToolsAction):
             return self._handle_list_tools()

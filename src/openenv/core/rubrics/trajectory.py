@@ -142,7 +142,11 @@ class TrajectoryRubric(Rubric):
 class ExponentialDiscountingTrajectoryRubric(TrajectoryRubric):
     """TrajectoryRubric with exponential discounting for credit assignment.
 
-    Per-step reward: r_t = gamma^(T-1-t) * R_final
+    Per-step reward:
+
+    ```text
+    r_t = gamma^(T-1-t) * R_final
+    ```
 
     With gamma=0.99, later steps get higher reward (they're "closer" to the outcome).
     With gamma=1.0, all steps get equal reward.
@@ -188,8 +192,8 @@ class ExponentialDiscountingTrajectoryRubric(TrajectoryRubric):
         """Apply exponential discounting from final reward.
 
         Returns:
-            `list[float]`: Discounted rewards. step_rewards[t] = gamma^(T-1-t) * R_final
-            where T is the trajectory length and R_final is score_trajectory().
+            `list[float]`: Discounted rewards where `step_rewards[t] = gamma^(T-1-t) * R_final`,
+            T is the trajectory length and R_final is score_trajectory().
         """
         if not self._trajectory:
             return []
