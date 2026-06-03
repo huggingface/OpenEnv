@@ -66,7 +66,7 @@ cd <forked-repo>
 openenv push <SPACE_ID> --create-pr
 ```
 
-For more information, see the [OpenEnv documentation](https://meta-pytorch.org/OpenEnv/).
+For more information, see the [OpenEnv documentation](https://huggingface.co/docs/openenv).
 """
 
 

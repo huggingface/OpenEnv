@@ -200,9 +200,8 @@ uv run ruff check src/ tests/
 uv run usort format src/ tests/
 uv run ruff format src/ tests/
 
-# Build documentation locally
-cd docs && make html
-# Preview: cd docs/_build/html && python -m http.server 8000
+# Build and preview documentation locally
+doc-builder preview openenv docs/source
 
 # Build Docker images
 docker build -t openenv-base:latest -f src/openenv/core/containers/images/Dockerfile .

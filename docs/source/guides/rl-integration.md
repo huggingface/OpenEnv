@@ -1,8 +1,7 @@
 # RL Framework Integration
 
-:::{note}
-This page is still being filled in. TRL integration is covered below; torchforge and SkyRL integrations are planned.
-:::
+> [!NOTE]
+> This page is still being filled in. TRL integration is covered below; torchforge and SkyRL integrations are planned.
 
 Use OpenEnv with popular RL frameworks like TRL, torchforge, and SkyRL.
 

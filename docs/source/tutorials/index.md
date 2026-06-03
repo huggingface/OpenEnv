@@ -4,13 +4,13 @@
 
 The Getting Started Series walks you from zero to deploying your own environment in five short parts. No GPU required.
 
-| Part | What it covers |
-|------|---------------|
-| [1 — Introduction & Quick Start](../auto_getting_started/plot_01_introduction_quickstart) | What OpenEnv is, why it exists, and your first environment in under 10 minutes |
-| [2 — Using Environments](../auto_getting_started/plot_02_using_environments) | Connect to environments, create policies, run evaluations |
-| [3 — Building Environments](../auto_getting_started/plot_03_building_environments) | Create a custom environment from scratch |
-| [4 — Packaging & Deploying](../auto_getting_started/environment-builder) | Package with Docker and deploy to Hugging Face |
-| [5 — Contributing to Hugging Face](../auto_getting_started/contributing-envs) | Publish, fork, and share environments on the Hub |
+| Part | What it covers | Notebook |
+|------|---------------|----------|
+| 1 — Introduction & Quick Start | What OpenEnv is, why it exists, and your first environment in under 10 minutes | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/huggingface/OpenEnv/blob/main/examples/openenv_introduction_quickstart.ipynb) |
+| 2 — Using Environments | Connect to environments, create policies, run evaluations | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/huggingface/OpenEnv/blob/main/examples/openenv_using_environments.ipynb) |
+| 3 — Building Environments | Create a custom environment from scratch | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/huggingface/OpenEnv/blob/main/examples/openenv_building_environments.ipynb) |
+| [4 — Packaging & Deploying](../getting_started/environment-builder) | Package with Docker and deploy to Hugging Face | — |
+| [5 — Contributing to Hugging Face](../getting_started/contributing-envs) | Publish, fork, and share environments on the Hub | — |
 
 ## Topic Tutorials
 
@@ -28,18 +28,3 @@ Already familiar with the basics? These tutorials cover specific workflows in de
 | [BrowserGym Harness Rollouts](browsergym-harness.md) | Drive BrowserGym through the OpenEnv harness runtime when a trainer needs token sampling, logprobs, and reward assignment inside the training loop. | Yes | — |
 | [Collecting rollouts for supervised training](sft-warmup.md) | Run a teacher model to collect reward-labeled rollouts, filter them, and fine-tune a student with TRL's `SFTTrainer` as a warm-start for GRPO. | Yes | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/huggingface/OpenEnv/blob/main/examples/sft_warmup.ipynb) |
 
-```{toctree}
-:maxdepth: 1
-:hidden:
-
-../auto_getting_started/index
-openenv-tutorial
-end-to-end-walkthrough
-mcp-environment
-rubrics
-wordle-grpo
-browsergym-harness
-rl-training-2048
-evaluation-inspect
-sft-warmup
-```

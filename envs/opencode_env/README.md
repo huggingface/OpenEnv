@@ -288,7 +288,7 @@ opencode_env/
 
 ## References
 
-- [OpenEnv docs](https://meta-pytorch.org/OpenEnv/)
+- [OpenEnv docs](https://huggingface.co/docs/openenv)
 - [OpenCode CLI](https://opencode.ai/docs/cli/)
 - [E2B Python SDK](https://e2b.dev/docs)
 - [HF Inference Providers logprob matrix](../../../DOCS/HF/hf_inference_providers_logprobs.md)

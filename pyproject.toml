@@ -49,21 +49,6 @@ cli = [
     "tomli>=2.3.0",
     "tomli-w>=1.2.0",
 ]
-docs = [
-    "sphinx==7.2.6",
-    "pytorch-sphinx-theme2",
-    "sphinxcontrib.katex==0.9.11",
-    "docutils>=0.18.1,<0.23",
-    "sphinx-design==0.6.1",
-    "sphinxcontrib-mermaid==2.0.2",
-    "myst-parser",
-    "sphinxext-opengraph",
-    "sphinx-sitemap==2.9.0",
-    "sphinx-gallery>=0.14.0",
-    "matplotlib",
-    "nest-asyncio",
-    "smolagents",
-]
 all = [
     "openenv[core]",
     "openenv[cli]",

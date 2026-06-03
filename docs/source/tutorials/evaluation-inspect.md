@@ -155,11 +155,10 @@ def echo_scorer():
     return score
 ```
 
-```{note}
-`echo_env` is a pure MCP environment. Interact with it via `MCPToolClient`
-and `call_tool("echo_message", ...)`. For non-MCP environments, use
-`GenericEnvClient` instead.
-```
+> [!NOTE]
+> `echo_env` is a pure MCP environment. Interact with it via `MCPToolClient`
+> and `call_tool("echo_message", ...)`. For non-MCP environments, use
+> `GenericEnvClient` instead.
 
 ## Run the eval with `InspectAIHarness`
 
@@ -239,12 +238,11 @@ Replace `echo_env_solver` with a solver that uses your env and model:
 3. **Scorer** — use the env's reward signal directly, or write an Inspect AI
    `@scorer` that checks the final observation against a ground-truth target.
 
-```{tip}
-Run this eval **before training** on your base model to establish a baseline,
-then again after training to measure the improvement. The delta (post − pre)
-is more informative than either number alone — a model that scores 60% after
-training tells you little without knowing it started at 4%.
-```
+> [!TIP]
+> Run this eval **before training** on your base model to establish a baseline,
+> then again after training to measure the improvement. The delta (post − pre)
+> is more informative than either number alone — a model that scores 60% after
+> training tells you little without knowing it started at 4%.
 
 ```python
 import asyncio
@@ -276,9 +274,9 @@ def my_env_solver(base_url: str):
 
 ## Next steps
 
-- [End-to-end walkthrough](https://huggingface.github.io/OpenEnv/tutorials/end-to-end-walkthrough.html) — full GRPO training loop that produces a model you can evaluate with this tutorial
-- [SFT warm-up tutorial](https://huggingface.github.io/OpenEnv/tutorials/sft-warmup.html) — collect rollouts, filter by reward, and fine-tune a student model before running GRPO
-- [Rubrics tutorial](https://huggingface.github.io/OpenEnv/tutorials/rubrics.html) — define reward functions inside
+- [End-to-end walkthrough](end-to-end-walkthrough) — full GRPO training loop that produces a model you can evaluate with this tutorial
+- [SFT warm-up tutorial](sft-warmup) — collect rollouts, filter by reward, and fine-tune a student model before running GRPO
+- [Rubrics tutorial](rubrics) — define reward functions inside
   the environment using composable rubrics
 - [Inspect AI documentation](https://inspect.aisi.org.uk/) — full reference
   for tasks, solvers, scorers, and the log viewer

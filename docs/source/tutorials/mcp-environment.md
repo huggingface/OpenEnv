@@ -22,13 +22,11 @@ Inside OpenEnv, MCP plays a specific role in a two-surface split:
 - **Training / orchestration infrastructure** uses the Gym-style control plane — `reset()`, `step()`, `state()` — over WebSocket (`/ws`). This is what the trainer needs to roll out episodes, compute rewards, and enforce termination.
 - **Agents** use MCP tools over the `/mcp` JSON-RPC endpoint. Tools are what the model calls to act on the world.
 
-```{note}
-In simulation mode, MCP tool calls flow **through** `step()`. The trainer stays in control of timing, rewards, and termination; the MCP action types are just a standardised action schema. The [MCP environment lifecycle guide](../guides/mcp-environment-lifecycle.md) covers the split in depth.
-```
+> [!NOTE]
+> In simulation mode, MCP tool calls flow **through** `step()`. The trainer stays in control of timing, rewards, and termination; the MCP action types are just a standardised action schema. The [MCP environment lifecycle guide](../guides/mcp-environment-lifecycle.md) covers the split in depth.
 
-```{note}
-**MCP adoption in OpenEnv is still in flight.** [RFC 003](https://github.com/huggingface/OpenEnv/blob/main/rfcs/003-mcp-support.md) proposes MCP as the standard interface for *all* agent-facing actions, but it is still **In Review**. Today only a handful of envs are MCP-backed: `echo_env` and `finqa_env` inherit from the canonical `openenv.core.env_server.mcp_environment.MCPEnvironment`; `calendar_env` uses a local wrapper with the same shape. The majority (`textarena_env` / Wordle, `openspiel_env`, `chess_env`, `browsergym_env`, and most others) still use custom action types that you pass through `env.step(CustomAction(...))` without MCP plumbing. Before using the patterns in this tutorial against a specific env, check whether it inherits from an `MCPEnvironment` base; if not, the env's own action schema applies instead.
-```
+> [!NOTE]
+> **MCP adoption in OpenEnv is still in flight.** [RFC 003](https://github.com/huggingface/OpenEnv/blob/main/rfcs/003-mcp-support.md) proposes MCP as the standard interface for *all* agent-facing actions, but it is still **In Review**. Today only a handful of envs are MCP-backed: `echo_env` and `finqa_env` inherit from the canonical `openenv.core.env_server.mcp_environment.MCPEnvironment`; `calendar_env` uses a local wrapper with the same shape. The majority (`textarena_env` / Wordle, `openspiel_env`, `chess_env`, `browsergym_env`, and most others) still use custom action types that you pass through `env.step(CustomAction(...))` without MCP plumbing. Before using the patterns in this tutorial against a specific env, check whether it inherits from an `MCPEnvironment` base; if not, the env's own action schema applies instead.
 
 ## Using MCP Tools in a Training Loop
 
@@ -147,9 +145,8 @@ The `ToolError.error_type` enum (`TOOL_NOT_FOUND`, `INVALID_ARGS`, `EXECUTION_ER
 
 Environment clients that inherit from `MCPToolClient` (such as `EchoEnv` and `FinQAEnv`) expose a shorter **async** `await env.call_tool("name", arg=value)` helper for a running environment server. It returns the tool's raw return value directly instead of a `CallToolObservation` — and it **raises `RuntimeError`** on any tool error (transport failure, unknown tool, invalid arguments, or a tool exception), so you cannot branch on `error_type` without a `try/except`. Use `step(CallToolAction(...))` when you need the whole observation (reward, done, metadata, or graceful error classification); reach for `call_tool()` in async production scripts where the raw result is all you care about and a failure is allowed to propagate. The [lifecycle guide](../guides/mcp-environment-lifecycle.md) covers the exact trade-offs.
 
-```{note}
-`MCPToolClient` and its base `MCPClientBase` only support `mode="production"`; construction raises `ValueError` for other modes. For direct in-process training or eval snippets like the ones above, call `env.step(CallToolAction(...))` on the environment class itself.
-```
+> [!NOTE]
+> `MCPToolClient` and its base `MCPClientBase` only support `mode="production"`; construction raises `ValueError` for other modes. For direct in-process training or eval snippets like the ones above, call `env.step(CallToolAction(...))` on the environment class itself.
 
 ## Using MCP Tools for Evaluation
 

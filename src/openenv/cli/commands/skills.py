@@ -42,7 +42,7 @@ _SKILL_TIPS = """
 
 Use `openenv <command> --help` for full flag reference.
 
-Full CLI reference: https://meta-pytorch.org/OpenEnv/cli.html
+Full CLI reference: https://huggingface.co/docs/openenv/reference/cli
 """
 
 CENTRAL_LOCAL = Path(".agents/skills")

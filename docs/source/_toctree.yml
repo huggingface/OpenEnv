@@ -1,0 +1,145 @@
+- sections:
+  - local: index
+    title: Overview
+  - local: getting-started
+    title: Getting Started
+  title: Get Started
+- sections:
+  - local: guides/first-environment
+    title: Your First Environment
+  - local: getting_started/environment-builder
+    title: Deploying an Env
+  - local: guides/auto-discovery
+    title: Auto-Discovery
+  - local: guides/rl-integration
+    title: RL Training
+  - local: guides/rewards
+    title: Rewards
+  - local: guides/concepts
+    title: Concepts
+  - sections:
+    - local: guides/customizing-web-ui
+      title: Customizing the Web UI
+    - local: guides/async-sync
+      title: Async vs Sync
+    - local: guides/simulation-vs-production
+      title: Simulation vs Production
+    - local: guides/mcp-environment-lifecycle
+      title: MCP Environment Lifecycle
+    - local: guides/connecting
+      title: Connecting to Servers
+    title: Advanced Guides
+  title: Guides
+- isExpanded: false
+  sections:
+  - local: tutorials/index
+    title: Overview
+  - local: tutorials/openenv-tutorial
+    title: Hello World
+  - local: tutorials/end-to-end-walkthrough
+    title: Train a reasoning model with TRL
+  - local: tutorials/mcp-environment
+    title: MCP Environments
+  - local: tutorials/rubrics
+    title: Rubrics
+  - local: tutorials/wordle-grpo
+    title: RL Training with TRL
+  - local: tutorials/rl-training-2048
+    title: RL Training with Unsloth
+  - local: tutorials/evaluation-inspect
+    title: Evaluating with Inspect AI
+  - local: tutorials/browsergym-harness
+    title: RL Training with an Agentic Harness
+  - local: tutorials/sft-warmup
+    title: SFT Training with Environments
+  title: Tutorials
+- sections:
+  - local: environments
+    title: Environments
+  - local: environments/echo
+    title: Echo
+  - local: environments/coding
+    title: Coding
+  - local: environments/jupyter
+    title: Jupyter
+  - local: environments/terminus
+    title: Terminus
+  - local: environments/coding_tools
+    title: Coding Tools
+  - local: environments/chat
+    title: Chat
+  - local: environments/atari
+    title: Atari
+  - local: environments/openspiel
+    title: OpenSpiel
+  - local: environments/sumo
+    title: SUMO-RL
+  - local: environments/finrl
+    title: FinRL
+  - local: environments/textarena
+    title: TextArena
+  - local: environments/git
+    title: Git
+  - local: environments/dipg
+    title: DIPG Safety
+  - local: environments/snake
+    title: Snake
+  - local: environments/websearch
+    title: Web Search
+  - local: environments/browsergym
+    title: BrowserGym
+  - local: environments/repl
+    title: REPL
+  - local: environments/calendar
+    title: Calendar
+  - local: environments/carla
+    title: CARLA
+  - local: environments/chess
+    title: Chess
+  - local: environments/connect4
+    title: Connect4
+  - local: environments/dm_control
+    title: DM Control
+  - local: environments/finqa
+    title: FinQA
+  - local: environments/grid_world
+    title: Grid World
+  - local: environments/julia
+    title: Julia
+  - local: environments/kernrl
+    title: KernRL
+  - local: environments/maze
+    title: Maze
+  - local: environments/openapp
+    title: OpenApp
+  - local: environments/reasoning_gym
+    title: Reasoning Gym
+  - local: environments/tbench2
+    title: TBench2
+  - local: environments/unity
+    title: Unity
+  - local: environments/wildfire
+    title: Wildfire
+  - local: environments/agent_world_model
+    title: Agent World Model
+  - local: environments/opencode
+    title: OpenCode
+  title: Environments
+- sections:
+  - local: reference/index
+    title: Overview
+  - local: reference/core
+    title: Core API
+  - local: reference/cli
+    title: CLI
+  - local: reference/auto_discovery
+    title: Auto-Discovery
+  title: API Reference
+- sections:
+  - local: contributing
+    title: Contributing To OpenEnv
+  - local: getting_started/contributing-envs
+    title: Contributing Environments
+  - local: release-notes
+    title: Release Notes
+  title: Project

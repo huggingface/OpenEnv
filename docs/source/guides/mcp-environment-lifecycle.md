@@ -124,8 +124,8 @@ In other words:
 
 Two good references in this repo are:
 
-- [Echo environment](environments/echo.md)
-- [FinQA environment](environments/finqa.md)
+- [Echo environment](../environments/echo)
+- [FinQA environment](../environments/finqa)
 
 For a minimal simulation-mode example, see:
 
@@ -159,5 +159,5 @@ Usually the action is flowing correctly, but through the async WebSocket path ra
 ## Related Reading
 
 - [Core API](../reference/core.md)
-- [Echo environment](environments/echo.md)
-- [FinQA environment](environments/finqa.md)
+- [Echo environment](../environments/echo)
+- [FinQA environment](../environments/finqa)

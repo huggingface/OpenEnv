@@ -72,7 +72,7 @@ docker build -t textarena-env:latest -f server/Dockerfile .
 
 ## Testing the Gradio UI locally
 
-With the web interface enabled, the server serves a **Gradio UI** at `/web`. If your `openenv` supports `gradio_builder`, you get two tabs (see [Customizing the Web UI](https://meta-pytorch.org/OpenEnv/customizing-web-ui/)):
+With the web interface enabled, the server serves a **Gradio UI** at `/web`. If your `openenv` supports `gradio_builder`, you get two tabs (see [Customizing the Web UI](https://huggingface.co/docs/openenv/guides/customizing-web-ui)):
 
 - **Playground** – default OpenEnv UI (Reset, Step, Get state, Quick Start, README).
 - **Custom** – Wordle-style HTML block (see `server/gradio_ui.py`; uses [Gradio 6 `gr.HTML`](https://gradio.app/docs/gradio/html) to render the block).

@@ -8,7 +8,7 @@
 
 Mounts under the standard OpenEnv ``/web`` path via the
 ``gradio_builder=`` callback documented at
-https://meta-pytorch.org/OpenEnv/customizing-web-ui.html.
+https://huggingface.co/docs/openenv/guides/customizing-web-ui.
 
 One page with:
   - endpoint selector (``vllm`` / ``openai`` / ``hf_router``) — the catalog

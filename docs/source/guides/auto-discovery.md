@@ -53,7 +53,7 @@ Create an environment client from a name or HuggingFace Hub repository.
 
 | Parameter | Description |
 |-----------|-------------|
-| `name` | Environment name or Hub repo ID. Local: `"coding"`, `"coding-env"`, `"coding_env"`. Hub: `"meta-pytorch/coding-env"`, `"username/env-name"` |
+| `name` | Environment name or Hub repo ID. Local: `"coding"`, `"coding-env"`, `"coding_env"`. Hub: `"openenv/coding_env"`, `"username/env-name"` |
 | `base_url` | Optional base URL for HTTP connection |
 | `docker_image` | Optional Docker image name (overrides default) |
 | `container_provider` | Optional container provider |
@@ -72,7 +72,7 @@ from openenv import AutoEnv
 env = AutoEnv.from_env("coding-env")
 
 # From HuggingFace Hub
-env = AutoEnv.from_env("meta-pytorch/coding-env")
+env = AutoEnv.from_env("openenv/coding_env")
 
 # With custom configuration
 env = AutoEnv.from_env(
@@ -151,7 +151,7 @@ CodeAction = AutoAction.from_env("coding-env")
 action = CodeAction(code="print('Hello!')")
 
 # From HuggingFace Hub
-CodeAction = AutoAction.from_env("meta-pytorch/coding-env")
+CodeAction = AutoAction.from_env("openenv/coding_env")
 
 # Different name formats work
 EchoAction = AutoAction.from_env("echo")
@@ -436,4 +436,4 @@ spec_version: 1
 
 - [Your First Environment](first-environment.md) - How to create your own environments
 - [Core API Documentation](../reference/core.md) - Low-level API details
-- [HuggingFace Hub](https://huggingface.co/meta-pytorch) - Pre-built environments
+- [HuggingFace Hub](https://huggingface.co/openenv) - Pre-built environments

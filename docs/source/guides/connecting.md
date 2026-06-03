@@ -1,8 +1,7 @@
 # Connecting to Servers
 
-:::{note}
-This page is still being filled in. Missing: guidance on which connection method to pick for each scenario, troubleshooting for timeouts / HF Space cold-starts / auth errors, and the MCP client path.
-:::
+> [!NOTE]
+> This page is still being filled in. Missing: guidance on which connection method to pick for each scenario, troubleshooting for timeouts / HF Space cold-starts / auth errors, and the MCP client path.
 
 Learn how to connect to OpenEnv environments via different methods.
 

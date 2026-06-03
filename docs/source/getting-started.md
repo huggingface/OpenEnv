@@ -8,11 +8,10 @@ Install OpenEnv, load an environment, and run your first step.
 pip install openenv
 ```
 
-```{note}
-This installs the `openenv` CLI and the `openenv.core` runtime. Environment
-projects can depend on `openenv[core]` when they only need the server and
-client libraries.
-```
+> [!NOTE]
+> This installs the `openenv` CLI and the `openenv.core` runtime. Environment
+> projects can depend on `openenv[core]` when they only need the server and
+> client libraries.
 
 ## Try an Environment
 

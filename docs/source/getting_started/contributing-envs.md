@@ -51,9 +51,8 @@ openenv push path/to/my_env
 That's it. The CLI validates your environment, stages the files, adds the Hugging Face Space frontmatter, enables the web interface, and uploads everything. Your environment will be live at
 `https://huggingface.co/spaces/<your-username>/my_env`.
 
-```{warning}
-If you are getting errors on deployment, it is likely because the environment structure is not valid. Run `openenv validate --verbose` to see the errors. This checks for the required files (`openenv.yaml`, `pyproject.toml`, `server/app.py`) and validates the Dockerfile and entry points.
-```
+> [!WARNING]
+> If you are getting errors on deployment, it is likely because the environment structure is not valid. Run `openenv validate --verbose` to see the errors. This checks for the required files (`openenv.yaml`, `pyproject.toml`, `server/app.py`) and validates the Dockerfile and entry points.
 
 ## 2. Fork Someone Else's Environment
 
@@ -102,25 +101,23 @@ hf download owner/space-name --local-dir space-name --repo-type space
 cd space-name
 ```
 
-```{warning}
-If the Space is private and you have access, make sure you're logged in with
-`hf auth login` first.
-```
+> [!WARNING]
+> If the Space is private and you have access, make sure you're logged in with
+> `hf auth login` first.
 
 #### 3.2 Make your changes
 Edit the environment files as needed.
 
-```{tip}
-You can test your changes locally before submitting:
-
-    # Run the server locally
-    cd space-name
-    uvicorn server.app:app --host 0.0.0.0 --port 8000
-
-    # Or build and run in Docker
-    openenv build
-    openenv validate --verbose
-```
+> [!TIP]
+> You can test your changes locally before submitting:
+>
+>     # Run the server locally
+>     cd space-name
+>     uvicorn server.app:app --host 0.0.0.0 --port 8000
+>
+>     # Or build and run in Docker
+>     openenv build
+>     openenv validate --verbose
 
 #### 3.3 Push your changes as a Pull Request
 
@@ -132,11 +129,10 @@ openenv push --repo-id owner/space-name --create-pr
 
 This uploads your modified files and opens a Pull Request on the Hub. The environment owner can review your changes, leave comments, and merge them.
 
-```{warning}
-When using `--create-pr`, the CLI uploads your changes to a new branch and
-opens a PR on the **original** Space. You do not need to create the Space
-yourself.
-```
+> [!WARNING]
+> When using `--create-pr`, the CLI uploads your changes to a new branch and
+> opens a PR on the **original** Space. You do not need to create the Space
+> yourself.
 
 ### Alternative: Fork-then-PR workflow
 

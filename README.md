@@ -5,7 +5,7 @@ An e2e framework for creating, deploying and using isolated execution environmen
 [![PyPI](https://img.shields.io/pypi/v/openenv?color=blue)](https://pypi.org/project/openenv/)
 [![Discord](https://img.shields.io/badge/Discord-OpenEnv-7289da?style=flat&logo=discord&logoColor=white)](https://discord.gg/YsTYBh6PD9)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/huggingface/OpenEnv/blob/main/examples/OpenEnv_Tutorial.ipynb)
-[![Docs](https://img.shields.io/badge/Docs-Explore-blue?logo=readthedocs&logoColor=white)](https://huggingface.github.io/OpenEnv/)
+[![Docs](https://img.shields.io/badge/Docs-Explore-blue?logo=readthedocs&logoColor=white)](https://huggingface.co/docs/openenv)
 
 ---
 
@@ -70,7 +70,7 @@ with EchoEnv(base_url="https://openenv-echo-env.hf.space").sync() as client:
     print(result.observation.result)
 ```
 
-For a detailed quick start, check out the [docs page](https://huggingface.github.io/OpenEnv/auto_getting_started/index.html).
+For a detailed quick start, check out the [docs page](https://huggingface.co/docs/openenv/getting-started).
 
 ## OpenEnv on partner platforms:
 
@@ -380,7 +380,7 @@ See the [Oumi example](https://github.com/oumi-ai/oumi/blob/main/notebooks/Oumi%
 | [Atari Environment](envs/atari_env/README.md) | Classic Arcade Learning Environment tasks for RL benchmarking. |
 | [FinRL Environment](envs/finrl_env/README.md) | Financial market simulations for algorithmic trading experiments. |
 
-> Browse the full catalog of community environments at [huggingface.github.io/OpenEnv/environments](https://huggingface.github.io/OpenEnv/environments.html).
+> Browse the full catalog of community environments at [huggingface.co/docs/openenv/environments](https://huggingface.co/docs/openenv/environments).
 
 ## Community Support & Acknowledgments
 This is an open and community-centric project, governed in public by a technical committee that includes Hugging Face, Unsloth, Reflection, and Meta PyTorch. If you would like to add your project or organization here, please open a pull request for maintainer review.

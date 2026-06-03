@@ -4,10 +4,9 @@ This tutorial shows how to drive BrowserGym through the OpenEnv harness runtime
 when a trainer needs to keep token sampling, logprobs, and reward assignment
 inside the training loop.
 
-```{note}
-Use this pattern for tool-driven BrowserGym rollouts. For a standard
-`reset()` / `step()` GRPO flow, keep using the Wordle GRPO tutorial.
-```
+> [!NOTE]
+> Use this pattern for tool-driven BrowserGym rollouts. For a standard
+> `reset()` / `step()` GRPO flow, keep using the Wordle GRPO tutorial.
 
 ## What You'll Build
 
