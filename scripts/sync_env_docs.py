@@ -104,7 +104,8 @@ def generate_stub(env_dir):
     can identify the source env when re-reading the file later.
     """
     readme_path = os.path.join(ENVS_DIR, env_dir, "README.md")
-    content = open(readme_path).read()
+    with open(readme_path) as f:
+        content = f.read()
     content = _strip_frontmatter(content)
     return f"<!-- openenv-source: {env_dir} -->\n{content}"
 
