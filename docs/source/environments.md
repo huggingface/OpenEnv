@@ -252,7 +252,7 @@ The OpenEnv community has built a catalog of ready-to-run environments that cove
       </div>
     </div>
     <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
-      <div class="font-bold mb-2">Opencode</div>
+      <div class="font-bold mb-2">OpenCode</div>
       <p class="text-sm"><code>opencode_env</code> runs the OpenCode coding agent inside an isolated E2B sandbox against any OpenAI-compatible LLM endpoint, optionally capturing per-token logprobs.</p>
       <div class="flex gap-2 mt-3">
         <a href="environments/opencode" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>

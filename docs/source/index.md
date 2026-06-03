@@ -11,7 +11,7 @@ Training RL agents—especially in agentic settings like code generation, web br
 <div class="mt-6">
   <div class="w-full flex flex-col space-y-4 md:space-y-0 md:grid md:grid-cols-3 md:gap-4">
     <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
-      <div class="font-bold mb-2">🎮 Gymnasium-Style APIs</div>
+      <div class="font-bold mb-2">Gymnasium-Style APIs</div>
       <p>Familiar <code>step()</code>, <code>reset()</code>, and <code>state()</code> interface for seamless integration with existing RL frameworks.</p>
     </div>
     <div class="border dark:border-gray-700 p-5 rounded-lg shadow">

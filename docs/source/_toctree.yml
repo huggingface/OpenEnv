@@ -5,56 +5,53 @@
     title: Getting Started
   title: Get Started
 - sections:
-  - local: guides/index
-    title: Overview
-  - local: guides/concepts
-    title: Concepts
-  - local: guides/auto-discovery
-    title: Auto-Discovery
-  - local: guides/connecting
-    title: Connecting to Servers
-  - local: guides/async-sync
-    title: Async vs Sync
-  - local: guides/simulation-vs-production
-    title: Simulation vs Production
-  - local: guides/mcp-environment-lifecycle
-    title: MCP Environment Lifecycle
   - local: guides/first-environment
     title: Your First Environment
-  - local: guides/environment-anatomy
-    title: Environment Anatomy
-  - local: guides/deployment
-    title: Deployment
+  - local: getting_started/environment-builder
+    title: Deploying an Env
+  - local: guides/auto-discovery
+    title: Auto-Discovery
   - local: guides/rl-integration
-    title: RL Integration
+    title: RL Training
   - local: guides/rewards
     title: Rewards
-  - local: guides/customizing-web-ui
-    title: Customizing the Web UI
-  - local: getting_started/environment-builder
-    title: Packaging & Deploying
+  - local: guides/concepts
+    title: Concepts
+  - sections:
+    - local: guides/customizing-web-ui
+      title: Customizing the Web UI
+    - local: guides/async-sync
+      title: Async vs Sync
+    - local: guides/simulation-vs-production
+      title: Simulation vs Production
+    - local: guides/mcp-environment-lifecycle
+      title: MCP Environment Lifecycle
+    - local: guides/connecting
+      title: Connecting to Servers
+    title: Advanced Guides
   title: Guides
-- sections:
+- isExpanded: false
+  sections:
   - local: tutorials/index
     title: Overview
   - local: tutorials/openenv-tutorial
-    title: OpenEnv Tutorial
+    title: Hello World
   - local: tutorials/end-to-end-walkthrough
-    title: End-to-End Walkthrough
+    title: Train a reasoning model with TRL
   - local: tutorials/mcp-environment
     title: MCP Environments
   - local: tutorials/rubrics
     title: Rubrics
   - local: tutorials/wordle-grpo
-    title: Wordle with GRPO
+    title: RL Training with TRL
   - local: tutorials/rl-training-2048
-    title: RL Training with 2048
+    title: RL Training with Unsloth
   - local: tutorials/evaluation-inspect
     title: Evaluating with Inspect AI
   - local: tutorials/browsergym-harness
     title: BrowserGym Harness
   - local: tutorials/sft-warmup
-    title: SFT Warm-up
+    title: SFT Training with Environments
   title: Tutorials
 - sections:
   - local: environments
@@ -126,7 +123,7 @@
   - local: environments/agent_world_model
     title: Agent World Model
   - local: environments/opencode
-    title: Opencode
+    title: OpenCode
   title: Environments
 - sections:
   - local: reference/index
@@ -142,7 +139,7 @@
   - local: contributing
     title: Contributing
   - local: getting_started/contributing-envs
-    title: Contributing Environments
+    title: Contributing To OpenEnv
   - local: release-notes
     title: Release Notes
   title: Project
