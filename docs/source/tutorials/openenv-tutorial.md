@@ -10,8 +10,8 @@
 
 That's OpenEnv. Type-safe. Isolated. Production-ready. 🎯
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/meta-pytorch/OpenEnv/blob/main/examples/OpenEnv_Tutorial.ipynb)
-[![GitHub](https://img.shields.io/badge/GitHub-meta--pytorch%2FOpenEnv-blue?logo=github)](https://github.com/meta-pytorch/OpenEnv)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/huggingface/OpenEnv/blob/main/examples/OpenEnv_Tutorial.ipynb)
+[![GitHub](https://img.shields.io/badge/GitHub-huggingface%2FOpenEnv-blue?logo=github)](https://github.com/huggingface/OpenEnv)
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-green.svg)](https://opensource.org/licenses/BSD-3-Clause)
 [![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
 
@@ -291,7 +291,7 @@ except ImportError:
 
 if IN_COLAB:
     print("\n📦 Cloning OpenEnv repository...")
-    !git clone https://github.com/meta-pytorch/OpenEnv.git > /dev/null 2>&1
+    !git clone https://github.com/huggingface/OpenEnv.git > /dev/null 2>&1
     %cd OpenEnv
 
     print("📚 Installing dependencies (this takes ~10 seconds)...")
@@ -1229,7 +1229,7 @@ OpenEnv includes 3 complete examples:
 
 ### 🔗 Essential Links
 
-- **🏠 OpenEnv GitHub**: https://github.com/meta-pytorch/OpenEnv
+- **🏠 OpenEnv GitHub**: https://github.com/huggingface/OpenEnv
 - **🎮 OpenSpiel**: https://github.com/google-deepmind/open_spiel
 - **⚡ FastAPI Docs**: https://fastapi.tiangolo.com/
 - **🐳 Docker Guide**: https://docs.docker.com/get-started/
@@ -1240,17 +1240,22 @@ OpenEnv includes 3 complete examples:
 - **Environment Creation Guide**: `src/envs/README.md`
 - **OpenSpiel Integration**: `src/envs/openspiel_env/README.md`
 - **Example Scripts**: `examples/`
-- **RFC 001**: [Baseline API Specs](https://github.com/meta-pytorch/OpenEnv/pull/26)
+- **RFC 001**: [Baseline API Specs](https://github.com/huggingface/OpenEnv/pull/26)
 
 ### 🎓 Community & Support
 
-**Supported by amazing organizations:**
+**Openly governed by a technical committee including:**
 
-- 🔥 Meta PyTorch
 - 🤗 Hugging Face
-- ⚡ Unsloth AI
-- 🌟 Reflection AI
+- ⚡ Unsloth
+- 🌟 Reflection
+- 🔥 Meta PyTorch
+
+**Supported by amazing organizations and contributors.**
+
 - 🚀 And many more!
+
+Technical direction, RFCs, and release planning are coordinated in public through the OpenEnv repository.
 
 **License**: BSD 3-Clause (very permissive!)
 

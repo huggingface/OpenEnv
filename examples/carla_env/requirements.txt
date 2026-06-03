@@ -1,7 +1,7 @@
 # LLM Inference Examples Dependencies
 
 # Core OpenEnv (should already be installed)
-# openenv-core
+# openenv
 
 # LLM APIs
 anthropic>=0.40.0  # Claude models

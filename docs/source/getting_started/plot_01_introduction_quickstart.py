@@ -34,8 +34,8 @@ nest_asyncio.apply()
 # ----------------
 #
 # OpenEnv is a **unified framework for building, sharing, and interacting with
-# reinforcement learning environments**. It's a collaborative effort between
-# Meta, Hugging Face, Unsloth, GPU Mode, and other industry leaders.
+# reinforcement learning environments**. It is openly governed by a technical
+# committee that includes Hugging Face, Unsloth, Reflection, and Meta PyTorch.
 #
 # **The Goal**: Make environment creation as easy and standardized as model
 # sharing on Hugging Face.
@@ -210,7 +210,7 @@ if IN_COLAB:
 
     # Install OpenEnv
     subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-q", "openenv-core"],
+        [sys.executable, "-m", "pip", "install", "-q", "openenv"],
         capture_output=True,
     )
     print("   OpenEnv installed!")
@@ -221,7 +221,7 @@ else:
     print("=" * 70)
     print()
     print("If you haven't installed OpenEnv yet:")
-    print("   pip install openenv-core")
+    print("   pip install openenv")
     print()
 
     # Add src to path for local development (when running from docs folder)
@@ -360,7 +360,7 @@ try:
 except ImportError as e:
     OPENENV_AVAILABLE = False
     print(f"✗ OpenEnv not fully installed: {e}")
-    print("  Run: pip install openenv-core")
+    print("  Run: pip install openenv")
     print("  And: pip install -e ./envs/openspiel_env")
 
 # %%

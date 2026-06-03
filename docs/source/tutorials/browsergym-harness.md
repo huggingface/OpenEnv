@@ -22,7 +22,7 @@ Install OpenEnv, TRL, and the BrowserGym environment package:
 
 ```bash
 pip install -U "trl[vllm]" peft trackio kernels
-pip install -U git+https://github.com/meta-pytorch/OpenEnv.git
+pip install -U git+https://github.com/huggingface/OpenEnv.git
 pip install -U "openenv-browsergym @ git+https://huggingface.co/spaces/openenv/browsergym_env"
 ```
 
@@ -124,6 +124,6 @@ BrowserGym episode per prompt, and returns `prompt_ids`, `completion_ids`,
 
 ## Full Example
 
-See [`examples/browsergym_harness.py`](https://github.com/meta-pytorch/OpenEnv/blob/main/examples/browsergym_harness.py)
+See [`examples/browsergym_harness.py`](https://github.com/huggingface/OpenEnv/blob/main/examples/browsergym_harness.py)
 for a complete TRL-oriented helper that includes action normalization and a
 ready-to-use `build_browsergym_rollout_func`.

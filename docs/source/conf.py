@@ -99,7 +99,7 @@ html_theme_options = {
     "icon_links": [
         {
             "name": "GitHub",
-            "url": "https://github.com/meta-pytorch/OpenEnv",
+            "url": "https://github.com/huggingface/OpenEnv",
             "icon": "fa-brands fa-github",
         },
     ],
@@ -134,9 +134,9 @@ html_context = {
     "theme_variables": theme_variables,
     "display_github": False,
     "github_url": "https://github.com",
-    "github_user": "meta-pytorch",
+    "github_user": "huggingface",
     "github_repo": "OpenEnv",
-    "feedback_url": "https://github.com/meta-pytorch/OpenEnv",
+    "feedback_url": "https://github.com/huggingface/OpenEnv",
     "github_version": "main",
     "doc_path": "docs/source",
     # Suppress the theme's PyTorch-wide sidebar blocks (PyTorch Libraries,
@@ -148,7 +148,7 @@ html_context = {
 }
 
 # Base URL for the site (used by sitemap and canonical URLs)
-html_baseurl = "https://meta-pytorch.org/OpenEnv/"
+html_baseurl = "https://huggingface.github.io/OpenEnv/"
 sitemap_locales = [None]
 sitemap_excludes = [
     "search.html",

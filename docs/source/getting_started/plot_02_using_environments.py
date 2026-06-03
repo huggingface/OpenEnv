@@ -47,7 +47,7 @@ if IN_COLAB:
     print("=" * 70)
 
     subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-q", "openenv-core"],
+        [sys.executable, "-m", "pip", "install", "-q", "openenv"],
         capture_output=True,
     )
     print("   OpenEnv installed!")

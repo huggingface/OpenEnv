@@ -2,7 +2,7 @@
   {
     "name": "main ",
     "version": "main",
-    "url": "https://meta-pytorch.org/OpenEnv/",
+    "url": "https://huggingface.github.io/OpenEnv/",
     "preferred": true
   }
 ]

@@ -1,4 +1,4 @@
-name: Auto-bump version after release
+name: Auto-bump version after PyPI release
 
 on:
   release:
@@ -22,6 +22,10 @@ jobs:
         id: released
         run: |
           TAG="${{ github.event.release.tag_name }}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ERROR: release tag must be stable and match vX.Y.Z"
+            exit 1
+          fi
           VERSION="${TAG#v}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -50,6 +54,39 @@ jobs:
             echo "ERROR: pyproject.toml is '$CURRENT' but release tag is '$EXPECTED'"
             exit 1
           fi
+
+      - name: Verify release exists on PyPI
+        run: |
+          VERSION="${{ steps.released.outputs.version }}"
+          for attempt in 1 2 3 4 5; do
+            if python3 - <<'PY'
+          import os
+          import urllib.error
+          import urllib.request
+
+          version = os.environ["VERSION"]
+          url = f"https://pypi.org/pypi/openenv/{version}/json"
+          try:
+              with urllib.request.urlopen(url, timeout=30) as response:
+                  if response.status == 200:
+                      raise SystemExit(0)
+          except urllib.error.HTTPError as exc:
+              if exc.code != 404:
+                  raise
+          raise SystemExit(1)
+          PY
+            then
+              echo "openenv ${VERSION} is available on PyPI"
+              exit 0
+            fi
+            echo "openenv ${VERSION} is not visible on PyPI yet; retrying..."
+            sleep 30
+          done
+
+          echo "ERROR: openenv ${VERSION} is not available on PyPI; refusing post-release bump"
+          exit 1
+        env:
+          VERSION: ${{ steps.released.outputs.version }}
 
       - name: Create bump branch and edit pyproject.toml
         env:

@@ -2,10 +2,10 @@
 
 An e2e framework for creating, deploying and using isolated execution environments for agentic RL training, built using Gymnasium style simple APIs.
 
-[![PyPI](https://img.shields.io/pypi/v/openenv-core?color=blue)](https://pypi.org/project/openenv-core/)
+[![PyPI](https://img.shields.io/pypi/v/openenv?color=blue)](https://pypi.org/project/openenv/)
 [![Discord](https://img.shields.io/badge/Discord-OpenEnv-7289da?style=flat&logo=discord&logoColor=white)](https://discord.gg/YsTYBh6PD9)
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/meta-pytorch/OpenEnv/blob/main/examples/OpenEnv_Tutorial.ipynb)
-[![Docs](https://img.shields.io/badge/Docs-Explore-blue?logo=readthedocs&logoColor=white)](https://meta-pytorch.org/OpenEnv/)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/huggingface/OpenEnv/blob/main/examples/OpenEnv_Tutorial.ipynb)
+[![Docs](https://img.shields.io/badge/Docs-Explore-blue?logo=readthedocs&logoColor=white)](https://huggingface.github.io/OpenEnv/)
 
 ---
 
@@ -15,10 +15,10 @@ An e2e framework for creating, deploying and using isolated execution environmen
 
 ## Quick Start
 
-Install the OpenEnv core package:
+Install the OpenEnv package:
 
 ```bash
-pip install openenv-core
+pip install openenv
 ```
 
 Install an environment client (e.g., Echo):
@@ -70,7 +70,7 @@ with EchoEnv(base_url="https://openenv-echo-env.hf.space").sync() as client:
     print(result.observation.result)
 ```
 
-For a detailed quick start, check out the [docs page](https://meta-pytorch.org/OpenEnv/auto_getting_started/index.html).
+For a detailed quick start, check out the [docs page](https://huggingface.github.io/OpenEnv/auto_getting_started/index.html).
 
 ## OpenEnv on partner platforms:
 
@@ -88,22 +88,25 @@ In addition to making it easier for researchers and RL framework writers, we als
 
 The OpenEnv CLI (`openenv`) provides commands to initialize new environments and deploy them to Hugging Face Spaces.
 
+OpenEnv is openly governed by a technical committee that includes Hugging Face, Unsloth, Reflection, and Meta PyTorch. The committee coordinates project direction, major technical decisions, RFCs, and release planning through the public issue tracker, pull requests, and RFC process.
+
 > ⚠️ **Early Development Warning** OpenEnv is currently in an experimental
 > stage. You should expect bugs, incomplete features, and APIs that may change
-> in future versions. The project welcomes bugfixes, but to make sure things are
-> well coordinated you should discuss any significant change before starting the
-> work. It's recommended that you signal your intention to contribute in the
-> issue tracker, either by filing a new issue or by claiming an existing one.
+> in future versions. The project welcomes bugfixes, but significant changes
+> should be discussed before implementation so the technical committee and
+> community can coordinate scope, compatibility, and release timing. It's
+> recommended that you signal your intention to contribute in the issue tracker,
+> either by filing a new issue or by claiming an existing one.
 
 ### RFCs
 
 Below is a list of active and historical RFCs for OpenEnv. RFCs are proposals for major changes or features. Please review and contribute!
 
-- [RFC 001: Baseline API and Interface Specifications](https://github.com/meta-pytorch/OpenEnv/pull/26)
-- [RFC 002: Discoverability of environment tools by agents](https://github.com/meta-pytorch/OpenEnv/pull/32)
-- [RFC 003: Add MCP (Model Context Protocol) support](https://github.com/meta-pytorch/OpenEnv/pull/224)
-- [RFC 004: Add delayed rewards support for trajectory-based scoring](https://github.com/meta-pytorch/OpenEnv/pull/337)
-- [RFC 005: Agentic Harness Integration](https://github.com/meta-pytorch/OpenEnv/pull/387)
+- [RFC 001: Baseline API and Interface Specifications](https://github.com/huggingface/OpenEnv/pull/26)
+- [RFC 002: Discoverability of environment tools by agents](https://github.com/huggingface/OpenEnv/pull/32)
+- [RFC 003: Add MCP (Model Context Protocol) support](https://github.com/huggingface/OpenEnv/pull/224)
+- [RFC 004: Add delayed rewards support for trajectory-based scoring](https://github.com/huggingface/OpenEnv/pull/337)
+- [RFC 005: Agentic Harness Integration](https://github.com/huggingface/OpenEnv/pull/387)
 
 ## Architecture
 
@@ -301,7 +304,7 @@ For detailed options: `openenv init --help` and `openenv push --help`.
 
 ```bash
 # Clone the repository
-git clone https://github.com/meta-pytorch/OpenEnv.git
+git clone https://github.com/huggingface/OpenEnv.git
 cd OpenEnv
 
 # Install core package in editable mode
@@ -377,12 +380,12 @@ See the [Oumi example](https://github.com/oumi-ai/oumi/blob/main/notebooks/Oumi%
 | [Atari Environment](envs/atari_env/README.md) | Classic Arcade Learning Environment tasks for RL benchmarking. |
 | [FinRL Environment](envs/finrl_env/README.md) | Financial market simulations for algorithmic trading experiments. |
 
-> Browse the full catalog of community environments at [meta-pytorch.org/OpenEnv/environments](https://meta-pytorch.org/OpenEnv/environments.html).
+> Browse the full catalog of community environments at [huggingface.github.io/OpenEnv/environments](https://huggingface.github.io/OpenEnv/environments.html).
 
 ## Community Support & Acknowledgments
-This is an open and community-centric project. If you would like to add your name here, please put up a pull request and tag @jspisak for review. Ty!!
+This is an open and community-centric project, governed in public by a technical committee that includes Hugging Face, Unsloth, Reflection, and Meta PyTorch. If you would like to add your project or organization here, please open a pull request for maintainer review.
 
-Supporters include: Meta-PyTorch, Hugging Face, [Scaler AI Labs](https://scalerailabs.com), [Patronus AI](https://patronus.ai), [Surge AI](https://surgehq.ai), [LastMile AI](https://www.lastmileai.dev), Unsloth AI, Reflection AI, vLLM, SkyRL (UC-Berkeley), LightningAI, Axolotl AI, Stanford Scaling Intelligence Lab, Mithril, [OpenMined](https://openmined.org/), [Fleet AI](https://fleetai.com), [Halluminate](https://halluminate.ai/), [Turing](https://www.turing.com/), [Scale AI](https://scale.com/), [Scorecard](https://www.scorecard.io/) ..
+Supporters include: Meta-PyTorch, Hugging Face, [Scaler AI Labs](https://scalerailabs.com), [Patronus AI](https://patronus.ai), [Surge AI](https://surgehq.ai), [LastMile AI](https://www.lastmileai.dev), Unsloth, Reflection, vLLM, SkyRL (UC-Berkeley), LightningAI, Axolotl AI, Stanford Scaling Intelligence Lab, Mithril, [OpenMined](https://openmined.org/), [Fleet AI](https://fleetai.com), [Halluminate](https://halluminate.ai/), [Turing](https://www.turing.com/), [Scale AI](https://scale.com/), [Scorecard](https://www.scorecard.io/) ..
 
 And we'd also like to acknowledge the team at Farama Foundation as the OpenEnv API was heavily inspired by the work you all have done on Gymnasium. Cheers!
 

@@ -62,7 +62,7 @@ A typical workflow looks like:
 
 - Python 3.11+ and [`uv`](https://github.com/astral-sh/uv) for dependency locking
 - Docker Desktop / Docker Engine
-- The OpenEnv library installed: `pip install https://github.com/meta-pytorch/OpenEnv.git`
+- The OpenEnv library installed: `pip install https://github.com/huggingface/OpenEnv.git`
 
 ## Step-by-Step Guide
 
@@ -441,4 +441,4 @@ finally:
 
 Your next steps are to:
 
-- [Try out the end-to-end tutorial](https://colab.research.google.com/github/meta-pytorch/OpenEnv/blob/main/examples/OpenEnv_Tutorial.ipynb)
+- [Try out the end-to-end tutorial](https://colab.research.google.com/github/huggingface/OpenEnv/blob/main/examples/OpenEnv_Tutorial.ipynb)

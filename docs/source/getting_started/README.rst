@@ -5,7 +5,7 @@ This section provides a hands-on introduction to reinforcement learning (RL) and
 
 **What is OpenEnv?**
 
-OpenEnv is a collaborative effort between **Meta, Hugging Face, Unsloth, GPU Mode, Reflection**, and other industry leaders to standardize reinforcement learning environments. Our goal is to make environment creation as easy and standardized as model sharing on Hugging Face.
+OpenEnv is a collaborative effort to standardize reinforcement learning environments and make environment creation as easy and standardized as model sharing on Hugging Face. The project is openly governed by a technical committee that includes **Hugging Face, Unsloth, Reflection, and Meta PyTorch**.
 
 Learning Path
 -------------
@@ -43,7 +43,7 @@ You can run these tutorials locally:
 .. code-block:: bash
 
     # Install OpenEnv
-    pip install openenv-core
+    pip install openenv
 
     # Run the Python scripts
     python plot_01_introduction_quickstart.py
