@@ -48,13 +48,17 @@ class ModelTokenizer(Protocol):
         """Apply a chat template to format and optionally tokenize a conversation.
 
         Args:
-            conversation: List of message dictionaries with 'role' and 'content'
-            tokenize: Whether to tokenize the output
-            return_tensors: Format for returned tensors ('pt' for PyTorch)
-            **kwargs: Additional arguments
+            conversation (`list[Message]`):
+                List of message dictionaries with 'role' and 'content'.
+            tokenize (`bool`, *optional*, defaults to `True`):
+                Whether to tokenize the output.
+            return_tensors (`str`, *optional*):
+                Format for returned tensors ('pt' for PyTorch).
+            **kwargs:
+                Additional arguments.
 
         Returns:
-            Formatted and optionally tokenized conversation
+            Formatted and optionally tokenized conversation.
         """
         ...
 
@@ -64,12 +68,15 @@ class ModelTokenizer(Protocol):
         """Decode token IDs back to text.
 
         Args:
-            token_ids: Token IDs to decode
-            skip_special_tokens: Whether to skip special tokens in output
-            **kwargs: Additional arguments
+            token_ids (`Any`):
+                Token IDs to decode.
+            skip_special_tokens (`bool`, *optional*, defaults to `False`):
+                Whether to skip special tokens in output.
+            **kwargs:
+                Additional arguments.
 
         Returns:
-            Decoded text string
+            `str`: Decoded text string.
         """
         ...
 
@@ -87,10 +94,11 @@ class Transform(ABC, Generic[ObsT]):
         """Transform an observation.
 
         Args:
-            observation: The input observation
+            observation (`ObsT`):
+                The input observation.
 
         Returns:
-            The transformed observation
+            `ObsT`: The transformed observation.
         """
         pass
 
@@ -98,30 +106,32 @@ class Transform(ABC, Generic[ObsT]):
 class Environment(ABC, Generic[ActT, ObsT, StateT]):
     """Base class for all environment servers following Gym/Gymnasium API.
 
+    See `rfcs/004-rubrics.md` for rubric design details.
+
     Args:
-        transform: Optional transform to apply to observations
+        transform: Optional transform to apply to observations.
         rubric: Optional rubric for reward computation. When provided, the
             rubric's output can be used to set the observation's reward in step().
 
-    Class Attributes:
-        SUPPORTS_CONCURRENT_SESSIONS: Whether this environment supports concurrent sessions.
-            When True, multiple WebSocket connections can each have their own
-            environment instance (up to max_concurrent_envs). When False (default),
+    Attributes:
+        SUPPORTS_CONCURRENT_SESSIONS (`bool`):
+            Whether this environment supports concurrent sessions. When ``True``,
+            multiple WebSocket connections can each have their own environment
+            instance (up to ``max_concurrent_envs``). When ``False`` (default),
             the environment should only be used with a single session at a time.
 
-            Set this to True in your Environment subclass if:
-            - The environment uses proper session isolation (e.g., unique working dirs)
-            - No shared mutable state exists between instances
-            - External resources (databases, APIs) can handle concurrent access
+            Set this to ``True`` in your subclass if the environment uses proper
+            session isolation (unique working dirs, no shared mutable state, and
+            external resources that can handle concurrent access).
+        rubric (`Rubric`, *optional*):
+            Optional rubric for computing rewards. Set in ``__init__`` and use in
+            ``step()`` to compute observation rewards. Training infrastructure can
+            access it for introspection:
 
-    Attributes:
-        rubric: Optional rubric for computing rewards. Environments can set this
-            in __init__ and use it in step() to compute observation rewards.
-            Training infrastructure can access it for introspection:
-                for name, r in env.rubric.named_rubrics():
-                    print(f"{name}: {r.last_score}")
-
-    See RFC 004 for rubric design: rfcs/004-rubrics.md
+            ```python
+            for name, r in env.rubric.named_rubrics():
+                print(f"{name}: {r.last_score}")
+            ```
     """
 
     # Class-level flag indicating whether this environment supports concurrent sessions
@@ -198,7 +208,7 @@ class Environment(ABC, Generic[ActT, ObsT, StateT]):
         Default implementation returns basic metadata derived from class name.
 
         Returns:
-            EnvironmentMetadata with environment information
+            [`EnvironmentMetadata`] with environment information.
         """
         return EnvironmentMetadata(
             name=self.__class__.__name__,
@@ -216,17 +226,22 @@ class Environment(ABC, Generic[ActT, ObsT, StateT]):
         """Apply rubric if one is provided.
 
         Args:
-            action: The action taken by the agent.
-            observation: The resulting observation.
+            action (`ActT`):
+                The action taken by the agent.
+            observation (`ObsT`):
+                The resulting observation.
 
         Returns:
-            Reward value from the rubric, or 0.0 if no rubric is set.
+            `float`: Reward value from the rubric, or 0.0 if no rubric is set.
 
-        Usage in step():
-            def step(self, action: MyAction, ...) -> MyObservation:
-                # ... execute action and create observation ...
-                observation.reward = self._apply_rubric(action, observation)
-                return observation
+        Call this in `step()` to compute and assign the reward:
+
+        ```python
+        def step(self, action: MyAction, ...) -> MyObservation:
+            # ... execute action and create observation ...
+            observation.reward = self._apply_rubric(action, observation)
+            return observation
+        ```
         """
         if self.rubric is not None:
             return self.rubric(action, observation)
@@ -236,17 +251,22 @@ class Environment(ABC, Generic[ActT, ObsT, StateT]):
         """Apply rubric asynchronously if one is provided.
 
         Args:
-            action: The action taken by the agent.
-            observation: The resulting observation.
+            action (`ActT`):
+                The action taken by the agent.
+            observation (`ObsT`):
+                The resulting observation.
 
         Returns:
-            Reward value from the rubric, or 0.0 if no rubric is set.
+            `float`: Reward value from the rubric, or 0.0 if no rubric is set.
 
-        Usage in step_async():
-            async def step_async(self, action: MyAction, ...) -> MyObservation:
-                # ... execute action and create observation ...
-                observation.reward = await self._apply_rubric_async(action, observation)
-                return observation
+        Call this in `step_async()` to compute and assign the reward:
+
+        ```python
+        async def step_async(self, action: MyAction, ...) -> MyObservation:
+            # ... execute action and create observation ...
+            observation.reward = await self._apply_rubric_async(action, observation)
+            return observation
+        ```
         """
         if self.rubric is not None:
             result = self.rubric(action, observation)
@@ -259,13 +279,14 @@ class Environment(ABC, Generic[ActT, ObsT, StateT]):
     def _reset_rubric(self) -> None:
         """Reset the rubric state if one is provided.
 
-        Call this in reset() to clear any trajectory state in the rubric.
+        Call this in `reset()` to clear any trajectory state in the rubric:
 
-        Usage in reset():
-            def reset(self, ...) -> MyObservation:
-                self._reset_rubric()
-                # ... create initial observation ...
-                return observation
+        ```python
+        def reset(self, ...) -> MyObservation:
+            self._reset_rubric()
+            # ... create initial observation ...
+            return observation
+        ```
         """
         if self.rubric is not None:
             self.rubric.reset()
@@ -273,13 +294,14 @@ class Environment(ABC, Generic[ActT, ObsT, StateT]):
     async def _reset_rubric_async(self) -> None:
         """Reset the rubric state asynchronously if one is provided.
 
-        Call this in reset_async() to clear any trajectory state in the rubric.
+        Call this in `reset_async()` to clear any trajectory state in the rubric:
 
-        Usage in reset_async():
-            async def reset_async(self, ...) -> MyObservation:
-                await self._reset_rubric_async()
-                # ... create initial observation ...
-                return observation
+        ```python
+        async def reset_async(self, ...) -> MyObservation:
+            await self._reset_rubric_async()
+            # ... create initial observation ...
+            return observation
+        ```
         """
         if self.rubric is not None:
             # Check if rubric has async reset method

@@ -40,10 +40,9 @@ def _detect_build_context(env_path: Path) -> tuple[str, Path, Path | None]:
     Detect whether we're building a standalone or in-repo environment.
 
     Returns:
-        tuple: (build_mode, build_context_path, repo_root)
-            - build_mode: "standalone" or "in-repo"
-            - build_context_path: Path to use as Docker build context
-            - repo_root: Path to repo root (None for standalone)
+        `tuple` of `(build_mode, build_context_path, repo_root)` where `build_mode` is
+        `"standalone"` or `"in-repo"`, `build_context_path` is the path to use as Docker
+        build context, and `repo_root` is the path to the repo root (`None` for standalone).
     """
     # Ensure env_path is absolute for proper comparison
     env_path = env_path.absolute()
@@ -89,7 +88,7 @@ def _prepare_standalone_build(env_path: Path, temp_dir: Path) -> Path:
     2. Ensure pyproject.toml depends on openenv
 
     Returns:
-        Path to the prepared build directory
+        `Path` to the prepared build directory.
     """
     console.print("[cyan]Preparing standalone build...[/cyan]")
 
@@ -136,7 +135,7 @@ def _prepare_inrepo_build(env_path: Path, repo_root: Path, temp_dir: Path) -> Pa
     2. Set up structure that matches expected layout
 
     Returns:
-        Path to the prepared build directory
+        `Path` to the prepared build directory.
     """
     console.print("[cyan]Preparing in-repo build...[/cyan]")
 

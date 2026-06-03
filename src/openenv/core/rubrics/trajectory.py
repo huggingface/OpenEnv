@@ -67,8 +67,8 @@ class TrajectoryRubric(Rubric):
         """Initialize trajectory rubric.
 
         Args:
-            intermediate_reward: Value to return for non-terminal steps.
-                Defaults to 0.0.
+            intermediate_reward (`float`, *optional*, defaults to `0.0`):
+                Value to return for non-terminal steps.
         """
         super().__init__()
         self.intermediate_reward = intermediate_reward
@@ -84,7 +84,7 @@ class TrajectoryRubric(Rubric):
             observation: The resulting observation. Must have a 'done' attribute.
 
         Returns:
-            intermediate_reward if not done, else score_trajectory() result.
+            `float`: intermediate_reward if not done, else score_trajectory() result.
         """
         self._trajectory.append((action, observation))
 
@@ -100,10 +100,11 @@ class TrajectoryRubric(Rubric):
         Called when observation.done=True.
 
         Args:
-            trajectory: List of (action, observation) tuples.
+            trajectory (`list`):
+                List of (action, observation) tuples.
 
         Returns:
-            Final trajectory score (typically 0.0 to 1.0).
+            `float`: Final trajectory score (typically 0.0 to 1.0).
         """
         raise NotImplementedError
 
@@ -111,11 +112,11 @@ class TrajectoryRubric(Rubric):
     def compute_step_rewards(self) -> List[float]:
         """Compute per-step rewards from the accumulated trajectory.
 
-        Returns:
-            List of rewards, one per step. Length matches len(trajectory).
-
         Define your credit assignment strategy here (e.g., discounting,
         assigning all credit to specific steps, etc.).
+
+        Returns:
+            `list[float]`: Rewards, one per step. Length matches len(trajectory).
         """
         raise NotImplementedError
 
@@ -173,9 +174,10 @@ class ExponentialDiscountingTrajectoryRubric(TrajectoryRubric):
         """Initialize with discount factor.
 
         Args:
-            gamma: Discount factor in [0, 1]. Higher values give more credit
-                to early moves. 0.99 is a common choice.
-            intermediate_reward: Value to return for non-terminal steps.
+            gamma (`float`, *optional*, defaults to `0.99`):
+                Discount factor in [0, 1]. Higher values give more credit to early moves.
+            intermediate_reward (`float`, *optional*, defaults to `0.0`):
+                Value to return for non-terminal steps.
         """
         super().__init__(intermediate_reward=intermediate_reward)
         if not 0.0 <= gamma <= 1.0:
@@ -186,7 +188,7 @@ class ExponentialDiscountingTrajectoryRubric(TrajectoryRubric):
         """Apply exponential discounting from final reward.
 
         Returns:
-            List of discounted rewards. step_rewards[t] = gamma^(T-1-t) * R_final
+            `list[float]`: Discounted rewards. step_rewards[t] = gamma^(T-1-t) * R_final
             where T is the trajectory length and R_final is score_trajectory().
         """
         if not self._trajectory:

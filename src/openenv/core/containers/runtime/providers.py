@@ -53,16 +53,20 @@ class ContainerProvider(ABC):
         Start a container from the specified image.
 
         Args:
-            image: Container image name (e.g., "echo-env:latest")
-            port: Port to expose (if None, provider chooses)
-            env_vars: Environment variables to pass to container
-            **kwargs: Provider-specific options
+            image (`str`):
+                Container image name (e.g., `"echo-env:latest"`).
+            port (`int`, *optional*):
+                Port to expose. If `None`, the provider chooses.
+            env_vars (`dict`, *optional*):
+                Environment variables to pass to container.
+            **kwargs:
+                Provider-specific options.
 
         Returns:
-            Base URL to connect to the container (e.g., ``http://localhost:8000``)
+            `str`: Base URL to connect to the container (e.g., `"http://localhost:8000"`).
 
         Raises:
-            RuntimeError: If container fails to start
+            RuntimeError: If container fails to start.
         """
         pass
 
@@ -83,11 +87,13 @@ class ContainerProvider(ABC):
         This typically polls the /health endpoint until it returns 200.
 
         Args:
-            base_url: Base URL of the container
-            timeout_s: Maximum time to wait
+            base_url (`str`):
+                Base URL of the container.
+            timeout_s (`float`, *optional*, defaults to `30.0`):
+                Maximum time to wait in seconds.
 
         Raises:
-            TimeoutError: If container doesn't become ready in time
+            TimeoutError: If container doesn't become ready in time.
         """
         pass
 
@@ -144,13 +150,17 @@ class LocalDockerProvider(ContainerProvider):
         Start a Docker container locally.
 
         Args:
-            image: Docker image name
-            port: Port to expose (if None, finds available port)
-            env_vars: Environment variables for the container
-            **kwargs: Additional Docker run options
+            image (`str`):
+                Docker image name.
+            port (`int`, *optional*):
+                Port to expose. If `None`, finds an available port.
+            env_vars (`dict`, *optional*):
+                Environment variables for the container.
+            **kwargs:
+                Additional Docker run options.
 
         Returns:
-            Base URL to connect to the container
+            `str`: Base URL to connect to the container.
         """
         import subprocess
         import time
@@ -232,11 +242,13 @@ class LocalDockerProvider(ContainerProvider):
         Wait for container to be ready by polling /health endpoint.
 
         Args:
-            base_url: Base URL of the container
-            timeout_s: Maximum time to wait
+            base_url (`str`):
+                Base URL of the container.
+            timeout_s (`float`, *optional*, defaults to `30.0`):
+                Maximum time to wait in seconds.
 
         Raises:
-            TimeoutError: If container doesn't become ready
+            TimeoutError: If container doesn't become ready.
         """
         import time
 
@@ -267,7 +279,7 @@ class LocalDockerProvider(ContainerProvider):
         Find an available port on localhost.
 
         Returns:
-            An available port number
+            `int`: An available port number.
         """
         import socket
 
@@ -282,10 +294,11 @@ class LocalDockerProvider(ContainerProvider):
         Generate a unique container name based on image name and timestamp.
 
         Args:
-            image: Docker image name
+            image (`str`):
+                Docker image name.
 
         Returns:
-            A unique container name
+            `str`: A unique container name.
         """
         import time
 
@@ -312,12 +325,13 @@ class DockerSwarmProvider(ContainerProvider):
     ):
         """
         Args:
-            auto_init_swarm: Whether to call ``docker swarm init`` when Swarm
-                is not active. Otherwise, user must manually initialize Swarm.
-            overlay_network: Optional overlay network name for the service.
-                When provided, the network is created with
-                ``docker network create --driver overlay --attachable`` if it
-                does not already exist.
+            auto_init_swarm (`bool`, *optional*, defaults to `True`):
+                Whether to call `docker swarm init` when Swarm is not active.
+                Otherwise, the user must manually initialize Swarm.
+            overlay_network (`str`, *optional*):
+                Overlay network name for the service. When provided, the network
+                is created with `docker network create --driver overlay --attachable`
+                if it does not already exist.
         """
         self._service_name: Optional[str] = None
         self._service_id: Optional[str] = None
@@ -340,13 +354,28 @@ class DockerSwarmProvider(ContainerProvider):
         """
         Start (or scale) a Swarm service for the given image.
 
-        Supported kwargs:
-            replicas (int): Number of container replicas (default: 2).
-            cpu_limit (float | str): CPU limit passed to ``--limit-cpu``.
-            memory_limit (str): Memory limit passed to ``--limit-memory``.
-            constraints (Sequence[str]): Placement constraints.
-            labels (Dict[str, str]): Service labels.
-            command (Sequence[str] | str): Override container command.
+        Args:
+            image (`str`):
+                Docker image name.
+            port (`int`, *optional*):
+                Port to expose. If `None`, finds an available port.
+            env_vars (`dict`, *optional*):
+                Environment variables for the container.
+            replicas (`int`, *optional*, defaults to `2`):
+                Number of container replicas.
+            cpu_limit (`float` or `str`, *optional*):
+                CPU limit passed to `--limit-cpu`.
+            memory_limit (`str`, *optional*):
+                Memory limit passed to `--limit-memory`.
+            constraints (`Sequence[str]`, *optional*):
+                Placement constraints.
+            labels (`dict`, *optional*):
+                Service labels.
+            command (`Sequence[str]` or `str`, *optional*):
+                Override container command.
+
+        Returns:
+            `str`: Base URL to connect to the service.
         """
         import shlex
         import subprocess
@@ -470,7 +499,7 @@ class DockerSwarmProvider(ContainerProvider):
         """
         Wait for at least one replica to become healthy by polling /health.
 
-        Note: With Swarm's load balancer, requests round-robin across replicas,
+        With Swarm's load balancer, requests round-robin across replicas,
         so this only verifies that at least one replica is responding. Some
         replicas may still be starting when this returns.
         """
@@ -643,13 +672,18 @@ class RuntimeProvider(ABC):
         **kwargs: Any,
     ) -> str:
         """
-        Start a runtime from the specified image.
+        Start the runtime.
 
         Args:
-            image: Runtime image name
-            port: Port to expose (if None, provider chooses)
-            env_vars: Environment variables for the runtime
-            **kwargs: Additional runtime options
+            port (`int`, *optional*):
+                Port to expose. If `None`, the provider chooses.
+            env_vars (`dict`, *optional*):
+                Environment variables for the runtime.
+            **kwargs:
+                Additional runtime options.
+
+        Returns:
+            `str`: Base URL to connect to the runtime.
         """
 
     @abstractmethod

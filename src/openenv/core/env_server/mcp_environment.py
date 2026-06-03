@@ -19,7 +19,9 @@ Key features:
 - Mode-aware tool registration (production vs simulation)
 - Code mode support via get_callables() and execute_code()
 
-Usage:
+Examples:
+
+    ```python
     from fastmcp import FastMCP
     from openenv.core.env_server.mcp_environment import MCPEnvironment
 
@@ -50,6 +52,7 @@ Usage:
         def state(self):
             # Return current state
             ...
+    ```
 """
 
 import asyncio
@@ -403,19 +406,20 @@ class MCPEnvironment(Environment):
         the subclass's _step_impl() method.
 
         Args:
-            action: The action to execute. Can be:
-                - ListToolsAction: Returns available MCP tools
-                - CallToolAction: Invokes a specific MCP tool
-                - Any other Action: Delegated to _step_impl()
-            timeout_s: Optional timeout in seconds for the action.
-                Defaults to MCP_TOOL_CALL_TIMEOUT (30s) for MCP actions.
-            **kwargs: Additional arguments passed to handlers.
+            action ([`~openenv.core.env_server.types.Action`]):
+                The action to execute. ListToolsAction returns available MCP tools,
+                CallToolAction invokes a specific MCP tool, and any other action
+                is delegated to _step_impl().
+            timeout_s (`float`, *optional*):
+                Timeout in seconds for the action. Defaults to MCP_TOOL_CALL_TIMEOUT
+                (30s) for MCP actions.
+            **kwargs (`Any`):
+                Additional arguments passed to handlers.
 
         Returns:
-            Observation appropriate to the action type:
-                - ListToolsObservation for ListToolsAction
-                - CallToolObservation for CallToolAction
-                - Subclass-defined Observation for other actions
+            [`~openenv.core.env_server.types.Observation`]: ListToolsObservation for
+            ListToolsAction, CallToolObservation for CallToolAction, or a
+            subclass-defined Observation for other actions.
         """
         if isinstance(action, ListToolsAction):
             return self._handle_list_tools()

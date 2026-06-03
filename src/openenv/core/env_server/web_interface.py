@@ -114,14 +114,14 @@ def load_environment_metadata(
     Load environment metadata including README content.
 
     Args:
-        env: The environment instance, class, or factory function.
-             - If a class: used as a factory, won't call instance methods
-             - If a function: used as a factory, won't call instance methods
-             - If an instance: may call get_metadata() if available
-        env_name: Optional environment name for README file lookup
+        env: The environment instance, class, or factory function. If a class or
+            function, it is used as a factory and instance methods are not called.
+            If an instance, `get_metadata()` is called if available.
+        env_name (`str`, *optional*):
+            Optional environment name for README file lookup.
 
     Returns:
-        EnvironmentMetadata with loaded information
+        [`~openenv.EnvironmentMetadata`] with loaded information.
     """
     import inspect
 
@@ -167,10 +167,9 @@ def _load_readme_from_filesystem(env_name: Optional[str]) -> Optional[str]:
     """
     Load README content from the filesystem.
 
-    Tries multiple locations:
-    1. Container filesystem: /app/README.md
-    2. Local development: src/envs/{env_name}/README.md
-    3. Environment variable: ENV_README_PATH
+    Tries multiple locations in order: the container filesystem at `/app/README.md`,
+    the path given by the `ENV_README_PATH` environment variable, and the local
+    development path `src/envs/{env_name}/README.md`.
     """
     import os
     from pathlib import Path
@@ -504,7 +503,7 @@ def create_web_interface_app(
     async def websocket_ui_endpoint(websocket: WebSocket):
         """WebSocket endpoint for web UI real-time updates.
 
-        Note: Uses /ws/ui to avoid conflict with /ws in http_server.py
+        Uses `/ws/ui` to avoid conflict with `/ws` in `http_server.py`,
         which is used for concurrent environment sessions.
         """
         await web_manager.connect_websocket(websocket)

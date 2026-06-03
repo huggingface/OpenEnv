@@ -116,10 +116,11 @@ class GitServerClient:
         Wait for Gitea server to be ready.
 
         Args:
-            timeout: Maximum seconds to wait
+            timeout (`int`, *optional*, defaults to `30`):
+                Maximum seconds to wait.
 
         Returns:
-            True if server is ready, False otherwise
+            `bool`: True if server is ready, False otherwise.
         """
         start_time = time.time()
         while time.time() - start_time < timeout:
@@ -146,7 +147,7 @@ class GitServerClient:
         List all repositories in Gitea.
 
         Returns:
-            List of repository information dictionaries
+            `list` of repository information dictionaries.
         """
         if not self.is_ready:
             raise RuntimeError("Gitea server is not ready")
@@ -189,15 +190,18 @@ class GitServerClient:
         This creates a fresh clone optimized for task isolation.
 
         Args:
-            repo_name: Name of repository to clone
-            target_dir: Target directory name (defaults to repo_name)
-            commit: Commit hash or branch to check out
+            repo_name (`str`):
+                Name of repository to clone.
+            target_dir (`str`, *optional*):
+                Target directory name. Defaults to `repo_name`.
+            commit (`str`, *optional*, defaults to `"main"`):
+                Commit hash or branch to check out.
 
         Returns:
-            Path to cloned repository
+            `str`: Path to cloned repository.
 
         Raises:
-            RuntimeError: If clone fails
+            RuntimeError: If clone fails.
         """
         if not self.is_ready:
             raise RuntimeError("Gitea server is not ready")
@@ -245,14 +249,16 @@ class GitServerClient:
         3. Cleans untracked files
 
         Args:
-            repo_name: Name of repository (directory in workspace)
-            commit: Commit hash or branch to reset to
+            repo_name (`str`):
+                Name of repository (directory in workspace).
+            commit (`str`, *optional*, defaults to `"main"`):
+                Commit hash or branch to reset to.
 
         Returns:
-            True if reset successful
+            `bool`: True if reset successful.
 
         Raises:
-            RuntimeError: If reset fails
+            RuntimeError: If reset fails.
         """
         repo_path = self.workspace_dir / repo_name
 
@@ -316,11 +322,13 @@ class GitServerClient:
         Execute a git command in the workspace.
 
         Args:
-            command: Git command to execute (without 'git' prefix)
-            working_dir: Working directory relative to workspace
+            command (`str`):
+                Git command to execute (without `git` prefix).
+            working_dir (`str`, *optional*, defaults to `""`):
+                Working directory relative to workspace.
 
         Returns:
-            Tuple of (exit_code, stdout, stderr)
+            `tuple` of (exit_code, stdout, stderr).
         """
         work_path = (
             self.workspace_dir / working_dir if working_dir else self.workspace_dir
@@ -346,10 +354,11 @@ class GitServerClient:
         Get current commit hash of a workspace repository.
 
         Args:
-            repo_name: Name of repository in workspace
+            repo_name (`str`):
+                Name of repository in workspace.
 
         Returns:
-            Commit hash
+            `str`: Commit hash.
         """
         repo_path = self.workspace_dir / repo_name
 

@@ -215,7 +215,7 @@ def _validate_openenv_directory(directory: Path) -> tuple[str, dict]:
     Validate that the directory is an OpenEnv environment.
 
     Returns:
-        Tuple of (env_name, manifest_data)
+        `tuple` of `(env_name, manifest_data)`.
     """
     # Use the comprehensive validation function
     try:
@@ -248,7 +248,7 @@ def _ensure_hf_authenticated() -> str:
     Ensure user is authenticated with Hugging Face.
 
     Returns:
-        Username of authenticated user
+        `str`: username of the authenticated user.
     """
     try:
         # Try to get current user

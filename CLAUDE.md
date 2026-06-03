@@ -178,6 +178,49 @@ Before making changes, understand the design constraints:
 - **Rewards inside environment**: Domain knowledge encapsulated in environment, not external
 - **Client-server separation**: Clients never import from `server/` directory
 
+## Docstrings
+
+Docstrings must follow the HF doc-builder format used by the reference API docs. Do **not** use Google, NumPy, or Sphinx styles.
+
+Rules:
+
+* Types appear in backticks inside parentheses: (`str`)
+* Optional parameters are marked with `*optional*`
+* Defaults are written as: `defaults to <value>`
+* When the default is `None`, prefer (`str`, *optional*) instead of (`str` or `None`, *optional*, defaults to `None`)
+* Union types use `or`: `str` or `None`
+* References to classes use the format: [`~openenv.core.EnvClient`]
+* Non-standard headers (`Usage:`, `Note:`, `Class Attributes:`) are not supported — use `Attributes:` or fold text into the description
+* `Examples:` (plural) with a blank line then a fenced ` ```python ``` ` block — no `>>>` prompts
+
+Example:
+
+````python
+def method(self, param1: str, param2: int = 1, param3: float | None = None):
+    """
+    Brief one-line description of what this does.
+
+    Args:
+        param1 (`str`):
+            Description of required param.
+        param2 (`int`, *optional*, defaults to `1`):
+            Description of optional param with default.
+        param3 (`float`, *optional*):
+            Description of optional param without explicit default.
+
+    Returns:
+        `dict` with keys:
+            - `key1` (`list[int]`):
+                Description of this key.
+
+    Examples:
+
+    ```python
+    result = method("hello")
+    ```
+    """
+````
+
 ## Build & Development Commands
 Below are reference commands that you are likely going to use often:
 

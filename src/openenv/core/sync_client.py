@@ -54,10 +54,9 @@ class SyncEnvClient(Generic[ActT, ObsT, StateT]):
     The wrapper executes async operations on a dedicated background event loop
     so connection state remains bound to a single loop.
 
-    Cleanup note:
-        For guaranteed resource cleanup, use `with SyncEnvClient(...)` or call
-        `close()` explicitly. `__del__` is best-effort only and may not run
-        reliably (for example, during interpreter shutdown).
+    For guaranteed resource cleanup, use `with SyncEnvClient(...)` or call
+    `close()` explicitly. `__del__` is best-effort only and may not run
+    reliably (for example, during interpreter shutdown).
 
     Examples:
 
@@ -81,7 +80,8 @@ class SyncEnvClient(Generic[ActT, ObsT, StateT]):
         Initialize sync wrapper around an async client.
 
         Args:
-            async_client: The async EnvClient to wrap
+            async_client (`EnvClient`):
+                The async `EnvClient` to wrap.
         """
         self._async = async_client
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -176,7 +176,8 @@ class SyncEnvClient(Generic[ActT, ObsT, StateT]):
         Reset the environment.
 
         Args:
-            **kwargs: Optional parameters passed to the environment's reset method
+            **kwargs:
+                Optional parameters passed to the environment's reset method.
 
         Returns:
             StepResult containing initial observation
@@ -188,8 +189,10 @@ class SyncEnvClient(Generic[ActT, ObsT, StateT]):
         Execute an action in the environment.
 
         Args:
-            action: The action to execute
-            **kwargs: Optional parameters
+            action:
+                The action to execute.
+            **kwargs:
+                Optional parameters.
 
         Returns:
             StepResult containing observation, reward, and done status

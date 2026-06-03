@@ -113,18 +113,23 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         Initialize environment client.
 
         Args:
-            base_url: Base URL of the environment server (http:// or ws://).
-                     Will be converted to ws:// if http:// is provided.
-            connect_timeout_s: Timeout for establishing WebSocket connection
-            message_timeout_s: Timeout for receiving responses to messages
-            max_message_size_mb: Maximum WebSocket message size in megabytes.
-                                Default 100MB to handle large observations (screenshots, DOM, etc.)
-            provider: Optional container/runtime provider for lifecycle management.
-                     Can be a ContainerProvider (Docker) or RuntimeProvider (UV).
-            mode: Communication mode: 'simulation' for Gym-style API (default) or
-                 'production' for MCP JSON-RPC protocol. Can also be set via the
-                 OPENENV_CLIENT_MODE environment variable. Constructor parameter
-                 takes precedence over environment variable. Case-insensitive.
+            base_url (`str`):
+                Base URL of the environment server (http:// or ws://). Will be converted to
+                ws:// if http:// is provided.
+            connect_timeout_s (`float`, *optional*, defaults to `10.0`):
+                Timeout for establishing WebSocket connection.
+            message_timeout_s (`float`, *optional*, defaults to `60.0`):
+                Timeout for receiving responses to messages.
+            max_message_size_mb (`float`, *optional*, defaults to `100.0`):
+                Maximum WebSocket message size in megabytes. Default 100MB to handle large
+                observations (screenshots, DOM, etc.).
+            provider (`ContainerProvider` or `RuntimeProvider`, *optional*):
+                Container/runtime provider for lifecycle management.
+            mode (`str`, *optional*):
+                Communication mode: `'simulation'` for Gym-style API (default) or
+                `'production'` for MCP JSON-RPC protocol. Can also be set via the
+                `OPENENV_CLIENT_MODE` environment variable. Constructor parameter takes
+                precedence over environment variable. Case-insensitive.
         """
         # Determine mode (constructor > env var > default)
         if mode is None:
@@ -262,9 +267,12 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         Create an environment client by spinning up a Docker container.
 
         Args:
-            image: Docker image name to run (e.g., "coding-env:latest")
-            provider: Container provider to use (defaults to LocalDockerProvider)
-            **kwargs: Additional arguments to pass to provider.start_container()
+            image (`str`):
+                Docker image name to run (e.g., `"coding-env:latest"`).
+            provider (`ContainerProvider`, *optional*):
+                Container provider to use. Defaults to `LocalDockerProvider`.
+            **kwargs:
+                Additional arguments to pass to `provider.start_container()`.
 
         Returns:
             Connected client instance
@@ -297,19 +305,19 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         Create a client from a Hugging Face Space.
 
         Args:
-            repo_id: Hugging Face space identifier ``{org}/{space}``.
-            use_docker: When ``True`` (default) pull from the HF registry and
-                launch via :class:`LocalDockerProvider`. When ``False`` run the
-                space locally with :class:`UVProvider`.
-            provider: Optional provider instance to reuse. Must be a
-                :class:`ContainerProvider` when ``use_docker=True`` and a
-                :class:`RuntimeProvider` otherwise.
-            provider_kwargs: Additional keyword arguments forwarded to
-                either the container provider's ``start_container`` (docker)
-                or to the ``UVProvider`` constructor/start (uv). When
-                ``use_docker=False``, the ``project_path`` argument can be
-                used to override the default git URL
-                (``git+https://huggingface.co/spaces/{repo_id}``).
+            repo_id (`str`):
+                Hugging Face space identifier `{org}/{space}`.
+            use_docker (`bool`, *optional*, defaults to `True`):
+                When `True`, pull from the HF registry and launch via `LocalDockerProvider`.
+                When `False`, run the space locally with `UVProvider`.
+            provider (`ContainerProvider` or `RuntimeProvider`, *optional*):
+                Provider instance to reuse. Must be a `ContainerProvider` when
+                `use_docker=True` and a `RuntimeProvider` otherwise.
+            **provider_kwargs:
+                Additional keyword arguments forwarded to either the container provider's
+                `start_container` (docker) or to the `UVProvider` constructor/start (uv).
+                When `use_docker=False`, the `project_path` argument can be used to override
+                the default git URL (`git+https://huggingface.co/spaces/{repo_id}`).
 
         Returns:
             Connected client instance
@@ -392,10 +400,8 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         Reset the environment with optional parameters.
 
         Args:
-            **kwargs: Optional parameters passed to the environment's reset method.
-                     Common parameters include:
-                     - seed: Random seed for reproducibility
-                     - episode_id: Custom episode identifier
+            **kwargs:
+                Optional parameters passed to the environment's reset method.
 
         Returns:
             StepResult containing initial observation
@@ -412,8 +418,10 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         Execute an action in the environment.
 
         Args:
-            action: The action to execute
-            **kwargs: Optional parameters (currently ignored)
+            action:
+                The action to execute.
+            **kwargs:
+                Optional parameters (currently ignored).
 
         Returns:
             StepResult containing observation, reward, and done status

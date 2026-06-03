@@ -9,15 +9,18 @@
 Provides a generic RPC abstraction: point it at an endpoint/port, tell it the
 protocol, and it works. OpenAI-compatible API is the first implementation,
 covering OpenAI, vLLM, TGI, Ollama, HuggingFace Inference API, etc.
-Anthropic's native API is supported via ``AnthropicClient``.
+Anthropic's native API is supported via `AnthropicClient`.
 
-Usage:
+Examples:
+
+    ```python
     client = OpenAIClient("http://localhost", 8000, model="meta-llama/...")
     response = await client.complete("What is 2+2?")
 
     # Or use the factory for hosted APIs:
     client = create_llm_client("openai", model="gpt-4", api_key="sk-...")
     response = await client.complete_with_tools(messages, tools)
+    ```
 """
 
 from __future__ import annotations
@@ -67,11 +70,13 @@ class LLMResponse:
 class LLMClient(ABC):
     """Abstract base for LLM endpoint clients.
 
-    Subclass and implement ``complete()`` for your protocol.
+    Subclass and implement `complete()` for your protocol.
 
     Args:
-        endpoint: The base URL of the LLM service (e.g. "http://localhost").
-        port: The port the service listens on.
+        endpoint (`str`):
+            The base URL of the LLM service (e.g. "http://localhost").
+        port (`int`):
+            The port the service listens on.
     """
 
     def __init__(self, endpoint: str, port: int):
@@ -83,8 +88,10 @@ class LLMClient(ABC):
         """Send a prompt, return the text response.
 
         Args:
-            prompt: The user prompt to send.
-            **kwargs: Override default parameters (temperature, max_tokens, etc.).
+            prompt (`str`):
+                The user prompt to send.
+            **kwargs:
+                Override default parameters (temperature, max_tokens, etc.).
 
         Returns:
             The model's text response.
@@ -99,16 +106,19 @@ class LLMClient(ABC):
     ) -> LLMResponse:
         """Send messages with tool definitions, return a normalized response.
 
-        Messages use OpenAI-format dicts (``{"role": "...", "content": "..."}``).
+        Messages use OpenAI-format dicts (`{"role": "...", "content": "..."}`).
         Tools use MCP tool definitions; they are converted internally.
 
         Args:
-            messages: Conversation history as OpenAI-format message dicts.
-            tools: MCP tool definitions.
-            **kwargs: Override default parameters (temperature, max_tokens, etc.).
+            messages (`list[dict[str, Any]]`):
+                Conversation history as OpenAI-format message dicts.
+            tools (`list[dict[str, Any]]`):
+                MCP tool definitions.
+            **kwargs:
+                Override default parameters (temperature, max_tokens, etc.).
 
         Returns:
-            An ``LLMResponse`` with the model's text and any tool calls.
+            An [`LLMResponse`] with the model's text and any tool calls.
         """
         raise NotImplementedError(
             f"{type(self).__name__} does not support tool calling"
@@ -127,16 +137,23 @@ class OpenAIClient(LLMClient):
     or any endpoint that speaks the OpenAI chat completions format.
 
     Args:
-        endpoint: The base URL (e.g. "http://localhost").
-        port: The port number.
-        model: Model name to pass to the API.
-        api_key: API key. Defaults to "not-needed" for local endpoints.
-        system_prompt: Optional system message prepended to every request.
-        temperature: Default sampling temperature.
-        max_tokens: Default max tokens in the response.
-        use_max_completion_tokens: Use max_completion_tokens instead of
-            max_tokens. Required for newer OpenAI models (gpt-5-mini, o1, o3).
-            Not supported by self-hosted OpenAI-compatible endpoints.
+        endpoint (`str`):
+            The base URL (e.g. "http://localhost").
+        port (`int`):
+            The port number.
+        model (`str`):
+            Model name to pass to the API.
+        api_key (`str`, *optional*):
+            API key. Defaults to "not-needed" for local endpoints.
+        system_prompt (`str`, *optional*):
+            System message prepended to every request.
+        temperature (`float`, *optional*, defaults to `0.0`):
+            Default sampling temperature.
+        max_tokens (`int`, *optional*, defaults to `256`):
+            Default max tokens in the response.
+        use_max_completion_tokens (`bool`, *optional*, defaults to `False`):
+            Use max_completion_tokens instead of max_tokens. Required for newer OpenAI models
+            (gpt-5-mini, o1, o3). Not supported by self-hosted OpenAI-compatible endpoints.
     """
 
     def __init__(
@@ -169,8 +186,10 @@ class OpenAIClient(LLMClient):
         """Send a chat completion request.
 
         Args:
-            prompt: The user message.
-            **kwargs: Overrides for temperature, max_tokens.
+            prompt (`str`):
+                The user message.
+            **kwargs:
+                Overrides for temperature, max_tokens.
 
         Returns:
             The assistant's response text.
@@ -227,16 +246,23 @@ class OpenAIClient(LLMClient):
 class AnthropicClient(LLMClient):
     """Client for Anthropic's Messages API.
 
-    Requires the ``anthropic`` package (lazy-imported at construction time).
+    Requires the `anthropic` package (lazy-imported at construction time).
 
     Args:
-        endpoint: The base URL (e.g. "https://api.anthropic.com").
-        port: The port number.
-        model: Model name (e.g. "claude-sonnet-4-20250514").
-        api_key: Anthropic API key.
-        system_prompt: Optional system message prepended to every request.
-        temperature: Default sampling temperature.
-        max_tokens: Default max tokens in the response.
+        endpoint (`str`):
+            The base URL (e.g. "https://api.anthropic.com").
+        port (`int`):
+            The port number.
+        model (`str`):
+            Model name (e.g. "claude-sonnet-4-20250514").
+        api_key (`str`, *optional*):
+            Anthropic API key.
+        system_prompt (`str`, *optional*):
+            System message prepended to every request.
+        temperature (`float`, *optional*, defaults to `0.0`):
+            Default sampling temperature.
+        max_tokens (`int`, *optional*, defaults to `256`):
+            Default max tokens in the response.
     """
 
     def __init__(
@@ -346,15 +372,21 @@ def create_llm_client(
     """Create an LLM client for a hosted provider.
 
     Args:
-        provider: Provider name ("openai" or "anthropic").
-        model: Model identifier.
-        api_key: API key for the provider.
-        system_prompt: Optional system message prepended to every request.
-        temperature: Sampling temperature.
-        max_tokens: Maximum tokens in the response.
+        provider (`str`):
+            Provider name ("openai" or "anthropic").
+        model (`str`):
+            Model identifier.
+        api_key (`str`):
+            API key for the provider.
+        system_prompt (`str`, *optional*):
+            System message prepended to every request.
+        temperature (`float`, *optional*, defaults to `0.0`):
+            Sampling temperature.
+        max_tokens (`int`, *optional*, defaults to `4096`):
+            Maximum tokens in the response.
 
     Returns:
-        A configured ``LLMClient`` instance.
+        A configured [`LLMClient`] instance.
     """
     key = provider.lower()
     if key not in _HOSTED_PROVIDERS:
@@ -386,7 +418,7 @@ def create_llm_client(
 
 
 def _clean_mcp_schema(schema: dict[str, Any]) -> dict[str, Any]:
-    """Normalize an MCP tool ``inputSchema`` for LLM function-calling APIs."""
+    """Normalize an MCP tool `inputSchema` for LLM function-calling APIs."""
     if not isinstance(schema, dict):
         return {"type": "object", "properties": {}, "required": []}
 
@@ -471,9 +503,9 @@ def _openai_msgs_to_anthropic(
 ) -> tuple[str, list[dict[str, Any]]]:
     """Convert OpenAI-format messages to Anthropic format.
 
-    Returns ``(system_text, anthropic_messages)``.  System-role messages are
+    Returns `(system_text, anthropic_messages)`. System-role messages are
     extracted and concatenated; tool-result messages are converted to
-    Anthropic's ``tool_result`` content blocks inside user turns.
+    Anthropic's `tool_result` content blocks inside user turns.
     """
     system_parts: list[str] = []
     anthropic_msgs: list[dict[str, Any]] = []

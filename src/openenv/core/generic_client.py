@@ -54,10 +54,9 @@ class GenericEnvClient(EnvClient[Dict[str, Any], Dict[str, Any], Dict[str, Any]]
         env.close()
         ```
 
-    Note:
-        GenericEnvClient inherits `from_docker_image()` and `from_env()` from
-        EnvClient, so you can use it with Docker containers and HuggingFace
-        Spaces without any package installation.
+    `GenericEnvClient` inherits `from_docker_image()` and `from_env()` from
+    `EnvClient`, so you can use it with Docker containers and HuggingFace
+    Spaces without any package installation.
     """
 
     def _step_payload(self, action: Dict[str, Any]) -> Dict[str, Any]:
@@ -69,7 +68,8 @@ class GenericEnvClient(EnvClient[Dict[str, Any], Dict[str, Any], Dict[str, Any]]
         passed, it will be converted to a dictionary using model_dump().
 
         Args:
-            action: Action as a dictionary or Pydantic BaseModel
+            action (`dict` or `BaseModel`):
+                Action as a dictionary or Pydantic `BaseModel`.
 
         Returns:
             The action as a dictionary for the server
@@ -97,7 +97,8 @@ class GenericEnvClient(EnvClient[Dict[str, Any], Dict[str, Any], Dict[str, Any]]
         server response.
 
         Args:
-            payload: Response payload from the server
+            payload (`dict`):
+                Response payload from the server.
 
         Returns:
             StepResult with observation as a dictionary
@@ -116,7 +117,8 @@ class GenericEnvClient(EnvClient[Dict[str, Any], Dict[str, Any], Dict[str, Any]]
         we're working with dictionaries.
 
         Args:
-            payload: State payload from the server
+            payload (`dict`):
+                State payload from the server.
 
         Returns:
             The state as a dictionary
@@ -147,10 +149,9 @@ class GenericAction(Dict[str, Any]):
         env.step(action)
         ```
 
-    Note:
-        GenericAction is just a dict with a constructor that accepts keyword
-        arguments. It's provided for symmetry with typed Action classes and
-        to make code more readable.
+    `GenericAction` is just a dict with a constructor that accepts keyword
+    arguments. It's provided for symmetry with typed Action classes and
+    to make code more readable.
     """
 
     def __init__(self, **kwargs: Any) -> None:
@@ -158,7 +159,8 @@ class GenericAction(Dict[str, Any]):
         Create a GenericAction from keyword arguments.
 
         Args:
-            **kwargs: Action fields as keyword arguments
+            **kwargs:
+                Action fields as keyword arguments.
 
         Examples:
 

@@ -40,17 +40,16 @@ def deserialize_action(action_data: Dict[str, Any], action_cls: Type[Action]) ->
     use deserialize_action_with_preprocessing().
 
     Args:
-        action_data: Dictionary containing action data
-        action_cls: The Action subclass to instantiate
+        action_data (`dict`):
+            Dictionary containing action data.
+        action_cls (`type`):
+            The Action subclass to instantiate.
 
     Returns:
-        Action instance
+        `Action` instance.
 
     Raises:
-        ValidationError: If action_data is invalid for the action class
-
-    Note:
-        This uses Pydantic's model_validate() for automatic validation.
+        `ValidationError`: If `action_data` is invalid for the action class.
     """
     # Route MCP action types before falling through to the env action_cls.
     # Only intercept when action_cls is the generic Action base or itself an
@@ -78,14 +77,16 @@ def deserialize_action_with_preprocessing(
     - Other custom preprocessing as needed
 
     Args:
-        action_data: Dictionary containing action data
-        action_cls: The Action subclass to instantiate
+        action_data (`dict`):
+            Dictionary containing action data.
+        action_cls (`type`):
+            The Action subclass to instantiate.
 
     Returns:
-        Action instance
+        `Action` instance.
 
     Raises:
-        ValidationError: If action_data is invalid for the action class
+        `ValidationError`: If `action_data` is invalid for the action class.
     """
     # Route MCP action types before preprocessing (they don't need it).
     # Same guard as deserialize_action: only intercept when action_cls is
@@ -138,17 +139,14 @@ def serialize_observation(observation: Observation) -> Dict[str, Any]:
     Convert Observation instance to JSON-compatible dict using Pydantic.
 
     Args:
-        observation: Observation instance
+        observation (`Observation`):
+            Observation instance to serialize.
 
     Returns:
-        Dictionary compatible with EnvClient._parse_result()
-
-    The format matches what EnvClient expects:
-    {
-        "observation": {...},  # Observation fields
-        "reward": float | None,
-        "done": bool,
-    }
+        `dict` compatible with `EnvClient._parse_result()`, with keys:
+            - `observation` (`dict`): Observation fields.
+            - `reward` (`float` or `None`): Reward value.
+            - `done` (`bool`): Whether the episode is done.
     """
     # Use Pydantic's model_dump() for serialization
     obs_dict = observation.model_dump(

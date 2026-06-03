@@ -50,8 +50,8 @@ class Sequential(Rubric):
         """Initialize with rubrics to run in sequence.
 
         Args:
-            *rubrics: Rubrics to run in order. Stops and returns 0 if any
-                child returns 0.
+            *rubrics (`Rubric`):
+                Rubrics to run in order. Stops and returns 0 if any child returns 0.
         """
         super().__init__()
         for i, rubric in enumerate(rubrics):
@@ -278,9 +278,10 @@ class Gate(Rubric):
         """Initialize with a rubric and threshold.
 
         Args:
-            rubric: The rubric to gate.
-            threshold: Minimum score required. If child returns less than
-                this, Gate returns 0. Default is 1.0 (must pass completely).
+            rubric (`Rubric`):
+                The rubric to gate.
+            threshold (`float`, *optional*, defaults to `1.0`):
+                Minimum score required. If child returns less than this, Gate returns 0.
         """
         super().__init__()
         self.rubric = rubric
@@ -351,8 +352,10 @@ class WeightedSum(Rubric):
         """Initialize with rubrics and weights.
 
         Args:
-            rubrics: List of rubrics to combine.
-            weights: Weight for each rubric. Must sum to 1.0.
+            rubrics (`list[Rubric]`):
+                List of rubrics to combine.
+            weights (`list[float]`):
+                Weight for each rubric. Must sum to 1.0.
 
         Raises:
             ValueError: If lengths don't match or weights don't sum to 1.0.
@@ -472,7 +475,8 @@ class RubricList(Rubric):
         """Initialize with optional list of rubrics.
 
         Args:
-            rubrics: Optional list of rubrics to start with.
+            rubrics (`list[Rubric]`, *optional*):
+                List of rubrics to start with.
         """
         super().__init__()
         self._rubrics: List[Rubric] = []
@@ -537,7 +541,8 @@ class RubricDict(Rubric):
         """Initialize with optional dictionary of rubrics.
 
         Args:
-            rubrics: Optional dictionary mapping names to rubrics.
+            rubrics (`dict[str, Rubric]`, *optional*):
+                Dictionary mapping names to rubrics.
         """
         super().__init__()
         self._rubric_dict: Dict[str, Rubric] = {}
