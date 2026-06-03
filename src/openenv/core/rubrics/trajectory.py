@@ -40,7 +40,9 @@ class TrajectoryRubric(Rubric):
     Known limitation: Very long episodes (thousands of steps) may consume
     significant CPU memory. For such cases, consider streaming rubrics.
 
-    Usage:
+    Examples:
+
+        ```python
         class WinLossRubric(TrajectoryRubric):
             def score_trajectory(self, trajectory):
                 _, final_obs = trajectory[-1]
@@ -55,6 +57,7 @@ class TrajectoryRubric(Rubric):
         for action, obs in episode:
             reward = rubric(action, obs)  # 0.0 until done
         step_rewards = rubric.compute_step_rewards()  # Credit assignment
+        ```
     """
 
     _trajectory: List[Tuple[Any, Any]]
@@ -147,7 +150,9 @@ class ExponentialDiscountingTrajectoryRubric(TrajectoryRubric):
     This is the standard temporal discounting used in reinforcement learning,
     applied retroactively once the episode outcome is known.
 
-    Usage:
+    Examples:
+
+        ```python
         class ChessRubric(ExponentialDiscountingTrajectoryRubric):
             def score_trajectory(self, trajectory):
                 _, final_obs = trajectory[-1]
@@ -159,6 +164,7 @@ class ExponentialDiscountingTrajectoryRubric(TrajectoryRubric):
         rubric = ChessRubric(gamma=0.99)
         reward = rubric(action, obs)  # 0.0 until done, then final score
         step_rewards = rubric.compute_step_rewards()  # Discounted per-step rewards
+        ```
     """
 
     gamma: float

@@ -35,12 +35,15 @@ class Sequential(Rubric):
     and returns 0. This implements hierarchical gating patterns where
     syntax checks run before execution checks.
 
-    Usage:
+    Examples:
+
+        ```python
         rubric = Sequential(
             Gate(Compiles()),
             Gate(PassesTests(), threshold=0.5),
             WeightedSum([PassesTests(), StyleRubric()], weights=[0.7, 0.3])
         )
+        ```
     """
 
     def __init__(self, *rubrics: Rubric):
@@ -263,9 +266,12 @@ class Gate(Rubric):
 
     Useful for hard constraints like "must pass 50% of tests".
 
-    Usage:
+    Examples:
+
+        ```python
         rubric = Gate(PassesTests(), threshold=0.5)
         # Returns PassesTests() score if >= 0.5, else 0.0
+        ```
     """
 
     def __init__(self, rubric: Rubric, threshold: float = 1.0):
@@ -331,11 +337,14 @@ class WeightedSum(Rubric):
 
     Standard aggregation pattern for multi-criteria evaluation.
 
-    Usage:
+    Examples:
+
+        ```python
         rubric = WeightedSum(
             [PassesTests(), StyleRubric()],
             weights=[0.7, 0.3]
         )
+        ```
     """
 
     def __init__(self, rubrics: List[Rubric], weights: List[float]):
@@ -446,7 +455,9 @@ class RubricList(Rubric):
     Analogous to nn.ModuleList. Does not define aggregation - use within
     a parent rubric that implements custom logic.
 
-    Usage:
+    Examples:
+
+        ```python
         class MultiGameRubric(Rubric):
             def __init__(self, games: List[str]):
                 super().__init__()
@@ -454,6 +465,7 @@ class RubricList(Rubric):
 
             def forward(self, action, obs) -> float:
                 return self.games[obs.game_index](action, obs)
+        ```
     """
 
     def __init__(self, rubrics: List[Rubric] = None):
@@ -502,7 +514,9 @@ class RubricDict(Rubric):
     Analogous to nn.ModuleDict. Enables keyed access for multi-task
     environments where different tasks require different rubrics.
 
-    Usage:
+    Examples:
+
+        ```python
         class AtariRubric(Rubric):
             def __init__(self):
                 super().__init__()
@@ -516,6 +530,7 @@ class RubricDict(Rubric):
                 return self.games[obs.game_id](action, obs)
 
         # Access: env.rubric.games["pong"]
+        ```
     """
 
     def __init__(self, rubrics: Dict[str, Rubric] = None):

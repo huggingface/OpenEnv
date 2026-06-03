@@ -315,18 +315,21 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
             Connected client instance
 
         Examples:
-            >>> # Pull and run from HF Docker registry
-            >>> env = await MyEnv.from_env("openenv/echo-env")
-            >>>
-            >>> # Run locally with UV (clones the space)
-            >>> env = await MyEnv.from_env("openenv/echo-env", use_docker=False)
-            >>>
-            >>> # Run from a local checkout
-            >>> env = await MyEnv.from_env(
-            ...     "openenv/echo-env",
-            ...     use_docker=False,
-            ...     project_path="/path/to/local/checkout"
-            ... )
+
+            ```python
+            # Pull and run from HF Docker registry
+            env = await MyEnv.from_env("openenv/echo-env")
+
+            # Run locally with UV (clones the space)
+            env = await MyEnv.from_env("openenv/echo-env", use_docker=False)
+
+            # Run from a local checkout
+            env = await MyEnv.from_env(
+                "openenv/echo-env",
+                use_docker=False,
+                project_path="/path/to/local/checkout"
+            )
+            ```
         """
         # Extract start args that apply to both providers
         start_args = {}

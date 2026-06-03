@@ -24,13 +24,16 @@ class Rubric(ABC):
     A Rubric computes a reward signal from an action and observation.
     Subclasses implement forward() to define the reward logic.
 
-    Usage:
+    Examples:
+
+        ```python
         class MyRubric(Rubric):
             def forward(self, action, observation) -> float:
                 return 1.0 if action.valid else 0.0
 
         rubric = MyRubric()
         reward = rubric(action, observation)
+        ```
 
     Child rubrics are auto-registered when assigned as attributes,
     enabling hierarchical composition and introspection.

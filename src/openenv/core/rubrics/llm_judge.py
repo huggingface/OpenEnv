@@ -8,13 +8,16 @@
 
 Uses an LLM endpoint (via LLMClient) to evaluate agent actions/observations.
 
-Usage:
+Examples:
+
+    ```python
     client = OpenAIClient("http://localhost", 8000, model="meta-llama/...")
     judge = LLMJudge(
         prompt_template="Rate this code solution:\\n{action}\\n\\nScore (0-1):",
         client=client,
     )
     score = await judge(action, observation)
+    ```
 
 See RFC 004 for full design: rfcs/004-rubrics.md
 """

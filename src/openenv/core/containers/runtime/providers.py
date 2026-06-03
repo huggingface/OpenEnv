@@ -59,7 +59,7 @@ class ContainerProvider(ABC):
             **kwargs: Provider-specific options
 
         Returns:
-            Base URL to connect to the container (e.g., "http://localhost:8000")
+            Base URL to connect to the container (e.g., ``http://localhost:8000``)
 
         Raises:
             RuntimeError: If container fails to start
