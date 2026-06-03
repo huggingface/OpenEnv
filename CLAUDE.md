@@ -203,6 +203,11 @@ uv run ruff format src/ tests/
 # Build and preview documentation locally
 doc-builder preview openenv docs/source
 
+# Sync environment doc stubs with their source READMEs (run after updating any envs/*/README.md)
+python scripts/sync_env_docs.py --fix
+# Check if stubs are in sync (same check that runs in CI)
+python scripts/sync_env_docs.py --check
+
 # Build Docker images
 docker build -t openenv-base:latest -f src/openenv/core/containers/images/Dockerfile .
 docker build -t echo-env:latest -f envs/echo_env/server/Dockerfile .
