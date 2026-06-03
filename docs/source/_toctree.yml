@@ -132,8 +132,6 @@
     title: Core API
   - local: reference/cli
     title: CLI
-  - local: reference/auto_discovery
-    title: Auto-Discovery
   title: API Reference
 - sections:
   - local: contributing
