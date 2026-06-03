@@ -31,12 +31,14 @@ Example:
 from __future__ import annotations
 
 import importlib
+import ipaddress
 import logging
 import os
 import shutil
 import subprocess
 import sys
 from typing import Any, Dict, Optional, TYPE_CHECKING
+from urllib.parse import urlparse
 
 import requests
 from openenv.core.utils import run_async_safely
@@ -199,8 +201,18 @@ class AutoEnv:
             >>> AutoEnv._is_local_url("https://example.com")
             False
         """
-        url_lower = url.lower()
-        return "localhost" in url_lower or "127.0.0.1" in url_lower
+        try:
+            hostname = urlparse(url).hostname or ""
+        except Exception:
+            return False
+        if not hostname:
+            return False
+        if hostname in ("localhost", "0.0.0.0"):
+            return True
+        try:
+            return ipaddress.ip_address(hostname).is_loopback
+        except ValueError:
+            return False
 
     @classmethod
     def _check_server_availability(cls, base_url: str, timeout: float = 2.0) -> bool:

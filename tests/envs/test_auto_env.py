@@ -272,6 +272,46 @@ class TestAutoEnvHubDetection:
 
 
 # ============================================================================
+# _is_local_url Tests
+# ============================================================================
+
+
+class TestIsLocalUrl:
+    """Test AutoEnv._is_local_url() uses proper URL parsing, not substring matching."""
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://localhost:8000",
+            "http://localhost",
+            "http://127.0.0.1:8000",
+            "http://127.0.0.1",
+            "http://127.5.5.5",  # rest of 127.0.0.0/8 loopback range
+            "http://[::1]:8000",  # IPv6 loopback with port
+            "http://[::1]",  # IPv6 loopback bare
+            "http://0.0.0.0:8000",
+            "http://0.0.0.0",
+        ],
+    )
+    def test_local_urls_return_true(self, url):
+        assert AutoEnv._is_local_url(url) is True
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://localhost.evil.com",  # headline false-positive bug
+            "http://my-127.0.0.1.io",  # 127.0.0.1 as substring in domain
+            "https://example.com",
+            "https://example.com/path?q=localhost",  # only in query string
+            "not-a-url",
+            "",
+        ],
+    )
+    def test_non_local_urls_return_false(self, url):
+        assert AutoEnv._is_local_url(url) is False
+
+
+# ============================================================================
 # Git+ URL Installation Tests
 # ============================================================================
 
