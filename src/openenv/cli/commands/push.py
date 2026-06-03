@@ -638,6 +638,8 @@ def push(
     but disabled by default when pushing to a custom Docker registry.
 
     Examples:
+
+        ```bash
         # Push to HuggingFace Spaces from current directory (web interface enabled)
         $ cd my_env
         $ openenv push
@@ -672,6 +674,7 @@ def push(
 
         # Set a private Space secret (value never logged)
         $ openenv push --secret OPENAI_API_KEY=sk-...
+        ```
     """
     # Validate --count flag combinations
     if count > 1 and registry:

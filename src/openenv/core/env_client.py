@@ -14,16 +14,24 @@ the overhead of HTTP request/response cycles.
 The client is async by default. For synchronous usage, use the `.sync()` method
 to get a `SyncEnvClient` wrapper.
 
-Example (async):
-    >>> async with GenericEnvClient(base_url="ws://localhost:8000") as env:
-    ...     result = await env.reset()
-    ...     result = await env.step({"code": "print('hello')"})
+Examples:
 
-Example (sync wrapper):
-    >>> env = GenericEnvClient(base_url="ws://localhost:8000").sync()
-    >>> with env:
-    ...     result = env.reset()
-    ...     result = env.step({"code": "print('hello')"})
+    Async usage:
+
+    ```python
+    async with GenericEnvClient(base_url="ws://localhost:8000") as env:
+        result = await env.reset()
+        result = await env.step({"code": "print('hello')"})
+    ```
+
+    Sync usage via `.sync()` wrapper:
+
+    ```python
+    env = GenericEnvClient(base_url="ws://localhost:8000").sync()
+    with env:
+        result = env.reset()
+        result = env.step({"code": "print('hello')"})
+    ```
 """
 
 from __future__ import annotations
@@ -68,21 +76,28 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
     - Better suited for long-running episodes
     - Async by default for modern Python async/await patterns
 
-    Example (async):
-        >>> from envs.coding_env.client import CodingEnv
-        >>>
-        >>> # Connect to a server using async context manager
-        >>> async with CodingEnv(base_url="ws://localhost:8000") as env:
-        ...     result = await env.reset(seed=42)
-        ...     while not result.done:
-        ...         action = agent.predict(result.observation)
-        ...         result = await env.step(action)
+    Examples:
 
-    Example (sync wrapper):
-        >>> env = CodingEnv(base_url="ws://localhost:8000").sync()
-        >>> with env:
-        ...     result = env.reset(seed=42)
-        ...     result = env.step(action)
+        Async usage:
+
+        ```python
+        from envs.coding_env.client import CodingEnv
+
+        async with CodingEnv(base_url="ws://localhost:8000") as env:
+            result = await env.reset(seed=42)
+            while not result.done:
+                action = agent.predict(result.observation)
+                result = await env.step(action)
+        ```
+
+        Sync usage via `.sync()` wrapper:
+
+        ```python
+        env = CodingEnv(base_url="ws://localhost:8000").sync()
+        with env:
+            result = env.reset(seed=42)
+            result = env.step(action)
+        ```
     """
 
     def __init__(
@@ -469,15 +484,16 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         Returns:
             SyncEnvClient wrapper that provides synchronous methods
 
-        Example:
-            >>> # Create async client and get sync wrapper
-            >>> async_client = GenericEnvClient(base_url="http://localhost:8000")
-            >>> sync_client = async_client.sync()
-            >>>
-            >>> # Use synchronous API
-            >>> with sync_client:
-            ...     result = sync_client.reset()
-            ...     result = sync_client.step({"code": "print('hello')"})
+        Examples:
+
+            ```python
+            async_client = GenericEnvClient(base_url="http://localhost:8000")
+            sync_client = async_client.sync()
+
+            with sync_client:
+                result = sync_client.reset()
+                result = sync_client.step({"code": "print('hello')"})
+            ```
         """
         from .sync_client import SyncEnvClient
 

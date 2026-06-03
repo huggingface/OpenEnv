@@ -382,6 +382,8 @@ def build(
     and uv for dependency management. Run from the environment root directory.
 
     Examples:
+
+        ```bash
         # Build from environment root (recommended)
         $ cd my_env
         $ openenv build
@@ -397,6 +399,7 @@ def build(
 
         # Build from different directory
         $ openenv build envs/echo_env
+        ```
     """
     # Determine environment path (default to current directory)
     if env_path is None:
