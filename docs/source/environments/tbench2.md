@@ -1,3 +1,4 @@
+<!-- openenv-source: tbench2_env -->
 # TB2 Environment (Terminal-Bench 2)
 
 OpenEnv wrapper for [Terminal-Bench 2](https://github.com/laude-institute/terminal-bench-2) tasks. Supports two execution modes:

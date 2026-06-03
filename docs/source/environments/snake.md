@@ -1,3 +1,4 @@
+<!-- openenv-source: snake_env -->
 # Snake Environment
 
 A multi-agent snake game environment for OpenEnv, based on [marlenv](https://github.com/kc-ml2/marlenv)'s Snake-v1. This environment provides a single-agent interface to the classic snake game where the snake must navigate a grid, eat fruits, and avoid walls and its own body.

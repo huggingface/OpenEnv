@@ -1,3 +1,4 @@
+<!-- openenv-source: browsergym_env -->
 # BrowserGym Environment
 
 BrowserGym is a unified framework for web-based agent tasks that provides access to multiple benchmarks under a single Gymnasium-compatible API. This integration brings the complete training-to-evaluation pipeline for web agents into OpenEnv.

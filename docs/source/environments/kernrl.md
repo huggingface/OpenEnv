@@ -1,3 +1,4 @@
+<!-- openenv-source: kernrl -->
 # kernrl
 
 RL environment for GPU kernel optimization. Train LLM agents to write fast CUDA/Triton kernels.

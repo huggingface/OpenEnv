@@ -1,3 +1,4 @@
+<!-- openenv-source: maze_env -->
 # Maze Environment
 
 A gridworld maze where the agent must navigate from a start cell to an exit while avoiding walls.

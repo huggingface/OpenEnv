@@ -1,3 +1,4 @@
+<!-- openenv-source: textarena_env -->
 # TextArena Environment
 
 An OpenEnv wrapper for [TextArena](https://github.com/textarena/textarena) game environments. Supports text-based games like Wordle, providing a standardized API for agent interaction.

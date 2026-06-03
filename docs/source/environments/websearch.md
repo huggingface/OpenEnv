@@ -1,3 +1,4 @@
+<!-- openenv-source: websearch_env -->
 # Web Search Environment
 
 A web search environment that searches the web with Google Search API (via Serper.dev).

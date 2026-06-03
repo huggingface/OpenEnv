@@ -1,3 +1,4 @@
+<!-- openenv-source: wildfire_env -->
 # 🌲 Wildfire Environment
 
 Autonomous wildfire-control simulation for reinforcement-learning agents, built on the [OpenEnv](https://github.com/openenv) framework.

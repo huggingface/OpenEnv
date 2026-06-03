@@ -1,3 +1,4 @@
+<!-- openenv-source: coding_tools_env -->
 # Coding Tools Environment
 
 `coding_tools_env` is an E2B-backed multi-tool coding environment with explicit

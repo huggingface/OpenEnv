@@ -1,3 +1,4 @@
+<!-- openenv-source: openapp_env -->
 <!--
 Copyright (c) Meta Platforms, Inc. and affiliates.
 All rights reserved.

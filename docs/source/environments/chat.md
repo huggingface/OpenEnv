@@ -1,3 +1,4 @@
+<!-- openenv-source: chat_env -->
 # Chat Environment
 
 A chat-based environment for LLMs with built-in tokenization and message history management. This environment is designed to work directly with language models and provides a minimal, flexible foundation for conversation-based RL training.

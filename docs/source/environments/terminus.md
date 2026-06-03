@@ -1,3 +1,4 @@
+<!-- openenv-source: terminus_env -->
 # Terminus Environment
 
 `terminus_env` is a single-tool coding environment backed by E2B Code

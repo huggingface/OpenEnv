@@ -1,3 +1,4 @@
+<!-- openenv-source: dm_control_env -->
 # dm_control OpenEnv Environment
 
 A generic OpenEnv environment for [dm_control.suite](https://github.com/google-deepmind/dm_control), providing access to all MuJoCo-based continuous control tasks.

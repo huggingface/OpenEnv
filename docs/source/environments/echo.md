@@ -1,3 +1,4 @@
+<!-- openenv-source: echo_env -->
 # Echo Environment
 
 A simple test environment that echoes back messages. Perfect for testing the env APIs as well as demonstrating environment usage patterns.

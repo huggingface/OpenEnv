@@ -1,3 +1,4 @@
+<!-- openenv-source: agent_world_model_env -->
 # Agent World Model
 
 AgentWorldModel-1K is a synthetic agentic environment suite containing **1,000 tool-use environments** with **10,000 tasks** for large-scale RL training. Each environment is a fully functional MCP server with tools, database state, and verification logic.

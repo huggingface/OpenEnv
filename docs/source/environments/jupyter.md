@@ -1,3 +1,4 @@
+<!-- openenv-source: jupyter_env -->
 # Jupyter Environment
 
 `jupyter_env` exposes a stateful Jupyter-style Python notebook through MCP

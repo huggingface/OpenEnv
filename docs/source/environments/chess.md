@@ -1,3 +1,4 @@
+<!-- openenv-source: chess_env -->
 # Chess Environment
 
 A chess reinforcement learning environment for OpenEnv, powered by the [moonfish](https://github.com/luccabb/moonfish) chess engine.

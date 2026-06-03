@@ -1,3 +1,4 @@
+<!-- openenv-source: opencode_env -->
 # OpenCode Environment for OpenEnv
 
 `opencode_env` runs the [OpenCode](https://opencode.ai) coding agent inside

@@ -1,3 +1,4 @@
+<!-- openenv-source: coding_env -->
 # Coding Environment
 
 A Python code execution environment that runs arbitrary Python code and returns results. Perfect for testing code execution infrastructure and demonstrating environment usage patterns.

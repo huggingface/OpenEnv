@@ -1,3 +1,4 @@
+<!-- openenv-source: reasoning_gym_env -->
 # Reasoning Gym Environment
 
 An OpenEnv environment that integrates the [Reasoning Gym](https://github.com/open-thought/reasoning-gym) library to provide single-step reasoning tasks. Each episode presents one question from a configurable dataset, the agent submits an answer, and receives a score.

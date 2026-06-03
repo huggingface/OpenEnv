@@ -1,3 +1,4 @@
+<!-- openenv-source: calendar_env -->
 # Calendar Environment
 
 This environment exposes a Calendar Gym tools through the OpenEnv reset/step/state interface. The server runs a FastAPI app that serves the OpenEnv endpoints.

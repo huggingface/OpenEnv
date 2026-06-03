@@ -1,3 +1,4 @@
+<!-- openenv-source: finqa_env -->
 # FinQA Environment
 
 A financial question-answering environment for RL training. Evaluates LLMs on their ability to answer complex financial questions using tool calls on SEC 10-K filing data.

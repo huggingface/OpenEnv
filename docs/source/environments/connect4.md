@@ -1,3 +1,4 @@
+<!-- openenv-source: connect4_env -->
 # Connect4 Environment
 
 A classic Connect Four board game environment for training agents on turn-based strategy with a 6×7 grid. Players alternate dropping pieces into columns, aiming to connect four in a row horizontally, vertically, or diagonally.

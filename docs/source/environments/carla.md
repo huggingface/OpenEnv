@@ -1,3 +1,4 @@
+<!-- openenv-source: carla_env -->
 # CARLA Environment for OpenEnv
 
 Embodied evaluation environment for testing LLM decision-making in a full 3D driving simulator with **irreversible consequences**.

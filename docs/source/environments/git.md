@@ -1,3 +1,4 @@
+<!-- openenv-source: git_env -->
 # Git Environment
 
 A Git server environment using Gitea that provides isolated Git repository management optimized for task-based RL training. Perfect for training agents on Git operations with fast reset capabilities.

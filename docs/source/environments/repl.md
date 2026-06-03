@@ -1,3 +1,4 @@
+<!-- openenv-source: repl_env -->
 # REPL Environment for OpenEnv
 
 `repl_env` is an OpenEnv-native Python REPL environment for Recursive Language Model style execution. It now follows the current OpenEnv client/server conventions:
