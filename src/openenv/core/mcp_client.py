@@ -272,7 +272,7 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
                 tools=tools,
                 done=payload.get("done", False),
                 reward=payload.get("reward"),
-                metadata=obs_data.get("metadata", {}),
+                metadata=payload.get("metadata"),
             )
         # Check if this is a CallToolObservation
         elif "tool_name" in obs_data:
@@ -286,20 +286,21 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
                 error=error,
                 done=payload.get("done", False),
                 reward=payload.get("reward"),
-                metadata=obs_data.get("metadata", {}),
+                metadata=payload.get("metadata"),
             )
         else:
             # Generic observation
             observation = Observation(
                 done=payload.get("done", False),
                 reward=payload.get("reward"),
-                metadata=obs_data.get("metadata", {}),
+                metadata=payload.get("metadata"),
             )
 
         return StepResult(
             observation=observation,
             reward=payload.get("reward"),
             done=payload.get("done", False),
+            metadata=payload.get("metadata"),
         )
 
     def _parse_state(self, payload: Dict[str, Any]) -> State:

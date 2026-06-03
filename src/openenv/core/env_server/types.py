@@ -121,6 +121,9 @@ class ResetResponse(BaseModel):
     done: bool = Field(
         default=False, description="Whether episode is already done (typically False)"
     )
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None, description="Additional metadata from the environment"
+    )
 
 
 class StepRequest(BaseModel):
@@ -164,6 +167,9 @@ class StepResponse(BaseModel):
         default=None, description="Reward signal from the action"
     )
     done: bool = Field(default=False, description="Whether the episode has terminated")
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None, description="Additional metadata from the environment"
+    )
 
 
 class BaseMessage(BaseModel):

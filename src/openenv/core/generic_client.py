@@ -103,6 +103,7 @@ class GenericEnvClient(EnvClient[Dict[str, Any], Dict[str, Any], Dict[str, Any]]
             observation=payload.get("observation", {}),
             reward=payload.get("reward"),
             done=payload.get("done", False),
+            metadata=payload.get("metadata"),
         )
 
     def _parse_state(self, payload: Dict[str, Any]) -> Dict[str, Any]:

@@ -148,24 +148,33 @@ def serialize_observation(observation: Observation) -> Dict[str, Any]:
         "observation": {...},  # Observation fields
         "reward": float | None,
         "done": bool,
+        "metadata": dict,
+    }
     }
     """
-    # Use Pydantic's model_dump() for serialization
+    # Use Pydantic's model_dump() for serialization.
+    # reward and done are promoted to top-level sibling keys so that
+    # EnvClient._parse_result() can read them directly. metadata is also
+    # promoted so it is not lost during serialization.
     obs_dict = observation.model_dump(
         exclude={
             "reward",
             "done",
             "metadata",
-        }  # Exclude these from observation dict
+        }
     )
 
-    # Extract reward and done directly from the observation
+    # Extract reward, done, and metadata directly from the observation
     reward = observation.reward
     done = observation.done
+    metadata = observation.metadata
 
     # Return in EnvClient expected format
-    return {
+    result = {
         "observation": obs_dict,
         "reward": reward,
         "done": done,
     }
+    if metadata is not None:
+        result["metadata"] = metadata
+    return result
