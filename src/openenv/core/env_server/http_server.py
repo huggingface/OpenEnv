@@ -160,12 +160,12 @@ class HTTPEnvServer:
 
         Args:
             env (`Callable`):
-                Factory callable that creates [`~openenv.core.env_server.interfaces.Environment`]
-                instances. Will be called to create a new environment for each WebSocket session.
+                Factory callable that creates [`Environment`] instances. Will be called
+                to create a new environment for each WebSocket session.
             action_cls (`type`):
-                The [`~openenv.core.env_server.types.Action`] subclass this environment expects.
+                The [`Action`] subclass this environment expects.
             observation_cls (`type`):
-                The [`~openenv.core.env_server.types.Observation`] subclass this environment returns.
+                The [`Observation`] subclass this environment returns.
             max_concurrent_envs (`int`, *optional*):
                 Maximum number of concurrent WebSocket sessions. Mutually exclusive with
                 `concurrency_config`.
