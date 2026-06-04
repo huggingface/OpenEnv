@@ -77,7 +77,7 @@ docker exec openenv-gitea curl -X POST \
   -u gitea:gitea123 \
   -H 'Content-Type: application/json' \
   -d '{
-    "clone_addr": "https://github.com/meta-pytorch/OpenEnv",
+    "clone_addr": "https://github.com/huggingface/OpenEnv",
     "repo_name": "OpenEnv",
     "repo_owner": "gitea",
     "service": "github"
