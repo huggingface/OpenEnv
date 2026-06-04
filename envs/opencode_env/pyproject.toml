@@ -48,9 +48,8 @@ packages = [
     "opencode_env",
     "opencode_env.sandbox",
     "opencode_env.server",
-    "opencode_env.tests",
 ]
-package-dir = { "opencode_env" = ".", "opencode_env.sandbox" = "sandbox", "opencode_env.server" = "server", "opencode_env.tests" = "tests" }
+package-dir = { "opencode_env" = ".", "opencode_env.sandbox" = "sandbox", "opencode_env.server" = "server" }
 
 [tool.setuptools.package-data]
 opencode_env = ["**/*.md"]
