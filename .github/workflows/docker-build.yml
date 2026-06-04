@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - chore/update-docker-registry
     paths:
       - 'envs/**/Dockerfile'
       - 'envs/**/*.py'
