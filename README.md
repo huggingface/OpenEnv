@@ -240,18 +240,12 @@ uv pip install -e .
 uv run server --host 0.0.0.0 --port 8000
 ```
 
-**Benefits:**
-- ✅ **Client-side extensions**: Modify client classes locally without repo changes
-- ✅ **Better dependency management**: Clear separation between environments
-- ✅ **Flexible workflows**: Use pip, uv, or Docker for different scenarios
-- ✅ **CI/CD ready**: Automated dependency generation and validation
-
 See [`envs/README.md`](envs/README.md) for a complete guide on building environments.
 
 ### For Environment Users
 
 To use an environment:
-1. Install the client: `pip install git+https://huggingface.co/spaces/openenv/echo-env`
+1. Install the client: `pip install git+https://huggingface.co/spaces/openenv/echo_env`
 2. Import: `from echo_env import CallToolAction, EchoEnv`
 3. Use async (recommended) or sync API:
 
@@ -290,13 +284,6 @@ openenv push
 ```
 
 For detailed options: `openenv init --help` and `openenv push --help`.
-
-## Design Principles
-
-1. **Separation of Concerns**: Clear client-server boundaries
-2. **Type Safety**: Strongly-typed actions, observations, and state
-3. **Container Isolation**: Each environment runs in its own container
-4. **Simple APIs**: Minimal, intuitive interfaces
 
 ## Development
 
