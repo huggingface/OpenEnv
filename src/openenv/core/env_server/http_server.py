@@ -159,13 +159,13 @@ class HTTPEnvServer:
         Initialize HTTP server wrapper.
 
         Args:
-            env (`Callable`):
-                Factory callable that creates [`Environment`] instances. Will be called
+            env (`Callable[[], Environment]`):
+                Environment factory (callable) that creates new instances. Will be called
                 to create a new environment for each WebSocket session.
-            action_cls (`type`):
-                The [`Action`] subclass this environment expects.
-            observation_cls (`type`):
-                The [`Observation`] subclass this environment returns.
+            action_cls (`Type[Action]`):
+                The `Action` subclass this environment expects.
+            observation_cls (`Type[Observation]`):
+                The `Observation` subclass this environment returns.
             max_concurrent_envs (`int`, *optional*):
                 Maximum number of concurrent WebSocket sessions. Mutually exclusive with
                 `concurrency_config`.

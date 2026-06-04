@@ -109,9 +109,9 @@ class Environment(ABC, Generic[ActT, ObsT, StateT]):
     See [rfcs/004-rubrics.md](https://github.com/huggingface/OpenEnv/blob/main/rfcs/004-rubrics.md) for rubric design details.
 
     Args:
-        transform ([`Transform`], *optional*):
+        transform (`Transform`, *optional*):
             Optional transform to apply to observations.
-        rubric ([`Rubric`], *optional*):
+        rubric (`Rubric`, *optional*):
             Optional rubric for reward computation. When provided, the
             rubric's output can be used to set the observation's reward in step().
 
@@ -125,7 +125,7 @@ class Environment(ABC, Generic[ActT, ObsT, StateT]):
             Set this to ``True`` in your subclass if the environment uses proper
             session isolation (unique working dirs, no shared mutable state, and
             external resources that can handle concurrent access).
-        rubric ([`Rubric`], *optional*):
+        rubric (`Rubric`, *optional*):
             Optional rubric for computing rewards. Set in ``__init__`` and use in
             ``step()`` to compute observation rewards. Training infrastructure can
             access it for introspection:

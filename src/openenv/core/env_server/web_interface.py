@@ -121,7 +121,7 @@ def load_environment_metadata(
             Optional environment name for README file lookup.
 
     Returns:
-        [`EnvironmentMetadata`] with loaded information.
+        `EnvironmentMetadata` with loaded information.
     """
     import inspect
 

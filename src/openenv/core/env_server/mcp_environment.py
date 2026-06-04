@@ -406,9 +406,9 @@ class MCPEnvironment(Environment):
         the subclass's _step_impl() method.
 
         Args:
-            action ([`Action`]):
-                The action to execute. [`ListToolsAction`] returns available MCP tools,
-                [`CallToolAction`] invokes a specific MCP tool, and any other action
+            action (`Action`):
+                The action to execute. `ListToolsAction` returns available MCP tools,
+                `CallToolAction` invokes a specific MCP tool, and any other action
                 is delegated to _step_impl().
             timeout_s (`float`, *optional*):
                 Timeout in seconds for the action. Defaults to MCP_TOOL_CALL_TIMEOUT
@@ -417,8 +417,8 @@ class MCPEnvironment(Environment):
                 Additional arguments passed to handlers.
 
         Returns:
-            [`Observation`]: [`ListToolsObservation`] for [`ListToolsAction`],
-            [`CallToolObservation`] for [`CallToolAction`], or a subclass-defined
+            `Observation`: `ListToolsObservation` for `ListToolsAction`,
+            `CallToolObservation` for `CallToolAction`, or a subclass-defined
             Observation for other actions.
         """
         if isinstance(action, ListToolsAction):
