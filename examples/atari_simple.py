@@ -32,7 +32,7 @@ def main():
     """Run a simple Atari episode."""
     # Connect to the Atari environment server
     print("Connecting to Atari environment...")
-    env = AtariEnv.from_docker_image("ghcr.io/meta-pytorch/openenv-atari-env:latest")
+    env = AtariEnv.from_docker_image("ghcr.io/huggingface/openenv-atari-env:latest")
     
    
     try:

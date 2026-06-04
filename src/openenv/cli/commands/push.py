@@ -662,7 +662,7 @@ def push(
         $ openenv push --repo-id my-org/my-env
 
         # Push privately with custom base image
-        $ openenv push --private --base-image ghcr.io/meta-pytorch/openenv-base:latest
+        $ openenv push --private --base-image ghcr.io/huggingface/openenv-base:latest
 
         # Push with GPU hardware
         $ openenv push --hardware t4-medium
