@@ -17,7 +17,8 @@
     title: Rewards
   - local: guides/concepts
     title: Concepts
-  - sections:
+  - isExpanded: false
+    sections:
     - local: guides/customizing-web-ui
       title: Customizing the Web UI
     - local: guides/async-sync
@@ -30,8 +31,7 @@
       title: Connecting to Servers
     title: Advanced Guides
   title: Guides
-- isExpanded: false
-  sections:
+- sections:
   - local: tutorials/index
     title: Overview
   - local: tutorials/openenv-tutorial
@@ -53,7 +53,8 @@
   - local: tutorials/sft-warmup
     title: SFT Training with Environments
   title: Tutorials
-- sections:
+- isExpanded: false
+  sections:
   - local: environments
     title: Environments
   - local: environments/echo
@@ -125,7 +126,8 @@
   - local: environments/opencode
     title: OpenCode
   title: Environments
-- sections:
+- isExpanded: false
+  sections:
   - local: reference/index
     title: Overview
   - local: reference/core
@@ -133,7 +135,8 @@
   - local: reference/cli
     title: CLI
   title: API Reference
-- sections:
+- isExpanded: false
+  sections:
   - local: contributing
     title: Contributing To OpenEnv
   - local: getting_started/contributing-envs
