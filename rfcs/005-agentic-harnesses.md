@@ -835,7 +835,7 @@ Submit for review and approval.
 
 ## References
 
-- [GitHub Issue #385](https://github.com/meta-pytorch/OpenEnv/issues/385): Add support for agentic harnesses
+- [GitHub Issue #385](https://github.com/huggingface/OpenEnv/issues/385): Add support for agentic harnesses
 - RFC 001: OpenEnv Basic Abstractions
 - RFC 002: OpenEnv Framework Spec
 - RFC 003: MCP Support
