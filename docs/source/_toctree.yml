@@ -143,6 +143,4 @@
     title: Contributing To OpenEnv
   - local: getting_started/contributing-envs
     title: Contributing Environments
-  - local: release-notes
-    title: Release Notes
   title: Project
