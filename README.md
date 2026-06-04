@@ -2,16 +2,20 @@
 
 An e2e framework for creating, deploying and using isolated execution environments for agentic RL training, built using Gymnasium style simple APIs.
 
-[![PyPI](https://img.shields.io/pypi/v/openenv?color=blue)](https://pypi.org/project/openenv/)
-[![Discord](https://img.shields.io/badge/Discord-OpenEnv-7289da?style=flat&logo=discord&logoColor=white)](https://discord.gg/YsTYBh6PD9)
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/huggingface/OpenEnv/blob/main/examples/OpenEnv_Tutorial.ipynb)
-[![Docs](https://img.shields.io/badge/Docs-Explore-blue?logo=readthedocs&logoColor=white)](https://huggingface.co/docs/openenv)
+<p align="center">
+    <a href="https://pypi.org/project/openenv/"><img alt="PyPI" src="https://img.shields.io/pypi/v/openenv?color=blue"/></a>
+    <a href="https://github.com/huggingface/OpenEnv/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/License-BSD%203--Clause-blue.svg"/></a>
+    <a href="https://huggingface.co/docs/openenv"><img alt="Docs" src="https://img.shields.io/badge/Docs-Explore-blue?logo=readthedocs&logoColor=white"/></a>
+    <a href="https://github.com/huggingface/OpenEnv/releases"><img alt="GitHub release" src="https://img.shields.io/github/release/huggingface/OpenEnv.svg"/></a>
+    <a href="https://discord.gg/YsTYBh6PD9"><img alt="Discord" src="https://img.shields.io/badge/Discord-OpenEnv-7289da?style=flat&logo=discord&logoColor=white"/></a>
+    <a href="https://colab.research.google.com/github/huggingface/OpenEnv/blob/main/examples/OpenEnv_Tutorial.ipynb"><img alt="Open In Colab" src="https://colab.research.google.com/assets/colab-badge.svg"/></a>
+</p>
 
 ---
 
-**🚀 Featured Example:** Train LLMs to play BlackJack using [torchforge](https://github.com/meta-pytorch/torchforge) (PyTorch's agentic RL framework): [`examples/grpo_blackjack/`](examples/grpo_blackjack/)
+**Featured Example:** Train LLMs to play BlackJack using [torchforge](https://meta-pytorch.org/torchforge/) (PyTorch's agentic RL framework): [`examples/grpo_blackjack/`](examples/grpo_blackjack/)
 
-**🔥 Zero to Hero Tutorial:** End to end tutorial from our [GPU Mode](tutorial/README.md) lecture and other hackathons.
+**Zero to Hero Tutorial:** End to end tutorial from our [GPU Mode](tutorial/README.md) lecture and other hackathons.
 
 ## Quick Start
 
@@ -170,7 +174,9 @@ Base class for environment communication:
 #### 4. Container Providers
 Manage container deployment:
 - `LocalDockerProvider`: Run containers on local Docker daemon
-- `KubernetesProvider`: Deploy to K8s clusters (future)
+- `DockerSwarmProvider`: Deploy to Docker Swarm clusters
+- `KubernetesProvider`: Deploy to Kubernetes clusters
+- `UVProvider`, `DaytonaProvider`: Additional runtime providers
 
 #### 5. Models
 Type-safe data structures:
@@ -263,6 +269,10 @@ The OpenEnv CLI provides commands to manage environments:
 
 - **`openenv init <env_name>`** - Initialize a new environment from template
 - **`openenv push [--repo-id <repo>] [--private]`** - Deploy environment to Hugging Face Spaces
+- **`openenv serve`** - Serve an environment locally with optional auto-reload
+- **`openenv build`** - Build the Docker image for an environment
+- **`openenv fork <space-id>`** - Fork a Space from HF Hub to your account
+- **`openenv validate`** - Validate an environment configuration
 
 ### Quick Start
 
@@ -275,7 +285,7 @@ cd my_game_env
 openenv push
 ```
 
-For detailed options: `openenv init --help` and `openenv push --help`.
+For detailed options run any command with `--help`.
 
 ## Development
 
@@ -358,7 +368,9 @@ See the [Oumi example](https://github.com/oumi-ai/oumi/blob/main/notebooks/Oumi%
 
 ## Community Support & Acknowledgments
 
-If you would like to add your project or organization here, please open a pull request for maintainer review.
+OpenEnv is governed by a technical committee that coordinates project direction, major technical decisions, RFCs, and release planning through the public issue tracker, pull requests, and RFC process. Current committee members: Hugging Face, Unsloth, Reflection, and Meta PyTorch.
+
+The project is also supported by a broader community of organizations. If you would like to add your project or organization here, please open a pull request for maintainer review.
 
 Supporters include: [Meta-PyTorch](https://github.com/meta-pytorch), [Hugging Face](https://huggingface.co), [Scaler AI Labs](https://scalerailabs.com), [Patronus AI](https://patronus.ai), [Surge AI](https://surgehq.ai), [LastMile AI](https://www.lastmileai.dev), [Unsloth](https://unsloth.ai), Reflection, [vLLM](https://vllm.ai), [SkyRL](https://skyrl.readthedocs.io) (UC-Berkeley), [Lightning AI](https://lightning.ai), [Axolotl AI](https://github.com/axolotl-ai-cloud/axolotl), Stanford Scaling Intelligence Lab, Mithril, [OpenMined](https://openmined.org/), [Fleet AI](https://fleetai.com), [Halluminate](https://halluminate.ai/), [Turing](https://www.turing.com/), [Scale AI](https://scale.com/), [Scorecard](https://www.scorecard.io/)
 
