@@ -80,8 +80,8 @@ class SyncEnvClient(Generic[ActT, ObsT, StateT]):
         Initialize sync wrapper around an async client.
 
         Args:
-            async_client (`EnvClient`):
-                The async `EnvClient` to wrap.
+            async_client ([`~openenv.core.env_client.EnvClient`]):
+                The async client to wrap.
         """
         self._async = async_client
         self._loop: asyncio.AbstractEventLoop | None = None

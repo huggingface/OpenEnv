@@ -50,7 +50,7 @@ class Sequential(Rubric):
         """Initialize with rubrics to run in sequence.
 
         Args:
-            *rubrics (`Rubric`):
+            *rubrics ([`~openenv.core.rubrics.base.Rubric`]):
                 Rubrics to run in order. Stops and returns 0 if any child returns 0.
         """
         super().__init__()
@@ -278,7 +278,7 @@ class Gate(Rubric):
         """Initialize with a rubric and threshold.
 
         Args:
-            rubric (`Rubric`):
+            rubric ([`~openenv.core.rubrics.base.Rubric`]):
                 The rubric to gate.
             threshold (`float`, *optional*, defaults to `1.0`):
                 Minimum score required. If child returns less than this, Gate returns 0.
@@ -352,7 +352,7 @@ class WeightedSum(Rubric):
         """Initialize with rubrics and weights.
 
         Args:
-            rubrics (`list[Rubric]`):
+            rubrics (`list[`[`~openenv.core.rubrics.base.Rubric`]`]`):
                 List of rubrics to combine.
             weights (`list[float]`):
                 Weight for each rubric. Must sum to 1.0.
@@ -475,7 +475,7 @@ class RubricList(Rubric):
         """Initialize with optional list of rubrics.
 
         Args:
-            rubrics (`list[Rubric]`, *optional*):
+            rubrics (`list[`[`~openenv.core.rubrics.base.Rubric`]`]`, *optional*):
                 List of rubrics to start with.
         """
         super().__init__()
@@ -541,7 +541,7 @@ class RubricDict(Rubric):
         """Initialize with optional dictionary of rubrics.
 
         Args:
-            rubrics (`dict[str, Rubric]`, *optional*):
+            rubrics (`dict[str, `[`~openenv.core.rubrics.base.Rubric`]`]`, *optional*):
                 Dictionary mapping names to rubrics.
         """
         super().__init__()

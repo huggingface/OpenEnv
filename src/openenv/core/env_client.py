@@ -123,7 +123,7 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
             max_message_size_mb (`float`, *optional*, defaults to `100.0`):
                 Maximum WebSocket message size in megabytes. Default 100MB to handle large
                 observations (screenshots, DOM, etc.).
-            provider (`ContainerProvider` or `RuntimeProvider`, *optional*):
+            provider ([`~openenv.core.containers.runtime.providers.ContainerProvider`] or [`~openenv.core.containers.runtime.providers.RuntimeProvider`], *optional*):
                 Container/runtime provider for lifecycle management.
             mode (`str`, *optional*):
                 Communication mode: `'simulation'` for Gym-style API (default) or
