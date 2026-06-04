@@ -1,7 +1,5 @@
 # Packaging & Deploying
 
-**Part 4 of 5** in the OpenEnv Getting Started Series
-
 This guide walks you through creating a custom environment using the `OpenEnv` framework and the `openenv` CLI.
 
 The CLI handles scaffolding, builds, validation, and deployment so you can stay focused on environment logic.
@@ -53,7 +51,7 @@ A typical workflow looks like:
 5. Use the CLI (`openenv build`, `openenv validate`, `openenv push`) to package and share your work.
 
 > [!NOTE]
->     These integrations are handled automatically by the `openenv` CLI when you run `openenv init`.
+> These integrations are handled automatically by the `openenv` CLI when you run `openenv init`.
 
 ### Prerequisites
 

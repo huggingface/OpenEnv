@@ -90,4 +90,4 @@ Per-turn progress helps the agent explore, but the terminal outcome still domina
 - [Rubrics tutorial](../tutorials/rubrics.md) — full API walkthrough with composable examples.
 - [RFC 004](https://github.com/huggingface/OpenEnv/blob/main/rfcs/004-rubrics.md) — design rationale.
 - [RL Framework Integration](rl-integration.md) — consume the reward signal in a training loop.
-- [Environment Anatomy](environment-anatomy.md) — where the rubric plugs in.
+- [Concepts](concepts.md) — where the rubric plugs in.

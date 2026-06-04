@@ -178,9 +178,9 @@ def _is_hub_url(name: str) -> bool:
         True if it looks like a Hub URL
 
     Examples:
-        >>> _is_hub_url("meta-pytorch/echo_env")
+        >>> _is_hub_url("openenv/echo_env")
         True
-        >>> _is_hub_url("https://huggingface.co/meta-pytorch/echo_env")
+        >>> _is_hub_url("https://huggingface.co/openenv/echo_env")
         True
         >>> _is_hub_url("echo")
         False

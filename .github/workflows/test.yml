@@ -96,6 +96,20 @@ jobs:
         env:
           PYTHONPATH: src:envs
 
+  check-env-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check environment stubs are in sync with READMEs
+        run: python scripts/sync_env_docs.py --check
+
   lint:
     runs-on: ubuntu-latest
     steps:

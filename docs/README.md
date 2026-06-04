@@ -28,22 +28,28 @@ Then open the URL printed in the terminal (usually `http://localhost:5173/openen
 
 ## Adding an Environment to the Docs
 
-Every environment page is generated from the environment's own `README.md` using an `{include}` directive. There are three steps:
+Every environment page is generated from the environment's own `README.md`. There are three steps:
 
 ### 1. Write the environment README
 
 Your environment must have a `README.md` at `envs/<name>/README.md`.
 
-### 2. Create the doc page
+### 2. Generate the doc stub
 
-Create `docs/source/environments/<name>.md` with exactly this content:
+Run the sync script from the repo root to create or refresh the stub:
 
-````markdown
-```{include} ../../../envs/<name>/README.md
+```bash
+python scripts/sync_env_docs.py --fix
 ```
-````
+
+This inlines the README content into `docs/source/environments/<slug>.md`.
+To check if stubs are in sync without modifying files:
+
+```bash
+python scripts/sync_env_docs.py --check
+```
 
 ### 3. Add a card and toctree entry
 
 - Add an HTML card in `docs/source/environments.md`
-- Add a `local: environments/<name>` entry in `docs/source/_toctree.yml`
+- Add a `local: environments/<slug>` entry in `docs/source/_toctree.yml`

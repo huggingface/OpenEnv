@@ -35,8 +35,10 @@ def register_get_endpoints(app: FastAPI, configs: List[GetEndpointConfig]) -> No
     Register multiple GET endpoints from configuration.
 
     Args:
-        app: FastAPI application instance
-        configs: List of GET endpoint configurations
+        app ([`~fastapi.FastAPI`]):
+            FastAPI application instance.
+        configs (`List[GetEndpointConfig]`):
+            List of GET endpoint configurations.
     """
     for config in configs:
         # Capture handler in a closure to avoid non-serializable default parameter

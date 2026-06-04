@@ -35,20 +35,23 @@ class Sequential(Rubric):
     and returns 0. This implements hierarchical gating patterns where
     syntax checks run before execution checks.
 
-    Usage:
+    Examples:
+
+        ```python
         rubric = Sequential(
             Gate(Compiles()),
             Gate(PassesTests(), threshold=0.5),
             WeightedSum([PassesTests(), StyleRubric()], weights=[0.7, 0.3])
         )
+        ```
     """
 
     def __init__(self, *rubrics: Rubric):
         """Initialize with rubrics to run in sequence.
 
         Args:
-            *rubrics: Rubrics to run in order. Stops and returns 0 if any
-                child returns 0.
+            *rubrics (`Rubric`):
+                Rubrics to run in order. Stops and returns 0 if any child returns 0.
         """
         super().__init__()
         for i, rubric in enumerate(rubrics):
@@ -263,18 +266,22 @@ class Gate(Rubric):
 
     Useful for hard constraints like "must pass 50% of tests".
 
-    Usage:
+    Examples:
+
+        ```python
         rubric = Gate(PassesTests(), threshold=0.5)
         # Returns PassesTests() score if >= 0.5, else 0.0
+        ```
     """
 
     def __init__(self, rubric: Rubric, threshold: float = 1.0):
         """Initialize with a rubric and threshold.
 
         Args:
-            rubric: The rubric to gate.
-            threshold: Minimum score required. If child returns less than
-                this, Gate returns 0. Default is 1.0 (must pass completely).
+            rubric (`Rubric`):
+                The rubric to gate.
+            threshold (`float`, *optional*, defaults to `1.0`):
+                Minimum score required. If child returns less than this, Gate returns 0.
         """
         super().__init__()
         self.rubric = rubric
@@ -331,19 +338,24 @@ class WeightedSum(Rubric):
 
     Standard aggregation pattern for multi-criteria evaluation.
 
-    Usage:
+    Examples:
+
+        ```python
         rubric = WeightedSum(
             [PassesTests(), StyleRubric()],
             weights=[0.7, 0.3]
         )
+        ```
     """
 
     def __init__(self, rubrics: List[Rubric], weights: List[float]):
         """Initialize with rubrics and weights.
 
         Args:
-            rubrics: List of rubrics to combine.
-            weights: Weight for each rubric. Must sum to 1.0.
+            rubrics (`list[``Rubric``]`):
+                List of rubrics to combine.
+            weights (`list[float]`):
+                Weight for each rubric. Must sum to 1.0.
 
         Raises:
             ValueError: If lengths don't match or weights don't sum to 1.0.
@@ -446,7 +458,9 @@ class RubricList(Rubric):
     Analogous to nn.ModuleList. Does not define aggregation - use within
     a parent rubric that implements custom logic.
 
-    Usage:
+    Examples:
+
+        ```python
         class MultiGameRubric(Rubric):
             def __init__(self, games: List[str]):
                 super().__init__()
@@ -454,13 +468,15 @@ class RubricList(Rubric):
 
             def forward(self, action, obs) -> float:
                 return self.games[obs.game_index](action, obs)
+        ```
     """
 
     def __init__(self, rubrics: List[Rubric] = None):
         """Initialize with optional list of rubrics.
 
         Args:
-            rubrics: Optional list of rubrics to start with.
+            rubrics (`list[``Rubric``]`, *optional*):
+                List of rubrics to start with.
         """
         super().__init__()
         self._rubrics: List[Rubric] = []
@@ -502,7 +518,9 @@ class RubricDict(Rubric):
     Analogous to nn.ModuleDict. Enables keyed access for multi-task
     environments where different tasks require different rubrics.
 
-    Usage:
+    Examples:
+
+        ```python
         class AtariRubric(Rubric):
             def __init__(self):
                 super().__init__()
@@ -516,13 +534,15 @@ class RubricDict(Rubric):
                 return self.games[obs.game_id](action, obs)
 
         # Access: env.rubric.games["pong"]
+        ```
     """
 
     def __init__(self, rubrics: Dict[str, Rubric] = None):
         """Initialize with optional dictionary of rubrics.
 
         Args:
-            rubrics: Optional dictionary mapping names to rubrics.
+            rubrics (`dict[str, ``Rubric``]`, *optional*):
+                Dictionary mapping names to rubrics.
         """
         super().__init__()
         self._rubric_dict: Dict[str, Rubric] = {}

@@ -83,10 +83,11 @@ def _make_json_serializable(obj: Any) -> Any:
     Handles Pydantic models, dataclasses, and other common types.
 
     Args:
-        obj: The object to convert
+        obj (`Any`):
+            The object to convert.
 
     Returns:
-        A JSON-serializable representation of the object
+        `Any`: A JSON-serializable representation of the object.
     """
     if obj is None:
         return None
@@ -124,23 +125,26 @@ class HTTPEnvServer:
     - Action deserialization: Converts JSON dict to Action subclass
     - Observation serialization: Converts Observation subclass to JSON dict
 
-    Example:
-        >>> from core.env_server import HTTPEnvServer
-        >>> from envs.coding_env.server import CodeExecutionEnvironment
-        >>> from envs.coding_env.models import CodeAction, CodeObservation
-        >>>
-        >>> # Pass environment class (factory pattern)
-        >>> server = HTTPEnvServer(
-        ...     env=CodeExecutionEnvironment,
-        ...     action_cls=CodeAction,
-        ...     observation_cls=CodeObservation,
-        ...     max_concurrent_envs=4,
-        ... )
-        >>>
-        >>> # Register routes with FastAPI
-        >>> from fastapi import FastAPI
-        >>> app = FastAPI()
-        >>> server.register_routes(app)
+    Examples:
+
+        ```python
+        from core.env_server import HTTPEnvServer
+        from envs.coding_env.server import CodeExecutionEnvironment
+        from envs.coding_env.models import CodeAction, CodeObservation
+
+        # Pass environment class (factory pattern)
+        server = HTTPEnvServer(
+            env=CodeExecutionEnvironment,
+            action_cls=CodeAction,
+            observation_cls=CodeObservation,
+            max_concurrent_envs=4,
+        )
+
+        # Register routes with FastAPI
+        from fastapi import FastAPI
+        app = FastAPI()
+        server.register_routes(app)
+        ```
     """
 
     def __init__(
@@ -155,19 +159,24 @@ class HTTPEnvServer:
         Initialize HTTP server wrapper.
 
         Args:
-            env: Environment factory (callable) that creates new instances.
-                 Will be called to create a new environment for each WebSocket session.
-            action_cls: The Action subclass this environment expects
-            observation_cls: The Observation subclass this environment returns
-            max_concurrent_envs: Maximum number of concurrent WebSocket sessions.
-                                 Mutually exclusive with concurrency_config.
-            concurrency_config: Optional ConcurrencyConfig for advanced concurrency settings.
-                                Mutually exclusive with max_concurrent_envs.
+            env (`Callable[[], Environment]`):
+                Environment factory (callable) that creates new instances. Will be called
+                to create a new environment for each WebSocket session.
+            action_cls (`Type[Action]`):
+                The `Action` subclass this environment expects.
+            observation_cls (`Type[Observation]`):
+                The `Observation` subclass this environment returns.
+            max_concurrent_envs (`int`, *optional*):
+                Maximum number of concurrent WebSocket sessions. Mutually exclusive with
+                `concurrency_config`.
+            concurrency_config (`ConcurrencyConfig`, *optional*):
+                Advanced concurrency settings. Mutually exclusive with
+                `max_concurrent_envs`.
 
         Raises:
-            ValueError: If both max_concurrent_envs and concurrency_config are provided.
-            ConcurrencyConfigurationError: If max_concurrent_envs > 1 for an
-                environment that is not marked as SUPPORTS_CONCURRENT_SESSIONS.
+            `ValueError`: If both `max_concurrent_envs` and `concurrency_config` are provided.
+            `ConcurrencyConfigurationError`: If `max_concurrent_envs` > 1 for an environment
+                that is not marked as `SUPPORTS_CONCURRENT_SESSIONS`.
         """
         # Validate that env is callable
         if not callable(env):
@@ -236,8 +245,8 @@ class HTTPEnvServer:
         Validate that the environment supports the configured concurrency level.
 
         Raises:
-            ConcurrencyConfigurationError: If max_concurrent_envs > 1 for an
-                environment that is not marked as SUPPORTS_CONCURRENT_SESSIONS.
+            `ConcurrencyConfigurationError`: If `max_concurrent_envs` > 1 for an environment
+                that is not marked as `SUPPORTS_CONCURRENT_SESSIONS`.
         """
         import functools
 
@@ -277,7 +286,7 @@ class HTTPEnvServer:
         Get the current capacity status of the server.
 
         Returns:
-            ServerCapacityStatus with current session counts and availability.
+            [`ServerCapacityStatus`] with current session counts and availability.
         """
         return ServerCapacityStatus.from_counts(
             active=len(self._sessions),
@@ -319,11 +328,11 @@ class HTTPEnvServer:
         Create a new WebSocket session with its own environment instance.
 
         Returns:
-            Tuple of (session_id, environment)
+            `tuple[str, Environment]`: Tuple of (session_id, environment).
 
         Raises:
-            SessionCapacityError: If max concurrent sessions reached
-            EnvironmentFactoryError: If the factory fails to create an environment
+            `SessionCapacityError`: If max concurrent sessions reached.
+            `EnvironmentFactoryError`: If the factory fails to create an environment.
         """
         async with self._session_lock:
             if len(self._sessions) >= self._max_concurrent_envs:
@@ -401,7 +410,8 @@ class HTTPEnvServer:
         Destroy a WebSocket session and cleanup resources.
 
         Args:
-            session_id: The session ID to destroy
+            session_id (`str`):
+                The session ID to destroy.
         """
         async with self._session_lock:
             env = self._sessions.pop(session_id, None)
@@ -456,8 +466,10 @@ class HTTPEnvServer:
         Update session activity timestamp and optionally increment step count.
 
         Args:
-            session_id: The session ID to update
-            increment_step: If True, increment the step count
+            session_id (`str`):
+                The session ID to update.
+            increment_step (`bool`, *optional*, defaults to `False`):
+                If `True`, increment the step count.
         """
         if session_id in self._session_info:
             self._session_info[session_id].last_activity_at = time.time()
@@ -514,10 +526,11 @@ class HTTPEnvServer:
         Get information about a specific session.
 
         Args:
-            session_id: The session ID to query
+            session_id (`str`):
+                The session ID to query.
 
         Returns:
-            SessionInfo if the session exists, None otherwise
+            [`SessionInfo`] if the session exists, `None` otherwise.
         """
         return self._session_info.get(session_id)
 
@@ -565,14 +578,15 @@ class HTTPEnvServer:
         Register HTTP routes on a FastAPI application.
 
         Args:
-            app: FastAPI application instance
-            mode: Server mode - either SIMULATION or PRODUCTION (or string equivalents).
-                  In production mode, simulation control endpoints (/reset, /step, /state)
-                  are NOT registered. Only safe endpoints (/health, /schema, /metadata, /ws)
-                  are available. Defaults to SIMULATION for backwards compatibility.
+            app (`FastAPI`):
+                FastAPI application instance.
+            mode (`ServerMode` or `str`, *optional*, defaults to `ServerMode.SIMULATION`):
+                Server mode. In production mode, simulation control endpoints (/reset, /step,
+                /state) are NOT registered. Only safe endpoints (/health, /schema, /metadata,
+                /ws) are available.
 
         Raises:
-            ValueError: If mode is not a valid ServerMode or string equivalent.
+            `ValueError`: If `mode` is not a valid `ServerMode` or string equivalent.
         """
         # Convert string to ServerMode enum for backwards compatibility
         if isinstance(mode, str):
@@ -676,9 +690,8 @@ class HTTPEnvServer:
             Handle MCP JSON-RPC requests.
 
             Supports tools/list and tools/call methods in JSON-RPC 2.0 format,
-            plus OpenEnv session lifecycle methods for HTTP MCP:
-            - openenv/session/create
-            - openenv/session/close
+            plus OpenEnv session lifecycle methods for HTTP MCP (openenv/session/create,
+            openenv/session/close).
             """
             method = request.method
             request_id = request.id
@@ -968,10 +981,8 @@ class HTTPEnvServer:
             WebSocket endpoint for MCP JSON-RPC requests.
 
             Each WebSocket connection gets its own environment instance for MCP operations.
-
-            Message Protocol:
-            - Client sends: JSON-RPC 2.0 request (tools/list, tools/call)
-            - Server responds: JSON-RPC 2.0 response (result or error)
+            The client sends JSON-RPC 2.0 requests (tools/list, tools/call) and the server
+            responds with JSON-RPC 2.0 responses (result or error).
             """
             await websocket.accept()
 
@@ -1267,8 +1278,7 @@ all schema information needed to interact with the environment.
         # Register MCP endpoint for production mode (direct MCP access)
         @app.post("/mcp")
         async def mcp_endpoint(request_raw: Request) -> Dict[str, Any]:
-            """
-            MCP JSON-RPC endpoint for production mode.
+            """MCP JSON-RPC endpoint for production mode.
 
             Bypasses step() overhead and provides direct access to MCP tools.
             Supports tools/list and tools/call methods.
@@ -1301,11 +1311,9 @@ all schema information needed to interact with the environment.
             """
             WebSocket endpoint for persistent environment sessions.
 
-            Each WebSocket connection gets its own environment instance.
-
-            Message Protocol:
-            - Client sends: WSResetMessage | WSStepMessage | WSStateMessage | WSCloseMessage
-            - Server responds: WSObservationResponse | WSStateResponse | WSErrorResponse
+            Each WebSocket connection gets its own environment instance. The client sends
+            WSResetMessage, WSStepMessage, WSStateMessage, or WSCloseMessage; the server
+            responds with WSObservationResponse, WSStateResponse, or WSErrorResponse.
             """
             await websocket.accept()
 
@@ -1532,31 +1540,39 @@ def create_app(
     including README integration for better user experience.
 
     Args:
-        env: Environment factory (callable) that creates new instances
-        action_cls: The Action subclass this environment expects
-        observation_cls: The Observation subclass this environment returns
-        env_name: Optional environment name for README loading
-        max_concurrent_envs: Maximum concurrent WebSocket sessions.
-                             Mutually exclusive with concurrency_config.
-        concurrency_config: Optional ConcurrencyConfig for advanced concurrency settings.
-                            Mutually exclusive with max_concurrent_envs.
-        gradio_builder: Optional callable to build a custom Gradio UI at /web.
-            Signature: (web_manager, action_fields, metadata, is_chat_env, title,
-            quick_start_md) -> gr.Blocks. When None, the default Gradio app is used.
-            See docs/customizing-web-ui.md.
-        custom_tab_name: Label for the env-specific tab when ``gradio_builder``
-            is provided. Defaults to ``"Custom"``.
-        custom_tab_primary: When True, the env-specific tab is active first; the
-            auto-generated Playground becomes secondary. Use when the custom tab
-            is the real interaction surface for the env.
-        show_default_tab: When False, mount the env's ``gradio_builder`` output
-            alone (no auto-generated Playground, no tab chrome). Only meaningful
-            when ``gradio_builder`` is provided.
-        title_override: If set, used as the Gradio app title instead of the
-            default ``"OpenEnv Agentic Environment: {name}"``.
+        env (`Callable[[], Environment]`):
+            Environment factory (callable) that creates new instances.
+        action_cls (`Type[Action]`):
+            The Action subclass this environment expects.
+        observation_cls (`Type[Observation]`):
+            The Observation subclass this environment returns.
+        env_name (`str`, *optional*):
+            Environment name for README loading.
+        max_concurrent_envs (`int`, *optional*):
+            Maximum concurrent WebSocket sessions. Mutually exclusive with
+            `concurrency_config`.
+        concurrency_config (`ConcurrencyConfig`, *optional*):
+            Advanced concurrency settings. Mutually exclusive with
+            `max_concurrent_envs`.
+        gradio_builder (`Callable`, *optional*):
+            Callable to build a custom Gradio UI at /web. Signature:
+            `(web_manager, action_fields, metadata, is_chat_env, title, quick_start_md) -> gr.Blocks`.
+            When `None`, the default Gradio app is used.
+        custom_tab_name (`str`, *optional*, defaults to `"Custom"`):
+            Label for the env-specific tab when `gradio_builder` is provided.
+        custom_tab_primary (`bool`, *optional*, defaults to `False`):
+            When `True`, the env-specific tab is active first; the auto-generated
+            Playground becomes secondary.
+        show_default_tab (`bool`, *optional*, defaults to `True`):
+            When `False`, mount the env's `gradio_builder` output alone (no
+            auto-generated Playground, no tab chrome). Only meaningful when
+            `gradio_builder` is provided.
+        title_override (`str`, *optional*):
+            If set, used as the Gradio app title instead of the default
+            `"OpenEnv Agentic Environment: {name}"`.
 
     Returns:
-        FastAPI application instance with or without web interface and README integration
+        `FastAPI` application instance with or without web interface and README integration.
     """
     # Check if web interface should be enabled
     # This can be controlled via environment variable or build argument
@@ -1601,16 +1617,21 @@ def create_fastapi_app(
     Create a FastAPI application with comprehensive documentation.
 
     Args:
-        env: Environment factory (callable) that creates new instances
-        action_cls: The Action subclass this environment expects
-        observation_cls: The Observation subclass this environment returns
-        max_concurrent_envs: Maximum concurrent WebSocket sessions.
-                             Mutually exclusive with concurrency_config.
-        concurrency_config: Optional ConcurrencyConfig for advanced concurrency settings.
-                            Mutually exclusive with max_concurrent_envs.
+        env (`Callable[[], Environment]`):
+            Environment factory (callable) that creates new instances.
+        action_cls (`Type[Action]`):
+            The Action subclass this environment expects.
+        observation_cls (`Type[Observation]`):
+            The Observation subclass this environment returns.
+        max_concurrent_envs (`int`, *optional*):
+            Maximum concurrent WebSocket sessions. Mutually exclusive with
+            `concurrency_config`.
+        concurrency_config (`ConcurrencyConfig`, *optional*):
+            Advanced concurrency settings. Mutually exclusive with
+            `max_concurrent_envs`.
 
     Returns:
-        FastAPI application instance
+        `FastAPI` application instance.
     """
     try:
         from fastapi import FastAPI

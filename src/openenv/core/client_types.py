@@ -13,9 +13,12 @@ class StepResult(Generic[ObsT]):
     Represents the result of one environment step.
 
     Attributes:
-        observation: The environment's observation after the action.
-        reward: Scalar reward for this step (optional).
-        done: Whether the episode is finished.
+        observation:
+            The environment's observation after the action.
+        reward (`float`, *optional*):
+            Scalar reward for this step.
+        done (`bool`, *optional*, defaults to `False`):
+            Whether the episode is finished.
     """
 
     observation: ObsT

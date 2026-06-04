@@ -24,13 +24,16 @@ class Rubric(ABC):
     A Rubric computes a reward signal from an action and observation.
     Subclasses implement forward() to define the reward logic.
 
-    Usage:
+    Examples:
+
+        ```python
         class MyRubric(Rubric):
             def forward(self, action, observation) -> float:
                 return 1.0 if action.valid else 0.0
 
         rubric = MyRubric()
         reward = rubric(action, observation)
+        ```
 
     Child rubrics are auto-registered when assigned as attributes,
     enabling hierarchical composition and introspection.
@@ -62,7 +65,7 @@ class Rubric(ABC):
             observation: The resulting observation.
 
         Returns:
-            Reward value (typically 0.0 to 1.0).
+            `float`: Reward value (typically 0.0 to 1.0).
         """
         # Check if forward method is async BEFORE calling it
         if inspect.iscoroutinefunction(self.forward):
@@ -117,7 +120,7 @@ class Rubric(ABC):
             observation: The resulting observation.
 
         Returns:
-            Reward value (typically 0.0 to 1.0).
+            `float`: Reward value (typically 0.0 to 1.0).
         """
         raise NotImplementedError
 
@@ -127,7 +130,8 @@ class Rubric(ABC):
         """Register a hook called after forward().
 
         Args:
-            hook: Callable with signature (rubric, action, observation, result).
+            hook (`Callable`):
+                Callable with signature (rubric, action, observation, result).
         """
         self._forward_hooks.append(hook)
 
@@ -137,7 +141,8 @@ class Rubric(ABC):
         """Register a hook called before forward().
 
         Args:
-            hook: Callable with signature (rubric, action, observation).
+            hook (`Callable`):
+                Callable with signature (rubric, action, observation).
         """
         self._forward_pre_hooks.append(hook)
 
@@ -166,10 +171,11 @@ class Rubric(ABC):
         """Access a nested rubric by dot-separated path.
 
         Args:
-            path: Dot-separated path (e.g., "code.syntax").
+            path (`str`):
+                Dot-separated path (e.g., "code.syntax").
 
         Returns:
-            The rubric at the specified path.
+            `Rubric`: The rubric at the specified path.
 
         Raises:
             KeyError: If the path does not exist.
