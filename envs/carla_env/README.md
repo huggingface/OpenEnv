@@ -347,7 +347,7 @@ Default is **RenderOffScreen** (supports `capture_image`). For text-only evaluat
 
 ## Resources
 
-- **OpenEnv Framework**: [github.com/meta-pytorch/OpenEnv](https://github.com/meta-pytorch/OpenEnv)
+- **OpenEnv Framework**: [github.com/huggingface/OpenEnv](https://github.com/huggingface/OpenEnv)
 - **Original carla-env**: [sinatras/carla-env](https://github.com/SinatrasC/carla-env)
 - **Blog Post**: [Carla-Env: Giving Models Access to World Simulation](https://blog.sinatras.dev/Carla-Env)
 - **CARLA Simulator**: [carla.org](https://carla.org/)
@@ -371,10 +371,10 @@ Scenarios and navigation agents adapted from [sinatras/carla-env](https://github
   title = {CARLA Environment for OpenEnv},
   author = {OpenEnv Contributors},
   year = {2026},
-  url = {https://github.com/meta-pytorch/OpenEnv}
+  url = {https://github.com/huggingface/OpenEnv}
 }
 ```
 
 ## License
 
-BSD-3-Clause License (see [LICENSE](https://github.com/meta-pytorch/OpenEnv/blob/main/LICENSE))
+BSD-3-Clause License (see [LICENSE](https://github.com/huggingface/OpenEnv/blob/main/LICENSE))
