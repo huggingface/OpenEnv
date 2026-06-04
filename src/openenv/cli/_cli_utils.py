@@ -20,14 +20,16 @@ def validate_env_structure(env_dir: Path, strict: bool = False) -> List[str]:
     Validate that the directory follows OpenEnv environment structure.
 
     Args:
-        env_dir: Path to environment directory
-        strict: If True, enforce all optional requirements
+        env_dir (`Path`):
+            Path to the environment directory.
+        strict (`bool`, *optional*, defaults to `False`):
+            If `True`, enforce all optional requirements.
 
     Returns:
-        List of validation warnings (empty if all checks pass)
+        `list` of validation warnings (empty if all checks pass).
 
     Raises:
-        FileNotFoundError: If required files are missing
+        `FileNotFoundError`: If required files are missing.
     """
     warnings = []
 

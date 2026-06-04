@@ -86,10 +86,10 @@ Focus on experiments, use OpenEnvironments, and build agents that go beyond Cart
 </tr>
 </table>
 
-!!! tip "Pro Tip"
-    This notebook is designed to run top-to-bottom in Google Colab with zero setup!
-
-    ⏱️ **Time**: ~5 minutes | 📊 **Difficulty**: Beginner-friendly | 🎯 **Outcome**: Production-ready RL knowledge
+> [!TIP]
+> This notebook is designed to run top-to-bottom in Google Colab with zero setup!
+>
+> ⏱️ **Time**: ~5 minutes | 📊 **Difficulty**: Beginner-friendly | 🎯 **Outcome**: Production-ready RL knowledge
 
 ---
 
@@ -124,7 +124,6 @@ Focus on experiments, use OpenEnvironments, and build agents that go beyond Cart
 
 ---
 
-(part-1-rl-in-60-seconds)=
 ## Part 1: RL in 60 Seconds ⏱️
 
 **Reinforcement Learning is simpler than you think.**
@@ -202,7 +201,6 @@ print("="*62 + "\n")
 
 ---
 
-(part-2-the-problem-with-traditional-rl)=
 ## Part 2: The Problem with Traditional RL 😤
 
 ### 🤔 Why Can't We Just Use OpenAI Gym?
@@ -259,20 +257,19 @@ Think of it like this: You don't run your database in the same process as your w
 └────────────────────────────────────────────────────────────┘
 ```
 
-!!! info "Key Insight"
-    You never see HTTP details - just clean Python methods!
-
-    ```python
-    env.reset()    # Under the hood: HTTP POST to /reset
-    env.step(...)  # Under the hood: HTTP POST to /step
-    env.state()    # Under the hood: HTTP GET to /state
-    ```
-
-    The magic? OpenEnv handles all the plumbing. You focus on RL! ✨
+> [!NOTE]
+> You never see HTTP details - just clean Python methods!
+>
+> ```python
+> env.reset()    # Under the hood: HTTP POST to /reset
+> env.step(...)  # Under the hood: HTTP POST to /step
+> env.state()    # Under the hood: HTTP GET to /state
+> ```
+>
+> The magic? OpenEnv handles all the plumbing. You focus on RL! ✨
 
 ---
 
-(part-3-setup)=
 ## Part 3: Setup 🛠️
 
 **Running in Colab?** This cell will clone OpenEnv and install dependencies automatically.
@@ -321,7 +318,6 @@ print("💡 Tip: Run cells top-to-bottom for the best experience.\n")
 
 ---
 
-(part-4-the-openenv-pattern)=
 ## Part 4: The OpenEnv Pattern 🏗️
 
 ### Every OpenEnv Environment Has 3 Components:
@@ -434,7 +430,6 @@ print("🎯 You focus on RL, OpenEnv handles the infrastructure.\n")
 
 ---
 
-(part-5-example-integration---openspiel)=
 ## Part 5: Example Integration - OpenSpiel 🎮
 
 ### What is OpenSpiel?
@@ -637,7 +632,6 @@ That's it! The base class handles all HTTP communication.
 
 ---
 
-(part-6-using-real-openspiel)=
 ## Part 6: Using Real OpenSpiel 🎮
 
 <div style="text-align: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 15px; margin: 30px 0;">
@@ -690,14 +684,14 @@ This is a REAL environment running in production at companies!
 - `+1` if caught 🎉
 - `0` if missed 😢
 
-!!! note "Why Catch?"
-    - Simple rules (easy to understand)
-    - Fast episodes (~5 steps)
-    - Clear success/failure
-    - Part of OpenSpiel's 70+ games!
-
-    **💡 The Big Idea:**
-    Instead of building this from scratch, we'll USE OpenEnv's existing OpenSpiel integration. Same interface, but production-ready!
+> [!NOTE]
+> - Simple rules (easy to understand)
+> - Fast episodes (~5 steps)
+> - Clear success/failure
+> - Part of OpenSpiel's 70+ games!
+>
+> **💡 The Big Idea:**
+> Instead of building this from scratch, we'll USE OpenEnv's existing OpenSpiel integration. Same interface, but production-ready!
 
 ```python
 from envs.openspiel_env import OpenSpielEnv
@@ -763,7 +757,6 @@ print("   • Works via HTTP (we'll see that next!)\n")
 
 ---
 
-(part-7-four-policies)=
 ## Part 7: Four Policies 🤖
 
 Let's test 4 different AI strategies:
@@ -890,7 +883,6 @@ print("   • Work with ANY OpenSpiel game that exposes these!\n")
 
 ---
 
-(part-8-policy-competition)=
 ## Part 8: Policy Competition! 🏆
 
 Let's run **50 episodes** for each policy against **REAL OpenSpiel** and see who wins!
@@ -955,7 +947,6 @@ evaluate_policies(client, num_episodes=50)
 
 ---
 
-(part-9-switching-to-other-games)=
 ## Part 9: Switching to Other Games 🎮
 
 ### What We Just Used: Real OpenSpiel! 🎉
@@ -1024,7 +1015,6 @@ result = client.reset()  # Now playing Tic-Tac-Toe!
 
 ---
 
-(part-10-create-your-own-integration)=
 ## Part 10: Create Your Own Integration 🛠️
 
 ### The 5-Step Pattern
@@ -1212,19 +1202,17 @@ OpenEnv includes 3 complete examples:
 | **Reproducibility** | ❌ "Works on my machine" | ✅ Same everywhere | 🏆 OpenEnv |
 | **Community** | ✅ Large ecosystem | 🟡 Growing | 🤝 Both! |
 
-!!! success "The Bottom Line"
-    OpenEnv brings **production engineering** to RL:
-
-    - Same environments work locally and in production
-    - Type safety catches bugs early
-    - Docker isolation prevents conflicts
-    - HTTP API works with any language
-
-    **It's RL for 2024 and beyond.**
+> [!TIP]
+> OpenEnv brings **production engineering** to RL:
+>
+> - Same environments work locally and in production
+> - Type safety catches bugs early
+> - Docker isolation prevents conflicts
+> - HTTP API works with any language
+>
+> **It's RL for 2024 and beyond.**
 
 ---
-
-(resources)=
 ## 📚 Resources
 
 ### 🔗 Essential Links

@@ -49,6 +49,5 @@ class EchoEnvironment(Environment[EchoAction, EchoObservation, EchoState]):
 
 ## Next Steps
 
-- [Environment Anatomy](environment-anatomy.md) - Deep dive into structure
-- [Deployment](deployment.md) - Deploy to Docker and HF Spaces
-- [Full Guide](../getting_started/environment-builder.md) - Complete documentation
+- [Concepts](concepts.md) - Deep dive into environment structure
+- [Packaging & Deploying](../getting_started/environment-builder.md) - Deploy to Docker and HF Spaces

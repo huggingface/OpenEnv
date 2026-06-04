@@ -22,7 +22,7 @@ Example:
     >>> env = AutoEnv.from_env("coding-env")
     >>>
     >>> # From HuggingFace Hub
-    >>> env = AutoEnv.from_env("meta-pytorch/coding-env")
+    >>> env = AutoEnv.from_env("openenv/coding_env")
     >>>
     >>> # With configuration
     >>> env = AutoEnv.from_env("coding", env_vars={"DEBUG": "1"})
@@ -136,7 +136,7 @@ class AutoEnv:
         >>> env = AutoEnv.from_env("coding-env")
         >>>
         >>> # From HuggingFace Hub
-        >>> env = AutoEnv.from_env("meta-pytorch/coding-env")
+        >>> env = AutoEnv.from_env("openenv/coding_env")
         >>>
         >>> # List available environments
         >>> AutoEnv.list_environments()
@@ -512,8 +512,8 @@ class AutoEnv:
             name: Environment name or HuggingFace Hub repo ID
                   Examples:
                   - "coding" / "coding-env" / "coding_env"
-                  - "meta-pytorch/coding-env" (Hub repo ID)
-                  - "https://huggingface.co/meta-pytorch/coding-env" (Hub URL)
+                  - "openenv/coding_env" (Hub repo ID)
+                  - "https://huggingface.co/openenv/coding_env" (Hub URL)
             base_url: Optional base URL for HTTP connection
             docker_image: Optional Docker image name (overrides default)
             container_provider: Optional container provider
@@ -543,7 +543,7 @@ class AutoEnv:
             >>> env = AutoEnv.from_env("coding-env")
             >>>
             >>> # From HuggingFace Hub
-            >>> env = AutoEnv.from_env("meta-pytorch/coding-env")
+            >>> env = AutoEnv.from_env("openenv/coding_env")
             >>>
             >>> # With custom Docker image
             >>> env = AutoEnv.from_env("coding", docker_image="my-coding-env:v2")
@@ -792,7 +792,7 @@ class AutoEnv:
 
         Examples:
             >>> env = AutoEnv.from_hub("coding-env")
-            >>> env = AutoEnv.from_hub("meta-pytorch/coding-env")
+            >>> env = AutoEnv.from_hub("openenv/coding_env")
         """
         return cls.from_env(
             name=name,

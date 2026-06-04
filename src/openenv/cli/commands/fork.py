@@ -136,11 +136,14 @@ def fork(
     and secrets, and request hardware/storage/sleep time at creation time.
 
     Examples:
+
+        ```bash
         $ openenv fork owner/source-space
         $ openenv fork owner/source-space --private
         $ openenv fork owner/source-space --repo-id myuser/my-fork
         $ openenv fork owner/source-space --set-env MODEL_ID=user/model --set-secret HF_TOKEN=hf_xxx
         $ openenv fork owner/source-space --hardware t4-medium
+        ```
     """
     if "/" not in source_space or source_space.count("/") != 1:
         raise typer.BadParameter(

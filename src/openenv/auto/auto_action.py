@@ -23,7 +23,7 @@ Example:
     >>> action = CodeAction(code="print('Hello!')")
     >>>
     >>> # From HuggingFace Hub
-    >>> CodeAction = AutoAction.from_env("meta-pytorch/coding-env")
+    >>> CodeAction = AutoAction.from_env("openenv/coding_env")
     >>>
     >>> # Use with AutoEnv
     >>> env = AutoEnv.from_env("coding-env")
@@ -58,7 +58,7 @@ class AutoAction:
         >>> action = CodeAction(code="print('test')")
         >>>
         >>> # From HuggingFace Hub
-        >>> CodeAction = AutoAction.from_env("meta-pytorch/coding-env")
+        >>> CodeAction = AutoAction.from_env("openenv/coding_env")
         >>> action = CodeAction(code="print('test')")
         >>>
         >>> # Use with AutoEnv for a complete workflow
@@ -94,8 +94,8 @@ class AutoAction:
             name: Environment name or HuggingFace Hub repo ID
                   Examples:
                   - "coding" / "coding-env" / "coding_env"
-                  - "meta-pytorch/coding-env" (Hub repo ID)
-                  - "https://huggingface.co/meta-pytorch/coding-env" (Hub URL)
+                  - "openenv/coding_env" (Hub repo ID)
+                  - "https://huggingface.co/openenv/coding_env" (Hub URL)
             skip_install: If True, skip package installation and return
                 GenericAction class instead. Use this when working with
                 GenericEnvClient to avoid installing remote packages.
@@ -114,7 +114,7 @@ class AutoAction:
             >>> action = CodeAction(code="print('Hello!')")
             >>>
             >>> # From HuggingFace Hub
-            >>> CodeAction = AutoAction.from_env("meta-pytorch/coding-env")
+            >>> CodeAction = AutoAction.from_env("openenv/coding_env")
             >>> action = CodeAction(code="print('Hello!')")
             >>>
             >>> # Skip installation, use GenericAction (for GenericEnvClient)

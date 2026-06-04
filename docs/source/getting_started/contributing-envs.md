@@ -1,7 +1,5 @@
 # Contributing to Hugging Face
 
-**Part 5 of 5** in the OpenEnv Getting Started Series
-
 OpenEnv environments are designed to be shared. The `openenv` CLI provides first-class
 commands for publishing, forking, and contributing to environments hosted as
 [Hugging Face Spaces](https://huggingface.co/spaces).
@@ -111,13 +109,15 @@ Edit the environment files as needed.
 > [!TIP]
 > You can test your changes locally before submitting:
 >
->     # Run the server locally
->     cd space-name
->     uvicorn server.app:app --host 0.0.0.0 --port 8000
+> ```bash
+> # Run the server locally
+> cd space-name
+> uvicorn server.app:app --host 0.0.0.0 --port 8000
 >
->     # Or build and run in Docker
->     openenv build
->     openenv validate --verbose
+> # Or build and run in Docker
+> openenv build
+> openenv validate --verbose
+> ```
 
 #### 3.3 Push your changes as a Pull Request
 

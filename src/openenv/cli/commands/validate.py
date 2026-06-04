@@ -80,6 +80,8 @@ def validate(
     versioned runtime API contract and returns a criteria-based JSON report.
 
     Examples:
+
+        ```bash
         # Validate current directory (recommended)
         $ cd my_env
         $ openenv validate
@@ -93,6 +95,7 @@ def validate(
 
         # Validate specific environment
         $ openenv validate envs/echo_env
+        ```
     """
     runtime_target = url
     if (
