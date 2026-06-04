@@ -10,17 +10,20 @@ Synchronous wrapper for async EnvClient.
 This module provides a SyncEnvClient that wraps an async EnvClient,
 allowing synchronous usage while the underlying client uses async I/O.
 
-Example:
-    >>> from openenv.core import GenericEnvClient
-    >>>
-    >>> # Create async client and get sync wrapper
-    >>> async_client = GenericEnvClient(base_url="http://localhost:8000")
-    >>> sync_client = async_client.sync()
-    >>>
-    >>> # Use synchronous API
-    >>> with sync_client:
-    ...     result = sync_client.reset()
-    ...     result = sync_client.step({"code": "print('hello')"})
+Examples:
+
+    ```python
+    from openenv.core import GenericEnvClient
+
+    # Create async client and get sync wrapper
+    async_client = GenericEnvClient(base_url="http://localhost:8000")
+    sync_client = async_client.sync()
+
+    # Use synchronous API
+    with sync_client:
+        result = sync_client.reset()
+        result = sync_client.step({"code": "print('hello')"})
+    ```
 """
 
 from __future__ import annotations
@@ -51,20 +54,22 @@ class SyncEnvClient(Generic[ActT, ObsT, StateT]):
     The wrapper executes async operations on a dedicated background event loop
     so connection state remains bound to a single loop.
 
-    Cleanup note:
-        For guaranteed resource cleanup, use `with SyncEnvClient(...)` or call
-        `close()` explicitly. `__del__` is best-effort only and may not run
-        reliably (for example, during interpreter shutdown).
+    For guaranteed resource cleanup, use `with SyncEnvClient(...)` or call
+    `close()` explicitly. `__del__` is best-effort only and may not run
+    reliably (for example, during interpreter shutdown).
 
-    Example:
-        >>> # From an async client
-        >>> async_client = GenericEnvClient(base_url="http://localhost:8000")
-        >>> sync_client = async_client.sync()
-        >>>
-        >>> # Use synchronous context manager
-        >>> with sync_client:
-        ...     result = sync_client.reset()
-        ...     result = sync_client.step({"action": "test"})
+    Examples:
+
+        ```python
+        # From an async client
+        async_client = GenericEnvClient(base_url="http://localhost:8000")
+        sync_client = async_client.sync()
+
+        # Use synchronous context manager
+        with sync_client:
+            result = sync_client.reset()
+            result = sync_client.step({"action": "test"})
+        ```
 
     Attributes:
         _async: The wrapped async EnvClient instance
@@ -75,7 +80,8 @@ class SyncEnvClient(Generic[ActT, ObsT, StateT]):
         Initialize sync wrapper around an async client.
 
         Args:
-            async_client: The async EnvClient to wrap
+            async_client (`EnvClient`):
+                The async client to wrap.
         """
         self._async = async_client
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -170,7 +176,8 @@ class SyncEnvClient(Generic[ActT, ObsT, StateT]):
         Reset the environment.
 
         Args:
-            **kwargs: Optional parameters passed to the environment's reset method
+            **kwargs:
+                Optional parameters passed to the environment's reset method.
 
         Returns:
             StepResult containing initial observation
@@ -182,8 +189,10 @@ class SyncEnvClient(Generic[ActT, ObsT, StateT]):
         Execute an action in the environment.
 
         Args:
-            action: The action to execute
-            **kwargs: Optional parameters
+            action:
+                The action to execute.
+            **kwargs:
+                Optional parameters.
 
         Returns:
             StepResult containing observation, reward, and done status

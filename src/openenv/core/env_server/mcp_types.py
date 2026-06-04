@@ -231,9 +231,8 @@ class ListToolsAction(Action):
     Request list of available tools from the environment.
 
     This action triggers MCP's tools/list operation and returns
-    all available tools with their schemas.
-
-    Note: Does NOT require reset() to be called first.
+    all available tools with their schemas. Does NOT require reset()
+    to be called first.
     """
 
     type: Literal["list_tools"] = Field(

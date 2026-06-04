@@ -513,7 +513,8 @@ def validate_multi_mode_deployment(env_path: Path) -> tuple[bool, list[str]]:
     5. Required dependencies are present
 
     Returns:
-        Tuple of (is_valid, list of issues found)
+        `tuple` of `(is_valid, issues)` where `is_valid` is a `bool` and `issues` is a
+        `list` of issue strings found during validation.
     """
     issues = []
 
@@ -581,7 +582,7 @@ def get_deployment_modes(env_path: Path) -> dict[str, bool]:
     Check which deployment modes are supported by the environment.
 
     Returns:
-        Dictionary with deployment mode names and whether they're supported
+        `dict` mapping deployment mode names to whether they are supported.
     """
     modes = {
         "docker": False,
@@ -610,7 +611,7 @@ def format_validation_report(env_name: str, is_valid: bool, issues: list[str]) -
     Format a validation report for display.
 
     Returns:
-        Formatted report string
+        `str`: formatted validation report.
     """
     if is_valid:
         return f"[OK] {env_name}: Ready for multi-mode deployment"

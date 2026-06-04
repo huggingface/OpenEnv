@@ -83,19 +83,28 @@ class UVProvider(RuntimeProvider):
     RuntimeProvider implementation backed by ``uv run``.
 
     Args:
-        project_path: Local path to a uv project (passed to ``uv run --project``)
-        app: ASGI application path for uvicorn (defaults to ``server.app:app``)
-        host: Host interface to bind to (defaults to ``0.0.0.0``)
-        reload: Whether to enable uvicorn's reload mode
-        env_vars: Environment variables to pass through to the spawned process
-        context_timeout_s: How long to wait for the environment to become ready
+        project_path (`str`):
+            Local path to a uv project (passed to `uv run --project`).
+        app (`str`, *optional*, defaults to `"server.app:app"`):
+            ASGI application path for uvicorn.
+        host (`str`, *optional*, defaults to `"0.0.0.0"`):
+            Host interface to bind to.
+        reload (`bool`, *optional*, defaults to `False`):
+            Whether to enable uvicorn's reload mode.
+        env_vars (`dict`, *optional*):
+            Environment variables to pass through to the spawned process.
+        context_timeout_s (`float`, *optional*, defaults to `60.0`):
+            How long to wait for the environment to become ready.
 
-    Example:
-        >>> provider = UVProvider(project_path="/path/to/env")
-        >>> base_url = provider.start()
-        >>> print(base_url)  # http://localhost:8000
-        >>> # Use the environment via base_url
-        >>> provider.stop()
+    Examples:
+
+        ```python
+        provider = UVProvider(project_path="/path/to/env")
+        base_url = provider.start()
+        print(base_url)  # http://localhost:8000
+        # Use the environment via base_url
+        provider.stop()
+        ```
     """
 
     def __init__(
@@ -130,15 +139,18 @@ class UVProvider(RuntimeProvider):
         Start the environment via `uv run`.
 
         Args:
-            port: The port to bind the environment to
-            env_vars: Environment variables to pass to the environment
-            workers: The number of workers to use
+            port (`int`, *optional*):
+                The port to bind the environment to.
+            env_vars (`dict`, *optional*):
+                Environment variables to pass to the environment.
+            workers (`int`, *optional*, defaults to `1`):
+                The number of workers to use.
 
         Returns:
-            The base URL of the environment
+            `str`: Base URL of the environment.
 
         Raises:
-            RuntimeError: If the environment is already running
+            RuntimeError: If the environment is already running.
         """
         if self._process is not None and self._process.poll() is None:
             raise RuntimeError("UVProvider is already running")
@@ -175,11 +187,12 @@ class UVProvider(RuntimeProvider):
         Wait for the environment to become ready.
 
         Args:
-            timeout_s: The timeout to wait for the environment to become ready
+            timeout_s (`float`, *optional*, defaults to `60.0`):
+                Maximum time in seconds to wait for the environment to become ready.
 
         Raises:
-            RuntimeError: If the environment is not running
-            TimeoutError: If the environment does not become ready within the timeout
+            RuntimeError: If the environment is not running.
+            TimeoutError: If the environment does not become ready within the timeout.
         """
         if self._process and self._process.poll() is not None:
             code = self._process.returncode
@@ -190,9 +203,6 @@ class UVProvider(RuntimeProvider):
     def stop(self) -> None:
         """
         Stop the environment.
-
-        Raises:
-            RuntimeError: If the environment is not running
         """
         if self._process is None:
             return
@@ -214,10 +224,10 @@ class UVProvider(RuntimeProvider):
         The base URL of the environment.
 
         Returns:
-            The base URL of the environment
+            `str`: Base URL of the running environment.
 
         Raises:
-            RuntimeError: If the environment is not running
+            RuntimeError: If the environment has not been started.
         """
         if self._base_url is None:
             raise RuntimeError("UVProvider has not been started")
