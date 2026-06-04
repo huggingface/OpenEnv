@@ -89,7 +89,7 @@ RUN pip install --upgrade pip \
     && pip install --no-cache-dir cffi cryptography
 
 # Install OpenEnv core from GitHub
-RUN pip install --no-cache-dir git+https://github.com/meta-pytorch/OpenEnv.git
+RUN pip install --no-cache-dir git+https://github.com/huggingface/OpenEnv.git
 
 # Copy and install environment dependencies
 COPY server/requirements.txt /tmp/requirements.txt

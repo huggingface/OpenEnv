@@ -236,6 +236,6 @@ Contributions are welcome! Please see the main OpenEnv repository for contributi
 
 ## Links
 
-- **Homepage**: https://github.com/meta-pytorch/OpenEnv
-- **Documentation**: https://github.com/meta-pytorch/OpenEnv/blob/main/README.md
-- **Bug Tracker**: https://github.com/meta-pytorch/OpenEnv/issues
+- **Homepage**: https://github.com/huggingface/OpenEnv
+- **Documentation**: https://github.com/huggingface/OpenEnv/blob/main/README.md
+- **Bug Tracker**: https://github.com/huggingface/OpenEnv/issues
