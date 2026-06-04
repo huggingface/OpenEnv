@@ -1,7 +1,3 @@
----
-orphan: true
----
-
 # Contributing to OpenEnv
 
 We welcome contributions from the community! OpenEnv is an open-source project and we're excited to have you join us.
