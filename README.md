@@ -72,14 +72,6 @@ with EchoEnv(base_url="https://openenv-echo-env.hf.space").sync() as client:
 
 For a detailed quick start, check out the [docs page](https://huggingface.co/docs/openenv/getting-started).
 
-## OpenEnv on partner platforms:
-
-- [Lightning AI Studio](https://lightning.ai/environments?section=featured)
-- [TRL example](https://huggingface.co/docs/trl/openenv)
-- [Unsloth Google Colab](https://colab.research.google.com/github/unslothai/notebooks/blob/main/nb/OpenEnv_gpt_oss_(20B)_Reinforcement_Learning_2048_Game.ipynb)
-- [ART example](https://art.openpipe.ai/integrations/openenv-integration)
-- [Oumi example](https://github.com/oumi-ai/oumi/blob/main/notebooks/Oumi%20-%20OpenEnv%20GRPO%20with%20trl.ipynb)
-
 ## Overview
 
 OpenEnv provides a standard for interacting with agentic execution environments via simple Gymnasium style APIs - `step()`, `reset()`, `state()`. Users of agentic execution environments can interact with the environment during RL training loops using these simple APIs.
@@ -88,7 +80,7 @@ In addition to making it easier for researchers and RL framework writers, we als
 
 The OpenEnv CLI (`openenv`) provides commands to initialize new environments and deploy them to Hugging Face Spaces.
 
-OpenEnv is openly governed by a technical committee that includes Hugging Face, Unsloth, Reflection, and Meta PyTorch. The committee coordinates project direction, major technical decisions, RFCs, and release planning through the public issue tracker, pull requests, and RFC process.
+OpenEnv is openly governed by a technical committee that includes Hugging Face, Unsloth, Reflection, and Meta PyTorch.
 
 > ⚠️ **Early Development Warning** OpenEnv is currently in an experimental
 > stage. You should expect bugs, incomplete features, and APIs that may change
@@ -327,23 +319,15 @@ PYTHONPATH=src:envs uv run pytest tests/envs/test_python_codeact_rewards.py -v
 
 Tests will be automatically skipped if their required dependencies aren't installed.
 
-## Requirements
+## Integrations
 
-- Python 3.10+
-- Docker Desktop or Docker Engine
-- FastAPI >= 0.104.0
-- Uvicorn >= 0.24.0
-- Requests >= 2.25.0
-- Environment-specific dependencies (e.g., smolagents for coding_env)
-
-## Supported RL Tools
-The goal of this project is to support a broad set of open and closed tools to help standardize the agentic RL community. If you have a project that supports OpenEnv environments, please put up a PR to add your tool name along with a link to your documentation.
-
-### torchforge
-See GRPO BlackJack training example: [`examples/grpo_blackjack/`](examples/grpo_blackjack/)
+OpenEnv works with a growing ecosystem of RL frameworks and platforms. If your project supports OpenEnv, open a PR to add it here.
 
 ### TRL
 See the [TRL example](https://huggingface.co/docs/trl/openenv) on how to integrate OpenEnv environments with GRPO training.
+
+### torchforge
+See GRPO BlackJack training example: [`examples/grpo_blackjack/`](examples/grpo_blackjack/)
 
 ### Unsloth
 See the 2048 game example based on gpt-oss: [Colab notebook](https://colab.research.google.com/github/unslothai/notebooks/blob/main/nb/OpenEnv_gpt_oss_(20B)_Reinforcement_Learning_2048_Game.ipynb)
@@ -356,6 +340,9 @@ See the [ART example](https://art.openpipe.ai/integrations/openenv-integration) 
 
 ### Oumi
 See the [Oumi example](https://github.com/oumi-ai/oumi/blob/main/notebooks/Oumi%20-%20OpenEnv%20GRPO%20with%20trl.ipynb) on how OpenEnv environments can be used to train models with Oumi.
+
+### Lightning AI
+[Lightning AI templates](https://lightning.ai/templates?section=featured&query=openenv)
 
 ## Example Environments
 
@@ -370,9 +357,10 @@ See the [Oumi example](https://github.com/oumi-ai/oumi/blob/main/notebooks/Oumi%
 > Browse the full catalog of community environments at [huggingface.co/docs/openenv/environments](https://huggingface.co/docs/openenv/environments).
 
 ## Community Support & Acknowledgments
-This is an open and community-centric project, governed in public by a technical committee that includes Hugging Face, Unsloth, Reflection, and Meta PyTorch. If you would like to add your project or organization here, please open a pull request for maintainer review.
 
-Supporters include: Meta-PyTorch, Hugging Face, [Scaler AI Labs](https://scalerailabs.com), [Patronus AI](https://patronus.ai), [Surge AI](https://surgehq.ai), [LastMile AI](https://www.lastmileai.dev), Unsloth, Reflection, vLLM, SkyRL (UC-Berkeley), LightningAI, Axolotl AI, Stanford Scaling Intelligence Lab, Mithril, [OpenMined](https://openmined.org/), [Fleet AI](https://fleetai.com), [Halluminate](https://halluminate.ai/), [Turing](https://www.turing.com/), [Scale AI](https://scale.com/), [Scorecard](https://www.scorecard.io/) ..
+If you would like to add your project or organization here, please open a pull request for maintainer review.
+
+Supporters include: [Meta-PyTorch](https://github.com/meta-pytorch), [Hugging Face](https://huggingface.co), [Scaler AI Labs](https://scalerailabs.com), [Patronus AI](https://patronus.ai), [Surge AI](https://surgehq.ai), [LastMile AI](https://www.lastmileai.dev), [Unsloth](https://unsloth.ai), Reflection, [vLLM](https://vllm.ai), [SkyRL](https://skyrl.readthedocs.io) (UC-Berkeley), [Lightning AI](https://lightning.ai), [Axolotl AI](https://github.com/axolotl-ai-cloud/axolotl), Stanford Scaling Intelligence Lab, Mithril, [OpenMined](https://openmined.org/), [Fleet AI](https://fleetai.com), [Halluminate](https://halluminate.ai/), [Turing](https://www.turing.com/), [Scale AI](https://scale.com/), [Scorecard](https://www.scorecard.io/)
 
 And we'd also like to acknowledge the team at Farama Foundation as the OpenEnv API was heavily inspired by the work you all have done on Gymnasium. Cheers!
 
