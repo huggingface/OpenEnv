@@ -495,8 +495,6 @@ def _dockerfile_installs_openenv_runtime(env_path: Path) -> bool:
                 return True
             if "openenv-core" in stripped:
                 return True
-            if "git+https://github.com/meta-pytorch/openenv" in stripped:
-                return True
 
     return False
 
