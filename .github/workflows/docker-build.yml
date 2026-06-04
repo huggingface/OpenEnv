@@ -65,6 +65,7 @@ jobs:
       packages: write
 
     strategy:
+      fail-fast: false
       matrix:
         image:
           - name: echo-env
