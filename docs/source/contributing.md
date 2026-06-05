@@ -1,7 +1,3 @@
----
-orphan: true
----
-
 # Contributing to OpenEnv
 
 We welcome contributions from the community! OpenEnv is an open-source project and we're excited to have you join us.
@@ -73,7 +69,7 @@ ruff check .
 ## Coordination
 
 OpenEnv is openly governed by a technical committee that includes Hugging Face,
-Unsloth, Reflection, and Meta PyTorch. The committee coordinates project
+Unsloth, Reflection, Meta PyTorch, Modal, and Prime Intellect. The committee coordinates project
 direction, major technical decisions, RFCs, and release planning in public.
 
 Use the [OpenEnv repository](https://github.com/huggingface/OpenEnv) to file

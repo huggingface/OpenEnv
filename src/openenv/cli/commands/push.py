@@ -215,7 +215,7 @@ def _validate_openenv_directory(directory: Path) -> tuple[str, dict]:
     Validate that the directory is an OpenEnv environment.
 
     Returns:
-        Tuple of (env_name, manifest_data)
+        `tuple` of `(env_name, manifest_data)`.
     """
     # Use the comprehensive validation function
     try:
@@ -248,7 +248,7 @@ def _ensure_hf_authenticated() -> str:
     Ensure user is authenticated with Hugging Face.
 
     Returns:
-        Username of authenticated user
+        `str`: username of the authenticated user.
     """
     try:
         # Try to get current user
@@ -638,6 +638,8 @@ def push(
     but disabled by default when pushing to a custom Docker registry.
 
     Examples:
+
+        ```bash
         # Push to HuggingFace Spaces from current directory (web interface enabled)
         $ cd my_env
         $ openenv push
@@ -672,6 +674,7 @@ def push(
 
         # Set a private Space secret (value never logged)
         $ openenv push --secret OPENAI_API_KEY=sk-...
+        ```
     """
     # Validate --count flag combinations
     if count > 1 and registry:

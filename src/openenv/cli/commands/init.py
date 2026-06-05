@@ -74,7 +74,7 @@ def _get_random_hf_space_config() -> Dict[str, str]:
     Get random Hugging Face Space configuration values.
 
     Returns:
-        Dictionary with 'emoji', 'colorFrom', and 'colorTo' keys
+        `dict` with keys `emoji`, `colorFrom`, and `colorTo`.
     """
     # Valid emojis (emoji-only characters)
     emojis = [
@@ -416,9 +416,12 @@ def init(
     Creates a new directory with the environment name and generates all necessary
     files based on the OpenEnv template structure.
 
-    Example:
+    Examples:
+
+        ```bash
         $ openenv init my_game_env
         $ openenv init my_env --output-dir /path/to/projects
+        ```
     """
     # Validate environment name
     env_name = _validate_env_name(env_name)

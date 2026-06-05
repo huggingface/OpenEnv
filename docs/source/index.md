@@ -53,9 +53,9 @@ New to OpenEnv? Follow our recommended learning path:
 
 ## How Can I Contribute?
 
-We welcome contributions from the community! OpenEnv is openly governed by a technical committee that includes Hugging Face, Unsloth, Reflection, and Meta PyTorch. The committee coordinates project direction, major technical decisions, RFCs, and release planning through the public repository.
+We welcome contributions from the community! OpenEnv is openly governed by a technical committee that includes Hugging Face, Unsloth, Reflection, Meta PyTorch, Modal, and Prime Intellect. The committee coordinates project direction, major technical decisions, RFCs, and release planning through the public repository.
 
-If you find a bug, have a feature request, or want to contribute a new environment, please open an issue or submit a pull request. The repository is hosted on GitHub at [huggingface/OpenEnv](https://github.com/huggingface/OpenEnv).
+If you find a bug, have a feature request, or want to contribute a new environment, please open an issue or submit a pull request. The repository is hosted on GitHub at [huggingface/OpenEnv](https://github.com/huggingface/OpenEnv). For the changelog, see [GitHub Releases](https://github.com/huggingface/OpenEnv/releases).
 
 > [!WARNING]
 > OpenEnv is currently in an experimental stage. You should expect bugs, incomplete features, and APIs that may change in future versions. The project welcomes bug fixes, but significant changes should be discussed before implementation so the technical committee and community can coordinate scope, compatibility, and release timing. Signal your intention to contribute in the issue tracker by filing a new issue or claiming an existing one.
