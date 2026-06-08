@@ -1119,10 +1119,15 @@ OpenEnv includes 3 complete examples:
 
 **Openly governed by a technical committee including:**
 
-- 🤗 Hugging Face
-- ⚡ Unsloth
-- 🌟 Reflection
 - 🔥 Meta PyTorch
+- 🌟 Reflection
+- ⚡ Unsloth
+- ☁️ Modal
+- 🧠 Prime Intellect
+- 🟢 Nvidia
+- 💼 Mercor
+- 🚀 Fleet AI
+- 🤗 Hugging Face
 
 **Supported by amazing organizations and contributors.**
 
