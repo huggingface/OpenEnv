@@ -139,7 +139,7 @@ openenv push
 openenv push --repo-id my-org/my-env
 
 # Push with a custom base image
-openenv push --base-image ghcr.io/meta-pytorch/openenv-base:latest
+openenv push --base-image ghcr.io/huggingface/openenv-base:latest
 
 # Push as a private space
 openenv push --private

@@ -339,7 +339,7 @@ openenv push --repo-id my-org/my-env
 openenv push --registry ghcr.io/my-org --tag my-env:latest
 
 # Customize image base or visibility
-openenv push --base-image ghcr.io/meta-pytorch/openenv-base:latest --private
+openenv push --base-image ghcr.io/huggingface/openenv-base:latest --private
 
 # Configure Space variables and secrets at push time
 openenv push -e OPENSPIEL_GAME=tic_tac_toe --secret OPENAI_API_KEY=sk-...

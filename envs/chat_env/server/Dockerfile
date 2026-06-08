@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-ARG BASE_IMAGE=ghcr.io/meta-pytorch/openenv-base:latest
+ARG BASE_IMAGE=ghcr.io/huggingface/openenv-base:latest
 FROM ${BASE_IMAGE} AS builder
 
 WORKDIR /app
@@ -40,7 +40,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # Pre-download GPT-2 tokenizer to avoid permission issues at runtime.
 # HF_HOME must match the runtime value so the cache is copied to the right place.
-RUN HF_HOME=/.cache /app/env/.venv/bin/python -c "from transformers import GPT2Tokenizer; GPT2Tokenizer.from_pretrained('gpt2')"
+RUN mkdir -p /.cache && \
+    HF_HOME=/.cache /app/env/.venv/bin/python -c "from transformers import GPT2Tokenizer; GPT2Tokenizer.from_pretrained('gpt2')"
 
 # Final runtime stage
 FROM ${BASE_IMAGE}

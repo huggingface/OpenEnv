@@ -13,7 +13,7 @@
 # Run:
 #   docker run -p 8000:8000 -e E2B_API_KEY=e2b_... opencode-env
 
-ARG BASE_IMAGE=ghcr.io/meta-pytorch/openenv-base:latest
+ARG BASE_IMAGE=ghcr.io/huggingface/openenv-base:latest
 FROM ${BASE_IMAGE} AS builder
 
 WORKDIR /app
