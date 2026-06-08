@@ -250,7 +250,7 @@ class AnthropicClient(LLMClient):
 
     Args:
         endpoint (`str`):
-            The base URL (e.g. "https://api.anthropic.com").
+            The base URL (e.g. `https://api.anthropic.com`).
         port (`int`):
             The port number.
         model (`str`):
