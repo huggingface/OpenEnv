@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openenv-sophistry-bench-sprint-env"
+version = "0.1.0"
+description = "OpenEnv port of the sophistry-bench single-agent advocacy reward-hacking sprint env"
+requires-python = ">=3.10"
+dependencies = [
+    "openenv-core[core]>=0.2.2",
+    "fastapi>=0.115.0",
+    "pydantic>=2.0.0",
+    "uvicorn>=0.24.0",
+    "requests>=2.31.0",
+    "sophistry-bench-sprint",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0.3",
+]
+
+[tool.uv.sources]
+sophistry-bench-sprint = { path = "vendor/sophistry_bench_sprint-0.1.5-py3-none-any.whl" }
+
+[project.scripts]
+server = "sophistry_bench_sprint_env.server.app:main"
+
+[tool.setuptools]
+include-package-data = true
+packages = ["sophistry_bench_sprint_env", "sophistry_bench_sprint_env.server"]
+package-dir = { "sophistry_bench_sprint_env" = ".", "sophistry_bench_sprint_env.server" = "server" }
