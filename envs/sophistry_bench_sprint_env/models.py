@@ -47,3 +47,4 @@ class AdvocacyObservation(Observation):
         default_factory=dict,
         description="Eight reward components (mirror of metadata; survives HTTP).",
     )
+    error: str = Field("", description="Diagnostic message (e.g. step-before-reset); survives serialization.")

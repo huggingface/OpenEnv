@@ -36,6 +36,11 @@ class SophistryBenchSprintEnv(EnvClient[AdvocacyAction, AdvocacyObservation, Sta
         # contract (``observation.metadata`` carries the eight components).
         if not observation.metadata and observation.components:
             observation.metadata = dict(observation.components)
+        # The error path's ``metadata={"error": ...}`` is also stripped over the
+        # wire, arriving only in the declared ``error`` field. Restore it so the
+        # over-the-wire contract matches in-process behavior.
+        if observation.error and "error" not in observation.metadata:
+            observation.metadata["error"] = observation.error
         return StepResult(
             observation=observation,
             reward=data["reward"],

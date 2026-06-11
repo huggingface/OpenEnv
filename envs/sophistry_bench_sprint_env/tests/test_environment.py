@@ -139,3 +139,36 @@ def test_aggregate_matches_canonical_verifiers_reward():
         aggregate_fn(prompt=[], completion=completion, answer="", state=state)
     )
     assert abs(obs.metadata["aggregate_reward"] - canonical) < 1e-9
+
+
+def test_metadata_survives_wire_serialization_round_trip():
+    """Lock in the wire contract: the framework strips base ``metadata`` from the
+    serialized observation, but the declared ``components`` field survives and the
+    typed client re-populates ``metadata`` from it on the way back."""
+    from openenv.core.env_server.serialization import serialize_observation
+    from sophistry_bench_sprint_env.client import SophistryBenchSprintEnv
+
+    env = _env()
+    env.reset(seed=0)
+    obs = env.step(
+        AdvocacyAction(text="".join(f"<claim>c{i}</claim>" for i in range(8)))
+    )
+
+    # Real server-side serialization. Returns
+    # {"observation": {...}, "reward": float, "done": bool}; the obs dict
+    # excludes reward/done/metadata but keeps declared subclass fields.
+    payload = serialize_observation(obs)
+    obs_dict = payload["observation"]
+    assert "metadata" not in obs_dict  # framework strips base metadata
+    assert set(obs_dict["components"].keys()) == _METADATA_KEYS
+
+    # Reconstruct the wire payload in the shape ``_parse_result`` reads.
+    wire = {
+        "observation": obs_dict,
+        "reward": payload["reward"],
+        "done": payload["done"],
+    }
+    client = SophistryBenchSprintEnv.__new__(SophistryBenchSprintEnv)
+    result = client._parse_result(wire)
+    assert set(result.observation.metadata.keys()) == _METADATA_KEYS
+    assert result.reward == obs.reward

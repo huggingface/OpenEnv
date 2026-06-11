@@ -139,11 +139,13 @@ class SophistryBenchSprintEnvironment(Environment):
         self._state.step_count += 1
 
         if not self._has_task:
+            msg = "call reset() before step()"
             return AdvocacyObservation(
                 prompt="",
                 reward=0.0,
                 done=True,
-                metadata={"error": "call reset() before step()"},
+                error=msg,
+                metadata={"error": msg},
             )
 
         text = action.text or ""
