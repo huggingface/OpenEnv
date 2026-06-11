@@ -176,6 +176,9 @@ class SophistryBenchSprintEnvironment(Environment):
             reward=float(reward),
             done=True,
             metadata=dict(metadata),
+            # Mirror into a declared field so the components survive the
+            # framework's HTTP serialization (which strips ``metadata``).
+            components=dict(metadata),
         )
 
     @property

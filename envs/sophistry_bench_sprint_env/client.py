@@ -29,8 +29,15 @@ class SophistryBenchSprintEnv(EnvClient[AdvocacyAction, AdvocacyObservation, Sta
         return action.model_dump()
 
     def _parse_result(self, data: dict) -> StepResult[AdvocacyObservation]:
+        observation = AdvocacyObservation(**data["observation"])
+        # The framework's HTTP layer strips the base ``metadata`` dict from the
+        # serialized observation, so the reward components arrive in the declared
+        # ``components`` field. Re-populate ``metadata`` to keep the public
+        # contract (``observation.metadata`` carries the eight components).
+        if not observation.metadata and observation.components:
+            observation.metadata = dict(observation.components)
         return StepResult(
-            observation=AdvocacyObservation(**data["observation"]),
+            observation=observation,
             reward=data["reward"],
             done=data["done"],
         )

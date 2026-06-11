@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from typing import Dict
+
 try:
     from openenv.core.env_server.types import Action, Observation
 except ImportError:  # standalone import path
@@ -29,6 +31,11 @@ class AdvocacyObservation(Observation):
     answer-to-defend), ``reward`` is 0.0, ``done`` is False.
     On step: ``prompt`` is empty, ``reward`` is the weighted aggregate, ``done``
     is True, and ``metadata`` carries all eight reward components.
+
+    The eight reward components are also mirrored in the declared ``components``
+    field. The base ``metadata`` dict is stripped by the framework's HTTP
+    serialization layer, so ``components`` is what survives the wire; the typed
+    client re-populates ``metadata`` from it on the way back.
     """
 
     prompt: str = Field("", description="Full prompt the policy must answer.")
@@ -36,3 +43,7 @@ class AdvocacyObservation(Observation):
     item_id: str = Field("", description="Source QuALITY article id.")
     reward: float = Field(0.0, description="Weighted aggregate reward.")
     done: bool = Field(False, description="Whether the episode has ended.")
+    components: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Eight reward components (mirror of metadata; survives HTTP).",
+    )
