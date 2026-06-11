@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "OpenEnv port of the sophistry-bench single-agent advocacy reward-hacking sprint env"
 requires-python = ">=3.10"
 dependencies = [
-    "openenv-core[core]>=0.2.2",
+    "openenv[core]>=0.2.2",
     "fastapi>=0.115.0",
     "pydantic>=2.0.0",
     "uvicorn>=0.24.0",
@@ -19,6 +19,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=9.0.3",
+    "pytest-asyncio>=0.21",
+    "pytest-cov",
 ]
 
 [project.scripts]

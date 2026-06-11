@@ -1,16 +1,4 @@
----
-title: Sophistry Bench Sprint Env
-emoji: 🗣️
-colorFrom: blue
-colorTo: indigo
-sdk: docker
-pinned: false
-app_port: 8000
-base_path: /web
-tags:
-  - openenv
----
-
+<!-- openenv-source: sophistry_bench_sprint_env -->
 # sophistry_bench_sprint_env
 
 OpenEnv port of the [sophistry-bench](https://github.com/acharyaanusha/sophistry-bench)

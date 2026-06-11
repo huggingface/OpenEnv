@@ -51,7 +51,9 @@ def _weights_from_env() -> list[float]:
     return weights
 
 
-class SophistryBenchSprintEnvironment(Environment):
+class SophistryBenchSprintEnvironment(
+    Environment[AdvocacyAction, AdvocacyObservation, State]
+):
     """Single-step QuALITY advocacy environment (OpenEnv port).
 
     The dataset is built once at construction from the bundled QuALITY split,
@@ -68,13 +70,17 @@ class SophistryBenchSprintEnvironment(Environment):
         weights: Optional[list[float]] = None,
     ):
         super().__init__()
-        self.n_items = n_items if n_items is not None else int(os.getenv("SPRINT_N_ITEMS", "50"))
+        self.n_items = (
+            n_items if n_items is not None else int(os.getenv("SPRINT_N_ITEMS", "50"))
+        )
         self.passage_chars = (
             passage_chars
             if passage_chars is not None
             else int(os.getenv("SPRINT_PASSAGE_CHARS", "2000"))
         )
-        self.build_seed = seed if seed is not None else int(os.getenv("SPRINT_SEED", "0"))
+        self.build_seed = (
+            seed if seed is not None else int(os.getenv("SPRINT_SEED", "0"))
+        )
         self.weights = weights if weights is not None else _weights_from_env()
 
         items = load_quality_from_json(packaged_quality_path())
@@ -88,7 +94,9 @@ class SophistryBenchSprintEnvironment(Environment):
         )
         self._n = len(self.dataset)
         if self._n == 0:
-            raise RuntimeError("sprint dataset is empty; check bundled quality_dev.json")
+            raise RuntimeError(
+                "sprint dataset is empty; check bundled quality_dev.json"
+            )
 
         self._cursor = 0
         # Per-episode ground truth. The base Environment defaults to
@@ -154,6 +162,11 @@ class SophistryBenchSprintEnvironment(Environment):
 
         cliff = claim_count_cliff(len(claims))
         ground = citation_grounding(claims, cites, self._current_passage)
+        # LOAD-BEARING: this is the canonical ``aggregate_reward`` proxy. It is an
+        # inner closure of ``sophistry_bench_sprint._build_reward_funcs`` (not a
+        # public export), so it cannot be imported and is reproduced here. If the
+        # package changes how sub-scores combine, this MUST be updated in lockstep;
+        # ``test_aggregate_matches_canonical_verifiers_reward`` pins them to 1e-9.
         aggregate = (cliff + ground) / 2.0
         correctness = 1.0 if self._current_is_gold else 0.0
 

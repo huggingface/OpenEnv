@@ -1,7 +1,43 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates. All rights reserved.
 """Tests for the sophistry-bench sprint OpenEnv environment."""
 
-from sophistry_bench_sprint_env.models import AdvocacyAction, AdvocacyObservation
+import asyncio
+import os
+import sys
+
+import pytest
+
+# Add the project root to the path for envs imports.
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+
+# The env imports the published ``sophistry-bench-sprint`` package (canonical
+# scoring source). It is not part of the repo's base test deps, so skip the whole
+# module when it (or its ``verifiers`` dependency) is unavailable.
+pytest.importorskip("sophistry_bench_sprint")
+
+from envs.sophistry_bench_sprint_env.client import SophistryBenchSprintEnv
+from envs.sophistry_bench_sprint_env.models import AdvocacyAction, AdvocacyObservation
+from envs.sophistry_bench_sprint_env.server.sophistry_bench_sprint_environment import (
+    SophistryBenchSprintEnvironment,
+)
+from openenv.core.env_server.serialization import serialize_observation
+from sophistry_bench_sprint import load_environment
+
+_METADATA_KEYS = {
+    "aggregate_reward",
+    "correctness_reward",
+    "n_claims",
+    "n_citations",
+    "alternation_canary",
+    "starts_with_canary",
+    "length_band_canary",
+    "template_echo_canary",
+}
+
+
+def _env():
+    # Small dataset keeps the test fast; reads the bundled QuALITY split.
+    return SophistryBenchSprintEnvironment(n_items=2, passage_chars=500, seed=0)
 
 
 def test_advocacy_action_carries_text():
@@ -20,9 +56,6 @@ def test_advocacy_observation_defaults():
 
 
 def test_client_parses_step_result():
-    from sophistry_bench_sprint_env.client import SophistryBenchSprintEnv
-    from sophistry_bench_sprint_env.models import AdvocacyAction, AdvocacyObservation
-
     # Exercise the pure parsing hooks without a live server.
     client = SophistryBenchSprintEnv.__new__(SophistryBenchSprintEnv)
     payload = client._step_payload(AdvocacyAction(text="<claim>x</claim>"))
@@ -48,16 +81,6 @@ def test_client_parses_step_result():
     assert result.done is True
 
 
-from sophistry_bench_sprint_env.server.sophistry_bench_sprint_environment import (
-    SophistryBenchSprintEnvironment,
-)
-
-
-def _env():
-    # Small dataset keeps the test fast; reads the bundled QuALITY split.
-    return SophistryBenchSprintEnvironment(n_items=2, passage_chars=500, seed=0)
-
-
 def test_reset_returns_task_observation():
     env = _env()
     obs = env.reset(seed=0)
@@ -77,23 +100,6 @@ def test_reset_is_deterministic_for_fixed_seed():
         b.answer_to_defend,
         b.prompt,
     )
-
-
-import asyncio
-
-from sophistry_bench_sprint import load_environment
-from sophistry_bench_sprint_env.models import AdvocacyAction
-
-_METADATA_KEYS = {
-    "aggregate_reward",
-    "correctness_reward",
-    "n_claims",
-    "n_citations",
-    "alternation_canary",
-    "starts_with_canary",
-    "length_band_canary",
-    "template_echo_canary",
-}
 
 
 def test_step_returns_all_components_and_is_done():
@@ -145,9 +151,6 @@ def test_metadata_survives_wire_serialization_round_trip():
     """Lock in the wire contract: the framework strips base ``metadata`` from the
     serialized observation, but the declared ``components`` field survives and the
     typed client re-populates ``metadata`` from it on the way back."""
-    from openenv.core.env_server.serialization import serialize_observation
-    from sophistry_bench_sprint_env.client import SophistryBenchSprintEnv
-
     env = _env()
     env.reset(seed=0)
     obs = env.step(
@@ -178,9 +181,6 @@ def test_error_survives_wire_serialization_round_trip():
     """The error path declares an ``error`` field so the step-before-reset
     message survives the framework's metadata-stripping serialization and is
     restored into ``metadata`` by the typed client on the way back."""
-    from openenv.core.env_server.serialization import serialize_observation
-    from sophistry_bench_sprint_env.client import SophistryBenchSprintEnv
-
     env = _env()
     obs = env.step(AdvocacyAction(text="<claim>x</claim>"))  # step before reset
 

@@ -39,7 +39,9 @@ class AdvocacyObservation(Observation):
     """
 
     prompt: str = Field("", description="Full prompt the policy must answer.")
-    answer_to_defend: str = Field("", description="The answer the policy advocates for.")
+    answer_to_defend: str = Field(
+        "", description="The answer the policy advocates for."
+    )
     item_id: str = Field("", description="Source QuALITY article id.")
     reward: float = Field(0.0, description="Weighted aggregate reward.")
     done: bool = Field(False, description="Whether the episode has ended.")
@@ -47,4 +49,7 @@ class AdvocacyObservation(Observation):
         default_factory=dict,
         description="Eight reward components (mirror of metadata; survives HTTP).",
     )
-    error: str = Field("", description="Diagnostic message (e.g. step-before-reset); survives serialization.")
+    error: str = Field(
+        "",
+        description="Diagnostic message (e.g. step-before-reset); survives serialization.",
+    )
