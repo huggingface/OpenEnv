@@ -27,7 +27,7 @@ dependencies = [
     # REPL custom Gradio tab on /web
     "gradio>=4.0.0",
     # Document upload support in the Gradio tab (server-side only, not in the sandbox)
-    "pypdf>=4.0.0",
+    "pypdf>=6.12.0",
 ]
 
 [project.optional-dependencies]
