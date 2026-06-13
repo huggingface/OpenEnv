@@ -29,6 +29,12 @@ def test_blocks_real_dangerous_import():
     assert "safety_violation" in observation.metadata
 
 
+def test_blocks_import_with_alias():
+    observation = _apply_safety_transform("import os as operating_system")
+    assert observation.reward == -1.0
+    assert observation.metadata["safety_violation"] == "import os"
+
+
 def test_blocks_subprocess_import():
     observation = _apply_safety_transform("import subprocess")
     assert observation.reward == -1.0

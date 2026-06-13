@@ -98,12 +98,18 @@ class PythonCodeActEnv(Environment):
     def step(
         self,
         action: Action,
+        timeout_s: Optional[float] = None,
+        **kwargs: Any,
     ) -> Observation:
         """
         Execute code action and return observation.
 
         Args:
             action: CodeAction containing the code to execute
+            timeout_s: Accepted for Environment API compatibility. PyExecutor
+                does not currently expose per-call timeout control.
+            **kwargs: Forward-compatible step parameters accepted by the base
+                Environment API but unused by this environment.
 
         Returns:
             CodeObservation with execution results (stdout, stderr, exit_code)
@@ -111,6 +117,8 @@ class PythonCodeActEnv(Environment):
         Raises:
             ValueError: If action is not a CodeAction instance
         """
+        del timeout_s, kwargs
+
         if not isinstance(action, CodeAction):
             raise ValueError(f"Expected CodeAction, got {type(action)}")
 

@@ -178,6 +178,16 @@ def test_reset_accepts_episode_id_override():
     assert env.state.step_count == 0
 
 
+def test_reset_accepts_seed_parameter():
+    """Test that reset() accepts a seed for API compatibility."""
+    env = PythonCodeActEnv()
+
+    obs = env.reset(seed=42)
+
+    assert obs.exit_code == 0
+    assert env.state.step_count == 0
+
+
 def test_reset_preserves_empty_episode_id_override():
     """Test that reset() preserves any explicit non-None episode_id."""
     env = PythonCodeActEnv()
@@ -186,3 +196,13 @@ def test_reset_preserves_empty_episode_id_override():
 
     assert env.state.episode_id == ""
     assert env.state.step_count == 0
+
+
+def test_step_accepts_timeout_parameter():
+    """Test that step() accepts timeout_s for API compatibility."""
+    env = PythonCodeActEnv()
+    env.reset()
+
+    obs = env.step(CodeAction(code="print('ok')"), timeout_s=30.0)
+
+    assert obs.exit_code == 0
