@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Unified terminal-style theme for OpenEnv Gradio UI (light/dark)."""
+"""Unified black-on-white theme for OpenEnv Gradio UI."""
 
 from __future__ import annotations
 
@@ -75,44 +75,69 @@ OPENENV_GRADIO_THEME = gr.themes.Base(
 ).set(
     body_background_fill="#ffffff",
     background_fill_primary="#ffffff",
-    background_fill_secondary="#f6f8fa",
+    background_fill_secondary="#ffffff",
     block_background_fill="#ffffff",
-    block_border_color="#ffffff",
-    block_label_text_color="#57606a",
-    block_title_text_color="#24292f",
-    border_color_primary="#d0d7de",
+    block_border_color="#111111",
+    block_label_text_color="#111111",
+    block_title_text_color="#111111",
+    border_color_primary="#111111",
     input_background_fill="#ffffff",
-    input_border_color="#d0d7de",
-    button_primary_background_fill="#1a7f37",
-    button_primary_background_fill_hover="#116329",
-    button_primary_text_color="#ffffff",
-    button_secondary_background_fill="#f6f8fa",
-    button_secondary_background_fill_hover="#eaeef2",
-    button_secondary_text_color="#24292f",
-    button_secondary_border_color="#d0d7de",
-    body_background_fill_dark="#0d1117",
-    background_fill_primary_dark="#0d1117",
-    background_fill_secondary_dark="#0d1117",
-    block_background_fill_dark="#0d1117",
-    block_border_color_dark="#0d1117",
-    block_label_text_color_dark="#8b949e",
-    block_title_text_color_dark="#c9d1d9",
-    border_color_primary_dark="#30363d",
-    input_background_fill_dark="#0d1117",
-    input_border_color_dark="#30363d",
-    button_primary_background_fill_dark="#30363d",
-    button_primary_background_fill_hover_dark="#484f58",
-    button_primary_text_color_dark="#c9d1d9",
-    button_secondary_background_fill_dark="#21262d",
-    button_secondary_background_fill_hover_dark="#30363d",
-    button_secondary_text_color_dark="#c9d1d9",
-    button_secondary_border_color_dark="#30363d",
+    input_border_color="#111111",
+    button_primary_background_fill="#ffffff",
+    button_primary_background_fill_hover="#f2f2f2",
+    button_primary_text_color="#111111",
+    button_secondary_background_fill="#ffffff",
+    button_secondary_background_fill_hover="#f2f2f2",
+    button_secondary_text_color="#111111",
+    button_secondary_border_color="#111111",
+    body_background_fill_dark="#ffffff",
+    background_fill_primary_dark="#ffffff",
+    background_fill_secondary_dark="#ffffff",
+    block_background_fill_dark="#ffffff",
+    block_border_color_dark="#111111",
+    block_label_text_color_dark="#111111",
+    block_title_text_color_dark="#111111",
+    border_color_primary_dark="#111111",
+    input_background_fill_dark="#ffffff",
+    input_border_color_dark="#111111",
+    button_primary_background_fill_dark="#ffffff",
+    button_primary_background_fill_hover_dark="#f2f2f2",
+    button_primary_text_color_dark="#111111",
+    button_secondary_background_fill_dark="#ffffff",
+    button_secondary_background_fill_hover_dark="#f2f2f2",
+    button_secondary_text_color_dark="#111111",
+    button_secondary_border_color_dark="#111111",
 )
 
 OPENENV_GRADIO_CSS = """
 * { border-radius: 0 !important; }
 .col-left { padding: 16px !important; }
 .col-right { padding: 16px !important; }
+.gradio-container,
+.gradio-container .gr-block,
+.gradio-container .gr-box,
+.gradio-container .gr-form,
+.gradio-container .gr-panel,
+.gradio-container .gr-group,
+.gradio-container .gr-row,
+.gradio-container .gr-column,
+.gradio-container .gr-tab,
+.gradio-container .gr-tabs,
+.gradio-container .gr-accordion,
+.gradio-container .gr-accordion-header {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #111111 !important;
+}
+.gradio-container button,
+.gradio-container input,
+.gradio-container textarea,
+.gradio-container select {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #111111 !important;
+    border-color: #111111 !important;
+}
 .prose, .markdown-text, .md,
 .prose > *, .markdown-text > * {
     background: transparent !important;
@@ -120,9 +145,9 @@ OPENENV_GRADIO_CSS = """
     box-shadow: none !important;
 }
 .dark .col-left {
-    border-left-color: rgba(139, 148, 158, 0.4) !important;
+    border-left-color: #111111 !important;
 }
 .dark .col-right {
-    border-left-color: rgba(201, 209, 217, 0.3) !important;
+    border-left-color: #111111 !important;
 }
 """
