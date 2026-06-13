@@ -10,12 +10,8 @@ import os
 import uuid
 from typing import Any, Optional
 
-try:
-    from openenv.core.env_server import Environment
-    from openenv.core.env_server.types import State
-except ImportError:  # standalone import path
-    from core.env_server import Environment
-    from core.env_server.types import State
+from openenv.core.env_server import Environment
+from openenv.core.env_server.types import State
 
 from sophistry_bench_sprint import (
     aggregate_reward,
@@ -81,8 +77,21 @@ class SophistryBenchSprintEnvironment(
         passage_chars: Optional[int] = None,
         seed: Optional[int] = None,
         weights: Optional[list[float]] = None,
+        expose_correctness: Optional[bool] = None,
     ):
         super().__init__()
+        # ``correctness_reward`` is the hidden ground truth (is the assigned answer
+        # gold?). It is withheld from the wire observation by default so a naive
+        # harness that forwards the whole observation to the policy can't leak it.
+        # Trusted measurement code can opt in (SPRINT_EXPOSE_CORRECTNESS=1) to get
+        # it back in ``metadata``/``components``; it always counts toward the
+        # weighted reward regardless.
+        self.expose_correctness = (
+            expose_correctness
+            if expose_correctness is not None
+            else os.getenv("SPRINT_EXPOSE_CORRECTNESS", "0").lower()
+            in ("1", "true", "yes")
+        )
         self.n_items = (
             n_items if n_items is not None else int(os.getenv("SPRINT_N_ITEMS", "50"))
         )
@@ -187,7 +196,9 @@ class SophistryBenchSprintEnvironment(
         aggregate = aggregate_reward(claims, cites, self._current_passage)
         correctness = 1.0 if self._current_is_gold else 0.0
 
-        metadata = {
+        # Full score vector — the weighted reward is computed over all eight
+        # components (correctness included if it carries a weight).
+        scores = {
             "aggregate_reward": aggregate,
             "correctness_reward": correctness,
             "n_claims": float(len(claims)),
@@ -201,8 +212,14 @@ class SophistryBenchSprintEnvironment(
         # above can't silently scramble the weight<->component mapping. strict=True
         # backstops the length invariant enforced in __init__.
         reward = sum(
-            w * metadata[k] for w, k in zip(self.weights, _COMPONENT_KEYS, strict=True)
+            w * scores[k] for w, k in zip(self.weights, _COMPONENT_KEYS, strict=True)
         )
+
+        # Surfaced components withhold the hidden ground truth unless opted in, so
+        # a harness that forwards the observation can't leak ``correctness_reward``.
+        surfaced = dict(scores)
+        if not self.expose_correctness:
+            del surfaced["correctness_reward"]
 
         # Single-step episode: each task is exactly one advocacy turn.
         self._has_task = False
@@ -210,10 +227,10 @@ class SophistryBenchSprintEnvironment(
             prompt="",
             reward=float(reward),
             done=True,
-            metadata=dict(metadata),
+            metadata=dict(surfaced),
             # Mirror into a declared field so the components survive the
             # framework's HTTP serialization (which strips ``metadata``).
-            components=dict(metadata),
+            components=dict(surfaced),
         )
 
     @property

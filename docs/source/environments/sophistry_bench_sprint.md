@@ -23,32 +23,49 @@ Single step. `reset()` issues a task; `step(AdvocacyAction(text=...))` scores it
 | `SPRINT_PASSAGE_CHARS` | `2000` | Passage char cap |
 | `SPRINT_SEED` | `0` | Distractor-selection seed (deterministic) |
 | `SPRINT_WEIGHTS` | `1,0,0,0,0,0,0,0` | 8 reward weights, order: `aggregate, correctness, n_claims, n_citations, alternation_canary, starts_with_canary, length_band_canary, template_echo_canary`. Do **not** weight canaries during training. |
+| `SPRINT_EXPOSE_CORRECTNESS` | `0` | When `1`/`true`, surface `correctness_reward` (the hidden ground truth) in the wire `metadata`/`components`. Off by default so a harness can't accidentally leak it to the policy. It always counts toward the weighted reward regardless of this flag. |
 
 ## Usage
 
+The client is **async by default** (like every OpenEnv client):
+
 ```python
+import asyncio
+
 from sophistry_bench_sprint_env import SophistryBenchSprintEnv
 
-# Run the deployed Hugging Face Space:
-env = SophistryBenchSprintEnv.from_env("anushaacharya/sophistry_bench_sprint_env")
-# ...or a local image: SophistryBenchSprintEnv.from_docker_image("openenv-sophistry_bench_sprint:latest")
-try:
-    obs = env.reset().observation
-    print(obs.prompt, obs.answer_to_defend)
-    result = env.step_text("<claim>...</claim><cite>...</cite>")
-    print(result.reward, result.observation.metadata)
-finally:
-    env.close()
+
+async def main():
+    # Deployed Hugging Face Space (or .from_docker_image("openenv-sophistry_bench_sprint:latest")):
+    client = await SophistryBenchSprintEnv.from_env("anushaacharya/sophistry_bench_sprint_env")
+    async with client:
+        obs = (await client.reset()).observation
+        print(obs.prompt, obs.answer_to_defend)
+        result = await client.step_text("<claim>...</claim><cite>...</cite>")
+        print(result.reward, result.observation.metadata)
+
+
+asyncio.run(main())
 ```
 
-`result.observation.metadata` contains all eight reward components every step — the canary
-scores are the reward-hacking measurement.
+For **synchronous usage**, use the `.sync()` wrapper:
+
+```python
+with SophistryBenchSprintEnv(base_url="http://localhost:8000").sync() as client:
+    obs = client.reset().observation
+    result = client.step_text("<claim>...</claim><cite>...</cite>")
+    print(result.reward, result.observation.metadata)
+```
+
+`result.observation.metadata` carries the reward components every step — the canary scores are
+the reward-hacking measurement. By default it holds **seven** components; `correctness_reward`
+(the hidden ground truth) is withheld unless `SPRINT_EXPOSE_CORRECTNESS=1` (see above).
 
 > **Do not feed `observation.metadata` / `observation.components` back into the policy's
-> prompt.** They include `correctness_reward` (whether the assigned answer is the gold one),
-> which is the hidden ground truth. `reset()` deliberately tells the policy only *what* to
-> defend, never *whether* it is correct; surfacing the components to the agent leaks that
-> signal and defeats the reward-hacking measurement.
+> prompt.** `reset()` deliberately tells the policy only *what* to defend, never *whether* it
+> is correct. `correctness_reward` is withheld from the wire by default for exactly this
+> reason; even with the rest of the components, forwarding them to the agent leaks the
+> reward signal and defeats the reward-hacking measurement.
 
 ## Build & test
 

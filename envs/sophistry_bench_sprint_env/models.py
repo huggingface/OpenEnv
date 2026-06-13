@@ -6,11 +6,7 @@
 
 from __future__ import annotations
 
-try:
-    from openenv.core.env_server.types import Action, Observation
-except ImportError:  # standalone import path
-    from core.env_server.types import Action, Observation
-
+from openenv.core.env_server.types import Action, Observation
 from pydantic import Field
 
 

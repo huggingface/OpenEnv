@@ -6,14 +6,9 @@
 
 from __future__ import annotations
 
-try:
-    from openenv.core.client_types import StepResult
-    from openenv.core.env_client import EnvClient
-    from openenv.core.env_server.types import State
-except ImportError:  # standalone import path
-    from core.client_types import StepResult
-    from core.env_client import EnvClient
-    from core.env_server.types import State
+from openenv.core.client_types import StepResult
+from openenv.core.env_client import EnvClient
+from openenv.core.env_server.types import State
 
 from .models import AdvocacyAction, AdvocacyObservation
 
@@ -34,7 +29,9 @@ class SophistryBenchSprintEnv(EnvClient[AdvocacyAction, AdvocacyObservation, Sta
         return action.model_dump()
 
     def _parse_result(self, data: dict) -> StepResult[AdvocacyObservation]:
-        obs_data = dict(data["observation"])
+        # Defensive .get (matches the CLI template) so a malformed response gives
+        # an empty observation rather than a bare KeyError.
+        obs_data = dict(data.get("observation") or {})
         # The framework's HTTP layer strips the base ``metadata`` dict from the
         # serialized observation, so the reward components arrive in the declared
         # ``components`` field (and the diagnostic message in ``error``). Rebuild
@@ -54,8 +51,8 @@ class SophistryBenchSprintEnv(EnvClient[AdvocacyAction, AdvocacyObservation, Sta
         observation = AdvocacyObservation(**obs_data, metadata=metadata)
         return StepResult(
             observation=observation,
-            reward=data["reward"],
-            done=data["done"],
+            reward=data.get("reward"),
+            done=data.get("done", False),
         )
 
     def _parse_state(self, data: dict) -> State:
