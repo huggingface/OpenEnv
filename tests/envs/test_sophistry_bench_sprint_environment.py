@@ -50,7 +50,7 @@ def test_advocacy_observation_defaults():
     assert o.prompt == "P"
     assert o.answer_to_defend == "A"
     assert o.item_id == "id1"
-    assert o.reward == 0.0
+    assert o.reward is None  # inherits base Observation default (no action scored)
     assert o.done is False
     assert o.metadata == {}
 
@@ -85,7 +85,7 @@ def test_reset_returns_task_observation():
     env = _env()
     obs = env.reset(seed=0)
     assert obs.done is False
-    assert obs.reward == 0.0
+    assert obs.reward is None  # no action scored on reset (framework convention)
     assert obs.prompt  # non-empty system prompt
     assert "DEFEND THIS ANSWER" in obs.prompt
     assert obs.answer_to_defend in obs.prompt
@@ -139,7 +139,7 @@ def test_aggregate_matches_canonical_verifiers_reward():
     env = _env()
     env.reset(seed=0)
     # Capture the episode passage now: step() flips _has_task and ends the episode.
-    passage = env._current_passage
+    passage = env.current_passage
     text = "<claim>alpha</claim><cite>beta gamma delta epsilon zeta</cite>"
     obs = env.step(AdvocacyAction(text=text))
 

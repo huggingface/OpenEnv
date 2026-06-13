@@ -29,18 +29,24 @@ class SophistryBenchSprintEnv(EnvClient[AdvocacyAction, AdvocacyObservation, Sta
         return action.model_dump()
 
     def _parse_result(self, data: dict) -> StepResult[AdvocacyObservation]:
-        observation = AdvocacyObservation(**data["observation"])
+        obs_data = dict(data["observation"])
         # The framework's HTTP layer strips the base ``metadata`` dict from the
         # serialized observation, so the reward components arrive in the declared
-        # ``components`` field. Re-populate ``metadata`` to keep the public
-        # contract (``observation.metadata`` carries the eight components).
-        if not observation.metadata and observation.components:
-            observation.metadata = dict(observation.components)
-        # The error path's ``metadata={"error": ...}`` is also stripped over the
-        # wire, arriving only in the declared ``error`` field. Restore it so the
-        # over-the-wire contract matches in-process behavior.
-        if observation.error and "error" not in observation.metadata:
-            observation.metadata["error"] = observation.error
+        # ``components`` field (and the diagnostic message in ``error``). Rebuild
+        # ``metadata`` here so the public contract holds — ``observation.metadata``
+        # carries the eight components — preferring any metadata that survived
+        # (in-process callers), else the mirrored ``components``.
+        wire_metadata = obs_data.pop("metadata", None)
+        metadata = (
+            dict(wire_metadata)
+            if wire_metadata
+            else dict(obs_data.get("components") or {})
+        )
+        error = obs_data.get("error") or ""
+        if error and "error" not in metadata:
+            metadata["error"] = error
+        # Construct once with metadata set, rather than mutating the model after.
+        observation = AdvocacyObservation(**obs_data, metadata=metadata)
         return StepResult(
             observation=observation,
             reward=data["reward"],

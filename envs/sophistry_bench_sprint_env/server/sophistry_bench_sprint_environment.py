@@ -157,11 +157,11 @@ class SophistryBenchSprintEnvironment(
 
         self._state = State(episode_id=episode_id or str(uuid.uuid4()), step_count=0)
 
+        # reward left as the base default (None): no action scored on reset.
         return AdvocacyObservation(
             prompt=self._system_text(row["prompt"]),
             answer_to_defend=info["assigned_answer"],
             item_id=info["article_id"],
-            reward=0.0,
             done=False,
         )
 
@@ -225,3 +225,10 @@ class SophistryBenchSprintEnvironment(
     @property
     def state(self) -> State:
         return self._state
+
+    @property
+    def current_passage(self) -> str:
+        """Passage of the active episode (the reading-comprehension text already
+        embedded in the reset prompt — not hidden ground truth). Empty before the
+        first ``reset``."""
+        return self._current_passage
