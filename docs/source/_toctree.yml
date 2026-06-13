@@ -125,6 +125,8 @@
     title: Agent World Model
   - local: environments/opencode
     title: OpenCode
+  - local: environments/sophistry_bench_sprint
+    title: Sophistry Bench Sprint
   title: Environments
 - isExpanded: false
   sections:
