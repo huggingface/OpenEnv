@@ -315,6 +315,13 @@ class TestREPLEnvironment:
         obs = env.step(REPLAction(code="print('FINAL(done)')"))
         assert obs.done
         assert obs.reward == 1.0
+        assert obs.metadata["reward_total"] == 1.0
+        assert obs.metadata["reward_aggregation"] == "weighted_sum_v1"
+        assert len(obs.metadata["reward_components"]) == 1
+        component = obs.metadata["reward_components"][0]
+        assert component["name"] == "outcome_match"
+        assert component["type"] == "binary"
+        assert component["terminal_only"] is True
 
     def test_rubric_reward_on_wrong_answer(self):
         """Test rubric reward when final answer does not match expected."""
@@ -325,6 +332,9 @@ class TestREPLEnvironment:
         obs = env.step(REPLAction(code="print('FINAL(wrong)')"))
         assert obs.done
         assert obs.reward == 0.0
+        assert obs.metadata["reward_total"] == 0.0
+        assert obs.metadata["reward_components"][0]["name"] == "outcome_match"
+        assert obs.metadata["reward_components"][0]["type"] == "binary"
 
     def test_rubric_reward_on_error(self):
         """Test rubric process reward on code error."""
@@ -332,6 +342,10 @@ class TestREPLEnvironment:
         env.reset()
         obs = env.step(REPLAction(code="raise ValueError()"))
         assert obs.reward == -0.05  # default CodeExecutionRubric error_penalty
+        assert obs.metadata["reward_total"] == -0.05
+        assert obs.metadata["reward_components"][0]["name"] == "code_execution_quality"
+        assert obs.metadata["reward_components"][0]["type"] == "shaping"
+        assert obs.metadata["reward_components"][0]["terminal_only"] is False
 
     def test_close(self):
         """Test close cleans up resources."""

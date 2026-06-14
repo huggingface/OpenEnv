@@ -10,6 +10,12 @@ See RFC 004 for full design: rfcs/004-rubrics.md
 """
 
 from openenv.core.rubrics.base import Rubric
+from openenv.core.rubrics.components import (
+    RewardComponent,
+    RewardComponentType,
+    aggregate_weighted_sum,
+    serialize_reward_components,
+)
 from openenv.core.rubrics.containers import (
     Gate,
     RubricDict,
@@ -26,6 +32,11 @@ from openenv.core.rubrics.trajectory import (
 __all__ = [
     # Base
     "Rubric",
+    # Components
+    "RewardComponent",
+    "RewardComponentType",
+    "aggregate_weighted_sum",
+    "serialize_reward_components",
     # Containers
     "Sequential",
     "Gate",
