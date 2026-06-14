@@ -166,3 +166,43 @@ def test_reset_changes_episode_id():
 
     # Episode IDs should be different
     assert episode_id_1 != episode_id_2
+
+
+def test_reset_accepts_episode_id_override():
+    """Test that reset() accepts an explicit episode_id."""
+    env = PythonCodeActEnv()
+
+    env.reset(episode_id="episode-123")
+
+    assert env.state.episode_id == "episode-123"
+    assert env.state.step_count == 0
+
+
+def test_reset_accepts_seed_parameter():
+    """Test that reset() accepts a seed for API compatibility."""
+    env = PythonCodeActEnv()
+
+    obs = env.reset(seed=42)
+
+    assert obs.exit_code == 0
+    assert env.state.step_count == 0
+
+
+def test_reset_replaces_empty_episode_id_override():
+    """Test that reset() replaces an empty episode_id with a generated ID."""
+    env = PythonCodeActEnv()
+
+    env.reset(episode_id="")
+
+    assert env.state.episode_id
+    assert env.state.step_count == 0
+
+
+def test_step_accepts_timeout_parameter():
+    """Test that step() accepts timeout_s for API compatibility."""
+    env = PythonCodeActEnv()
+    env.reset()
+
+    obs = env.step(CodeAction(code="print('ok')"), timeout_s=30.0)
+
+    assert obs.exit_code == 0

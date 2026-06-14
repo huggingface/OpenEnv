@@ -12,6 +12,7 @@ Python code actions using PyExecutor.
 """
 
 import uuid
+from typing import Any, Optional
 
 from openenv.core.env_server.interfaces import Action, Environment, Observation
 
@@ -50,15 +51,32 @@ class PythonCodeActEnv(Environment):
         self._executor = PyExecutor()
         self._state = CodeState()
 
-    def reset(self) -> Observation:
+    def reset(
+        self,
+        seed: Optional[int] = None,
+        episode_id: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Observation:
         """
         Reset environment and start fresh execution session.
+
+        Args:
+            seed: Accepted for API compatibility. This deterministic executor
+                has no random state to seed.
+            episode_id: Optional episode identifier override.
+            **kwargs: Forward-compatible reset parameters accepted by the base
+                Environment API but unused by this environment.
 
         Returns:
             Initial observation with empty stdout/stderr and exit_code=0
         """
+        del seed, kwargs
+
         # Initialize fresh state
-        self._state = CodeState(episode_id=str(uuid.uuid4()), step_count=0)
+        self._state = CodeState(
+            episode_id=episode_id or str(uuid.uuid4()),
+            step_count=0,
+        )
         # Add last_exit_code to state
         self._state.last_exit_code = 0
 
@@ -77,12 +95,21 @@ class PythonCodeActEnv(Environment):
 
         return self._apply_transform(observation)
 
-    def step(self, action: Action) -> Observation:
+    def step(
+        self,
+        action: Action,
+        timeout_s: Optional[float] = None,
+        **kwargs: Any,
+    ) -> Observation:
         """
         Execute code action and return observation.
 
         Args:
             action: CodeAction containing the code to execute
+            timeout_s: Accepted for Environment API compatibility. PyExecutor
+                does not currently expose per-call timeout control.
+            **kwargs: Forward-compatible step parameters accepted by the base
+                Environment API but unused by this environment.
 
         Returns:
             CodeObservation with execution results (stdout, stderr, exit_code)
@@ -90,6 +117,8 @@ class PythonCodeActEnv(Environment):
         Raises:
             ValueError: If action is not a CodeAction instance
         """
+        del timeout_s, kwargs
+
         if not isinstance(action, CodeAction):
             raise ValueError(f"Expected CodeAction, got {type(action)}")
 
