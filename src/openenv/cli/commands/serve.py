@@ -65,7 +65,7 @@ def serve(
         import uvicorn
     except ImportError as exc:  # pragma: no cover
         raise typer.BadParameter(
-            "uvicorn is required for `openenv serve`. Install openenv-core with default dependencies."
+            "uvicorn is not installed. Run: pip install 'uvicorn>=0.24.0'"
         ) from exc
 
     env_path_obj = (
@@ -112,6 +112,10 @@ def serve(
         raise typer.BadParameter(
             f"Invalid port {raw_port!r}; expected an integer"
         ) from exc
+    if not (1 <= listen_port <= 65535):
+        raise typer.BadParameter(
+            f"Invalid port {listen_port}; expected a value between 1 and 65535"
+        )
 
     repo_src = _find_repo_src_for_openenv(env_path_obj)
     if repo_src is not None:
@@ -123,11 +127,18 @@ def serve(
     if env_root not in sys.path:
         sys.path.insert(0, env_root)
 
+    prev_cwd = os.getcwd()
     os.chdir(env_root)
 
-    console.print(
-        f"[bold green]Serving[/bold green] [cyan]{app_spec}[/cyan] on "
-        f"[bold]http://{host}:{listen_port}/[/bold]  (cwd: {env_root})"
-    )
+    try:
+        console.print(
+            f"[bold green]Serving[/bold green] [cyan]{app_spec}[/cyan] on "
+            f"[bold]http://{host}:{listen_port}/[/bold]  (cwd: {env_root})"
+        )
 
-    uvicorn.run(app_spec, host=host, port=listen_port, reload=reload)
+        uvicorn.run(app_spec, host=host, port=listen_port, reload=reload)
+    finally:
+        try:
+            os.chdir(prev_cwd)
+        except OSError:
+            pass

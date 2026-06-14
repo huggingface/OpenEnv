@@ -27,7 +27,7 @@ runner = CliRunner()
 
 
 @pytest.fixture(autouse=True)
-def _restore_cwd_and_syspath() -> None:
+def _restore_cwd_and_syspath():
     """``serve`` mutates cwd and ``sys.path``; CliRunner runs in-process."""
     cwd = os.getcwd()
     path = list(sys.path)
