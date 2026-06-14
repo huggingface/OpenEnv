@@ -276,5 +276,13 @@ The OpenEnv community has built a catalog of ready-to-run environments that cove
         <a href="https://huggingface.co/spaces/ZhiyuanZeng/RLVE_Gym" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">🤗 HF</a>
       </div>
     </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Reasoning Core</div>
+      <p class="text-sm">Formally verifiable symbolic reasoning tasks across logic, mathematics, planning, syntax, and related procedural domains.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="https://huggingface.co/spaces/reasoning-core/reasoning-core-openenv/blob/main/README.md" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+        <a href="https://huggingface.co/spaces/reasoning-core/reasoning-core-openenv" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">🤗 HF</a>
+      </div>
+    </div>
   </div>
 </div>
