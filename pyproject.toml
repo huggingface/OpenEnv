@@ -70,6 +70,7 @@ include-package-data = true
 
 [tool.setuptools.package-data]
 "openenv.cli" = ["templates/**/*"]
+"openenv.core.harness" = ["*.mjs"]
 
 [tool.setuptools.exclude-package-data]
 "*" = ["*.pyc", "*.pyo", "__pycache__/*"]

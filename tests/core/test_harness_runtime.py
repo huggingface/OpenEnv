@@ -8,6 +8,9 @@
 
 from __future__ import annotations
 
+import json
+import subprocess
+import urllib.request
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -22,6 +25,7 @@ from openenv.core.harness import (
     HarnessRunLimits,
     MCPHarnessAdapter,
     ModelStepResult,
+    PiCLIHarnessAdapter,
     RESERVED_TOOL_NAMES,
     RolloutEvent,
     SessionMCPBridge,
@@ -700,3 +704,98 @@ class TestCLIHarnessAdapter:
         assert result.done is True
         assert result.metrics["mode"] == "black_box"
         assert result.events[0].payload["result"]["done"] is True
+
+
+class TestPiCLIHarnessAdapter:
+    """Tests for the black-box Pi CLI harness adapter."""
+
+    def test_pi_cli_adapter_forwards_pi_tool_calls_to_session_bridge(self):
+        env = FakeSyncEnv()
+        session = StepEnvSessionAdapter(
+            client=env,
+            task="pi-task",
+            tool_specs=[
+                Tool(
+                    name="finish",
+                    description="Finish the task",
+                    input_schema={"type": "object", "properties": {}},
+                )
+            ],
+            action_builder=lambda name, arguments: name,
+            initial_messages_builder=lambda result, task: [
+                {"role": "user", "content": f"Solve {task}"}
+            ],
+        )
+        seen_commands: list[list[str]] = []
+
+        def fake_pi(command, cwd, env, text, capture_output, timeout):
+            del cwd, text, capture_output, timeout
+            seen_commands.append(list(command))
+            bridge_url = env["OPENENV_PI_BRIDGE_URL"]
+            assert env["OPENENV_PI_MODEL_BASE_URL"] == "http://trainer.example/v1"
+            assert env["OPENENV_PI_MODEL_ID"] == "test-model"
+            assert env["OPENENV_PI_MODEL_PROVIDER"] == "openenv-vllm"
+
+            def post(payload):
+                request = urllib.request.Request(
+                    bridge_url,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={"content-type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    return json.loads(response.read().decode("utf-8"))
+
+            tools = post(
+                {
+                    "jsonrpc": "2.0",
+                    "id": "tools",
+                    "method": "tools/list",
+                    "params": {},
+                }
+            )
+            payload = post(
+                {
+                    "jsonrpc": "2.0",
+                    "id": "call-1",
+                    "method": "tools/call",
+                    "params": {"name": "finish", "arguments": {}},
+                }
+            )
+
+            assert tools["result"]["tools"][0]["name"] == "finish"
+            assert payload["result"]["done"] is True
+            stdout = "\n".join(
+                [
+                    json.dumps({"type": "session", "id": "pi-session"}),
+                    json.dumps(
+                        {
+                            "type": "agent_end",
+                            "messages": [{"role": "assistant", "content": "done"}],
+                        }
+                    ),
+                ]
+            )
+            return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+        adapter = PiCLIHarnessAdapter(
+            pi_command="pi",
+            model="test-model",
+            model_base_url="http://trainer.example/v1",
+            command_runner=fake_pi,
+        )
+
+        result = adapter.run_black_box(session=session, limits=HarnessRunLimits())
+
+        assert result.done is True
+        assert result.metrics["harness"] == "pi_cli"
+        assert result.tool_trace[0].tool_name == "finish"
+        assert result.tool_trace[0].result.metadata["reward"] == 1.0
+        assert result.messages == [{"role": "assistant", "content": "done"}]
+        assert seen_commands[0][seen_commands[0].index("--provider") + 1] == "openenv-vllm"
+        assert seen_commands[0][seen_commands[0].index("--model") + 1] == "test-model"
+        assert seen_commands[0][:3] == ["pi", "--mode", "json"]
+        extension_path = seen_commands[0][seen_commands[0].index("--extension") + 1]
+        assert extension_path.endswith("pi_bridge.mjs")
+        assert "--no-context-files" in seen_commands[0]
+        assert seen_commands[0][-1] == "Solve pi-task"
