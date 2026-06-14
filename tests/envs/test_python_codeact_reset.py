@@ -188,13 +188,13 @@ def test_reset_accepts_seed_parameter():
     assert env.state.step_count == 0
 
 
-def test_reset_preserves_empty_episode_id_override():
-    """Test that reset() preserves any explicit non-None episode_id."""
+def test_reset_replaces_empty_episode_id_override():
+    """Test that reset() replaces an empty episode_id with a generated ID."""
     env = PythonCodeActEnv()
 
     env.reset(episode_id="")
 
-    assert env.state.episode_id == ""
+    assert env.state.episode_id
     assert env.state.step_count == 0
 
 

@@ -10,9 +10,16 @@ Keep imports lazy so utility modules (for example transforms) remain importable
 without pulling optional runtime dependencies like smolagents.
 """
 
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .python_codeact_env import PythonCodeActEnv
 
 __all__ = ["PythonCodeActEnv"]
+
+
+def __dir__() -> list[str]:
+    return sorted({*globals(), *__all__})
 
 
 def __getattr__(name: str) -> Any:

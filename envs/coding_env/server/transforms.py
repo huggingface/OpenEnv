@@ -7,12 +7,17 @@
 """Transforms specific to coding environments."""
 
 import ast
+import re
 
 from openenv.core.env_server.base_transforms import CompositeTransform
 from openenv.core.env_server.interfaces import Transform
 from openenv.core.env_server.types import Observation
 
 from ..models import CodeObservation
+
+
+def _parse_code(code: str) -> ast.AST:
+    return ast.parse(code)
 
 
 class CodeSafetyTransform(Transform):
@@ -25,6 +30,20 @@ class CodeSafetyTransform(Transform):
 
     def __init__(self, penalty: float = -1.0):
         self.penalty = penalty
+        self._fallback_patterns = [
+            (re.compile(r"\bimport\s+os\b"), "import os"),
+            (re.compile(r"\bimport\s+subprocess\b"), "import subprocess"),
+            (re.compile(r"\beval\s*\("), "eval"),
+            (re.compile(r"\bexec\s*\("), "exec"),
+            (re.compile(r"\b__import__\s*\("), "__import__"),
+            (re.compile(r"\bopen\s*\("), "open"),
+        ]
+
+    def _detect_text_violation(self, code: str) -> str | None:
+        for pattern, violation in self._fallback_patterns:
+            if pattern.search(code):
+                return violation
+        return None
 
     def _detect_violation(self, code: str) -> str | None:
         """
@@ -35,13 +54,11 @@ class CodeSafetyTransform(Transform):
         (e.g. ``myopen()``).
         """
         try:
-            tree = ast.parse(code)
+            tree = _parse_code(code)
         except (SyntaxError, RecursionError, ValueError):
-            # Intentional trade-off: once the code is syntactically invalid or
-            # pathologically nested, this AST-only safety pass cannot reliably
-            # inspect partial code. CodeQualityTransform applies the syntax
-            # penalty instead.
-            return None
+            # Fall back to the previous raw-text heuristic when AST parsing
+            # cannot inspect malformed or pathologically nested code.
+            return self._detect_text_violation(code)
 
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -60,6 +77,8 @@ class CodeSafetyTransform(Transform):
                     called_name = node.func.id
                     if called_name in {"eval", "exec", "open", "__import__"}:
                         return called_name
+                if isinstance(node.func, ast.Attribute) and node.func.attr == "open":
+                    return "open"
 
         return None
 
@@ -107,7 +126,7 @@ class CodeQualityTransform(Transform):
 
             # Check syntax (redundant but useful for quality assessment)
             try:
-                ast.parse(code)
+                _parse_code(code)
             except (SyntaxError, RecursionError, ValueError):
                 quality_score += self.syntax_penalty
 

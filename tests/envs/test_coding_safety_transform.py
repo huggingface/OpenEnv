@@ -61,6 +61,18 @@ def test_blocks_builtin_open_call():
     assert "safety_violation" in observation.metadata
 
 
+def test_blocks_attribute_open_call():
+    observation = _apply_safety_transform("Path('f.txt').open()")
+    assert observation.reward == -1.0
+    assert observation.metadata["safety_violation"] == "open"
+
+
+def test_blocks_raw_text_violation_when_parse_fails():
+    observation = _apply_safety_transform("import os\n\x00")
+    assert observation.reward == -1.0
+    assert observation.metadata["safety_violation"] == "import os"
+
+
 def test_blocks_builtin_eval_call():
     observation = _apply_safety_transform("result = eval('1 + 1')")
     assert observation.reward == -1.0
@@ -109,7 +121,9 @@ def test_quality_transform_handles_ast_recursion_error(monkeypatch):
     def raise_recursion_error(_code: str):
         raise RecursionError("pathologically nested code")
 
-    monkeypatch.setattr("coding_env.server.transforms.ast.parse", raise_recursion_error)
+    monkeypatch.setattr(
+        "coding_env.server.transforms._parse_code", raise_recursion_error
+    )
 
     transform = CodeQualityTransform(concise_bonus=0.0, syntax_penalty=-0.2)
     observation = CodeObservation(
