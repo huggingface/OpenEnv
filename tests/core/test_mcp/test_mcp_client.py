@@ -180,6 +180,30 @@ class TestMCPClientBase:
         assert result.observation.error is not None
         assert result.observation.error.error_type == ToolErrorType.TOOL_NOT_FOUND
 
+    def test_parse_result_generic_observation_preserves_custom_fields(self):
+        """Test _parse_result keeps env-specific observation fields on reset/step."""
+        client = MCPClientBase.__new__(MCPClientBase)
+        client._ws = None
+        client._tools_cache = None
+
+        payload = {
+            "observation": {
+                "problem": "Prove that the sum of two even integers is even.",
+                "problem_id": "bootstrap_000001",
+                "problem_type": "proof",
+                "metadata": {"dataset_source": "bootstrap"},
+            },
+            "done": False,
+            "reward": None,
+        }
+
+        result = client._parse_result(payload)
+
+        assert isinstance(result, StepResult)
+        assert getattr(result.observation, "problem_id") == "bootstrap_000001"
+        assert getattr(result.observation, "problem_type") == "proof"
+        assert result.observation.metadata == {"dataset_source": "bootstrap"}
+
 
 # =============================================================================
 # MCPToolClient Tests

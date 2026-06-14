@@ -24,7 +24,7 @@ Architecture Overview::
     │    /mcp   → MCP JSON-RPC (tools/list, tools/call)       │
     │    /reset, /step, /state → HTTP endpoints               │
     ├─────────────────────────────────────────────────────────┤
-    │  Production Mode (use_production_mode=True):                     │
+    │  Production Mode (use_production_mode=True):            │
     │    /mcp   → MCP JSON-RPC (tools/list, tools/call)       │
     │    Bypasses step() for direct tool access               │
     └─────────────────────────────────────────────────────────┘
@@ -61,6 +61,8 @@ Examples:
 import asyncio
 from typing import Any, Dict, List, Optional
 
+from pydantic import ConfigDict
+
 from .client_types import StepResult
 from .env_client import EnvClient
 from .env_server.mcp_types import (
@@ -72,6 +74,16 @@ from .env_server.mcp_types import (
     ToolError,
 )
 from .env_server.types import Observation, State
+
+
+class GenericMCPObservation(Observation):
+    """Generic MCP observation that preserves env-specific fields."""
+
+    model_config = ConfigDict(
+        extra="allow",
+        validate_assignment=True,
+        arbitrary_types_allowed=True,
+    )
 
 
 class MCPClientBase(EnvClient[Any, Observation, State]):
@@ -303,11 +315,17 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
                 metadata=obs_data.get("metadata", {}),
             )
         else:
-            # Generic observation
-            observation = Observation(
+            # Generic observation with passthrough for env-specific fields
+            custom_fields = {
+                key: value
+                for key, value in obs_data.items()
+                if key not in {"done", "reward", "metadata"}
+            }
+            observation = GenericMCPObservation(
                 done=payload.get("done", False),
                 reward=payload.get("reward"),
                 metadata=obs_data.get("metadata", {}),
+                **custom_fields,
             )
 
         return StepResult(
