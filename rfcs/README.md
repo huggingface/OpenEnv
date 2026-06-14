@@ -93,6 +93,9 @@ Each RFC should include the following sections:
 ### Agentic Harnesses
 - [005-agentic-harnesses.md](./005-agentic-harnesses.md) - Agentic Harness Integration (OpenClaw, Claude Code, etc.)
 
+### External Environment Imports
+- [006-external-environment-imports.md](./006-external-environment-imports.md) - External Environment Imports (ORS/OpenReward, Verifiers)
+
 ## Questions?
 
 For questions about the RFC process, reach out to the core team or open a discussion in the project repository.
