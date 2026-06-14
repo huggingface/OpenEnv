@@ -17,7 +17,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-import requests
 from openenv.cli.__main__ import app
 from typer.testing import CliRunner
 
@@ -92,6 +91,7 @@ def test_serve_uses_manifest_port_when_omitted() -> None:
 
 @pytest.mark.integration
 def test_serve_echo_env_health_subprocess() -> None:
+    requests = pytest.importorskip("requests")
     port = _pick_free_port()
     env = os.environ.copy()
     env["PYTHONPATH"] = str(REPO_ROOT / "src")

@@ -57,6 +57,9 @@ def serve(
     Uses ``openenv.yaml`` fields ``app`` (e.g. ``server.app:app``), ``port``, and
     ``runtime`` (must be ``fastapi``). Matches ``uv run --project . server`` layout:
     the environment directory is the working directory and on ``sys.path``.
+
+    For production or training, use Docker (``openenv build``) — this command runs
+    on the host for local development only.
     """
     try:
         import uvicorn
@@ -102,7 +105,13 @@ def serve(
             f"openenv serve only supports runtime 'fastapi' (got {runtime!r})"
         )
 
-    listen_port = int(port if port is not None else manifest.get("port", 8000))
+    raw_port = port if port is not None else manifest.get("port", 8000)
+    try:
+        listen_port = int(raw_port)
+    except (TypeError, ValueError) as exc:
+        raise typer.BadParameter(
+            f"Invalid port {raw_port!r}; expected an integer"
+        ) from exc
 
     repo_src = _find_repo_src_for_openenv(env_path_obj)
     if repo_src is not None:
