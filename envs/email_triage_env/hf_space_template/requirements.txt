@@ -1,0 +1,4 @@
+gradio
+fastapi
+pydantic
+numpy

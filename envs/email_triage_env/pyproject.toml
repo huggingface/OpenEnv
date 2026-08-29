@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "email_triage_env"
+version = "0.1.0"
+description = "Email triage OpenEnv environment with task-specific graders"
+requires-python = ">=3.10"
+dependencies = [
+    "openenv-core[core]>=0.2.2",
+    "fastapi>=0.115.0",
+    "pydantic>=2.0.0",
+    "uvicorn>=0.24.0",
+    "requests>=2.31.0",
+    "openai>=2.7.2",
+]
+
+[project.scripts]
+server = "email_triage_env.server.app:main"
+
+[tool.setuptools]
+include-package-data = true
+packages = ["email_triage_env", "email_triage_env.server"]
+package-dir = { "email_triage_env" = ".", "email_triage_env.server" = "server" }
+
+[tool.setuptools.package-data]
+email_triage_env = ["server/email_triage_dataset.json", "README.md", "openenv.yaml"]
+
+[tool.uv.sources]
+openenv = { path = "../../", editable = true }
