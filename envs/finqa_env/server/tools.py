@@ -48,6 +48,34 @@ class FinQATools:
             if os.path.isdir(os.path.join(self.companies_path, d))
         ]
 
+    def _resolve_within(self, *parts: str) -> str | None:
+        """
+        Join agent-supplied path components under ``companies_path`` and confirm the
+        result stays inside it.
+
+        The tool arguments (``company_name``, ``table_name``) are supplied by the agent
+        over the MCP boundary. Joining them into a filesystem path without a containment
+        check allows ``..`` traversal to read files outside the data directory. This
+        rejects any such escape.
+
+        Args:
+            parts (`str`):
+                Path components to join beneath ``companies_path``.
+
+        Returns:
+            `str` or `None`: the resolved absolute path if it stays within
+            ``companies_path``, otherwise `None`.
+        """
+        root = os.path.realpath(self.companies_path)
+        candidate = os.path.realpath(os.path.join(self.companies_path, *parts))
+        try:
+            if candidate != root and os.path.commonpath([root, candidate]) == root:
+                return candidate
+        except ValueError:
+            # Raised when paths cannot be compared (e.g. different drives on Windows).
+            pass
+        return None
+
     def execute_tool(
         self, tool_name: str, tool_args: Dict[str, Any]
     ) -> Tuple[str, bool]:
@@ -82,9 +110,9 @@ class FinQATools:
         Returns:
             JSON list of table names
         """
-        company_path = os.path.join(self.companies_path, company_name)
+        company_path = self._resolve_within(company_name)
 
-        if not os.path.isdir(company_path):
+        if company_path is None or not os.path.isdir(company_path):
             available = self.get_available_companies()
             return (
                 f"Error: '{company_name}' not found. Available companies: {available}"
@@ -109,9 +137,9 @@ class FinQATools:
         Returns:
             JSON string with table metadata (description, columns, dtypes, unique values)
         """
-        company_path = os.path.join(self.companies_path, company_name)
+        company_path = self._resolve_within(company_name)
 
-        if not os.path.isdir(company_path):
+        if company_path is None or not os.path.isdir(company_path):
             available = self.get_available_companies()
             return (
                 f"Error: '{company_name}' not found. Available companies: {available}"
@@ -211,12 +239,10 @@ class FinQATools:
 
         # Clean table name
         cleaned_table_name = table_name.replace(".txt", "").replace(".json", "")
-        table_path = os.path.join(
-            self.companies_path, company_name, f"{cleaned_table_name}.json"
-        )
+        table_path = self._resolve_within(company_name, f"{cleaned_table_name}.json")
 
-        if not os.path.isfile(table_path):
-            return f"Error: Table file not found at {table_path}"
+        if table_path is None or not os.path.isfile(table_path):
+            return f"Error: Table file not found for '{company_name}/{table_name}'"
 
         try:
             # Load table and execute query
