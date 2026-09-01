@@ -66,6 +66,7 @@ include-package-data = true
 [tool.setuptools.package-data]
 "openenv.cli" = ["templates/**/*"]
 "openenv.cli.importers" = ["templates/**/*"]
+"openenv.validation" = ["schemas/*.json"]
 
 [tool.setuptools.exclude-package-data]
 "*" = ["*.pyc", "*.pyo", "__pycache__/*"]
