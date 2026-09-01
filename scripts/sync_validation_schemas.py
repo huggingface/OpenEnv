@@ -26,9 +26,11 @@ SCHEMAS_DIR = os.path.join(ROOT, "src", "openenv", "validation", "schemas")
 def rendered_schemas():
     """Return {filename: rendered JSON text} for every exported schema."""
     from openenv.validation.manifest import NormalizedManifest
+    from openenv.validation.report import ValidationReport
 
     exports = {
         "manifest.schema.json": NormalizedManifest,
+        "report.schema.json": ValidationReport,
     }
     return {
         fname: json.dumps(model.model_json_schema(), indent=2, sort_keys=True) + "\n"
