@@ -29,7 +29,7 @@ dependencies = [
     # "openspiel>=1.0.0",
     # "smolagents>=1.22.0,<2",
     "textarena>=0.6.1",
-    "nltk>=3.9.3",
+    "nltk>=3.10.0",
     # For custom Gradio tab (server/gradio_ui.py) when ENABLE_WEB_INTERFACE=true
     "gradio>=6.15.1",
 ]
