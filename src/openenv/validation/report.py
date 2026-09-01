@@ -6,6 +6,7 @@ an author is never shown a check they cannot red-to-green. Hub and statistical c
 ids are reserved in this schema so operator reports and local reports share it.
 """
 
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -68,3 +69,22 @@ class ValidationReport(BaseModel):
     levels_run: list[Level]
     results: list[CheckResult]
     verdict: Verdict
+
+
+def write_report(report: ValidationReport, path: Path | None = None) -> str:
+    """
+    Serialize a validation report to schema-versioned JSON.
+
+    Args:
+        report ([`~openenv.validation.report.ValidationReport`]):
+            The completed report.
+        path (`Path`, *optional*):
+            When set, the JSON is also written to this file.
+
+    Returns:
+        `str`: the JSON payload, without a trailing newline.
+    """
+    payload = report.model_dump_json(indent=2)
+    if path is not None:
+        path.write_text(payload + "\n")
+    return payload

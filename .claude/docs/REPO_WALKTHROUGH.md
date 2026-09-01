@@ -64,6 +64,7 @@ src/
 │   │   ├── signature.py          # Package signature detection
 │   │   ├── report.py             # Versioned validation report models
 │   │   ├── policy.py             # Severity-policy loading and application
+│   │   ├── runner.py             # Local validation orchestration
 │   │   ├── parsers/              # Manifest parser registry
 │   │   ├── providers/            # Validation provider contracts
 │   │   ├── graders/              # Grader registry and protocols

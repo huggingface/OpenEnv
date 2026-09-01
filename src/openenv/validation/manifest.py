@@ -12,6 +12,28 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .types import SignatureKind
 
 
+class ManifestError(Exception):
+    """
+    A package's declarations do not produce a valid normalized manifest.
+
+    Raised by parsers when the format-specific source (e.g. `openenv.yaml`) is
+    readable but its content fails the manifest schema. The runner surfaces this as a
+    `static.manifest` FAIL in the report — a graded failure with remediation, not a
+    crash and not exit code 2.
+
+    Attributes:
+        errors (`list[str]`):
+            Human-readable schema violations, one per finding.
+        remediation (`str`, *optional*):
+            What the author changes to go green.
+    """
+
+    def __init__(self, errors: list[str], *, remediation: str | None = None):
+        super().__init__("; ".join(errors))
+        self.errors = errors
+        self.remediation = remediation
+
+
 class RewardDeclaration(BaseModel):
     """
     Author-declared reward contract. Graders normalize measurements against it.

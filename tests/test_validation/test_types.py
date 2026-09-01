@@ -1,5 +1,12 @@
 from openenv.validation.signature import WELL_KNOWN_FILES
-from openenv.validation.types import CheckStatus, Lane, Level, Severity, Verdict
+from openenv.validation.types import (
+    CheckStatus,
+    Lane,
+    Level,
+    Severity,
+    SignatureKind,
+    Verdict,
+)
 
 
 def test_levels_are_ordered_by_cost():
@@ -22,5 +29,5 @@ def test_lanes():
     assert {lane.value for lane in Lane} == {"local", "hub"}
 
 
-def test_well_known_files_is_empty_until_a_parser_exists():
-    assert WELL_KNOWN_FILES == {}
+def test_well_known_files_lists_implemented_parsers():
+    assert WELL_KNOWN_FILES == {SignatureKind.OPENENV_SERVED: "openenv.yaml"}

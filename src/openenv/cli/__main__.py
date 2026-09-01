@@ -37,9 +37,9 @@ app.command(name="import", help="Import a third-party environment into OpenEnv")
 app.command(name="build", help="Build Docker images for OpenEnv environments")(
     build.build
 )
-app.command(
-    name="validate", help="Validate environment structure and deployment readiness"
-)(validate.validate)
+app.command(name="validate", help="Validate a package against the OpenEnv quality bar")(
+    validate.validate
+)
 app.command(
     name="push",
     help="Push an OpenEnv environment to Hugging Face Spaces or custom registry",
