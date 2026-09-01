@@ -58,6 +58,11 @@ src/
 │   │       ├── local_python_executor.py  # Python code execution
 │   │       └── git_server_client.py      # Git operations
 │   │
+│   ├── validation/           # RFC 008 environment validation contracts
+│   │   ├── types.py              # Shared validation enums and protocol types
+│   │   ├── manifest.py           # Normalized environment manifest models
+│   │   └── schemas/              # Generated JSON schemas
+│   │
 │   └── cli/                  # Command-line interface
 │       ├── __main__.py           # Entry point (`python -m openenv.cli`)
 │       ├── commands/             # CLI subcommands
