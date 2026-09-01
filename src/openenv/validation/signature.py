@@ -1,9 +1,13 @@
-"""Well-known files and unsupported-package errors."""
+"""Well-known files, signature detection, and unsupported-package errors."""
+
+from pathlib import Path
 
 from .types import SignatureKind
 
-WELL_KNOWN_FILES: dict[SignatureKind, str] = {}
-"""Formats this build can parse. Empty until a parser is registered. Values are the enum filenames."""
+WELL_KNOWN_FILES: dict[SignatureKind, str] = {
+    SignatureKind.OPENENV_SERVED: "openenv.yaml",
+}
+"""Formats this build can parse. Values are the enum filenames."""
 
 UNSUPPORTED_CATEGORIES: dict[str, str] = {
     "hosted-verifier": (
@@ -51,3 +55,66 @@ class UnsupportedPackageError(Exception):
         super().__init__(f"unsupported package ({category}): {reason}")
         self.category = category
         self.reason = reason
+
+
+def _has_yaml_frontmatter(path: Path) -> bool:
+    try:
+        return path.read_text(encoding="utf-8").lstrip().startswith("---")
+    except (OSError, UnicodeError):
+        return False
+
+
+def _file_present(package_root: Path, kind: SignatureKind) -> bool:
+    path = package_root / kind.value
+    if not path.is_file():
+        return False
+    if kind is SignatureKind.POSTTRAIN_TASK:
+        return _has_yaml_frontmatter(path)
+    return True
+
+
+def detect_signature(package_root: Path) -> SignatureKind:
+    """
+    Detect a package's format from its well-known file. Never a guess.
+
+    Only formats with implemented parsers are returned. A package carrying two or
+    more well-known files of any named format is refused as ambiguous — even when
+    only one of those formats has a parser in this build — because choosing the
+    parseable one would be a guess. Zero implemented-parser matches is unrecognized.
+
+    Args:
+        package_root (`Path`):
+            Directory to inspect.
+
+    Returns:
+        [`~openenv.validation.types.SignatureKind`]: the single matching signature.
+
+    Raises:
+        [`~openenv.validation.signature.SignatureError`]:
+            The path is not a directory, zero implemented parsers match, or two or
+            more named-format well-known files are present.
+    """
+    package_root = Path(package_root)
+    if not package_root.is_dir():
+        raise SignatureError(f"not a package directory: {package_root}")
+
+    named_matches = [
+        kind for kind in SignatureKind if _file_present(package_root, kind)
+    ]
+    if len(named_matches) > 1:
+        found = ", ".join(sorted(kind.value for kind in named_matches))
+        raise SignatureError(
+            f"ambiguous package: {package_root} matches multiple signatures ({found}); "
+            "a package must carry exactly one well-known file"
+        )
+
+    implemented = [
+        kind for kind in WELL_KNOWN_FILES if _file_present(package_root, kind)
+    ]
+    if not implemented:
+        expected = ", ".join(sorted(WELL_KNOWN_FILES.values()))
+        raise SignatureError(
+            f"unrecognized package: {package_root} contains none of the well-known "
+            f"files this build can parse ({expected})"
+        )
+    return implemented[0]
