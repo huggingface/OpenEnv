@@ -111,6 +111,8 @@
     title: FinQA
   - local: environments/grid_world
     title: Grid World
+  - local: environments/harbor
+    title: Harbor
   - local: environments/julia
     title: Julia
   - local: environments/kernrl

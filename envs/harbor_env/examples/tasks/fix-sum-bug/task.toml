@@ -1,0 +1,24 @@
+schema_version = "1.4"
+
+[task]
+name = "openenv/fix-sum-bug"
+version = "1.0.0"
+description = "Fix a statistics helper so it handles empty and single-element inputs."
+keywords = ["example", "python", "bugfix"]
+
+[metadata]
+difficulty = "easy"
+category = "programming"
+difficulty_explanation = "A two-line fix; exists to exercise the task format end to end."
+
+[environment]
+# No environment/Dockerfile, so Harbor uploads the other environment/ files into
+# the working directory and runs them on this image. That also makes the task
+# self-contained, which is what lets OpenEnv's local backend run it without Docker.
+docker_image = "python:3.12-slim"
+
+[agent]
+timeout_sec = 600.0
+
+[verifier]
+timeout_sec = 120.0
