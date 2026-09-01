@@ -19,6 +19,7 @@ manages the per-environment stub files.
 
 import argparse
 import os
+import posixpath
 import re
 import sys
 
@@ -26,8 +27,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENVS_DIR = os.path.join(ROOT, "envs")
 DOCS_ENVS_DIR = os.path.join(ROOT, "docs", "source", "environments")
 GITHUB_RAW_BASE = "https://raw.githubusercontent.com/huggingface/OpenEnv/main"
+GITHUB_BLOB_BASE = "https://github.com/huggingface/OpenEnv/blob/main"
+GITHUB_TREE_BASE = "https://github.com/huggingface/OpenEnv/tree/main"
 
 SKIP_DIRS = {"README.md"}
+_MD_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +101,78 @@ def _strip_frontmatter(text):
     return text
 
 
+def _is_absolute_or_external_url(url):
+    """Return True if *url* should be left untouched (http, mailto, anchors, site-root)."""
+    url = url.strip()
+    if not url:
+        return True
+    if url.startswith(("#", "/", "http://", "https://", "mailto:")):
+        return True
+    if "://" in url:
+        return True
+    return False
+
+
+def repo_relpath_from_readme_link(env_dir, url):
+    """Resolve a README-relative link to a repo-root POSIX path, or None.
+
+    Extra ``../`` segments that walk out of the repository (a common README
+    mistake) are stripped so ``envs/git_env/../../../examples/foo.py`` still
+    maps to ``examples/foo.py``.
+    """
+    path = url.split()[0].strip()
+    path, hash_sep, anchor = path.partition("#")
+    if not path or _is_absolute_or_external_url(path):
+        return None
+    joined = posixpath.normpath(posixpath.join("envs", env_dir, path))
+    while joined.startswith("../"):
+        joined = joined[3:]
+    if joined in {".", ""} or joined.startswith(".."):
+        return None
+    if hash_sep:
+        return f"{joined}#{anchor}"
+    return joined
+
+
+def _link_escapes_env_dir(env_dir, repo_relpath):
+    """True when the resolved path is outside ``envs/<env_dir>/``."""
+    path_only = repo_relpath.split("#", 1)[0]
+    prefix = f"envs/{env_dir}"
+    return path_only != prefix and not path_only.startswith(prefix + "/")
+
+
+def rewrite_markdown_links(content, env_dir):
+    """Rewrite README-relative markdown links that leave the env directory.
+
+    Those links are valid from ``envs/<env>/README.md`` but break once the
+    README is inlined at ``docs/source/environments/<slug>.md``. Convert them
+    to GitHub blob/tree URLs, matching the convention already used by some
+    env READMEs. See https://github.com/huggingface/OpenEnv/issues/1095
+    """
+
+    def repl(match):
+        text, url = match.group(1), match.group(2)
+        raw_url = url.split()[0]
+        repo_rel = repo_relpath_from_readme_link(env_dir, raw_url)
+        if repo_rel is None or not _link_escapes_env_dir(env_dir, repo_rel):
+            return match.group(0)
+        path_only, hash_sep, anchor = repo_rel.partition("#")
+        abs_fs = os.path.join(ROOT, *path_only.split("/"))
+        is_image = match.start() > 0 and content[match.start() - 1] == "!"
+        url_path = raw_url.split("#", 1)[0]
+        if is_image:
+            new_url = f"{GITHUB_RAW_BASE}/{path_only}"
+        elif url_path.endswith("/") or os.path.isdir(abs_fs):
+            new_url = f"{GITHUB_TREE_BASE}/{path_only}"
+        else:
+            new_url = f"{GITHUB_BLOB_BASE}/{path_only}"
+        if hash_sep:
+            new_url = f"{new_url}#{anchor}"
+        return f"[{text}]({new_url})"
+
+    return _MD_LINK_RE.sub(repl, content)
+
+
 def generate_stub(env_dir):
     """Return the doc stub content for an environment.
 
@@ -111,7 +187,8 @@ def generate_stub(env_dir):
     # Rewrite relative assets/ paths to absolute GitHub raw URLs so images
     # render correctly when the README is inlined into the doc-builder site.
     base_url = f"{GITHUB_RAW_BASE}/envs/{env_dir}"
-    content = re.sub(r'(src=["\'])assets/', rf'\1{base_url}/assets/', content)
+    content = re.sub(r'(src=["\'])assets/', rf"\1{base_url}/assets/", content)
+    content = rewrite_markdown_links(content, env_dir)
     return f"<!-- openenv-source: {env_dir} -->\n{content}"
 
 
@@ -241,9 +318,15 @@ def main():
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--check", action="store_true", help="Check sync status (CI mode)")
-    group.add_argument("--fix", action="store_true", help="Fix missing, stale, and orphaned stubs")
-    group.add_argument("--dry-run", action="store_true", help="Preview --fix without writing")
+    group.add_argument(
+        "--check", action="store_true", help="Check sync status (CI mode)"
+    )
+    group.add_argument(
+        "--fix", action="store_true", help="Fix missing, stale, and orphaned stubs"
+    )
+    group.add_argument(
+        "--dry-run", action="store_true", help="Preview --fix without writing"
+    )
     args = parser.parse_args()
 
     env_dirs = get_env_dirs()
@@ -264,7 +347,11 @@ def main():
         print("✅ Everything is already in sync.")
         return
 
-    print("Fixing documentation...\n" if not args.dry_run else "Dry run — no files will be modified:\n")
+    print(
+        "Fixing documentation...\n"
+        if not args.dry_run
+        else "Dry run — no files will be modified:\n"
+    )
     run_fix(missing, orphaned, stale, dry_run=args.dry_run)
 
 
