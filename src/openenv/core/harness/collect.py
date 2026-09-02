@@ -25,7 +25,7 @@ from typing import Any, Callable, Iterable, Iterator
 from ..env_server.mcp_types import Tool
 from ..llm_client import LLMClient
 from ..utils import run_async_safely
-from . import (
+from .rollout import (
     _resolve_env_reward,
     HarnessAdapter,
     HarnessRolloutResult,
