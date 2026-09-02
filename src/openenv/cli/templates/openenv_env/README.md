@@ -24,7 +24,9 @@ from __ENV_NAME__ import __ENV_CLASS_NAME__Action, __ENV_CLASS_NAME__Env
 
 try:
     # Create environment from Docker image (.sync() for synchronous use)
-    __ENV_NAME__env = __ENV_CLASS_NAME__Env.from_docker_image("__ENV_NAME__-env:latest").sync()
+    __ENV_NAME__env = __ENV_CLASS_NAME__Env.from_docker_image(
+        "__ENV_NAME__-env:latest"
+    ).sync()
 
     # Reset
     result = __ENV_NAME__env.reset()
@@ -198,12 +200,16 @@ Then multiple clients can connect simultaneously:
 from __ENV_NAME__ import __ENV_CLASS_NAME__Action, __ENV_CLASS_NAME__Env
 from concurrent.futures import ThreadPoolExecutor
 
+
 def run_episode(client_id: int):
     with __ENV_CLASS_NAME__Env(base_url="http://localhost:8000") as env:
         result = env.reset()
         for i in range(10):
-            result = env.step(__ENV_CLASS_NAME__Action(message=f"Client {client_id}, step {i}"))
+            result = env.step(
+                __ENV_CLASS_NAME__Action(message=f"Client {client_id}, step {i}")
+            )
         return client_id, result.observation.message_length
+
 
 # Run 4 episodes concurrently
 with ThreadPoolExecutor(max_workers=4) as executor:

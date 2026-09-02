@@ -112,6 +112,7 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
         websocket_ping_timeout_s: Optional[float] = 20.0,
         provider: Optional[Any] = None,
         mode: Optional[str] = None,
+        max_message_size_mb: float = 100.0,
     ):
         """
         Initialize MCP client.
@@ -131,6 +132,11 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
                 Container/runtime provider for lifecycle management.
             mode (`str`, *optional*):
                 Communication mode. Must be 'production' for MCP clients. Defaults to 'production'.
+            max_message_size_mb (`float`, *optional*, defaults to `100.0`):
+                Largest WebSocket frame to accept. `EnvClient` has always taken this, but
+                `MCPClientBase` did not forward it, so no MCP client could raise it — an environment
+                whose tool returns a large result closed the connection with `1009 message too big`
+                and there was no way to ask for more from the client side.
         """
         # MCPClientBase defaults to production mode, but allow override for validation
         if mode is None:
@@ -152,6 +158,7 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
             websocket_ping_timeout_s=websocket_ping_timeout_s,
             provider=provider,
             mode=mode,
+            max_message_size_mb=max_message_size_mb,
         )
         self._tools_cache: Optional[List[Tool]] = None
         self.use_production_mode = False
@@ -339,12 +346,22 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
             step_count=payload.get("step_count", 0),
         )
 
-    async def close(self) -> None:
+    async def _close_async(self) -> None:
         """
         Close client resources.
 
         In production MCP mode, this also closes the server-side persistent
         MCP session (best effort) before closing websocket/provider resources.
+
+        Overrides `_close_async`, NOT `close`. `EnvClient.close` is synchronous and dispatches here
+        through `_dispatch`, which returns an awaitable in async code and a result in sync code — so
+        both `client.close()` and `await client.close()` keep working.
+
+        Overriding `close` with an `async def`, as this used to, silently broke every synchronous
+        caller: `client.close()` built a coroutine, dropped it un-awaited, and returned. The websocket
+        stayed open, so the server never ran its `_destroy_session` cleanup and sessions accumulated
+        until `max_concurrent_envs` was exhausted — measured as exactly 16 successful connects out of
+        20 against a cap of 16, with the rest failing as `ConnectionClosedOK`.
         """
         if self._production_session_id is not None:
             try:
@@ -366,7 +383,7 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
             finally:
                 self._http_client = None
 
-        await super().close()
+        await super()._close_async()
 
 
 class MCPToolClient(MCPClientBase):

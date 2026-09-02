@@ -73,6 +73,8 @@
     title: Terminus
   - local: environments/coding_tools
     title: Coding Tools
+  - local: environments/harbor
+    title: Harbor
   - local: environments/chat
     title: Chat
   - local: environments/atari
