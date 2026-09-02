@@ -19,20 +19,18 @@ if ! command -v uv &> /dev/null; then
 fi
 
 echo "=== Running import sort + format check ==="
-# Run the same pipeline as arc f: usort then ruff format.
-# If any file changes, the code wasn't properly formatted.
-uv run usort format src/ tests/ >/dev/null 2>&1
-uv run ruff format src/ tests/ envs/ >/dev/null 2>&1
+# Ask the same tools as arc f whether the tree is formatted, without writing to
+# it. Formatting in place and then running `git checkout --` to undo it also
+# reverts the author's uncommitted edits in those files, and leaves reformatted
+# Markdown behind, because the restore only ever covered *.py.
+FORMAT_FAILED=0
+uv run usort check src/ tests/ || FORMAT_FAILED=1
+uv run ruff format --check src/ tests/ envs/ || FORMAT_FAILED=1
 
-# Check if any files were modified (means they weren't formatted before)
-CHANGED=$(git diff --name-only -- '*.py' 2>/dev/null || true)
-if [ -n "$CHANGED" ]; then
-    echo "ERROR: The following files need formatting:"
-    echo "$CHANGED"
+if [ "$FORMAT_FAILED" -ne 0 ]; then
     echo ""
+    echo "ERROR: the files listed above need formatting."
     echo "Run: uv run usort format src/ tests/ && uv run ruff format src/ tests/ envs/"
-    # Undo the formatting so the working tree stays as-is
-    git checkout -- $CHANGED 2>/dev/null || true
     exit 1
 fi
 echo "Import sort + format check passed!"
