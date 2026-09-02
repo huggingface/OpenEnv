@@ -280,6 +280,13 @@ The OpenEnv community has built a catalog of ready-to-run environments that cove
         <a href="environments/sophistry_bench_sprint" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
       </div>
     </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">SQL Query Optimization</div>
+      <p class="text-sm"><code>sql_optim_env</code> rewards an agent for rewriting slow SQL: it executes both the original and optimized query against an in-memory DuckDB seeded with synthetic data and scores measured speedup plus result-correctness across five anti-pattern tasks.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/sql_optim" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
   </div>
 </div>
 
