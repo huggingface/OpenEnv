@@ -623,6 +623,172 @@ class HTTPEnvServer:
         """Return the concurrency configuration."""
         return self._concurrency_config
 
+    def _factory_produces_harness_env(self) -> bool:
+        """Return whether the env factory produces a HarnessEnvironment."""
+        import inspect
+
+        # Lazy import: openenv.core.harness imports env_server modules, so a
+        # top-level import here would be circular.
+        from ..harness.environment import HarnessEnvironment
+
+        if inspect.isclass(self._env_factory):
+            return issubclass(self._env_factory, HarnessEnvironment)
+        _temp_env = self._env_factory()
+        try:
+            return isinstance(_temp_env, HarnessEnvironment)
+        finally:
+            _temp_env.close()
+
+    def _register_harness_route(self, app: FastAPI) -> None:
+        """
+        Register the production `/harness` WebSocket route (RFC 005).
+
+        Each connection gets its own environment session: connecting resets
+        the environment (which starts the harness process and injects tools),
+        and each `{"type": "message", "content": ...}` frame runs one
+        conversational turn, streamed back as `HarnessEvent` JSON frames
+        ending with a `turn_complete` event.
+        """
+        # Lazy import to avoid a circular import with openenv.core.harness.
+        from ..harness.events import (
+            HarnessClientMessage,
+            HarnessEvent,
+            HarnessEventType,
+        )
+
+        @app.websocket("/harness")
+        async def harness_websocket_endpoint(websocket: WebSocket):
+            await websocket.accept()
+
+            session_id = None
+            session_env = None
+
+            async def send_error(message: str, code: WSErrorCode) -> None:
+                error_response = WSErrorResponse(
+                    data={"message": message, "code": code}
+                )
+                await websocket.send_text(error_response.model_dump_json())
+
+            async def send_harness_error(message: str) -> None:
+                """Emit a terminal ERROR event in the harness event stream."""
+                error_event = HarnessEvent(
+                    type=HarnessEventType.ERROR,
+                    data={"message": message, "recoverable": False},
+                )
+                await websocket.send_text(error_event.model_dump_json())
+
+            try:
+                session_id, session_env = await self._create_session()
+
+                async with AsyncExitStack() as stack:
+                    mcp_session_factory = getattr(session_env, "mcp_session", None)
+                    if callable(mcp_session_factory):
+                        mcp_session_cm = cast(
+                            AsyncContextManager[Any], mcp_session_factory()
+                        )
+                        await stack.enter_async_context(mcp_session_cm)
+
+                    # Starts the harness process and injects environment tools
+                    await session_env.reset_async()
+                    await websocket.send_text(
+                        json.dumps(
+                            {
+                                "type": "session_started",
+                                "data": {
+                                    "session_id": session_id,
+                                    "harness": session_env.adapter.config.name,
+                                },
+                            }
+                        )
+                    )
+
+                    while True:
+                        raw_message = await websocket.receive_text()
+
+                        try:
+                            message_dict = json.loads(raw_message)
+                        except json.JSONDecodeError as e:
+                            await send_error(
+                                f"Invalid JSON: {e}", WSErrorCode.INVALID_JSON
+                            )
+                            continue
+                        try:
+                            client_message = HarnessClientMessage(**message_dict)
+                        except (ValidationError, TypeError) as e:
+                            await send_error(
+                                f"Invalid message: {e}",
+                                WSErrorCode.VALIDATION_ERROR,
+                            )
+                            continue
+
+                        self._update_session_activity(session_id, increment_step=True)
+
+                        async def stream_turn(content: str) -> bool:
+                            """Stream one turn; True if it ended with TURN_COMPLETE."""
+                            saw_terminal = False
+                            adapter = session_env.adapter
+                            async for event in adapter.send_message_streaming(content):
+                                await websocket.send_text(event.model_dump_json())
+                                # Long turns must not be reaped as idle
+                                self._update_session_activity(session_id)
+                                saw_terminal = (
+                                    event.type is HarnessEventType.TURN_COMPLETE
+                                )
+                            return saw_terminal
+
+                        # Bound the turn in wall-clock time, matching what
+                        # simulation mode does in HarnessEnvironment._run_turn.
+                        # Without this a hung harness holds the session open
+                        # forever, and the server sits at capacity.
+                        turn_timeout_s = session_env.adapter.config.session_timeout_s
+                        try:
+                            completed = await asyncio.wait_for(
+                                stream_turn(client_message.content),
+                                turn_timeout_s,
+                            )
+                        except asyncio.TimeoutError:
+                            await send_harness_error(
+                                f"harness turn exceeded {turn_timeout_s} seconds"
+                            )
+                            break
+                        except Exception as e:
+                            # Harness state after a crash is undefined; end
+                            # the session so a reconnect gets a fresh one.
+                            await send_harness_error(str(e))
+                            break
+
+                        if not completed:
+                            # send_message() raises HarnessError here; the
+                            # socket equivalent is to say so and end the
+                            # session, rather than leaving a client that
+                            # blocks on the terminal event waiting forever.
+                            await send_harness_error(
+                                "harness event stream ended without a "
+                                "TURN_COMPLETE event"
+                            )
+                            break
+
+            except WebSocketDisconnect:
+                pass
+            except SessionCapacityError as e:
+                await send_error(str(e), WSErrorCode.CAPACITY_REACHED)
+            except EnvironmentFactoryError as e:
+                await send_error(str(e), WSErrorCode.FACTORY_ERROR)
+            except Exception as e:
+                try:
+                    await send_error(str(e), WSErrorCode.SESSION_ERROR)
+                except (RuntimeError, WebSocketDisconnect):
+                    pass
+            finally:
+                if session_id:
+                    await self._destroy_session(session_id)
+                try:
+                    await websocket.close()
+                except (RuntimeError, WebSocketDisconnect):
+                    # TestClient raises RuntimeError, real ASGI servers raise
+                    # WebSocketDisconnect when the client is already gone.
+                    pass
+
     def register_routes(
         self, app: FastAPI, mode: ServerMode | str = ServerMode.SIMULATION
     ) -> None:
@@ -1255,6 +1421,11 @@ class HTTPEnvServer:
                 except RuntimeError:
                     pass
 
+        # In production mode, a harness environment is exposed directly to
+        # clients via a streaming WebSocket (RFC 005).
+        if mode == ServerMode.PRODUCTION and self._factory_produces_harness_env():
+            self._register_harness_route(app)
+
         # Register simulation control routes only in simulation mode
         if mode == ServerMode.SIMULATION:
 
@@ -1708,6 +1879,8 @@ def create_app(
     custom_tab_primary: bool = False,
     show_default_tab: bool = True,
     title_override: Optional[str] = None,
+    *,
+    mode: Optional[ServerMode | str] = None,
 ) -> FastAPI:
     """
     Create a FastAPI application with or without web interface.
@@ -1746,6 +1919,9 @@ def create_app(
         title_override (`str`, *optional*):
             If set, used as the Gradio app title instead of the default
             `"OpenEnv Agentic Environment: {name}"`.
+        mode (`ServerMode` or `str`, *optional*):
+            Server mode. When `None`, resolved from the `OPENENV_MODE`
+            environment variable, defaulting to simulation.
 
     Returns:
         `FastAPI` application instance with or without web interface and README integration.
@@ -1774,6 +1950,7 @@ def create_app(
             custom_tab_primary=custom_tab_primary,
             show_default_tab=show_default_tab,
             title_override=title_override,
+            mode=mode,
         )
     else:
         # Use standard FastAPI app without web interface
@@ -1784,6 +1961,7 @@ def create_app(
             max_concurrent_envs,
             concurrency_config,
             env_name=env_name,
+            mode=mode,
         )
 
 
@@ -1794,6 +1972,8 @@ def create_fastapi_app(
     max_concurrent_envs: Optional[int] = None,
     concurrency_config: Optional[ConcurrencyConfig] = None,
     env_name: Optional[str] = None,
+    *,
+    mode: Optional[ServerMode | str] = None,
 ) -> FastAPI:
     """
     Create a FastAPI application with comprehensive documentation.
@@ -1813,6 +1993,9 @@ def create_fastapi_app(
             `max_concurrent_envs`.
         env_name (`str`, *optional*):
             Optional environment name for task/split endpoints.
+        mode (`ServerMode` or `str`, *optional*):
+            Server mode. When `None`, resolved from the `OPENENV_MODE`
+            environment variable, defaulting to simulation.
 
     Returns:
         `FastAPI` application instance.
@@ -1892,5 +2075,7 @@ HTTP API for interacting with OpenEnv environments through a standardized interf
         concurrency_config=concurrency_config,
         env_name=env_name,
     )
-    server.register_routes(app)
+    if mode is None:
+        mode = os.environ.get("OPENENV_MODE", ServerMode.SIMULATION.value)
+    server.register_routes(app, mode=mode)
     return app
