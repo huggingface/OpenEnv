@@ -20,8 +20,9 @@ import importlib.metadata
 import importlib.resources
 import json
 import logging
+import os
 import re
-import tempfile
+import stat
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Type
@@ -336,6 +337,46 @@ def _create_env_info_from_package(
     )
 
 
+def _default_cache_file() -> Path:
+    """
+    Return the per-user discovery cache file path.
+
+    Uses a per-user cache directory (``$XDG_CACHE_HOME`` or ``~/.cache``) rather than a
+    shared, world-writable temporary directory. A fixed path under the shared temp dir
+    lets another local user pre-create the cache file and redirect discovery to
+    attacker-controlled import paths (`import_module` on a cached `client_module_path`).
+    """
+    base = os.environ.get("XDG_CACHE_HOME")
+    root = Path(base) if base else Path.home() / ".cache"
+    return root / "openenv" / "discovery_cache.json"
+
+
+def _is_trusted_cache_file(path: Path) -> bool:
+    """
+    Return whether *path* is safe to load.
+
+    On POSIX the file must be owned by the current user and not writable by group or
+    others, so a cache file planted by another user is ignored rather than trusted.
+
+    Args:
+        path (`Path`):
+            The cache file to check.
+
+    Returns:
+        `bool`: `True` if the file is owned by the current user and not
+        group/other-writable (always `True` on non-POSIX platforms).
+    """
+    if os.name != "posix":
+        return True
+    try:
+        info = path.stat()
+    except OSError:
+        return False
+    return info.st_uid == os.getuid() and not (
+        info.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+    )
+
+
 class EnvironmentDiscovery:
     """
     Auto-discovery system for OpenEnv environments using installed packages.
@@ -346,7 +387,7 @@ class EnvironmentDiscovery:
     def __init__(self):
         """Initialize discovery system."""
         self._cache: dict[str, EnvironmentInfo] | None = None
-        self._cache_file = Path(tempfile.gettempdir()) / "openenv_discovery_cache.json"
+        self._cache_file = _default_cache_file()
 
     def _discover_installed_packages(self) -> dict[str, EnvironmentInfo]:
         """
@@ -411,6 +452,16 @@ class EnvironmentDiscovery:
         if not self._cache_file.exists():
             return None
 
+        # Only trust a cache file owned by the current user. This prevents another
+        # local user from planting a file that would redirect discovery (and the
+        # subsequent import_module) to attacker-controlled modules/classes.
+        if not _is_trusted_cache_file(self._cache_file):
+            logger.warning(
+                f"Ignoring discovery cache {self._cache_file}: not owned by the "
+                "current user or writable by group/others."
+            )
+            return None
+
         try:
             with open(self._cache_file, "r") as f:
                 cache_data = json.load(f)
@@ -437,8 +488,12 @@ class EnvironmentDiscovery:
             for env_key, env_info in environments.items():
                 cache_data[env_key] = asdict(env_info)
 
+            self._cache_file.parent.mkdir(parents=True, exist_ok=True)
             with open(self._cache_file, "w") as f:
                 json.dump(cache_data, f, indent=2)
+            # Restrict to the owner so the cache cannot be tampered with by others.
+            if os.name == "posix":
+                os.chmod(self._cache_file, 0o600)
 
         except Exception as e:
             logger.warning(f"Failed to save discovery cache: {e}")
