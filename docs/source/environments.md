@@ -280,6 +280,13 @@ The OpenEnv community has built a catalog of ready-to-run environments that cove
         <a href="environments/sophistry_bench_sprint" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
       </div>
     </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">QED Math</div>
+      <p class="text-sm"><code>qed_math_env</code> serves math problems and grades submitted proofs with an LLM rubric (0–7 scale, normalized rewards), with process-based answer verification and multi-attempt feedback. Ported from QED-Nano.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/qed_math" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
   </div>
 </div>
 

@@ -5,7 +5,9 @@ Ensures every environment in envs/ with a README.md has a corresponding
 doc stub in docs/source/environments/<slug>.md, and that existing stubs
 stay in sync with their source README.
 
-Also detects orphaned stubs that reference envs which no longer exist.
+Also detects orphaned stubs that reference envs which no longer exist,
+and stubs that are not listed in docs/source/_toctree.yml (sidebar) or
+docs/source/environments.md (HTML catalog).
 
 Modes:
   --check   : Exit non-zero if out of sync (for CI)
@@ -14,7 +16,8 @@ Modes:
 
 Note: entries in docs/source/environments.md (HTML catalog) and
 docs/source/_toctree.yml are managed manually. This script only
-manages the per-environment stub files.
+writes the per-environment stub files; missing toctree/catalog
+entries are reported so they can be added by hand.
 """
 
 import argparse
@@ -25,6 +28,8 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENVS_DIR = os.path.join(ROOT, "envs")
 DOCS_ENVS_DIR = os.path.join(ROOT, "docs", "source", "environments")
+TOCTREE_PATH = os.path.join(ROOT, "docs", "source", "_toctree.yml")
+CATALOG_PATH = os.path.join(ROOT, "docs", "source", "environments.md")
 GITHUB_RAW_BASE = "https://raw.githubusercontent.com/huggingface/OpenEnv/main"
 
 SKIP_DIRS = {"README.md"}
@@ -158,12 +163,42 @@ def analyze(env_dirs, stub_mapping):
     return missing, orphaned, stale, no_readme
 
 
+def find_unlisted(stub_mapping, orphaned):
+    """Return (unlisted_toctree, unlisted_catalog) slug lists.
+
+    A stub is unlisted when docs/source/_toctree.yml has no
+    ``- local: environments/<slug>`` entry (the page is unreachable from the
+    sidebar) or docs/source/environments.md has no ``environments/<slug>``
+    link (the env has no card in the catalog). Both files are managed
+    manually, so these are reported rather than auto-fixed. Orphaned stubs
+    are skipped: the fix there is deleting the stub, not listing it.
+    """
+    with open(TOCTREE_PATH) as f:
+        toctree = f.read()
+    with open(CATALOG_PATH) as f:
+        catalog = f.read()
+
+    orphaned_slugs = {slug for _, slug in orphaned}
+    unlisted_toctree = []
+    unlisted_catalog = []
+    for slug in sorted(stub_mapping):
+        if slug in orphaned_slugs:
+            continue
+        if not re.search(
+            rf"^\s*-\s*local:\s*environments/{re.escape(slug)}\s*$", toctree, re.M
+        ):
+            unlisted_toctree.append(slug)
+        if not re.search(rf"environments/{re.escape(slug)}\b", catalog):
+            unlisted_catalog.append(slug)
+    return unlisted_toctree, unlisted_catalog
+
+
 # ---------------------------------------------------------------------------
 # Reporting and fixing
 # ---------------------------------------------------------------------------
 
 
-def run_check(missing, orphaned, stale, no_readme):
+def run_check(missing, orphaned, stale, no_readme, unlisted_toctree, unlisted_catalog):
     ok = True
 
     if no_readme:
@@ -198,6 +233,29 @@ def run_check(missing, orphaned, stale, no_readme):
             print(f"  docs/source/environments/{slug}.md  (was envs/{env_dir}/)")
         print()
         print("  Run:  python scripts/sync_env_docs.py --fix\n")
+
+    if unlisted_toctree:
+        ok = False
+        print("❌ Stubs missing from the docs sidebar (docs/source/_toctree.yml):\n")
+        for slug in unlisted_toctree:
+            print(f"  docs/source/environments/{slug}.md")
+        print()
+        print(
+            "  Add an entry to the Environments section of docs/source/_toctree.yml:\n"
+            "    - local: environments/<slug>\n"
+            "      title: <Env Name>\n"
+        )
+
+    if unlisted_catalog:
+        ok = False
+        print("❌ Stubs missing from the HTML catalog (docs/source/environments.md):\n")
+        for slug in unlisted_catalog:
+            print(f"  docs/source/environments/{slug}.md")
+        print()
+        print(
+            "  Add a card to docs/source/environments.md (copy an existing\n"
+            '  <div class="border ..."> card and link to environments/<slug>).\n'
+        )
 
     if ok:
         print("✅ All environment stubs are present and up to date.")
@@ -249,9 +307,14 @@ def main():
     env_dirs = get_env_dirs()
     stub_mapping = get_existing_stub_mapping()
     missing, orphaned, stale, no_readme = analyze(env_dirs, stub_mapping)
+    unlisted_toctree, unlisted_catalog = find_unlisted(stub_mapping, orphaned)
 
     if args.check:
-        sys.exit(run_check(missing, orphaned, stale, no_readme))
+        sys.exit(
+            run_check(
+                missing, orphaned, stale, no_readme, unlisted_toctree, unlisted_catalog
+            )
+        )
 
     # --fix and --dry-run
     if no_readme:
@@ -261,11 +324,27 @@ def main():
         print()
 
     if not missing and not orphaned and not stale:
-        print("✅ Everything is already in sync.")
-        return
+        print("✅ All stubs are already in sync.")
+    else:
+        print(
+            "Fixing documentation...\n"
+            if not args.dry_run
+            else "Dry run — no files will be modified:\n"
+        )
+        run_fix(missing, orphaned, stale, dry_run=args.dry_run)
 
-    print("Fixing documentation...\n" if not args.dry_run else "Dry run — no files will be modified:\n")
-    run_fix(missing, orphaned, stale, dry_run=args.dry_run)
+    # Toctree/catalog entries are managed manually; remind about gaps that
+    # --fix cannot write (including stubs it just created).
+    manual_toctree = sorted(set(unlisted_toctree) | {slug for _, slug in missing})
+    manual_catalog = sorted(set(unlisted_catalog) | {slug for _, slug in missing})
+    if manual_toctree:
+        print("\n⚠️  Add these to docs/source/_toctree.yml manually (- local: environments/<slug>):")
+        for slug in manual_toctree:
+            print(f"  {slug}")
+    if manual_catalog:
+        print("\n⚠️  Add a card for these to docs/source/environments.md manually:")
+        for slug in manual_catalog:
+            print(f"  {slug}")
 
 
 if __name__ == "__main__":
