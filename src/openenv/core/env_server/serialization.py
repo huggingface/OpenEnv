@@ -8,6 +8,7 @@ and Pydantic models (Action/Observation) to eliminate code duplication across
 HTTP server and web interface implementations.
 """
 
+import json
 from typing import Any, Dict, Type
 
 from .mcp_types import CallToolAction, ListToolsAction
@@ -77,6 +78,7 @@ def deserialize_action_with_preprocessing(
     Convert JSON dict to Action instance with preprocessing for special types.
 
     This version handles common type conversions needed for web interfaces:
+    - Converting JSON string arguments to dict for MCP call_tool actions
     - Converting lists/strings to tensors for 'tokens' field
     - Converting string action_id to int
     - Other custom preprocessing as needed
@@ -93,7 +95,17 @@ def deserialize_action_with_preprocessing(
     Raises:
         `ValidationError`: If `action_data` is invalid for the action class.
     """
-    mcp_action = _deserialize_mcp_action(action_data, action_cls)
+    mcp_data = action_data
+    if action_data.get("type") == "call_tool" and isinstance(
+        action_data.get("arguments"), str
+    ):
+        mcp_data = dict(action_data)
+        try:
+            mcp_data["arguments"] = json.loads(action_data["arguments"])
+        except Exception:
+            pass
+
+    mcp_action = _deserialize_mcp_action(mcp_data, action_cls)
     if mcp_action is not None:
         return mcp_action
 
@@ -105,8 +117,6 @@ def deserialize_action_with_preprocessing(
             if isinstance(value, str):
                 # If it's a string, try to parse it as a list of numbers
                 try:
-                    import json
-
                     value = json.loads(value)
                 except Exception:
                     # If parsing fails, treat as empty list
