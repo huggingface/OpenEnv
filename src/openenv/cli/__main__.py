@@ -44,9 +44,10 @@ app.command(
     name="push",
     help="Push an OpenEnv environment to Hugging Face Spaces or custom registry",
 )(push.push)
-app.command(name="serve", help="Serve environments locally (TODO: Phase 4)")(
-    serve.serve
-)
+app.command(
+    name="serve",
+    help="Serve an environment locally with uvicorn using openenv.yaml",
+)(serve.serve)
 app.command(
     name="fork",
     help="Fork (duplicate) a Hugging Face Space to your account",
