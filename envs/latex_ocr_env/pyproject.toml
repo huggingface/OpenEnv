@@ -1,0 +1,38 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openenv-latex_ocr_env"
+version = "0.1.0"
+description = "LaTeX OCR environment for OpenEnv (image -> LaTeX transcription with edit-distance reward)"
+requires-python = ">=3.10"
+dependencies = [
+    # Core OpenEnv runtime (FastAPI server + Task API). 0.4.1 is the first
+    # release that ships the Task API (#726).
+    "openenv>=0.4.1",
+    "datasets>=4.0.0",
+    "pillow>=10.0.0",
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    # OpenAI SDK is only needed to drive the env with a VLM policy (validate.py).
+    "openai>=1.40.0",
+]
+
+[project.scripts]
+server = "latex_ocr_env.server.app:main"
+
+[tool.setuptools]
+include-package-data = true
+packages = ["latex_ocr_env", "latex_ocr_env.server"]
+package-dir = { "latex_ocr_env" = ".", "latex_ocr_env.server" = "server" }

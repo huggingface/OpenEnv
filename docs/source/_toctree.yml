@@ -139,6 +139,8 @@
     title: Pi
   - local: environments/sophistry_bench_sprint
     title: Sophistry Bench Sprint
+  - local: environments/latex_ocr
+    title: LaTeX OCR
   title: Environments
 - isExpanded: false
   sections:
