@@ -21,6 +21,12 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from openenv.core.rubrics.base import Rubric
+from openenv.core.rubrics.components import (
+    RewardComponent,
+    RewardComponentType,
+    aggregate_weighted_sum,
+    serialize_reward_components,
+)
 
 
 class ExactMatchRubric(Rubric):
@@ -173,16 +179,61 @@ class REPLRubric(Rubric):
         if hasattr(self.outcome, "set_expected"):
             self.outcome.set_expected(expected)
 
-    def forward(self, action: Any, observation: Any) -> float:
+    def evaluate_components(self, action: Any, observation: Any) -> list[RewardComponent]:
+        """Compute structured reward components for the current step."""
         done = getattr(observation, "done", False)
         if done:
             final = getattr(observation, "metadata", {}).get("final_answer")
             if final is not None:
-                return self.outcome(action, observation)
-            # Done but no final answer (max iterations exhausted)
-            return self.failure_reward
-        # Non-terminal step: process reward only
-        return self.process(action, observation)
+                return [
+                    RewardComponent(
+                        name="outcome_match",
+                        type=RewardComponentType.BINARY,
+                        value=float(self.outcome(action, observation)),
+                        weight=1.0,
+                        terminal_only=True,
+                    )
+                ]
+            return [
+                RewardComponent(
+                    name="max_iterations_failure",
+                    type=RewardComponentType.PENALTY,
+                    value=float(self.failure_reward),
+                    weight=1.0,
+                    terminal_only=True,
+                )
+            ]
+
+        return [
+            RewardComponent(
+                name="code_execution_quality",
+                type=RewardComponentType.SHAPING,
+                value=float(self.process(action, observation)),
+                weight=1.0,
+                terminal_only=False,
+            )
+        ]
+
+    def _attach_reward_metadata(
+        self,
+        observation: Any,
+        components: list[RewardComponent],
+        total: float,
+    ) -> None:
+        """Attach component diagnostics to observation metadata if available."""
+        if not hasattr(observation, "metadata"):
+            return
+        metadata = getattr(observation, "metadata", None) or {}
+        metadata["reward_components"] = serialize_reward_components(components)
+        metadata["reward_total"] = total
+        metadata["reward_aggregation"] = "weighted_sum_v1"
+        observation.metadata = metadata
+
+    def forward(self, action: Any, observation: Any) -> float:
+        components = self.evaluate_components(action, observation)
+        total = aggregate_weighted_sum(components)
+        self._attach_reward_metadata(observation, components, total)
+        return total
 
     def reset(self) -> None:
         self.outcome.reset()
