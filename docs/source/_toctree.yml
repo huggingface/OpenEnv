@@ -125,6 +125,8 @@
     title: Reasoning Gym
   - local: environments/tbench2
     title: TBench2
+  - local: environments/thinkingbox
+    title: ThinkingBox
   - local: environments/unity
     title: Unity
   - local: environments/wildfire
