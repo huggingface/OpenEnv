@@ -6,6 +6,8 @@ If you are trying to understand when OpenEnv exposes the training loop versus di
 
 For a high-level explanation of how MCP-backed environments move through `step()`, `step_async()`, and convenience tool helpers, see the [MCP environment lifecycle](../guides/mcp-environment-lifecycle.md) guide.
 
+For dataset-backed environments that publish enumerable tasks and splits, see the [Task API](../guides/task-api.md) guide.
+
 ## Server
 
 ### Environment server primitives
@@ -15,6 +17,8 @@ For a high-level explanation of how MCP-backed environments move through `step()
 [[autodoc]] openenv.core.env_server.interfaces.ModelTokenizer
 
 [[autodoc]] openenv.core.env_server.interfaces.Transform
+
+[[autodoc]] openenv.core.env_server.interfaces.TaskProvider
 
 [[autodoc]] openenv.core.env_server.interfaces.Environment
 
@@ -49,6 +53,14 @@ For a high-level explanation of how MCP-backed environments move through `step()
 [[autodoc]] openenv.core.env_server.types.SchemaResponse
 
 [[autodoc]] openenv.core.env_server.types.HealthResponse
+
+[[autodoc]] openenv.core.env_server.types.ListTasksRequest
+
+[[autodoc]] openenv.core.env_server.types.NumTasksRequest
+
+[[autodoc]] openenv.core.env_server.types.GetTaskRequest
+
+[[autodoc]] openenv.core.env_server.types.GetTaskRangeRequest
 
 [[autodoc]] openenv.core.env_server.types.WSResetMessage
 

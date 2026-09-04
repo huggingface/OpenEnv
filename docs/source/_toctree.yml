@@ -27,6 +27,8 @@
       title: Simulation vs Production
     - local: guides/mcp-environment-lifecycle
       title: MCP Environment Lifecycle
+    - local: guides/task-api
+      title: The Task API
     - local: guides/connecting
       title: Connecting to Servers
     - local: guides/runtime-providers
