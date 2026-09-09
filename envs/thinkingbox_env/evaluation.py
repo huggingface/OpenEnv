@@ -269,18 +269,20 @@ class _OpenEnvProxy:
     ) -> tuple[Any, ParallelToolCall] | None:
         if self._agent is None:
             return None
+        errored_match: tuple[Any, ParallelToolCall] | None = None
         for message in self._agent.conversation.messages[self._message_start :]:
             if not isinstance(message, ParallelToolCall):
                 continue
             for call in message.tool_calls:
                 if (
-                    not call.metadata.get("error")
-                    and call.id not in self._returned_call_ids
+                    call.id not in self._returned_call_ids
                     and call.name == name
                     and call.arguments == arguments
                 ):
-                    return call, message
-        return None
+                    if not call.metadata.get("error"):
+                        return call, message
+                    errored_match = errored_match or (call, message)
+        return errored_match
 
     async def _submit_batch_once(self, message: ParallelToolCall) -> None:
         result = await self._env.call_tools(
@@ -1235,15 +1237,47 @@ def _write_canonical(stream: Any, result: DecodeResult) -> None:
     stream.flush()
 
 
-def _assert_no_forbidden_fields(value: Any, path: str) -> None:
+def _assert_no_forbidden_fields(
+    value: Any,
+    path: str,
+    *,
+    location: tuple[str | int, ...] = (),
+    in_tool_arguments: bool = False,
+) -> None:
     if isinstance(value, dict):
         for key, child in value.items():
-            if str(key).casefold() in _FORBIDDEN_CANONICAL_FIELDS:
+            key_name = str(key)
+            if (
+                not in_tool_arguments
+                and key_name.casefold() in _FORBIDDEN_CANONICAL_FIELDS
+            ):
                 raise CoverageError(f"{path} contains forbidden field {key!r}")
-            _assert_no_forbidden_fields(child, f"{path}.{key}")
+            child_location = (*location, key_name)
+            # Tool arguments are agent-authored, model-visible content. Their API field
+            # names may overlap private evaluator fields, so only the surrounding
+            # canonical envelope remains subject to the name denylist.
+            child_is_tool_arguments = in_tool_arguments or (
+                len(child_location) == 5
+                and child_location[0] == "messages"
+                and isinstance(child_location[1], int)
+                and child_location[2] == "tool_calls"
+                and isinstance(child_location[3], int)
+                and child_location[4] == "arguments"
+            )
+            _assert_no_forbidden_fields(
+                child,
+                f"{path}.{key}",
+                location=child_location,
+                in_tool_arguments=child_is_tool_arguments,
+            )
     elif isinstance(value, list):
         for index, child in enumerate(value):
-            _assert_no_forbidden_fields(child, f"{path}[{index}]")
+            _assert_no_forbidden_fields(
+                child,
+                f"{path}[{index}]",
+                location=(*location, index),
+                in_tool_arguments=in_tool_arguments,
+            )
 
 
 def _validate_provenance_shape(
@@ -2329,7 +2363,7 @@ async def _run(args: argparse.Namespace) -> None:
                             env_config=env_config,
                             env_dataset=env_dataset,
                         )
-                        canonical_result = _canonical_decode_result(
+                        candidate_result = _canonical_decode_result(
                             uid=uid,
                             repetition=repetition,
                             attempt=attempt,
@@ -2337,7 +2371,10 @@ async def _run(args: argparse.Namespace) -> None:
                             test_case=test_case,
                             outcome=outcome,
                         )
+                        _write_canonical(result_stream, candidate_result)
+                        canonical_result = candidate_result
                     except Exception as exc:
+                        canonical_result = None
                         _write_error(
                             error_stream,
                             _operational_error_record(
@@ -2350,7 +2387,6 @@ async def _run(args: argparse.Namespace) -> None:
                             ),
                         )
                         continue
-                    _write_canonical(result_stream, canonical_result)
                     completed.add(repetition_id)
                     break
                 if canonical_result is None:

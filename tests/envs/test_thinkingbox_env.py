@@ -2279,6 +2279,38 @@ def test_eval_canonical_fixture_validates_and_native_tb_agg_is_exact(
         thinkingbox_eval._canonical_payload(leaked)
 
 
+def test_eval_canonical_payload_allows_agent_tool_argument_field_names() -> None:
+    provenance = _eval_provenance()
+    result = _fixture_decode_result(UID, 0, True, provenance)
+    result.messages = [
+        ParallelToolCall(
+            tool_calls=[
+                ToolCall(
+                    name="authenticate",
+                    arguments={
+                        "token": "agent-supplied-placeholder",
+                        "request": {
+                            "headers": {"authorization": "placeholder"},
+                            "session_id": "agent-session",
+                        },
+                    },
+                    id="credential-shaped-arguments",
+                )
+            ]
+        )
+    ]
+
+    payload = thinkingbox_eval._canonical_payload(result)
+
+    assert payload["messages"][0]["tool_calls"][0]["arguments"] == {
+        "token": "agent-supplied-placeholder",
+        "request": {
+            "headers": {"authorization": "placeholder"},
+            "session_id": "agent-session",
+        },
+    }
+
+
 def test_eval_rejects_mismatched_or_mutating_server_execution_provenance() -> None:
     provenance = _eval_provenance()
     outcome = _eval_outcome(True, provenance)
@@ -2511,16 +2543,34 @@ async def test_eval_run_retries_to_dual_outputs_and_resume_skips_canonical(
             trace=thinkingbox_eval._ExecutionTrace(),
         ),
         _eval_outcome(True, provenance),
+        _eval_outcome(True, provenance),
     ]
 
     async def fake_run_episode(*_args: Any, **_kwargs: Any) -> Any:
         return outcomes.pop(0)
 
     monkeypatch.setattr(thinkingbox_eval, "_run_episode", fake_run_episode)
+    write_canonical = thinkingbox_eval._write_canonical
+    write_attempts = 0
+
+    def fail_first_canonical_write(stream: Any, result: DecodeResult) -> None:
+        nonlocal write_attempts
+        write_attempts += 1
+        if write_attempts == 1:
+            raise thinkingbox_eval.CoverageError(
+                "synthetic canonical validation failure"
+            )
+        write_canonical(stream, result)
+
+    monkeypatch.setattr(
+        thinkingbox_eval,
+        "_write_canonical",
+        fail_first_canonical_write,
+    )
     args = SimpleNamespace(
         repeat=1,
         repetition_start=0,
-        attempts_per_repetition=2,
+        attempts_per_repetition=3,
         message_timeout=1800.0,
         shard_count=1,
         shard_index=0,
@@ -2546,15 +2596,19 @@ async def test_eval_run_retries_to_dual_outputs_and_resume_skips_canonical(
     canonical_lines = output.read_text(encoding="utf-8").splitlines()
     error_lines = errors.read_text(encoding="utf-8").splitlines()
     assert len(canonical_lines) == 1
-    assert len(error_lines) == 1
+    assert len(error_lines) == 2
     canonical = DecodeResult.model_validate_json(canonical_lines[0])
-    error = json.loads(error_lines[0])
+    operational_error = json.loads(error_lines[0])
+    write_error = json.loads(error_lines[1])
     assert canonical.test_result is not None
     assert canonical.test_result.result is True
-    assert canonical.metadata["attempt"] == 2
-    assert error["attempt"] == 1
-    assert error["retryable"] is True
-    assert "trusted-sidecar" in error["error"]["message"]
+    assert canonical.metadata["attempt"] == 3
+    assert operational_error["attempt"] == 1
+    assert operational_error["retryable"] is True
+    assert "trusted-sidecar" in operational_error["error"]["message"]
+    assert write_error["attempt"] == 2
+    assert write_error["retryable"] is True
+    assert "synthetic canonical validation failure" in write_error["error"]["message"]
     assert "trusted-sidecar" not in canonical_lines[0]
 
     async def should_not_run(*_args: Any, **_kwargs: Any) -> Any:
@@ -3335,6 +3389,7 @@ async def test_native_agent_proxy_forwards_provider_parse_errors() -> None:
     proxy = thinkingbox_eval._OpenEnvProxy(FakeEnv(), [])
     proxy.bind(agent)
 
+    assert await proxy.call_tool("lookup") == "ok"
     assert await proxy.call_tool("lookup", key="valid") == "ok"
     assert len(batches) == 1
     assert batches[0][0].parse_error == "Error: invalid JSON arguments"
