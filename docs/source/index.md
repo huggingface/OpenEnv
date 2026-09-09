@@ -53,9 +53,7 @@ New to OpenEnv? Follow our recommended learning path:
 
 ## How Can I Contribute?
 
-We welcome contributions from the community! OpenEnv is openly governed by a technical committee that includes Meta-PyTorch, Reflection, Unsloth, Modal, Prime Intellect, Nvidia, Mercor, Fleet AI, Microsoft, Hugging Face, and RadixArk. The committee coordinates project direction, major technical decisions, RFCs, and release planning through the public repository.
-
-OpenEnv is also supported by [Nebius](https://nebius.com).
+We welcome contributions from the community! OpenEnv is openly governed by a technical committee that includes Meta-PyTorch, Reflection, Unsloth, Modal, Prime Intellect, Nvidia, Mercor, Fleet AI, Microsoft, Hugging Face, RadixArk, and Nebius. The committee coordinates project direction, major technical decisions, RFCs, and release planning through the public repository.
 
 If you find a bug, have a feature request, or want to contribute a new environment, please open an issue or submit a pull request. The repository is hosted on GitHub at [huggingface/OpenEnv](https://github.com/huggingface/OpenEnv). For the changelog, see [GitHub Releases](https://github.com/huggingface/OpenEnv/releases).
 

@@ -372,7 +372,7 @@ See the [Oumi example](https://github.com/oumi-ai/oumi/blob/main/notebooks/Oumi%
 
 ## Community Support & Acknowledgments
 
-OpenEnv is governed by a technical committee that coordinates project direction, major technical decisions, RFCs, and release planning through the public issue tracker, pull requests, and RFC process. Current committee members: Meta-PyTorch, Reflection, Unsloth, Modal, Prime Intellect, Nvidia, Mercor, Fleet AI, Microsoft, Hugging Face, and RadixArk.
+OpenEnv is governed by a technical committee that coordinates project direction, major technical decisions, RFCs, and release planning through the public issue tracker, pull requests, and RFC process. Current committee members: Meta-PyTorch, Reflection, Unsloth, Modal, Prime Intellect, Nvidia, Mercor, Fleet AI, Microsoft, Hugging Face, RadixArk, and Nebius.
 
 The project is also supported by a broader community of organizations. If you would like to add your project or organization here, please open a pull request for maintainer review.
 
