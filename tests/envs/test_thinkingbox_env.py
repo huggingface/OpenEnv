@@ -3653,6 +3653,88 @@ async def test_configured_agent_submits_mixed_batch_exactly_once() -> None:
     assert returned == ["result:mixed-valid"]
 
 
+@pytest.mark.asyncio
+async def test_configured_agent_reports_exact_tool_only_limit() -> None:
+    batches: list[list[SubmittedToolCall]] = []
+    finish_reasons: list[str] = []
+
+    class FakeAgent:
+        def __init__(self) -> None:
+            self.conversation = Conversation()
+
+        def add_messages(self, added: list[Any]) -> None:
+            self.conversation.messages.extend(added)
+
+        async def decode_turn_iter(self, user_message: Text | None) -> Any:
+            if user_message is not None:
+                self.add_messages([user_message])
+            for index in range(2):
+                batch = ParallelToolCall(
+                    tool_calls=[
+                        ToolCall(
+                            name="lookup",
+                            arguments={"index": index},
+                            id=f"tool-only-{index}",
+                        )
+                    ]
+                )
+                self.add_messages([batch])
+                yield batch
+
+    class FakeEnv:
+        async def call_tools(self, calls: list[SubmittedToolCall]) -> Any:
+            batches.append(calls)
+            return SimpleNamespace(
+                done=False,
+                observation=SimpleNamespace(
+                    tool_results=[
+                        SimpleNamespace(
+                            call_id=call.call_id,
+                            content=f"result:{call.call_id}",
+                        )
+                        for call in calls
+                    ]
+                ),
+            )
+
+        async def submit_message(self, content: str) -> Any:
+            raise AssertionError(f"unexpected assistant message: {content}")
+
+        async def finish(self, reason: str) -> Any:
+            finish_reasons.append(reason)
+            return SimpleNamespace(
+                done=True,
+                observation=SimpleNamespace(
+                    finish_reason=reason,
+                    metadata={},
+                ),
+            )
+
+    case = _case()
+    case.max_agent_sim_turns = 2
+    reset_result = SimpleNamespace(
+        observation=SimpleNamespace(
+            task="task",
+            bot_instructions=None,
+            tools=[],
+        )
+    )
+
+    result = await thinkingbox_eval.run_configured_agent(
+        FakeEnv(),
+        reset_result,
+        case,
+        lambda **_: FakeAgent(),
+    )
+
+    assert result.done is True
+    assert finish_reasons == ["agent_limit"]
+    assert [[call.call_id for call in batch] for batch in batches] == [
+        ["tool-only-0"],
+        ["tool-only-1"],
+    ]
+
+
 async def _run_fake_agent_messages(
     messages: list[Any],
     *,

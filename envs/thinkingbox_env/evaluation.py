@@ -826,7 +826,7 @@ async def run_configured_agent(
             None,
         )
         if assistant_text is None:
-            if limit_reached:
+            if limit_reached or agent_turns >= test_case.max_agent_sim_turns:
                 return record(await env.finish("agent_limit"))
             return record(await env.finish("agent_error"))
 
