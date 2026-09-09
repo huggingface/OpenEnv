@@ -230,6 +230,13 @@ The OpenEnv community has built a catalog of ready-to-run environments that cove
       </div>
     </div>
     <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">ThinkingBox</div>
+      <p class="text-sm">Evaluation-only adapter for public ThinkingBox-Bench and user-supplied ThinkingBox scenarios, preserving isolated MCP tools, simulated users, and native state and side-effect grading.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/thinkingbox" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
       <div class="font-bold mb-2">Unity</div>
       <p class="text-sm">OpenEnv wrapper for Unity ML-Agents environments, providing access to Unity's RL environments through HTTP/WebSocket interfaces.</p>
       <div class="flex gap-2 mt-3">
