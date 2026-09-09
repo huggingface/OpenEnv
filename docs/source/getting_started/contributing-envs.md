@@ -50,7 +50,10 @@ That's it. The CLI validates your environment, stages the files, adds the Huggin
 `https://huggingface.co/spaces/<your-username>/my_env`.
 
 > [!WARNING]
-> If you are getting errors on deployment, it is likely because the environment structure is not valid. Run `openenv validate --verbose` to see the errors. This checks for the required files (`openenv.yaml`, `pyproject.toml`, `server/app.py`) and validates the Dockerfile and entry points.
+> If you are getting errors on deployment, first run
+> `openenv validate --level static --skip-build`. This checks the `validation:`
+> contract in `openenv.yaml` against the current severity policy. Validate a
+> running server separately with `openenv validate --url http://localhost:8000`.
 
 ## 2. Fork Someone Else's Environment
 
@@ -116,7 +119,7 @@ Edit the environment files as needed.
 >
 > # Or build and run in Docker
 > openenv build
-> openenv validate --verbose
+> openenv validate --level static --skip-build
 > ```
 
 #### 3.3 Push your changes as a Pull Request
@@ -174,7 +177,7 @@ cd echo-env-improved
 # ... edit server/echo_environment.py ...
 
 # Test locally
-openenv validate --verbose
+openenv validate --level static --skip-build
 
 # Push your improvement as a PR to the original
 openenv push --repo-id openenv/echo-env --create-pr

@@ -18,7 +18,7 @@ Already familiar with OpenEnv? Here's the 8-step process at a glance:
 | 3 | Edit `server/my_environment.py` | Implement `reset()` and `step()` methods |
 | 4 | Edit `client.py` | Implement `_step_payload()`, `_parse_result()`, `_parse_state()` |
 | 5 | `uv run --project . server` | Start local dev server for testing |
-| 6 | `openenv validate` | Validate environment structure |
+| 6 | `openenv validate --level static --skip-build` | Validate the declared manifest contract |
 | 7 | `openenv push` | Deploy to Hugging Face Hub |
 | 8 | Share the URL! | Others use via `MyEnv.from_hub("you/my-env")` |
 
@@ -30,7 +30,7 @@ Already familiar with OpenEnv? Here's the 8-step process at a glance:
 | `openenv import SOURCE --name NAME --output-dir DIR` | Wrap a supported third-party environment source tree |
 | `uv run --project . server` | Start local dev server |
 | `openenv build` | Build Docker image |
-| `openenv validate --verbose` | Validate environment structure |
+| `openenv validate --level static --skip-build` | Validate the declared manifest contract |
 | `openenv push` | Deploy to Hugging Face Hub |
 | `openenv push --repo-id NAME` | Deploy to specific repo |
 | `openenv push --private` | Deploy as private environment |
@@ -317,7 +317,7 @@ From the environment directory:
 ```bash
 cd envs/my_env
 openenv build          # Builds Docker image (auto-detects context)
-openenv validate --verbose
+openenv validate --level static --skip-build
 ```
 
 `openenv build` understands both standalone environments and in-repo ones. Useful flags:
@@ -327,7 +327,12 @@ openenv validate --verbose
 - `--dockerfile` / `--context`: custom locations when experimenting
 - `--no-cache`: force fresh dependency installs
 
-`openenv validate` checks for required files, ensures the Dockerfile/server entrypoints function, and lists supported deployment modes. The command exits non-zero if issues are found so you can wire it into CI.
+`openenv validate` reads the `validation:` contract in `openenv.yaml`, checks
+the normalized manifest against the selected severity policy, and exits
+non-zero when a required check fails. The current walking skeleton runs the
+static manifest check; the report's `levels_run` field records exactly which
+levels executed. Use `openenv validate --url http://localhost:8000` separately
+to validate a running endpoint.
 
 ### 8. Push & Share with `openenv push`
 
