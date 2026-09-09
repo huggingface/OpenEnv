@@ -16,7 +16,6 @@ import json
 import platform
 import subprocess
 import sys
-import traceback
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
@@ -1967,17 +1966,15 @@ def _exception_details(exc: Exception) -> dict[str, Any]:
     chain = [
         {
             "type": type(current).__name__,
-            "message": str(current),
+            "message": "details redacted",
         }
         for current in _iter_exception_chain(exc)
     ]
     return {
         "type": type(exc).__name__,
-        "message": str(exc),
+        "message": "details redacted",
         "chain": chain,
-        "traceback": "".join(
-            traceback.format_exception(type(exc), exc, exc.__traceback__)
-        ),
+        "traceback": "details redacted",
     }
 
 
@@ -2099,7 +2096,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--errors-output",
-        help="Trusted operational sidecar; defaults beside --output.",
+        help="Redacted operational sidecar; defaults beside --output.",
     )
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--repetition-start", type=int, default=0)

@@ -2471,7 +2471,19 @@ def test_eval_botdesigner_failure_is_canonical_but_system_errors_are_quarantined
         provenance=provenance,
     )
     assert attempts == {thinkingbox_eval._repetition_id(UID, 1): 2}
-    assert "trusted-sidecar-only" in errors_path.read_text(encoding="utf-8")
+    error_payload = json.loads(errors_path.read_text(encoding="utf-8"))
+    assert error_payload["error"] == {
+        "type": "RuntimeError",
+        "message": "details redacted",
+        "chain": [
+            {
+                "type": "RuntimeError",
+                "message": "details redacted",
+            }
+        ],
+        "traceback": "details redacted",
+    }
+    assert "trusted-sidecar-only" not in errors_path.read_text(encoding="utf-8")
     assert "trusted-sidecar-only" not in json.dumps(
         thinkingbox_eval._canonical_payload(canonical)
     )
@@ -2608,10 +2620,12 @@ async def test_eval_run_retries_to_dual_outputs_and_resume_skips_canonical(
     assert canonical.metadata["attempt"] == 3
     assert operational_error["attempt"] == 1
     assert operational_error["retryable"] is True
-    assert "trusted-sidecar" in operational_error["error"]["message"]
+    assert operational_error["error"]["message"] == "details redacted"
     assert write_error["attempt"] == 2
     assert write_error["retryable"] is True
-    assert "synthetic canonical validation failure" in write_error["error"]["message"]
+    assert write_error["error"]["message"] == "details redacted"
+    assert "trusted-sidecar" not in "\n".join(error_lines)
+    assert "synthetic canonical validation failure" not in "\n".join(error_lines)
     assert "trusted-sidecar" not in canonical_lines[0]
 
     async def should_not_run(*_args: Any, **_kwargs: Any) -> Any:
