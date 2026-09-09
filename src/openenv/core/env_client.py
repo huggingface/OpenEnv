@@ -588,8 +588,11 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         await self._ws.send(json.dumps(message))
 
     async def _receive(self) -> Dict[str, Any]:
-        """Receive and parse a message from the WebSocket."""
-        await self._ensure_connected()
+        """Receive the response on the same WebSocket that carried the request.
+
+        Reconnecting here would wait on a fresh socket where the request was
+        never sent. The next complete operation may reconnect in `_send()`.
+        """
         assert self._ws is not None
         raw = await asyncio.wait_for(self._ws.recv(), timeout=self._message_timeout)
         return json.loads(raw)
