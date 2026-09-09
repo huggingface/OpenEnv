@@ -111,6 +111,7 @@ envs/
 │       ├── echo_environment.py       # Environment implementation
 │       └── Dockerfile                # Container definition
 │
+├── thinkingbox_env/           # Stateful MCP business-workflow benchmark adapter
 ├── coding_env/               # Python code execution environment
 ├── chat_env/                 # Conversational environment
 ├── textarena_env/            # Text-based games (TextArena)
@@ -137,6 +138,7 @@ tests/
 ├── envs/                     # Per-environment integration tests
 │   ├── test_echo_environment.py
 │   ├── test_coding_environment.py
+│   ├── test_thinkingbox_env.py  # Focused wire, fidelity, provenance, and evaluator suite
 │   └── ...
 │
 ├── test_cli/                 # CLI command tests
@@ -240,6 +242,7 @@ docs/
     ├── environments/         # Per-environment documentation
     │   ├── echo.md
     │   ├── coding.md
+    │   ├── thinkingbox.md    # Generated from envs/thinkingbox_env/README.md
     │   └── ...
     │
     ├── getting_started/      # Sphinx Gallery executable tutorials
@@ -256,6 +259,8 @@ docs/
     │
     └── _static/              # Static assets (versions.json, etc.)
 ```
+
+ThinkingBox examples: `example_usage.py` is a public-client smoke test, while `eval_testlist.py` invokes the packaged evaluator.
 
 ## Key Files to Know
 
