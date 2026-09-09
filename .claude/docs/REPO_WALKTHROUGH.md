@@ -58,6 +58,19 @@ src/
 │   │       ├── local_python_executor.py  # Python code execution
 │   │       └── git_server_client.py      # Git operations
 │   │
+│   ├── validation/           # RFC 008 environment validation contracts
+│   │   ├── types.py              # Shared validation enums and protocol types
+│   │   ├── manifest.py           # Normalized environment manifest models
+│   │   ├── signature.py          # Package signature detection
+│   │   ├── report.py             # Versioned validation report models
+│   │   ├── policy.py             # Severity-policy loading and application
+│   │   ├── runner.py             # Local validation orchestration
+│   │   ├── parsers/              # Manifest parser registry
+│   │   ├── providers/            # Validation provider contracts
+│   │   ├── graders/              # Grader registry and protocols
+│   │   ├── policies/             # Versioned severity policies
+│   │   └── schemas/              # Generated JSON schemas
+│   │
 │   └── cli/                  # Command-line interface
 │       ├── __main__.py           # Entry point (`python -m openenv.cli`)
 │       ├── commands/             # CLI subcommands
