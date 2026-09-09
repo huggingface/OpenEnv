@@ -128,14 +128,30 @@
           "type": "object"
         },
         "representativeQueries": {
-          "items": {
-            "maxLength": 8192,
-            "minLength": 1,
-            "pattern": "\\S",
-            "type": "string"
-          },
-          "title": "Representativequeries",
-          "type": "array"
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 8192,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "maxItems": 0,
+              "type": "array"
+            },
+            {
+              "items": {
+                "maxLength": 8192,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "maxItems": 5,
+              "minItems": 2,
+              "type": "array"
+            }
+          ],
+          "title": "Representativequeries"
         },
         "tags": {
           "items": {

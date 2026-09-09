@@ -67,12 +67,20 @@ descriptions, tags, representative queries, artifact availability, applicable
 license declarations, or declared agent tools. Echo contains a worked example.
 The producer reads it from the same Git revision as the environment.
 
+Leave `representative_queries` empty or supply two to five hints. The declaration,
+generated entry and packaged JSON schemas enforce the same bounds.
+
 Description precedence is `discovery.json`, `openenv.yaml`, package description,
 then README frontmatter. An explicit reviewed license declaration takes
 precedence; conflicting package and README declarations remain `unknown` with a
 diagnostic. Otherwise the package or README declaration is used, then the
 repository's declared source license. Mappings are retained in
 `metadata.provenance`. This is a source declaration, not a legal certification.
+
+A package `license = {file = "LICENSE"}` table remains `unknown`: a file pointer
+alone does not identify an SPDX or custom license. The producer does not classify
+the referenced file's contents or replace this unknown with a repository-wide
+license. A license table cannot contain both `file` and `text`.
 
 Tool declarations name repository-relative evidence within the environment and
 remain `declared`. Merely listing a tool name does not establish semantic safety.

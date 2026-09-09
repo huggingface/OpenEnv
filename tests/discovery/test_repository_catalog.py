@@ -202,6 +202,53 @@ def test_missing_license_is_explicitly_unknown(repository: Path) -> None:
     assert {entry.data.license for entry in build(repository).entries} == {"unknown"}
 
 
+@pytest.mark.parametrize("scope", ["environment", "repository"])
+@pytest.mark.parametrize(
+    ("declaration", "expected"),
+    [
+        ('{file = "LICENSE"}', "unknown"),
+        ('{text = "MIT"}', "MIT"),
+        ('{text = "Custom license terms."}', "other"),
+    ],
+)
+def test_license_tables_distinguish_file_pointers_from_license_text(
+    repository: Path, scope: str, declaration: str, expected: str
+) -> None:
+    origin = (
+        "envs/echo_env/pyproject.toml" if scope == "environment" else "pyproject.toml"
+    )
+    (repository / origin).write_text(
+        '[project]\nname="fixture"\ndescription="Echo messages."\n'
+        f"license={declaration}\n"
+    )
+    revision = commit(repository)
+    snapshot = build(repository)
+    entry = next(item for item in snapshot.entries if item.data.name == "echo_env")
+    assert snapshot.complete
+    assert entry.data.license == expected
+    assert entry.metadata["provenance"]["license"] == origin
+    if expected == "unknown":
+        assert entry.data.license_url is None
+    else:
+        assert entry.data.license_url.endswith(f"/{revision}/{origin}")
+
+
+def test_license_table_cannot_claim_both_a_file_and_text(repository: Path) -> None:
+    (repository / "envs/echo_env/pyproject.toml").write_text(
+        '[project]\nname="echo"\ndescription="Echo messages."\n'
+        'license={file="LICENSE",text="MIT"}\n'
+    )
+    commit(repository)
+    snapshot = build(repository)
+    assert not snapshot.complete
+    assert any(
+        issue.path == "envs/echo_env"
+        and issue.code == "invalid_metadata"
+        and issue.severity == "error"
+        for issue in snapshot.issues
+    )
+
+
 def test_failed_eligible_record_is_not_a_complete_inventory(
     repository: Path, tmp_path: Path
 ) -> None:

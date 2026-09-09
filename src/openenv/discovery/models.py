@@ -32,6 +32,10 @@ MAX_CATALOG_BYTES = 16 * 1024 * 1024
 NonEmpty = Annotated[
     str, StringConstraints(min_length=1, max_length=8192, pattern=r"\S")
 ]
+RepresentativeQueries = (
+    Annotated[list[NonEmpty], Field(max_length=0)]
+    | Annotated[list[NonEmpty], Field(min_length=2, max_length=5)]
+)
 Revision = Annotated[str, StringConstraints(pattern=r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")]
 Publisher = Annotated[
     str,
@@ -237,7 +241,7 @@ class DiscoveryEntry(ProfileModel):
     description: NonEmpty
     tags: list[NonEmpty] = Field(default_factory=list)
     capabilities: list[NonEmpty] = Field(default_factory=list)
-    representative_queries: list[NonEmpty] = Field(
+    representative_queries: RepresentativeQueries = Field(
         default_factory=list, alias="representativeQueries"
     )
     metadata: dict[str, JsonValue] = Field(default_factory=dict)
@@ -256,11 +260,6 @@ class DiscoveryEntry(ProfileModel):
             raise ValueError(
                 "capabilities require an evidenced agent-tools declaration"
             )
-        if (
-            self.representative_queries
-            and not 2 <= len(self.representative_queries) <= 5
-        ):
-            raise ValueError("representativeQueries must contain two to five hints")
         return self
 
 

@@ -3,10 +3,14 @@
 import copy
 import hashlib
 import json
+from importlib.resources import files
 from pathlib import Path
 
 import pytest
+from jsonschema import Draft202012Validator
 from openenv.discovery import CatalogError, EnvironmentCard, load_catalog
+from openenv.discovery.metadata import DiscoveryDeclaration
+from openenv.discovery.models import DiscoveryEntry
 from pydantic import ValidationError
 
 
@@ -216,8 +220,6 @@ def test_loader_rejects_tampering_even_when_json_is_well_formed(tmp_path: Path, 
 
 
 def test_schema_files_ship_with_the_profile():
-    from importlib.resources import files
-
     root = files("openenv.discovery").joinpath("schemas", "0.1-draft")
     card_schema = json.loads(root.joinpath("environment-card.schema.json").read_text())
     catalog_schema = json.loads(root.joinpath("catalog.schema.json").read_text())
@@ -225,3 +227,41 @@ def test_schema_files_ship_with_the_profile():
     assert catalog_schema["$schema"] == card_schema["$schema"]
     assert card_schema["properties"]["schema_version"]["const"] == "0.1-draft"
     assert card_schema["properties"]["source"]["$ref"].startswith("#/$defs/")
+
+
+@pytest.mark.parametrize(
+    ("count", "valid"), [(0, True), (1, False), (2, True), (5, True), (6, False)]
+)
+def test_query_hint_counts_agree_across_declarations_entries_and_schemas(
+    card, count, valid
+):
+    queries = [f"query {index}" for index in range(count)]
+    declaration = {"representative_queries": queries}
+    entry = {
+        "identifier": f"urn:air:example.org:openenv:echo:{REVISION}",
+        "displayName": "Echo",
+        "description": card["description"],
+        "data": card,
+        "representativeQueries": queries,
+    }
+    for model, payload in (
+        (DiscoveryDeclaration, declaration),
+        (DiscoveryEntry, entry),
+    ):
+        if valid:
+            assert model.model_validate(payload).representative_queries == queries
+        else:
+            with pytest.raises(ValidationError):
+                model.model_validate(payload)
+
+    root = files("openenv.discovery").joinpath("schemas", "0.1-draft")
+    declaration_schema = json.loads(
+        root.joinpath("declaration.schema.json").read_text()
+    )
+    catalog_schema = json.loads(root.joinpath("catalog.schema.json").read_text())
+    entry_schema = {
+        "$defs": catalog_schema["$defs"],
+        "$ref": "#/$defs/DiscoveryEntry",
+    }
+    assert Draft202012Validator(declaration_schema).is_valid(declaration) is valid
+    assert Draft202012Validator(entry_schema).is_valid(entry) is valid

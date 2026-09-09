@@ -109,6 +109,7 @@ dev = [
     "usort>=1.1.0",
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
+    "jsonschema>=4.20.0",
 ]
 
 [tool.usort]

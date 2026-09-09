@@ -14,7 +14,13 @@ from packaging.utils import canonicalize_name
 from pydantic import Field, field_validator
 
 from .errors import CatalogError
-from .models import NonEmpty, ProfileModel, RelativePath, SIMULATION_CONTROLS
+from .models import (
+    NonEmpty,
+    ProfileModel,
+    RelativePath,
+    RepresentativeQueries,
+    SIMULATION_CONTROLS,
+)
 from .repository import GitMetadataSource, MetadataError
 from .serialization import parse_json
 
@@ -37,7 +43,7 @@ class ToolDeclaration(ProfileModel):
 class DiscoveryDeclaration(ProfileModel):
     description: NonEmpty | None = None
     tags: list[NonEmpty] = Field(default_factory=list)
-    representative_queries: list[NonEmpty] = Field(default_factory=list)
+    representative_queries: RepresentativeQueries = Field(default_factory=list)
     license: NonEmpty | None = None
     license_source: RelativePath | None = None
     artifact_availability: Literal["resolvable", "external", "unknown"] = "resolvable"
@@ -132,9 +138,15 @@ def license_declaration(value: object) -> str | None:
     if value is None:
         return None
     if isinstance(value, dict):
+        if "file" in value and "text" in value:
+            raise MetadataError(
+                "invalid_metadata",
+                "License file and text declarations are mutually exclusive",
+            )
         value = value.get("text")
         if value is None:
-            return "other"
+            # A file pointer alone does not identify an SPDX or custom license.
+            return "unknown"
     if not isinstance(value, str) or not value.strip():
         return "unknown"
     if value in {"unknown", "other"}:
