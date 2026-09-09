@@ -3751,6 +3751,68 @@ async def test_configured_agent_reports_exact_tool_only_limit() -> None:
     ]
 
 
+@pytest.mark.asyncio
+async def test_configured_agent_counts_only_submitted_visible_text() -> None:
+    submitted: list[str] = []
+
+    class FakeAgent:
+        def __init__(self) -> None:
+            self.conversation = Conversation()
+            self.turn = 0
+
+        def add_messages(self, added: list[Any]) -> None:
+            self.conversation.messages.extend(added)
+
+        async def decode_turn_iter(self, user_message: Text | None) -> Any:
+            if user_message is not None:
+                self.add_messages([user_message])
+            self.turn += 1
+            contents = (
+                ["intermediate text", "first submitted text"]
+                if self.turn == 1
+                else ["second submitted text"]
+            )
+            for content in contents:
+                message = Text(role="assistant", content=content)
+                self.add_messages([message])
+                yield message
+
+    class FakeEnv:
+        async def submit_message(self, content: str) -> Any:
+            submitted.append(content)
+            return SimpleNamespace(
+                done=len(submitted) == 2,
+                observation=SimpleNamespace(
+                    error=None,
+                    user_message="continue" if len(submitted) == 1 else None,
+                    metadata={},
+                ),
+            )
+
+        async def finish(self, reason: str) -> Any:
+            raise AssertionError(f"unexpected finish: {reason}")
+
+    case = _case()
+    case.max_agent_sim_turns = 2
+    reset_result = SimpleNamespace(
+        observation=SimpleNamespace(
+            task="task",
+            bot_instructions=None,
+            tools=[],
+        )
+    )
+
+    result = await thinkingbox_eval.run_configured_agent(
+        FakeEnv(),
+        reset_result,
+        case,
+        lambda **_: FakeAgent(),
+    )
+
+    assert result.done is True
+    assert submitted == ["first submitted text", "second submitted text"]
+
+
 async def _run_fake_agent_messages(
     messages: list[Any],
     *,

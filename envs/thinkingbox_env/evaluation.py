@@ -780,14 +780,16 @@ async def run_configured_agent(
                 if isinstance(message, ParallelToolCall):
                     await proxy.submit_batch(message)
                     completion_messages.append(message)
-                    agent_turns += 1
+                    if not message.metadata.get("is_end_turn_tool", False):
+                        agent_turns += 1
                 elif (
                     isinstance(message, Text)
                     and message.role == "assistant"
                     and message.is_visible
                 ):
                     completion_messages.append(message)
-                    agent_turns += 1
+                    if message.tag == "direct":
+                        agent_turns += 1
         except _EpisodeEnded as exc:
             return record(exc.result)
         except Exception:
@@ -831,6 +833,7 @@ async def run_configured_agent(
             return record(await env.finish("agent_error"))
 
         result = await env.submit_message(assistant_text)
+        agent_turns += 1
         trace.capture_result(result)
         if result.done:
             return record(result)
