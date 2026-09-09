@@ -85,5 +85,5 @@ Mark complete only when all are true:
 - `client.py` matches the selected archetype and correctly serializes/parses data.
 - `__init__.py` exports the public API.
 - `README.md` includes quickstart and configuration.
-- `openenv build` and `openenv validate --verbose` pass, or failures are documented.
+- `openenv build` and `openenv validate --level static --skip-build` pass, or failures are documented.
 - Runtime smoke check is executed (`/health`; optionally `openenv validate --url`).

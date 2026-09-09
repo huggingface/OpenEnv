@@ -15,6 +15,7 @@ Run with: pytest tests/envs/test_websockets.py -v
 Run specific category: pytest tests/envs/test_websockets.py -v -k "smoke"
 """
 
+import asyncio
 import os
 import subprocess
 import sys
@@ -24,6 +25,7 @@ from typing import Generator
 
 import pytest
 import requests
+from websockets.protocol import State
 
 # Add the project root to the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -315,6 +317,27 @@ class TestProtocolWebSocketClient:
             state = client.state()
             assert state is not None
             assert state.step_count == 1
+
+    def test_protocol_client_reconnects_after_close(self, echo_server):
+        """A socket closed by the far end must not disable the client."""
+        from envs.echo_env.client import EchoEnv
+
+        with EchoEnv(base_url=echo_server).sync() as client:
+            client.reset()
+            assert client.call_tool("echo_message", message="before") == "before"
+
+            # Close the socket the way a keepalive timeout or a dropped tunnel
+            # would: from underneath the client, without telling it. The sync
+            # wrapper drives its own loop on a background thread, so the close
+            # has to be scheduled onto that loop.
+            inner = client._async
+            asyncio.run_coroutine_threadsafe(inner._ws.close(), client._loop).result(
+                timeout=10
+            )
+            assert inner._ws.state in (State.CLOSING, State.CLOSED)
+
+            client.reset()
+            assert client.call_tool("echo_message", message="after") == "after"
 
     def test_protocol_client_multiple_episodes(self, echo_server):
         """Test client can run multiple episodes."""
