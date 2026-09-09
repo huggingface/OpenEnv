@@ -32,6 +32,7 @@ pytest.importorskip(
 
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
+from starlette.websockets import WebSocketDisconnect
 from thinkingbox.common.chat_types import (
     Conversation,
     DecodeResult,
@@ -581,6 +582,8 @@ def test_supported_websocket_path_retains_one_episode() -> None:
         assert listed["data"]["observation"]["kind"] == "tools"
         assert listed["data"]["observation"]["task_uid"] == UID
         websocket.send_json({"type": "close"})
+        with pytest.raises(WebSocketDisconnect):
+            websocket.receive_json()
 
     assert proxy.created == 1
     assert proxy.destroyed == 1
