@@ -16,7 +16,6 @@ import json
 import platform
 import subprocess
 import sys
-import traceback
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
@@ -269,18 +268,20 @@ class _OpenEnvProxy:
     ) -> tuple[Any, ParallelToolCall] | None:
         if self._agent is None:
             return None
+        errored_match: tuple[Any, ParallelToolCall] | None = None
         for message in self._agent.conversation.messages[self._message_start :]:
             if not isinstance(message, ParallelToolCall):
                 continue
             for call in message.tool_calls:
                 if (
-                    not call.metadata.get("error")
-                    and call.id not in self._returned_call_ids
+                    call.id not in self._returned_call_ids
                     and call.name == name
                     and call.arguments == arguments
                 ):
-                    return call, message
-        return None
+                    if not call.metadata.get("error"):
+                        return call, message
+                    errored_match = errored_match or (call, message)
+        return errored_match
 
     async def _submit_batch_once(self, message: ParallelToolCall) -> None:
         result = await self._env.call_tools(
@@ -778,14 +779,16 @@ async def run_configured_agent(
                 if isinstance(message, ParallelToolCall):
                     await proxy.submit_batch(message)
                     completion_messages.append(message)
-                    agent_turns += 1
+                    if not message.metadata.get("is_end_turn_tool", False):
+                        agent_turns += 1
                 elif (
                     isinstance(message, Text)
                     and message.role == "assistant"
                     and message.is_visible
                 ):
                     completion_messages.append(message)
-                    agent_turns += 1
+                    if message.tag == "direct":
+                        agent_turns += 1
         except _EpisodeEnded as exc:
             return record(exc.result)
         except Exception:
@@ -824,11 +827,12 @@ async def run_configured_agent(
             None,
         )
         if assistant_text is None:
-            if limit_reached:
+            if limit_reached or agent_turns >= test_case.max_agent_sim_turns:
                 return record(await env.finish("agent_limit"))
             return record(await env.finish("agent_error"))
 
         result = await env.submit_message(assistant_text)
+        agent_turns += 1
         trace.capture_result(result)
         if result.done:
             return record(result)
@@ -1217,7 +1221,7 @@ def _canonical_payload(result: DecodeResult) -> dict[str, Any]:
     return payload
 
 
-def _write_canonical(stream: Any, result: DecodeResult) -> None:
+def _encode_canonical(result: DecodeResult) -> str:
     payload = _canonical_payload(result)
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     decoded = DecodeResult.model_validate_json(encoded)
@@ -1231,19 +1235,59 @@ def _write_canonical(stream: Any, result: DecodeResult) -> None:
         expected={repetition_id: (decoded.uid, repetition)},
         expected_provenance=decoded.metadata.get("provenance"),
     )
+    return encoded
+
+
+def _write_encoded_canonical(stream: Any, encoded: str) -> None:
     stream.write(encoded + "\n")
     stream.flush()
 
 
-def _assert_no_forbidden_fields(value: Any, path: str) -> None:
+def _write_canonical(stream: Any, result: DecodeResult) -> None:
+    _write_encoded_canonical(stream, _encode_canonical(result))
+
+
+def _assert_no_forbidden_fields(
+    value: Any,
+    path: str,
+    *,
+    location: tuple[str | int, ...] = (),
+    in_tool_arguments: bool = False,
+) -> None:
     if isinstance(value, dict):
         for key, child in value.items():
-            if str(key).casefold() in _FORBIDDEN_CANONICAL_FIELDS:
+            key_name = str(key)
+            if (
+                not in_tool_arguments
+                and key_name.casefold() in _FORBIDDEN_CANONICAL_FIELDS
+            ):
                 raise CoverageError(f"{path} contains forbidden field {key!r}")
-            _assert_no_forbidden_fields(child, f"{path}.{key}")
+            child_location = (*location, key_name)
+            # Tool arguments are agent-authored, model-visible content. Their API field
+            # names may overlap private evaluator fields, so only the surrounding
+            # canonical envelope remains subject to the name denylist.
+            child_is_tool_arguments = in_tool_arguments or (
+                len(child_location) == 5
+                and child_location[0] == "messages"
+                and isinstance(child_location[1], int)
+                and child_location[2] == "tool_calls"
+                and isinstance(child_location[3], int)
+                and child_location[4] == "arguments"
+            )
+            _assert_no_forbidden_fields(
+                child,
+                f"{path}.{key}",
+                location=child_location,
+                in_tool_arguments=child_is_tool_arguments,
+            )
     elif isinstance(value, list):
         for index, child in enumerate(value):
-            _assert_no_forbidden_fields(child, f"{path}[{index}]")
+            _assert_no_forbidden_fields(
+                child,
+                f"{path}[{index}]",
+                location=(*location, index),
+                in_tool_arguments=in_tool_arguments,
+            )
 
 
 def _validate_provenance_shape(
@@ -1922,17 +1966,15 @@ def _exception_details(exc: Exception) -> dict[str, Any]:
     chain = [
         {
             "type": type(current).__name__,
-            "message": str(current),
+            "message": "details redacted",
         }
         for current in _iter_exception_chain(exc)
     ]
     return {
         "type": type(exc).__name__,
-        "message": str(exc),
+        "message": "details redacted",
         "chain": chain,
-        "traceback": "".join(
-            traceback.format_exception(type(exc), exc, exc.__traceback__)
-        ),
+        "traceback": "details redacted",
     }
 
 
@@ -2054,7 +2096,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--errors-output",
-        help="Trusted operational sidecar; defaults beside --output.",
+        help="Redacted operational sidecar; defaults beside --output.",
     )
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--repetition-start", type=int, default=0)
@@ -2329,7 +2371,7 @@ async def _run(args: argparse.Namespace) -> None:
                             env_config=env_config,
                             env_dataset=env_dataset,
                         )
-                        canonical_result = _canonical_decode_result(
+                        candidate_result = _canonical_decode_result(
                             uid=uid,
                             repetition=repetition,
                             attempt=attempt,
@@ -2337,7 +2379,9 @@ async def _run(args: argparse.Namespace) -> None:
                             test_case=test_case,
                             outcome=outcome,
                         )
+                        encoded_result = _encode_canonical(candidate_result)
                     except Exception as exc:
+                        canonical_result = None
                         _write_error(
                             error_stream,
                             _operational_error_record(
@@ -2350,7 +2394,8 @@ async def _run(args: argparse.Namespace) -> None:
                             ),
                         )
                         continue
-                    _write_canonical(result_stream, canonical_result)
+                    _write_encoded_canonical(result_stream, encoded_result)
+                    canonical_result = candidate_result
                     completed.add(repetition_id)
                     break
                 if canonical_result is None:

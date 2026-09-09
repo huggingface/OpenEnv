@@ -32,6 +32,7 @@ pytest.importorskip(
 
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
+from starlette.websockets import WebSocketDisconnect
 from thinkingbox.common.chat_types import (
     Conversation,
     DecodeResult,
@@ -581,6 +582,8 @@ def test_supported_websocket_path_retains_one_episode() -> None:
         assert listed["data"]["observation"]["kind"] == "tools"
         assert listed["data"]["observation"]["task_uid"] == UID
         websocket.send_json({"type": "close"})
+        with pytest.raises(WebSocketDisconnect):
+            websocket.receive_json()
 
     assert proxy.created == 1
     assert proxy.destroyed == 1
@@ -2279,6 +2282,38 @@ def test_eval_canonical_fixture_validates_and_native_tb_agg_is_exact(
         thinkingbox_eval._canonical_payload(leaked)
 
 
+def test_eval_canonical_payload_allows_agent_tool_argument_field_names() -> None:
+    provenance = _eval_provenance()
+    result = _fixture_decode_result(UID, 0, True, provenance)
+    result.messages = [
+        ParallelToolCall(
+            tool_calls=[
+                ToolCall(
+                    name="authenticate",
+                    arguments={
+                        "token": "agent-supplied-placeholder",
+                        "request": {
+                            "headers": {"authorization": "placeholder"},
+                            "session_id": "agent-session",
+                        },
+                    },
+                    id="credential-shaped-arguments",
+                )
+            ]
+        )
+    ]
+
+    payload = thinkingbox_eval._canonical_payload(result)
+
+    assert payload["messages"][0]["tool_calls"][0]["arguments"] == {
+        "token": "agent-supplied-placeholder",
+        "request": {
+            "headers": {"authorization": "placeholder"},
+            "session_id": "agent-session",
+        },
+    }
+
+
 def test_eval_rejects_mismatched_or_mutating_server_execution_provenance() -> None:
     provenance = _eval_provenance()
     outcome = _eval_outcome(True, provenance)
@@ -2436,7 +2471,19 @@ def test_eval_botdesigner_failure_is_canonical_but_system_errors_are_quarantined
         provenance=provenance,
     )
     assert attempts == {thinkingbox_eval._repetition_id(UID, 1): 2}
-    assert "trusted-sidecar-only" in errors_path.read_text(encoding="utf-8")
+    error_payload = json.loads(errors_path.read_text(encoding="utf-8"))
+    assert error_payload["error"] == {
+        "type": "RuntimeError",
+        "message": "details redacted",
+        "chain": [
+            {
+                "type": "RuntimeError",
+                "message": "details redacted",
+            }
+        ],
+        "traceback": "details redacted",
+    }
+    assert "trusted-sidecar-only" not in errors_path.read_text(encoding="utf-8")
     assert "trusted-sidecar-only" not in json.dumps(
         thinkingbox_eval._canonical_payload(canonical)
     )
@@ -2511,16 +2558,34 @@ async def test_eval_run_retries_to_dual_outputs_and_resume_skips_canonical(
             trace=thinkingbox_eval._ExecutionTrace(),
         ),
         _eval_outcome(True, provenance),
+        _eval_outcome(True, provenance),
     ]
 
     async def fake_run_episode(*_args: Any, **_kwargs: Any) -> Any:
         return outcomes.pop(0)
 
     monkeypatch.setattr(thinkingbox_eval, "_run_episode", fake_run_episode)
+    encode_canonical = thinkingbox_eval._encode_canonical
+    encode_attempts = 0
+
+    def fail_first_canonical_encoding(result: DecodeResult) -> str:
+        nonlocal encode_attempts
+        encode_attempts += 1
+        if encode_attempts == 1:
+            raise thinkingbox_eval.CoverageError(
+                "synthetic canonical validation failure"
+            )
+        return encode_canonical(result)
+
+    monkeypatch.setattr(
+        thinkingbox_eval,
+        "_encode_canonical",
+        fail_first_canonical_encoding,
+    )
     args = SimpleNamespace(
         repeat=1,
         repetition_start=0,
-        attempts_per_repetition=2,
+        attempts_per_repetition=3,
         message_timeout=1800.0,
         shard_count=1,
         shard_index=0,
@@ -2546,15 +2611,21 @@ async def test_eval_run_retries_to_dual_outputs_and_resume_skips_canonical(
     canonical_lines = output.read_text(encoding="utf-8").splitlines()
     error_lines = errors.read_text(encoding="utf-8").splitlines()
     assert len(canonical_lines) == 1
-    assert len(error_lines) == 1
+    assert len(error_lines) == 2
     canonical = DecodeResult.model_validate_json(canonical_lines[0])
-    error = json.loads(error_lines[0])
+    operational_error = json.loads(error_lines[0])
+    write_error = json.loads(error_lines[1])
     assert canonical.test_result is not None
     assert canonical.test_result.result is True
-    assert canonical.metadata["attempt"] == 2
-    assert error["attempt"] == 1
-    assert error["retryable"] is True
-    assert "trusted-sidecar" in error["error"]["message"]
+    assert canonical.metadata["attempt"] == 3
+    assert operational_error["attempt"] == 1
+    assert operational_error["retryable"] is True
+    assert operational_error["error"]["message"] == "details redacted"
+    assert write_error["attempt"] == 2
+    assert write_error["retryable"] is True
+    assert write_error["error"]["message"] == "details redacted"
+    assert "trusted-sidecar" not in "\n".join(error_lines)
+    assert "synthetic canonical validation failure" not in "\n".join(error_lines)
     assert "trusted-sidecar" not in canonical_lines[0]
 
     async def should_not_run(*_args: Any, **_kwargs: Any) -> Any:
@@ -2565,6 +2636,22 @@ async def test_eval_run_retries_to_dual_outputs_and_resume_skips_canonical(
     await thinkingbox_eval._run(args)
     assert output.read_text(encoding="utf-8").splitlines() == canonical_lines
     assert errors.read_text(encoding="utf-8").splitlines() == error_lines
+
+    outcomes.append(_eval_outcome(True, provenance))
+    monkeypatch.setattr(thinkingbox_eval, "_run_episode", fake_run_episode)
+    args.resume = False
+
+    def fail_result_write(_stream: Any, _encoded: str) -> None:
+        raise OSError("result stream unavailable")
+
+    monkeypatch.setattr(
+        thinkingbox_eval,
+        "_write_encoded_canonical",
+        fail_result_write,
+    )
+    with pytest.raises(OSError, match="result stream unavailable"):
+        await thinkingbox_eval._run(args)
+    assert errors.read_text(encoding="utf-8") == ""
 
 
 def test_eval_resume_rejects_malformed_duplicate_unexpected_and_stale_records(
@@ -3335,6 +3422,7 @@ async def test_native_agent_proxy_forwards_provider_parse_errors() -> None:
     proxy = thinkingbox_eval._OpenEnvProxy(FakeEnv(), [])
     proxy.bind(agent)
 
+    assert await proxy.call_tool("lookup") == "ok"
     assert await proxy.call_tool("lookup", key="valid") == "ok"
     assert len(batches) == 1
     assert batches[0][0].parse_error == "Error: invalid JSON arguments"
@@ -3593,6 +3681,150 @@ async def test_configured_agent_submits_mixed_batch_exactly_once() -> None:
         ("mixed-valid", None),
     ]
     assert returned == ["result:mixed-valid"]
+
+
+@pytest.mark.asyncio
+async def test_configured_agent_reports_exact_tool_only_limit() -> None:
+    batches: list[list[SubmittedToolCall]] = []
+    finish_reasons: list[str] = []
+
+    class FakeAgent:
+        def __init__(self) -> None:
+            self.conversation = Conversation()
+
+        def add_messages(self, added: list[Any]) -> None:
+            self.conversation.messages.extend(added)
+
+        async def decode_turn_iter(self, user_message: Text | None) -> Any:
+            if user_message is not None:
+                self.add_messages([user_message])
+            for index in range(2):
+                batch = ParallelToolCall(
+                    tool_calls=[
+                        ToolCall(
+                            name="lookup",
+                            arguments={"index": index},
+                            id=f"tool-only-{index}",
+                        )
+                    ]
+                )
+                self.add_messages([batch])
+                yield batch
+
+    class FakeEnv:
+        async def call_tools(self, calls: list[SubmittedToolCall]) -> Any:
+            batches.append(calls)
+            return SimpleNamespace(
+                done=False,
+                observation=SimpleNamespace(
+                    tool_results=[
+                        SimpleNamespace(
+                            call_id=call.call_id,
+                            content=f"result:{call.call_id}",
+                        )
+                        for call in calls
+                    ]
+                ),
+            )
+
+        async def submit_message(self, content: str) -> Any:
+            raise AssertionError(f"unexpected assistant message: {content}")
+
+        async def finish(self, reason: str) -> Any:
+            finish_reasons.append(reason)
+            return SimpleNamespace(
+                done=True,
+                observation=SimpleNamespace(
+                    finish_reason=reason,
+                    metadata={},
+                ),
+            )
+
+    case = _case()
+    case.max_agent_sim_turns = 2
+    reset_result = SimpleNamespace(
+        observation=SimpleNamespace(
+            task="task",
+            bot_instructions=None,
+            tools=[],
+        )
+    )
+
+    result = await thinkingbox_eval.run_configured_agent(
+        FakeEnv(),
+        reset_result,
+        case,
+        lambda **_: FakeAgent(),
+    )
+
+    assert result.done is True
+    assert finish_reasons == ["agent_limit"]
+    assert [[call.call_id for call in batch] for batch in batches] == [
+        ["tool-only-0"],
+        ["tool-only-1"],
+    ]
+
+
+@pytest.mark.asyncio
+async def test_configured_agent_counts_only_submitted_visible_text() -> None:
+    submitted: list[str] = []
+
+    class FakeAgent:
+        def __init__(self) -> None:
+            self.conversation = Conversation()
+            self.turn = 0
+
+        def add_messages(self, added: list[Any]) -> None:
+            self.conversation.messages.extend(added)
+
+        async def decode_turn_iter(self, user_message: Text | None) -> Any:
+            if user_message is not None:
+                self.add_messages([user_message])
+            self.turn += 1
+            contents = (
+                ["intermediate text", "first submitted text"]
+                if self.turn == 1
+                else ["second submitted text"]
+            )
+            for content in contents:
+                message = Text(role="assistant", content=content)
+                self.add_messages([message])
+                yield message
+
+    class FakeEnv:
+        async def submit_message(self, content: str) -> Any:
+            submitted.append(content)
+            return SimpleNamespace(
+                done=len(submitted) == 2,
+                observation=SimpleNamespace(
+                    error=None,
+                    user_message="continue" if len(submitted) == 1 else None,
+                    metadata={},
+                ),
+            )
+
+        async def finish(self, reason: str) -> Any:
+            raise AssertionError(f"unexpected finish: {reason}")
+
+    case = _case()
+    case.max_agent_sim_turns = 2
+    reset_result = SimpleNamespace(
+        observation=SimpleNamespace(
+            task="task",
+            bot_instructions=None,
+            tools=[],
+        )
+    )
+
+    result = await thinkingbox_eval.run_configured_agent(
+        FakeEnv(),
+        reset_result,
+        case,
+        lambda **_: FakeAgent(),
+    )
+
+    assert result.done is True
+    assert submitted == ["first submitted text", "second submitted text"]
 
 
 async def _run_fake_agent_messages(
