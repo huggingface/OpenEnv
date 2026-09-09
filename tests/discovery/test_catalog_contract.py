@@ -1,0 +1,227 @@
+# SPDX-License-Identifier: BSD-3-Clause
+
+import copy
+import hashlib
+import json
+from pathlib import Path
+
+import pytest
+from openenv.discovery import CatalogError, EnvironmentCard, load_catalog
+from pydantic import ValidationError
+
+
+REVISION = "a" * 40
+
+
+@pytest.fixture
+def card() -> dict:
+    return {
+        "schema_version": "0.1-draft",
+        "name": "echo_env",
+        "description": "Echo messages for client smoke testing.",
+        "owner": {"authority": "github.com", "id": "example"},
+        "source": {
+            "provider": "github",
+            "id": "example/environments",
+            "uri": "https://github.com/example/environments.git",
+            "path": "envs/echo_env",
+            "revision": REVISION,
+        },
+        "artifact_availability": "resolvable",
+        "artifacts": [
+            {
+                "kind": "git",
+                "uri": "https://github.com/example/environments.git",
+                "path": "envs/echo_env",
+                "revision": REVISION,
+            }
+        ],
+        "license": "BSD-3-Clause",
+        "manifest_spec_version": 1,
+        "framework_requirement": "openenv>=0.3.1",
+        "interfaces": [
+            {"role": "orchestration", "protocol": "openenv"},
+            {
+                "role": "agent-tools",
+                "protocol": "mcp",
+                "status": "declared",
+                "source_revision": REVISION,
+            },
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("revision", "b" * 40),
+        ("path", "envs/another"),
+        ("uri", "https://github.com/x/y.git"),
+    ],
+)
+def test_artifact_must_bind_to_the_same_selected_subject(card, field, value):
+    card["artifacts"][0][field] = value
+    with pytest.raises(ValidationError):
+        EnvironmentCard.model_validate(card)
+
+
+def test_tool_declaration_cannot_borrow_another_revision(card):
+    card["interfaces"][1]["source_revision"] = "b" * 40
+    with pytest.raises(ValidationError):
+        EnvironmentCard.model_validate(card)
+
+
+@pytest.mark.parametrize(
+    "path", ["/envs/echo", "../echo", "envs/../echo", "envs\\echo"]
+)
+def test_environment_locator_is_a_safe_repository_relative_path(card, path):
+    card["source"]["path"] = path
+    card["artifacts"][0]["path"] = path
+    with pytest.raises(ValidationError):
+        EnvironmentCard.model_validate(card)
+
+
+def test_claimed_validated_tools_are_unsupported_in_the_declaration_profile(card):
+    card["interfaces"][1]["status"] = "validated"
+    with pytest.raises(ValidationError):
+        EnvironmentCard.model_validate(card)
+
+
+def test_source_manifest_marker_does_not_become_a_protocol_version(card):
+    parsed = EnvironmentCard.model_validate(card)
+    assert parsed.manifest_spec_version == 1
+    assert "version" not in parsed.interfaces[0].model_dump(exclude_none=True)
+    card["interfaces"][0]["version"] = "1"
+    with pytest.raises(ValidationError):
+        EnvironmentCard.model_validate(card)
+
+
+@pytest.mark.parametrize(
+    "interfaces", [[], [{"role": "agent-tools", "protocol": "mcp"}]]
+)
+def test_orchestration_descriptor_is_required(card, interfaces):
+    card["interfaces"] = interfaces
+    with pytest.raises(ValidationError):
+        EnvironmentCard.model_validate(card)
+
+
+def test_orchestration_must_not_be_duplicated(card):
+    card["interfaces"].append(copy.deepcopy(card["interfaces"][0]))
+    with pytest.raises(ValidationError):
+        EnvironmentCard.model_validate(card)
+
+
+def test_external_subject_does_not_claim_artifact_distribution(card):
+    card["artifact_availability"] = "external"
+    with pytest.raises(ValidationError):
+        EnvironmentCard.model_validate(card)
+    card["artifacts"] = []
+    assert EnvironmentCard.model_validate(card).source.revision == REVISION
+
+
+def test_other_license_requires_evidence_and_unknown_remains_unknown(card):
+    card["license"] = "other"
+    with pytest.raises(ValidationError):
+        EnvironmentCard.model_validate(card)
+    card["license"] = "unknown"
+    assert EnvironmentCard.model_validate(card).license == "unknown"
+
+
+def test_invalid_package_requirement_is_not_presented_as_compatibility(card):
+    card["framework_requirement"] = "openenv >=> 1"
+    with pytest.raises(ValidationError):
+        EnvironmentCard.model_validate(card)
+
+
+def test_a_publisher_policy_flag_is_not_part_of_the_card(card):
+    card["requires_explicit_trust"] = False
+    with pytest.raises(ValidationError):
+        EnvironmentCard.model_validate(card)
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        ["schema_version"],
+        ["source", "provider"],
+        ["artifacts", 0, "kind"],
+        ["interfaces", 0, "protocol"],
+        ["interfaces", 1, "status"],
+    ],
+)
+def test_required_wire_claims_are_not_invented_from_defaults(card, location):
+    parent = card
+    for key in location[:-1]:
+        parent = parent[key]
+    del parent[location[-1]]
+    with pytest.raises(ValidationError):
+        EnvironmentCard.model_validate(card)
+
+
+@pytest.mark.parametrize("field", ["name", "description"])
+def test_whitespace_is_not_a_useful_required_description(card, field):
+    card[field] = "   "
+    with pytest.raises(ValidationError):
+        EnvironmentCard.model_validate(card)
+
+
+def test_loader_rejects_identifier_only_and_incomplete_records(tmp_path: Path):
+    path = tmp_path / "partial.json"
+    path.write_text('{"entries":[{"identifier":"urn:air:example.org:openenv:echo"}]}')
+    with pytest.raises(CatalogError):
+        load_catalog(path)
+
+
+def test_loader_rejects_tampering_even_when_json_is_well_formed(tmp_path: Path, card):
+    payload = {
+        "schema_version": "0.1-draft",
+        "publisher": "example.org",
+        "source": {
+            key: value for key, value in card["source"].items() if key != "path"
+        },
+        "generator": {"name": "openenv-git-catalog", "version": "1"},
+        "inventory": {"root": "envs", "paths": ["envs/echo_env"]},
+        "complete": True,
+        "issues": [],
+        "entries": [
+            {
+                "@context": "https://agenticresourcediscovery.org/context/v1",
+                "identifier": f"urn:air:example.org:openenv:echo:{REVISION}",
+                "displayName": "Echo",
+                "type": "application/vnd.openenv.environment-card+json",
+                "data": card,
+                "description": card["description"],
+                "tags": [],
+                "capabilities": [],
+                "representativeQueries": [],
+                "metadata": {},
+            }
+        ],
+    }
+    payload["digest"] = (
+        "sha256:"
+        + hashlib.sha256(
+            json.dumps(
+                payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+            ).encode()
+        ).hexdigest()
+    )
+    path = tmp_path / "tampered.json"
+    path.write_text(json.dumps(payload))
+    assert load_catalog(path).complete
+    payload["entries"][0]["data"]["description"] = "A replaced description."
+    path.write_text(json.dumps(payload))
+    with pytest.raises(CatalogError, match="digest"):
+        load_catalog(path)
+
+
+def test_schema_files_ship_with_the_profile():
+    from importlib.resources import files
+
+    root = files("openenv.discovery").joinpath("schemas", "0.1-draft")
+    card_schema = json.loads(root.joinpath("environment-card.schema.json").read_text())
+    catalog_schema = json.loads(root.joinpath("catalog.schema.json").read_text())
+    assert card_schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+    assert catalog_schema["$schema"] == card_schema["$schema"]
+    assert card_schema["properties"]["schema_version"]["const"] == "0.1-draft"
+    assert card_schema["properties"]["source"]["$ref"].startswith("#/$defs/")

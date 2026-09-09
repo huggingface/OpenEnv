@@ -58,6 +58,14 @@ src/
 │   │       ├── local_python_executor.py  # Python code execution
 │   │       └── git_server_client.py      # Git operations
 │   │
+│   ├── discovery/            # RFC 011 metadata-only repository catalogs
+│   │   ├── models.py             # Declaration profile and identity invariants
+│   │   ├── repository.py         # Bounded reads from one committed Git tree
+│   │   ├── producer.py           # Inventory, provenance and record generation
+│   │   ├── search.py             # Lexical selection, exact lookup and lifecycle
+│   │   ├── serialization.py      # Complete-snapshot loading and atomic writes
+│   │   └── schemas/              # Packaged versioned JSON schemas
+│   │
 │   ├── validation/           # RFC 008 environment validation contracts
 │   │   ├── types.py              # Shared validation enums and protocol types
 │   │   ├── manifest.py           # Normalized environment manifest models
@@ -77,6 +85,7 @@ src/
 │       │   ├── init.py               # `openenv init` - scaffold new env
 │       │   ├── serve.py              # `openenv serve` - run server locally
 │       │   ├── build.py              # `openenv build` - build Docker image
+│       │   ├── catalog.py            # `catalog` and `discover` - metadata only
 │       │   ├── push.py               # `openenv push` - deploy to HF Spaces
 │       │   └── validate.py           # `openenv validate` - check config
 │       └── templates/            # Scaffolding templates

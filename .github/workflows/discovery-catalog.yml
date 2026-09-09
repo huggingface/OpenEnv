@@ -1,0 +1,55 @@
+name: Discovery catalog
+
+on:
+  pull_request:
+    paths:
+      - src/openenv/discovery/**
+      - src/openenv/cli/commands/catalog.py
+      - tests/discovery/**
+      - envs/**
+      - pyproject.toml
+      - scripts/generate_discovery_schemas.py
+      - .github/workflows/discovery-catalog.yml
+  push:
+    branches: [main]
+    paths:
+      - src/openenv/discovery/**
+      - envs/**
+      - pyproject.toml
+      - .github/workflows/discovery-catalog.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --group dev
+      - name: Check the profile and producer
+        run: |
+          uv run python scripts/generate_discovery_schemas.py --check
+          uv run pytest tests/discovery -q
+        env:
+          PYTHONPATH: src:envs
+      - name: Generate committed repository metadata
+        run: |
+          uv run openenv catalog build \
+            --repository . \
+            --repository-uri "https://github.com/$SOURCE_REPOSITORY.git" \
+            --publisher github.com \
+            --namespace "$SOURCE_OWNER" \
+            --revision "$SOURCE_REVISION" \
+            --output openenv-catalog.json
+        env:
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_OWNER: ${{ github.repository_owner }}
+          SOURCE_REVISION: ${{ github.sha }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openenv-catalog-${{ github.sha }}
+          path: openenv-catalog.json
+          if-no-files-found: error

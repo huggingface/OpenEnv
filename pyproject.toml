@@ -16,6 +16,7 @@ dependencies = [
     # individual environment pyproject.toml files
     "fastapi>=0.116.0",
     "pydantic>=2.0.0",
+    "packaging>=24.2",
     "typing_extensions>=4.0.0",
     "uvicorn>=0.24.0",
     "requests>=2.25.0",
@@ -67,6 +68,7 @@ include-package-data = true
 "openenv.cli" = ["templates/**/*"]
 "openenv.cli.importers" = ["templates/**/*"]
 "openenv.validation" = ["policies/*.json", "schemas/*.json"]
+"openenv.discovery" = ["schemas/**/*.json"]
 
 [tool.setuptools.exclude-package-data]
 "*" = ["*.pyc", "*.pyo", "__pycache__/*"]
