@@ -349,6 +349,28 @@ def test_an_incomplete_refresh_cannot_withdraw_last_known_records(
         compare_catalogs(previous, build(repository))
 
 
+@pytest.mark.parametrize("root", ["unrelated", "."])
+def test_snapshot_cannot_claim_entries_outside_its_inventory_scope(
+    repository: Path, tmp_path: Path, root: str
+) -> None:
+    snapshot = build(repository)
+    payload = snapshot.model_dump(by_alias=True, exclude_none=True, mode="json")
+    payload["inventory"]["root"] = root
+    payload.pop("digest")
+    payload["digest"] = (
+        "sha256:"
+        + hashlib.sha256(
+            json.dumps(
+                payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+            ).encode()
+        ).hexdigest()
+    )
+    path = tmp_path / "wrong-scope.json"
+    path.write_text(json.dumps(payload))
+    with pytest.raises(CatalogError, match="profile"):
+        load_catalog(path)
+
+
 def test_identifier_only_result_is_resolved_only_in_the_configured_snapshot(
     repository: Path,
 ) -> None:

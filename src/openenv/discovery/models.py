@@ -268,6 +268,15 @@ class Inventory(ProfileModel):
     root: RelativePath
     paths: list[RelativePath]
 
+    @model_validator(mode="after")
+    def direct_children(self) -> Inventory:
+        parent = "" if self.root == "." else self.root
+        if any(path == "." or path.rpartition("/")[0] != parent for path in self.paths):
+            raise ValueError(
+                "inventory paths must be direct children of its declared root"
+            )
+        return self
+
 
 class CatalogIssue(ProfileModel):
     path: RelativePath
