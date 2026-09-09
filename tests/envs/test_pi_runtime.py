@@ -50,6 +50,16 @@ def test_install_cmd_bootstraps_node_and_installs_pi():
     assert cmd.strip().endswith("/root/.pi-npm/bin/pi --version")
 
 
+def test_hf_image_exposes_node_and_pi_on_path():
+    dockerfile = os.path.join(_REPO_ROOT, "envs", "pi_env", "hf_image", "Dockerfile")
+    with open(dockerfile, encoding="utf-8") as stream:
+        contents = stream.read()
+
+    path_env = 'ENV PATH="/root/.node/bin:/root/.pi-npm/bin:${PATH}"'
+    assert path_env in contents
+    assert contents.index(path_env) < contents.index("# Node 22")
+
+
 def test_install_cmd_pins_version():
     cmd = rt.build_install_cmd(_cfg(pi_version="0.73.0"))
     assert "@mariozechner/pi-coding-agent@0.73.0" in cmd
