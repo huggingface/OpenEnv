@@ -1219,7 +1219,7 @@ def _canonical_payload(result: DecodeResult) -> dict[str, Any]:
     return payload
 
 
-def _write_canonical(stream: Any, result: DecodeResult) -> None:
+def _encode_canonical(result: DecodeResult) -> str:
     payload = _canonical_payload(result)
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     decoded = DecodeResult.model_validate_json(encoded)
@@ -1233,8 +1233,16 @@ def _write_canonical(stream: Any, result: DecodeResult) -> None:
         expected={repetition_id: (decoded.uid, repetition)},
         expected_provenance=decoded.metadata.get("provenance"),
     )
+    return encoded
+
+
+def _write_encoded_canonical(stream: Any, encoded: str) -> None:
     stream.write(encoded + "\n")
     stream.flush()
+
+
+def _write_canonical(stream: Any, result: DecodeResult) -> None:
+    _write_encoded_canonical(stream, _encode_canonical(result))
 
 
 def _assert_no_forbidden_fields(
@@ -2371,8 +2379,7 @@ async def _run(args: argparse.Namespace) -> None:
                             test_case=test_case,
                             outcome=outcome,
                         )
-                        _write_canonical(result_stream, candidate_result)
-                        canonical_result = candidate_result
+                        encoded_result = _encode_canonical(candidate_result)
                     except Exception as exc:
                         canonical_result = None
                         _write_error(
@@ -2387,6 +2394,8 @@ async def _run(args: argparse.Namespace) -> None:
                             ),
                         )
                         continue
+                    _write_encoded_canonical(result_stream, encoded_result)
+                    canonical_result = candidate_result
                     completed.add(repetition_id)
                     break
                 if canonical_result is None:

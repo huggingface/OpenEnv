@@ -2553,22 +2553,22 @@ async def test_eval_run_retries_to_dual_outputs_and_resume_skips_canonical(
         return outcomes.pop(0)
 
     monkeypatch.setattr(thinkingbox_eval, "_run_episode", fake_run_episode)
-    write_canonical = thinkingbox_eval._write_canonical
-    write_attempts = 0
+    encode_canonical = thinkingbox_eval._encode_canonical
+    encode_attempts = 0
 
-    def fail_first_canonical_write(stream: Any, result: DecodeResult) -> None:
-        nonlocal write_attempts
-        write_attempts += 1
-        if write_attempts == 1:
+    def fail_first_canonical_encoding(result: DecodeResult) -> str:
+        nonlocal encode_attempts
+        encode_attempts += 1
+        if encode_attempts == 1:
             raise thinkingbox_eval.CoverageError(
                 "synthetic canonical validation failure"
             )
-        write_canonical(stream, result)
+        return encode_canonical(result)
 
     monkeypatch.setattr(
         thinkingbox_eval,
-        "_write_canonical",
-        fail_first_canonical_write,
+        "_encode_canonical",
+        fail_first_canonical_encoding,
     )
     args = SimpleNamespace(
         repeat=1,
@@ -2622,6 +2622,22 @@ async def test_eval_run_retries_to_dual_outputs_and_resume_skips_canonical(
     await thinkingbox_eval._run(args)
     assert output.read_text(encoding="utf-8").splitlines() == canonical_lines
     assert errors.read_text(encoding="utf-8").splitlines() == error_lines
+
+    outcomes.append(_eval_outcome(True, provenance))
+    monkeypatch.setattr(thinkingbox_eval, "_run_episode", fake_run_episode)
+    args.resume = False
+
+    def fail_result_write(_stream: Any, _encoded: str) -> None:
+        raise OSError("result stream unavailable")
+
+    monkeypatch.setattr(
+        thinkingbox_eval,
+        "_write_encoded_canonical",
+        fail_result_write,
+    )
+    with pytest.raises(OSError, match="result stream unavailable"):
+        await thinkingbox_eval._run(args)
+    assert errors.read_text(encoding="utf-8") == ""
 
 
 def test_eval_resume_rejects_malformed_duplicate_unexpected_and_stale_records(
