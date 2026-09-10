@@ -17,6 +17,10 @@ RUN apt-get update \
 # Proxy deps that interception.py imports.
 RUN pip install --no-cache-dir "fastapi>=0.104" "uvicorn[standard]>=0.24" "httpx>=0.27"
 
+# Pi's launcher uses `#!/usr/bin/env node`; keep both pre-baked tools available
+# while building the image and when the sandbox executes Pi at runtime.
+ENV PATH="/root/.node/bin:/root/.pi-npm/bin:${PATH}"
+
 # Node 22 (pi requires >=22.19) + the pi CLI, at the paths pi_runtime expects.
 RUN A=$(uname -m); case $A in x86_64) A=x64;; aarch64|arm64) A=arm64;; esac \
     && curl -fsSL "https://nodejs.org/dist/v22.19.0/node-v22.19.0-linux-$A.tar.xz" | tar -xJ -C /root \
