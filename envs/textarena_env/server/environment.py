@@ -188,7 +188,7 @@ class TextArenaEnvironment(Environment):
         if hasattr(env, "full_observations"):
             env.full_observations = {}
 
-        self._ta_env.reset(num_players=self.num_players)
+        self._ta_env.reset(num_players=self.num_players, seed=seed)
 
         for provider in self._reward_providers:
             provider.reset()

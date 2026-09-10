@@ -65,3 +65,21 @@ def test_wordle_reset_clears_accumulated_state():
     # Verify the prompts are actually the same content
     assert obs1.prompt == obs2.prompt
     assert obs2.prompt == obs3.prompt
+
+
+def test_reset_seed_is_forwarded_to_textarena():
+    """`reset(seed=...)` must reach the underlying TextArena env.
+
+    Regression test: the seed was previously accepted but discarded, so two
+    resets with the same seed drew two different secret words.
+    """
+    pytest.importorskip("textarena", reason="textarena not installed")
+    env = TextArenaEnvironment(env_id="Wordle-v0", num_players=1)
+
+    env.reset(seed=1234)
+    first_word = env._ta_env.state.game_state["secret_word"]
+
+    env.reset(seed=1234)
+    second_word = env._ta_env.state.game_state["secret_word"]
+
+    assert first_word == second_word
