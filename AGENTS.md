@@ -22,8 +22,8 @@ OpenEnv is a Python (`uv`) monorepo: a core library + `openenv` CLI in `src/open
 - `openenv serve` is a stub that just prints instructions; run the server module (or `uvicorn echo_env.server.app:app`) directly instead.
 - Interact via the client: `EchoEnv(base_url="http://localhost:8000").sync()` then `.reset()` / `.list_tools()` / `.step(CallToolAction(...))`.
 
-### Optional Gradio web UI gotcha
-- The debug web UI is off by default; enable with `ENABLE_WEB_INTERFACE=true` and open `/web/`. Reset works, but the auto-generated Playground "Step" form has a pre-existing bug for MCP `CallToolAction`: the `arguments` field is a plain textbox passed as a string, so dict-typed args fail validation. Use the Python client or the REST `/web/step` endpoint (with a real JSON dict) instead of the Playground form for MCP envs.
+### Optional Gradio web UI
+- The debug web UI is off by default; enable with `ENABLE_WEB_INTERFACE=true` and open `/web/`.
 
 ### Docker
 - Docker is not required for local dev/test of the core library or pure-Python envs, and is not installed by the update script. Tests marked `@pytest.mark.docker`/`network` are skipped without it. Only set Docker up if you specifically work on container build/run flows.
