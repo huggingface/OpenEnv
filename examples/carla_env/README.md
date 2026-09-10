@@ -88,7 +88,7 @@ This is useful as a baseline to compare against LLM/VLM-driven navigation on the
 
 ### Fine-Tuned Model Inference
 
-Run inference with a model fine-tuned via GRPO on the trolley escape scenario (e.g., using [TRL's CARLA example](https://github.com/huggingface/trl/blob/main/examples/scripts/openenv/carla.py)). Uses the same prompt, tools, and message format from training to ensure consistent behavior.
+Run inference with a model fine-tuned via GRPO on the trolley escape scenario (e.g., using [TRL's CARLA example](https://github.com/huggingface/trl/blob/main/examples/grpo_carla/grpo_carla.py)). Uses the same prompt, tools, and message format from training to ensure consistent behavior.
 
 ```bash
 # Run with a fine-tuned model from the Hub

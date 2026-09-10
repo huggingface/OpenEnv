@@ -421,8 +421,8 @@ def _prepare_staging_directory(
                     frontmatter = f"""---
 title: {env_name.replace("_", " ").title()} Environment Server
 emoji: 🔊
-colorFrom: '#00C9FF'
-colorTo: '#1B2845'
+colorFrom: blue
+colorTo: indigo
 sdk: docker
 pinned: false
 app_port: 8000

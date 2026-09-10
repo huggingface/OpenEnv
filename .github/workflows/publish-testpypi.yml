@@ -15,6 +15,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: openenv-package-publish
+  cancel-in-progress: false
+
 env:
   PACKAGE_NAME: openenv
 

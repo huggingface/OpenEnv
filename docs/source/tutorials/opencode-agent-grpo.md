@@ -56,9 +56,9 @@ the recipe in TRL:
 - [Training on harnesses](https://huggingface.co/docs/trl/openenv#training-on-harnesses-training-a-real-coding-agent-opencode)
   in TRL's OpenEnv docs: rollout semantics, the reward path, turn selection,
   and the trace contract.
-- [`examples/scripts/openenv/opencode.py`](https://github.com/huggingface/trl/blob/main/examples/scripts/openenv/opencode.py)
+- [`examples/async_grpo_opencode/async_grpo_opencode.py`](https://github.com/huggingface/trl/blob/main/examples/async_grpo_opencode/async_grpo_opencode.py)
   in TRL: the complete, runnable script.
-- [`examples/scripts/openenv/opencode_hf_sandbox.py`](https://github.com/huggingface/trl/blob/main/examples/scripts/openenv/opencode_hf_sandbox.py)
+- [`examples/async_grpo_opencode/opencode_hf_sandbox.py`](https://github.com/huggingface/trl/blob/main/examples/async_grpo_opencode/opencode_hf_sandbox.py)
   in TRL: the same recipe, but each rollout runs in its own remote Hugging Face
   sandbox, so rollouts scale out beyond one node.
 - [`envs/opencode_env`](https://github.com/huggingface/OpenEnv/tree/main/envs/opencode_env):
