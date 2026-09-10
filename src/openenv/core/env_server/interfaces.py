@@ -78,28 +78,91 @@ class ModelTokenizer(Protocol):
 
 
 class TaskProvider(Protocol):
-    """Optional task discovery API for dataset-backed environments.
+    """
+    Optional task discovery API for dataset-backed environments.
+
+    An environment implements this protocol structurally — declare the methods on
+    an [`~openenv.core.env_server.interfaces.Environment`] subclass, without
+    inheriting from `TaskProvider`. When the methods are present,
+    [`~openenv.core.env_server.http_server.HTTPEnvServer`] exposes them as HTTP
+    routes under `/{env_name}/…`; when they are absent, those routes return
+    `501 Not Implemented`. Each method may be sync or async.
 
     Task provider methods are for metadata/discovery only and should be
     side-effect-free. They must be callable on a freshly constructed
     environment instance because HTTP compatibility routes may create a
     short-lived instance solely for task discovery.
+
+    Selecting a task is not part of this protocol — pass the chosen split and
+    index to `reset()` instead. See the
+    [Task API guide](https://huggingface.co/docs/openenv/guides/task-api).
+
+    Examples:
+
+    ```python
+    env.list_splits()          # ["train", "test"]
+    env.num_tasks("test")      # 7595
+    env.get_task("test", 12)   # {"id": "test-12", "index": 12}
+    env.reset(split="test", index=12)
+    ```
     """
 
     def list_splits(self) -> list[Any]:
-        """Return task split descriptors supported by this environment."""
+        """
+        Return task split descriptors supported by this environment.
+
+        Returns:
+            `list[Any]`: Split descriptors. Plain strings, dicts, and Pydantic
+                models are all accepted; the server normalizes each entry to
+                `{"name": ..., "type": ...}`.
+        """
         ...
 
     def list_tasks(self, split: str) -> list[Any]:
-        """Return all task specs for a split."""
+        """
+        Return all task specs for a split.
+
+        Args:
+            split (`str`):
+                Task split name.
+
+        Returns:
+            `list[Any]`: Task specs for the split. Environments backed by very
+                large or streamed splits may return a bounded preview, but
+                `num_tasks` should still report the true total.
+        """
         ...
 
     def num_tasks(self, split: str) -> int:
-        """Return the number of task specs in a split."""
+        """
+        Return the number of task specs in a split.
+
+        Args:
+            split (`str`):
+                Task split name.
+
+        Returns:
+            `int`: Number of task specs available in the split.
+        """
         ...
 
     def get_task(self, split: str, index: int) -> Any:
-        """Return one task spec by split and index."""
+        """
+        Return one task spec by split and index.
+
+        Args:
+            split (`str`):
+                Task split name.
+            index (`int`):
+                Task index within the split.
+
+        Returns:
+            `Any`: The task spec at that position.
+
+        Raises:
+            `IndexError`: If `index` is out of range for the split. The HTTP
+                route converts this to a `400 Bad Request`.
+        """
         ...
 
     def get_task_range(
@@ -108,7 +171,20 @@ class TaskProvider(Protocol):
         start: Optional[int] = None,
         stop: Optional[int] = None,
     ) -> list[Any]:
-        """Return task specs for Python slice-style range bounds."""
+        """
+        Return task specs for Python slice-style range bounds.
+
+        Args:
+            split (`str`):
+                Task split name.
+            start (`int`, *optional*):
+                Inclusive start index. Defaults to the beginning of the split.
+            stop (`int`, *optional*):
+                Exclusive stop index. Defaults to the end of the split.
+
+        Returns:
+            `list[Any]`: Task specs in `[start, stop)`.
+        """
         ...
 
 

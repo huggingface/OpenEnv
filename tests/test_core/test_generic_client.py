@@ -24,6 +24,7 @@ from openenv.core.client_types import StepResult
 from openenv.core.env_client import _is_localhost_ws_url
 from openenv.core.generic_client import GenericAction, GenericEnvClient
 from openenv.core.sync_client import SyncEnvClient
+from websockets.protocol import State
 
 
 # ============================================================================
@@ -1342,6 +1343,41 @@ class TestForeignLoopReconnect:
         mock_connect.assert_called_once()
         assert client._ws is second_ws
         assert client._ws_loop is asyncio.get_running_loop()
+
+    @pytest.mark.asyncio
+    async def test_receive_does_not_reconnect_after_request_was_sent(self):
+        """A response must be read from the socket that carried its request."""
+
+        class SocketClosedAfterSend:
+            state = State.OPEN
+
+            async def send(self, _message):
+                self.state = State.CLOSED
+
+            async def recv(self):
+                raise ConnectionError("original socket closed after send")
+
+        client = GenericEnvClient(base_url="http://localhost:8000")
+        original_ws = SocketClosedAfterSend()
+        client._ws = original_ws
+        client._ws_loop = asyncio.get_running_loop()
+
+        replacement_ws = AsyncMock()
+        replacement_ws.state = State.OPEN
+        replacement_ws.recv.side_effect = AssertionError(
+            "must not receive a response on a replacement socket"
+        )
+
+        with patch(
+            "openenv.core.env_client.ws_connect", return_value=replacement_ws
+        ) as mock_connect:
+            with pytest.raises(
+                ConnectionError, match="original socket closed after send"
+            ):
+                await client._send_and_receive({"type": "state"})
+
+        mock_connect.assert_not_called()
+        assert client._ws is original_ws
 
 
 # ============================================================================

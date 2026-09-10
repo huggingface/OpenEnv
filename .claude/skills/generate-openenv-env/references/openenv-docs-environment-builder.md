@@ -276,7 +276,7 @@ From the environment directory:
 ```bash
 cd envs/my_env
 openenv build          # Builds Docker image (auto-detects context)
-openenv validate --verbose
+openenv validate --level static --skip-build
 ```
 
 `openenv build` understands both standalone environments and in-repo ones. Useful flags:
@@ -286,7 +286,12 @@ openenv validate --verbose
 - `--dockerfile` / `--context`: custom locations when experimenting
 - `--no-cache`: force fresh dependency installs
 
-`openenv validate` checks for required files, ensures the Dockerfile/server entrypoints function, and lists supported deployment modes. The command exits non-zero if issues are found so you can wire it into CI.
+`openenv validate` reads the `validation:` contract in `openenv.yaml`, checks
+the normalized manifest against the selected severity policy, and exits
+non-zero when a required check fails. The current walking skeleton runs the
+static manifest check; the report's `levels_run` field records exactly which
+levels executed. Use `openenv validate --url http://localhost:8000` separately
+to validate a running endpoint.
 
 You can also validate a running environment endpoint and get criteria-level JSON:
 
