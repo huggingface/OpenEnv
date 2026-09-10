@@ -57,7 +57,8 @@ def _ensure_nltk_data() -> None:
     packages = ("words", "averaged_perceptron_tagger_eng")
     opener = urllib.request._opener
     explicit_proxy = opener is not None and any(
-        isinstance(handler, urllib.request.ProxyHandler) and handler.proxies
+        isinstance(handler, urllib.request.ProxyHandler)
+        and any(scheme != "no" for scheme in handler.proxies)
         for handler in opener.handlers
     )
     if (

@@ -120,3 +120,21 @@ def test_unaffected_download_uses_normal_path(
     run.assert_not_called()
     assert nltk_download.download.call_count == 2
     assert environment._NLTK_DOWNLOADED
+
+
+def test_exclusion_only_global_opener_is_not_a_carrying_proxy(
+    monkeypatch, nltk_download
+):
+    monkeypatch.setenv("NO_PROXY", "localhost")
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({"no": "localhost"})
+    )
+    monkeypatch.setattr(urllib.request, "_opener", opener)
+    run = Mock()
+    monkeypatch.setattr(subprocess, "run", run)
+
+    environment._ensure_nltk_data()
+
+    run.assert_called_once()
+    nltk_download.download.assert_not_called()
+    assert urllib.request._opener is opener
