@@ -20,8 +20,9 @@ import importlib.metadata
 import importlib.resources
 import json
 import logging
+import os
 import re
-import tempfile
+import stat
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Type
@@ -336,6 +337,101 @@ def _create_env_info_from_package(
     )
 
 
+def _default_cache_file() -> Path:
+    """
+    Return the per-user discovery cache file path.
+
+    Uses a per-user cache directory (``$XDG_CACHE_HOME`` or ``~/.cache``) rather than a
+    shared, world-writable temporary directory. A fixed path under the shared temp dir
+    lets another local user pre-create the cache file and redirect discovery to
+    attacker-controlled import paths (`import_module` on a cached `client_module_path`).
+    """
+    base = os.environ.get("XDG_CACHE_HOME")
+    root = Path(base) if base else Path.home() / ".cache"
+    return root / "openenv" / "discovery_cache.json"
+
+
+def _is_trusted_stat(info: os.stat_result) -> bool:
+    """
+    Return whether the file *info* describes is safe to load.
+
+    On POSIX the file must be owned by the current user and not writable by group or
+    others, so a cache file planted by another user is ignored rather than trusted.
+
+    Args:
+        info (`os.stat_result`):
+            Metadata for the file being considered.
+
+    Returns:
+        `bool`: `True` if the file is owned by the current user and not
+        group/other-writable (always `True` on non-POSIX platforms).
+    """
+    if os.name != "posix":
+        return True
+    return info.st_uid == os.getuid() and not (
+        info.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+    )
+
+
+def _is_trusted_cache_file(path: Path) -> bool:
+    """
+    Return whether *path* is safe to load.
+
+    Prefer `_open_trusted_cache`, which checks the descriptor it hands back. This
+    variant resolves the path a second time, so on its own it cannot promise that
+    the file inspected is the file later read.
+
+    Args:
+        path (`Path`):
+            The cache file to check.
+
+    Returns:
+        `bool`: `True` if the file is owned by the current user and not
+        group/other-writable (always `True` on non-POSIX platforms).
+    """
+    if os.name != "posix":
+        return True
+    try:
+        return _is_trusted_stat(path.stat())
+    except OSError:
+        return False
+
+
+def _open_trusted_cache(path: Path) -> int | None:
+    """
+    Open *path* for reading and return the descriptor only if it is trustworthy.
+
+    Checking a path and then opening it are two separate resolutions, and an
+    attacker who can write in the cache directory can swap the file for a symlink
+    in between, so the file that was vetted is not the file that gets read.
+    ``O_NOFOLLOW`` refuses a symlink outright and ``fstat`` inspects the descriptor
+    itself, which makes the ownership check and the read the same object.
+
+    Args:
+        path (`Path`):
+            The cache file to open.
+
+    Returns:
+        `int` or `None`: an open read-only descriptor the caller must close, or
+        `None` if the file is missing, is a symlink, or is not owned by the
+        current user.
+    """
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError:
+        # Missing, unreadable, or a symlink (ELOOP under O_NOFOLLOW).
+        return None
+    try:
+        if not _is_trusted_stat(os.fstat(fd)):
+            os.close(fd)
+            return None
+    except OSError:
+        os.close(fd)
+        return None
+    return fd
+
+
 class EnvironmentDiscovery:
     """
     Auto-discovery system for OpenEnv environments using installed packages.
@@ -346,7 +442,7 @@ class EnvironmentDiscovery:
     def __init__(self):
         """Initialize discovery system."""
         self._cache: dict[str, EnvironmentInfo] | None = None
-        self._cache_file = Path(tempfile.gettempdir()) / "openenv_discovery_cache.json"
+        self._cache_file = _default_cache_file()
 
     def _discover_installed_packages(self) -> dict[str, EnvironmentInfo]:
         """
@@ -408,11 +504,22 @@ class EnvironmentDiscovery:
         Returns:
             Dictionary of env_key -> EnvironmentInfo, or None if cache invalid
         """
-        if not self._cache_file.exists():
+        # Only trust a cache file owned by the current user. This prevents another
+        # local user from planting a file that would redirect discovery (and the
+        # subsequent import_module) to attacker-controlled modules/classes. The
+        # descriptor is what gets vetted and then read, so the file cannot be
+        # swapped for a symlink after the check.
+        fd = _open_trusted_cache(self._cache_file)
+        if fd is None:
+            if self._cache_file.exists():
+                logger.warning(
+                    f"Ignoring discovery cache {self._cache_file}: not owned by "
+                    "the current user, writable by group/others, or a symlink."
+                )
             return None
 
         try:
-            with open(self._cache_file, "r") as f:
+            with os.fdopen(fd, "r") as f:
                 cache_data = json.load(f)
 
             # Reconstruct EnvironmentInfo objects
@@ -437,7 +544,15 @@ class EnvironmentDiscovery:
             for env_key, env_info in environments.items():
                 cache_data[env_key] = asdict(env_info)
 
-            with open(self._cache_file, "w") as f:
+            self._cache_file.parent.mkdir(parents=True, exist_ok=True)
+            # Create the file owner-only rather than writing it and narrowing the
+            # mode afterwards: `open()` applies the umask, so a `chmod` after the
+            # fact leaves a window in which the cache is world-readable. Refuse to
+            # follow a symlink here too, so a planted link cannot redirect the
+            # write.
+            flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+            fd = os.open(self._cache_file, flags, 0o600)
+            with os.fdopen(fd, "w") as f:
                 json.dump(cache_data, f, indent=2)
 
         except Exception as e:
