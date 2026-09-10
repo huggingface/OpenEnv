@@ -594,7 +594,24 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         never sent. The next complete operation may reconnect in `_send()`.
         """
         assert self._ws is not None
-        raw = await asyncio.wait_for(self._ws.recv(), timeout=self._message_timeout)
+        try:
+            raw = await asyncio.wait_for(self._ws.recv(), timeout=self._message_timeout)
+        except asyncio.TimeoutError:
+            # The server may still write the response for this request to the
+            # socket after we give up waiting on it. If we left the socket
+            # open, the next call's `_receive()` would read that stale frame
+            # and silently pair it with an unrelated request -- and every
+            # response after that would be shifted by one for the life of
+            # the connection. Drop the socket so the next `_send()` opens a
+            # fresh one instead of reusing a desynced one.
+            ws = self._ws
+            self._ws = None
+            self._ws_loop = None
+            try:
+                await ws.close()
+            except Exception:
+                pass  # Best effort
+            raise
         return json.loads(raw)
 
     async def _send_and_receive(self, message: Dict[str, Any]) -> Dict[str, Any]:
