@@ -229,7 +229,7 @@ Note that the Task API is served over HTTP while episodes typically run over the
 From a training or evaluation loop, discovery and episode control then compose naturally:
 
 ```python
-with LatexOCREnv.from_docker_image("latex-ocr-env:latest") as env:
+with LatexOCREnv.from_docker_image("latex-ocr-env:latest").sync() as env:
     total = env.num_tasks("test")
     for index in range(total):
         result = env.reset(split="test", index=index)

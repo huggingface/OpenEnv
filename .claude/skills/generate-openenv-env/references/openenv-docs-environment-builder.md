@@ -378,12 +378,12 @@ For an end-to-end example of using your environment, see the [Quick Start](quick
 ```python
 from envs.my_env import MyAction, MyEnv
 
-# Create environment from Docker image
-client = MyEnv.from_docker_image("my-env:latest")
-# Or, connect to the remote space on Hugging Face
-client = MyEnv.from_hub("my-org/my-env")
-# Or, connect to the local server
-client = MyEnv(base_url="http://localhost:8000")
+# Create environment from Docker image (starts a container)
+client = MyEnv.from_docker_image("my-env:latest").sync()
+# Or, run the image of a Hugging Face Space locally
+client = MyEnv.from_env("my-org/my-env").sync()
+# Or, connect to an already running server
+client = MyEnv(base_url="http://localhost:8000").sync()
 
 # Use context manager for automatic cleanup (recommended)
 with client:
@@ -403,11 +403,36 @@ with client:
 
 # Or manually manage the connection
 try:
-    client = MyEnv(base_url="http://localhost:8000")
+    client = MyEnv(base_url="http://localhost:8000").sync()
     result = client.reset()
     result = client.step(MyAction(command="test", parameters={}))
 finally:
     client.close()
+```
+
+`from_docker_image()` and `from_env()` do not return a connected client. They
+return a lazy bootstrap handle, and nothing starts until you resolve it: chain
+`.sync()` for a synchronous client (as above), or `await` the handle from async
+code. Using the handle directly in a `with` block raises
+`TypeError: '_BootstrapResult' object does not support the context manager protocol`.
+
+The equivalent async usage is:
+
+```python
+import asyncio
+
+from envs.my_env import MyAction, MyEnv
+
+
+async def main():
+    client = await MyEnv.from_docker_image("my-env:latest")
+    async with client:
+        result = await client.reset()
+        result = await client.step(MyAction(command="test", parameters={}))
+        state = await client.state()
+
+
+asyncio.run(main())
 ```
 
 ## Troubleshooting

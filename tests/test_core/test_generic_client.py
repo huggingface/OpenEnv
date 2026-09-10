@@ -592,6 +592,67 @@ class TestSyncBootstrapConstructors:
 
         mock_provider.stop_container.assert_called_once_with()
 
+    _RESET_RESPONSE = (
+        '{"type": "response", "data": {"observation": {"ready": true}, '
+        '"reward": 0.0, "done": false}}'
+    )
+
+    def test_documented_sync_usage_with_block_and_reset(self, mock_provider):
+        """The Environment Builder docs' sync example works end-to-end (issue #1118).
+
+        `client = MyEnv.from_docker_image(...).sync()` followed by
+        `with client: client.reset()` must connect on the sync loop, return a
+        concrete StepResult (not a coroutine), and release the container on exit.
+        """
+        fake_connect, sockets = self._fake_ws_connect()
+
+        with patch("openenv.core.env_client.ws_connect", side_effect=fake_connect):
+            client = GenericEnvClient.from_docker_image(
+                image="my-env:latest",
+                provider=mock_provider,
+            ).sync()
+            sockets[0].recv.return_value = self._RESET_RESPONSE
+
+            with client:
+                result = client.reset()
+
+        if asyncio.iscoroutine(result):
+            result.close()
+            pytest.fail("client.reset() returned a coroutine in synchronous code")
+        assert isinstance(result, StepResult)
+        assert result.observation == {"ready": True}
+        assert result.done is False
+        mock_provider.start_container.assert_called_once_with("my-env:latest")
+        mock_provider.stop_container.assert_called_once_with()
+
+    @pytest.mark.asyncio
+    async def test_documented_async_usage_async_with_and_reset(self, mock_provider):
+        """The Environment Builder docs' async example works end-to-end (issue #1118).
+
+        `client = await MyEnv.from_docker_image(...)` followed by
+        `async with client: await client.reset()` must reuse the connection
+        opened by the handle and release the container on exit.
+        """
+        fake_connect, sockets = self._fake_ws_connect()
+
+        with patch("openenv.core.env_client.ws_connect", side_effect=fake_connect):
+            client = await GenericEnvClient.from_docker_image(
+                image="my-env:latest",
+                provider=mock_provider,
+            )
+            assert isinstance(client, GenericEnvClient)
+            sockets[0].recv.return_value = self._RESET_RESPONSE
+
+            async with client:
+                result = await client.reset()
+
+        assert isinstance(result, StepResult)
+        assert result.observation == {"ready": True}
+        # `async with` on an already-connected client must not open a second socket.
+        assert len(sockets) == 1
+        mock_provider.start_container.assert_called_once_with("my-env:latest")
+        mock_provider.stop_container.assert_called_once_with()
+
 
 class TestBaseUrlProperty:
     """Test the public read-only base_url property (issue #935)."""
