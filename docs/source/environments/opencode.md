@@ -304,4 +304,4 @@ opencode_env/
 - [OpenEnv docs](https://huggingface.co/docs/openenv)
 - [OpenCode CLI](https://opencode.ai/docs/cli/)
 - [E2B Python SDK](https://e2b.dev/docs)
-- [HF Inference Providers logprob matrix](../../../DOCS/HF/hf_inference_providers_logprobs.md)
+- [HF Inference Providers logprob matrix](https://github.com/huggingface/OpenEnv/blob/main/DOCS/HF/hf_inference_providers_logprobs.md)
