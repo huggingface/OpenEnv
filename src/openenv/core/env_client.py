@@ -55,6 +55,7 @@ if TYPE_CHECKING:
     from .sync_client import SyncEnvClient
 
 from websockets.asyncio.client import connect as ws_connect
+from websockets.protocol import State
 
 ActT = TypeVar("ActT")
 ObsT = TypeVar("ObsT")
@@ -492,7 +493,16 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
             ConnectionError: If connection cannot be established
         """
         if self._ws is not None:
-            if self._ws_loop is asyncio.get_running_loop():
+            if self._ws.state in (State.CLOSING, State.CLOSED):
+                # Closed by the far end: a keepalive timeout, a tunnel dropping
+                # the socket, the server restarting. The object is still not
+                # None, so without this check it stays cached and every later
+                # call raises `ConnectionClosed` for the rest of the process's
+                # life. Only a demonstrably closed socket is dropped, so one
+                # still CONNECTING is left alone.
+                self._ws = None
+                self._ws_loop = None
+            elif self._ws_loop is asyncio.get_running_loop():
                 return self
             # Connected from a different event loop than the one running
             # now -- e.g. `client = await Client.from_env(...)` inside
@@ -578,7 +588,11 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         await self._ws.send(json.dumps(message))
 
     async def _receive(self) -> Dict[str, Any]:
-        """Receive and parse a message from the WebSocket."""
+        """Receive the response on the same WebSocket that carried the request.
+
+        Reconnecting here would wait on a fresh socket where the request was
+        never sent. The next complete operation may reconnect in `_send()`.
+        """
         assert self._ws is not None
         raw = await asyncio.wait_for(self._ws.recv(), timeout=self._message_timeout)
         return json.loads(raw)

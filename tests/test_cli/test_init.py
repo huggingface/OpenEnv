@@ -114,7 +114,24 @@ def test_init_generates_openenv_yaml(tmp_path: Path) -> None:
     assert "runtime: fastapi" in yaml_content
     assert "app: server.app:app" in yaml_content
     assert "port: 8000" in yaml_content
+    assert "validation:" in yaml_content
     assert "__ENV_NAME__" not in yaml_content
+
+    validate_result = runner.invoke(
+        app,
+        [
+            "validate",
+            str(env_dir),
+            "--level",
+            "static",
+            "--skip-build",
+        ],
+    )
+    assert validate_result.exit_code == 0, validate_result.output
+    assert "Verdict: PASS" in validate_result.output
+
+    environment_file = env_dir / "server" / f"{env_name}_environment.py"
+    assert "min(length * 0.1, 1.0)" in environment_file.read_text()
 
 
 def test_init_readme_has_hf_frontmatter(tmp_path: Path) -> None:
