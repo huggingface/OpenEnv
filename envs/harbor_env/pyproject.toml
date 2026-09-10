@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: BSD-3-Clause
+
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openenv-harbor_env"
+version = "0.1.0"
+description = "Run Harbor task directories as an OpenEnv environment"
+requires-python = ">=3.10"
+dependencies = [
+    # OpenEnv runtime: FastAPI server + WebSocket client types
+    "openenv>=0.2.3",
+    # Loading task sets straight from a Hugging Face dataset
+    "huggingface_hub>=0.20.0",
+    # Docker execution mode — the faithful backend for image-backed tasks
+    "docker>=7.1.0",
+    # tomllib is stdlib from 3.11
+    "tomli>=2.0.0; python_version < '3.11'",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0.0",
+    "pytest-cov>=7.0.0",
+]
+
+[project.scripts]
+# Server entry point - enables running via: uv run --project . server
+# or: python -m harbor_env.server.app
+server = "harbor_env.server.app:main"
+
+[tool.setuptools]
+include-package-data = true
+packages = ["harbor_env", "harbor_env.server"]
+package-dir = { "harbor_env" = ".", "harbor_env.server" = "server" }
+
+[tool.setuptools.package-data]
+# Ship the bundled example tasks so a fresh install has something to run.
+"harbor_env" = ["examples/tasks/**/*"]
