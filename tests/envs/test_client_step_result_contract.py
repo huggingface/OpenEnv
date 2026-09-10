@@ -24,7 +24,7 @@ from openenv.core.env_server.serialization import serialize_observation
 
 def test_serializer_keeps_reward_and_done_on_the_envelope():
     """Pin the wire contract the clients are being checked against."""
-    from envs.chess_env.models import ChessObservation
+    from chess_env.models import ChessObservation
 
     payload = serialize_observation(ChessObservation(done=True, reward=1.0))
 
@@ -36,12 +36,12 @@ def test_serializer_keeps_reward_and_done_on_the_envelope():
 
 class TestChessClient:
     def parse(self, observation):
-        from envs.chess_env.client import ChessEnv
+        from chess_env.client import ChessEnv
 
         return ChessEnv._parse_result(None, serialize_observation(observation))
 
     def test_step_result_carries_reward_and_done(self):
-        from envs.chess_env.models import ChessObservation
+        from chess_env.models import ChessObservation
 
         result = self.parse(
             ChessObservation(fen="8/8/8/8/8/8/8/K6k w - - 0 1", done=True, reward=1.0)
@@ -51,7 +51,7 @@ class TestChessClient:
         assert result.done is True
 
     def test_observation_agrees_with_the_step_result(self):
-        from envs.chess_env.models import ChessObservation
+        from chess_env.models import ChessObservation
 
         result = self.parse(ChessObservation(done=True, reward=-1.0))
 
@@ -59,7 +59,7 @@ class TestChessClient:
         assert result.observation.done == result.done
 
     def test_other_observation_fields_still_arrive(self):
-        from envs.chess_env.models import ChessObservation
+        from chess_env.models import ChessObservation
 
         result = self.parse(
             ChessObservation(
@@ -74,8 +74,8 @@ class TestChessClient:
 
 class TestSumoClient:
     def test_observation_agrees_with_the_step_result(self):
-        from envs.sumo_rl_env.client import SumoRLEnv
-        from envs.sumo_rl_env.models import SumoObservation
+        from sumo_rl_env.client import SumoRLEnv
+        from sumo_rl_env.models import SumoObservation
 
         result = SumoRLEnv._parse_result(
             None, serialize_observation(SumoObservation(done=True, reward=2.5))
@@ -89,8 +89,8 @@ class TestSumoClient:
 
 class TestSophistryClient:
     def test_observation_agrees_with_the_step_result(self):
-        from envs.sophistry_bench_sprint_env.client import SophistryBenchSprintEnv
-        from envs.sophistry_bench_sprint_env.models import AdvocacyObservation
+        from sophistry_bench_sprint_env.client import SophistryBenchSprintEnv
+        from sophistry_bench_sprint_env.models import AdvocacyObservation
 
         result = SophistryBenchSprintEnv._parse_result(
             None, serialize_observation(AdvocacyObservation(done=True, reward=0.75))
