@@ -219,7 +219,11 @@ class LocalDockerProvider(ContainerProvider):
         # Add volume mounts before the image name.
         if volumes:
             for source, config in volumes.items():
-                bind = config["bind"]
+                bind = config.get("bind")
+                if not bind:
+                    raise ValueError(
+                        f"Volume config for {source!r} must include a non-empty 'bind'"
+                    )
                 mode = config.get("mode")
                 volume_spec = f"{source}:{bind}"
                 if mode:
