@@ -50,7 +50,7 @@ def validate_env_structure(env_dir: Path, strict: bool = False) -> List[str]:
         "openenv.yaml",
         "__init__.py",
         "client.py",
-        "models.py",
+        "models.py",  # presence only; MCP-only envs may re-export mcp_types
         "README.md",
     ]
 
