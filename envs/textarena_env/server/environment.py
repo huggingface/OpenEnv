@@ -8,11 +8,18 @@
 
 from __future__ import annotations
 
+import random
 import sys
+import threading
 from typing import Any, Dict, Iterable, List, Optional
 from uuid import uuid4
 
 from openenv.core.env_server.interfaces import Environment
+
+try:
+    import numpy as _np
+except Exception:  # pragma: no cover - numpy is optional
+    _np = None
 
 try:
     # When running as installed package
@@ -37,6 +44,11 @@ except ImportError:
 _TEXTARENA_MODULE: Any | None = None
 _TEXTARENA_IMPORT_ERROR: Exception | None = None
 _NLTK_DOWNLOADED: bool = False
+
+# TextArena selects episodes/words via the process-global ``random`` (and
+# sometimes ``numpy``) RNGs. Seeding+selection must be atomic across concurrent
+# sessions, so guard it with a process-wide lock.
+_SEED_LOCK = threading.Lock()
 
 
 def _ensure_nltk_data() -> None:
@@ -147,7 +159,7 @@ class TextArenaEnvironment(Environment):
         if hasattr(env, "full_observations"):
             env.full_observations = {}
 
-        self._ta_env.reset(num_players=self.num_players)
+        self._seeded_reset(seed)
 
         for provider in self._reward_providers:
             provider.reset()
@@ -202,6 +214,48 @@ class TextArenaEnvironment(Environment):
     @property
     def state(self) -> TextArenaState:
         return self._state
+
+    # ------------------------------------------------------------------
+    # Seeding
+    # ------------------------------------------------------------------
+    def _seeded_reset(self, seed: Optional[int]) -> None:
+        """Reset the underlying TextArena env, honoring ``seed`` for reproducibility.
+
+        TextArena chooses episodes/words with the process-global ``random`` (and
+        sometimes ``numpy``) RNGs and does *not* apply ``reset(seed=...)`` to that
+        selection. So we seed the global RNGs ourselves immediately before the
+        underlying reset. This makes episodes reproducible, which is required, for
+        example, for GRPO-style training where every rollout in a group must share
+        the same episode (same Wordle word) for the group baseline to be valid.
+
+        A process-wide lock keeps seed+selection atomic across concurrent sessions,
+        and we restore the prior RNG state afterwards so that unseeded sessions
+        sharing the process are left undisturbed.
+        """
+        if seed is None:
+            self._ta_reset(seed)
+            return
+
+        with _SEED_LOCK:
+            py_state = random.getstate()
+            np_state = _np.random.get_state() if _np is not None else None
+            try:
+                random.seed(seed)
+                if _np is not None:
+                    _np.random.seed(seed)
+                self._ta_reset(seed)
+            finally:
+                random.setstate(py_state)
+                if np_state is not None:
+                    _np.random.set_state(np_state)
+
+    def _ta_reset(self, seed: Optional[int]) -> None:
+        """Call the underlying TextArena reset, forwarding ``seed`` when supported."""
+        try:
+            self._ta_env.reset(num_players=self.num_players, seed=seed)
+        except TypeError:
+            # Older/other TextArena games whose reset does not accept a seed.
+            self._ta_env.reset(num_players=self.num_players)
 
     # ------------------------------------------------------------------
     # Helpers
