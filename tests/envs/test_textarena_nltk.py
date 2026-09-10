@@ -16,6 +16,7 @@ def nltk_download(monkeypatch, tmp_path):
     nltk = SimpleNamespace(
         __version__="3.10.3",
         download=Mock(),
+        data=SimpleNamespace(find=Mock()),
         downloader=SimpleNamespace(
             Downloader=lambda: SimpleNamespace(
                 default_download_dir=lambda: str(tmp_path)
@@ -138,3 +139,27 @@ def test_exclusion_only_global_opener_is_not_a_carrying_proxy(
     run.assert_called_once()
     nltk_download.download.assert_not_called()
     assert urllib.request._opener is opener
+
+
+@pytest.mark.parametrize(
+    "missing_resource", ["corpora/words", "taggers/averaged_perceptron_tagger_eng"]
+)
+def test_cli_zero_exit_without_corpora_does_not_cache_success(
+    monkeypatch, nltk_download, missing_resource
+):
+    monkeypatch.setenv("NO_PROXY", "localhost")
+    # NLTK's CLI can exit zero after reporting a download/security error.
+    run = Mock(return_value=subprocess.CompletedProcess([], 0))
+    monkeypatch.setattr(subprocess, "run", run)
+
+    def find(resource):
+        if resource == missing_resource:
+            raise LookupError("corpus missing")
+        return resource
+
+    nltk_download.data.find.side_effect = find
+    for _ in range(2):
+        with pytest.raises(LookupError, match="corpus missing"):
+            environment._ensure_nltk_data()
+        assert not environment._NLTK_DOWNLOADED
+    assert run.call_count == 2

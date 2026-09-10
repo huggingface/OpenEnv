@@ -90,6 +90,10 @@ def _ensure_nltk_data() -> None:
     else:
         for package in packages:
             nltk.download(package, quiet=True, raise_on_error=True)
+    # NLTK 3.10.3's CLI can exit zero after a failed download. Verify the
+    # resources in this process before caching successful initialization.
+    nltk.data.find("corpora/words")
+    nltk.data.find("taggers/averaged_perceptron_tagger_eng")
     _NLTK_DOWNLOADED = True
 
 
