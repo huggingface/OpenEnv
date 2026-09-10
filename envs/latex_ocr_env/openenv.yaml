@@ -1,0 +1,41 @@
+spec_version: 1
+name: latex_ocr_env
+type: space
+runtime: fastapi
+app: server.app:app
+port: 8000
+
+description: >
+  Dataset-backed LaTeX OCR environment. Agents receive an image of a
+  mathematical expression and must return its LaTeX source. Reward is a blend
+  of normalized character edit distance and an exact-match bonus, computed
+  server-side against the hidden ground-truth LaTeX. Tasks are served from a
+  Hugging Face dataset (default: unsloth/LaTeX_OCR) via the OpenEnv Task API.
+version: "0.1.0"
+
+# Environment configuration defaults (overridable via env vars)
+environment:
+  dataset_name: unsloth/LaTeX_OCR      # LATEX_OCR_DATASET
+  image_column: image                  # LATEX_OCR_IMAGE_COLUMN
+  text_column: text                    # LATEX_OCR_TEXT_COLUMN
+  splits: "train,test"                 # LATEX_OCR_SPLITS
+  exact_weight: 0.4                    # LATEX_OCR_EXACT_WEIGHT (edit 0.6 / exact 0.4)
+  overlong_ratio: 4.0                  # LATEX_OCR_OVERLONG_RATIO (length guard; 0 disables)
+  overlong_floor: 80                   # LATEX_OCR_OVERLONG_FLOOR (min allowed raw chars)
+
+# Reward definition
+rubric:
+  name: LatexOCRRubric
+  formula: "[(1 - exact_weight) * (1 - CER) + exact_weight * exact_match] * length_factor"
+  cer: "normalized Levenshtein distance over whitespace-stripped LaTeX"
+  length_factor: "decays reward when the raw prediction exceeds overlong_ratio x target length (anti whitespace-padding hack)"
+
+# Task API (dataset discovery) — auto-exposed by the OpenEnv server
+task_api:
+  splits: [train, test]
+  endpoints:
+    - GET  /latex_ocr_env/splits
+    - POST /latex_ocr_env/num_tasks
+    - POST /latex_ocr_env/tasks
+    - POST /latex_ocr_env/task
+    - POST /latex_ocr_env/task_range
