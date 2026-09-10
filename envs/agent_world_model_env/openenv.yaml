@@ -2,5 +2,5 @@ spec_version: 1
 name: agent_world_model_env
 type: space
 runtime: fastapi
-app: envs.agent_world_model_env.server.app:app
+app: agent_world_model_env.server.app:app
 port: 8000
