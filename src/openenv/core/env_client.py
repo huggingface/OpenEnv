@@ -384,7 +384,11 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         self._set_base_url(base_url)
 
     def _create_session_client(self) -> "EnvClient[Any, Any, Any]":
-        self._start_provider_if_needed()
+        try:
+            self._start_provider_if_needed()
+        except Exception:
+            self._stop_provider_best_effort()
+            raise
         if self._base_url is None:
             raise RuntimeError("EnvClient has no base URL.")
 
