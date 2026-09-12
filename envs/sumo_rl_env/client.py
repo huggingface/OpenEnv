@@ -104,8 +104,10 @@ class SumoRLEnv(EnvClient[SumoAction, SumoObservation, SumoState]):
             observation_shape=obs_data.get("observation_shape", []),
             action_mask=obs_data.get("action_mask", []),
             sim_time=obs_data.get("sim_time", 0.0),
-            done=obs_data.get("done", False),
-            reward=obs_data.get("reward"),
+            # Read from the envelope, where `serialize_observation` puts these,
+            # so `result.observation.reward` agrees with `result.reward`.
+            done=bool(payload.get("done", False)),
+            reward=payload.get("reward"),
             metadata=payload.get("metadata", obs_data.get("metadata", {})),
         )
 
