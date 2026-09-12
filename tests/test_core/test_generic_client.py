@@ -1379,6 +1379,114 @@ class TestForeignLoopReconnect:
         mock_connect.assert_not_called()
         assert client._ws is original_ws
 
+    @pytest.mark.asyncio
+    async def test_receive_timeout_drops_socket_so_next_call_reconnects(self):
+        """A response that arrives after we time out must not be read by the
+        *next* call.
+
+        Regression test for #1143: leaving the timed-out socket open let the
+        server's late response for the abandoned request sit in the buffer,
+        where the next `_receive()` silently read it as its own -- and every
+        response after that was shifted by one for the life of the connection.
+        """
+
+        class NeverResponds:
+            state = State.OPEN
+
+            async def send(self, _message):
+                pass
+
+            async def recv(self):
+                await asyncio.sleep(10)
+
+            async def close(self):
+                self.state = State.CLOSED
+
+        client = GenericEnvClient(
+            base_url="http://localhost:8000", message_timeout_s=0.05
+        )
+        original_ws = NeverResponds()
+        client._ws = original_ws
+        client._ws_loop = asyncio.get_running_loop()
+
+        with pytest.raises(asyncio.TimeoutError):
+            await client._send_and_receive({"type": "state"})
+
+        assert client._ws is None
+        assert original_ws.state == State.CLOSED
+
+        replacement_ws = AsyncMock()
+        replacement_ws.state = State.OPEN
+        replacement_ws.recv.return_value = '{"type": "state", "data": {}}'
+
+        async def fake_ws_connect(*args, **kwargs):
+            return replacement_ws
+
+        with patch(
+            "openenv.core.env_client.ws_connect", side_effect=fake_ws_connect
+        ) as mock_connect:
+            await client._send_and_receive({"type": "state"})
+
+        mock_connect.assert_called_once()
+        assert client._ws is replacement_ws
+
+    @pytest.mark.asyncio
+    async def test_receive_cancelled_by_outer_deadline_drops_socket_so_next_call_reconnects(
+        self,
+    ):
+        """An outer `asyncio.wait_for` around the whole call cancels
+        `_receive()` with `asyncio.CancelledError`, not the client's own
+        `asyncio.TimeoutError` -- a caller-imposed deadline (e.g. a step
+        call wrapped in its own timeout) hits this path even when
+        `message_timeout_s` itself never fires.
+
+        Regression for the gap in the #1143 fix: only `asyncio.TimeoutError`
+        was caught, so this path left the socket open and desynced exactly
+        like the original bug.
+        """
+
+        class NeverResponds:
+            state = State.OPEN
+
+            async def send(self, _message):
+                pass
+
+            async def recv(self):
+                await asyncio.sleep(10)
+
+            async def close(self):
+                self.state = State.CLOSED
+
+        client = GenericEnvClient(
+            base_url="http://localhost:8000", message_timeout_s=10
+        )
+        original_ws = NeverResponds()
+        client._ws = original_ws
+        client._ws_loop = asyncio.get_running_loop()
+
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(
+                client._send_and_receive({"type": "state"}), timeout=0.05
+            )
+
+        assert client._ws is None
+        assert original_ws.state == State.CLOSED
+
+        replacement_ws = AsyncMock()
+        replacement_ws.state = State.OPEN
+        replacement_ws.recv.return_value = '{"type": "state", "data": {}}'
+
+        async def fake_ws_connect(*args, **kwargs):
+            return replacement_ws
+
+        with patch(
+            "openenv.core.env_client.ws_connect", side_effect=fake_ws_connect
+        ) as mock_connect:
+            await client._send_and_receive({"type": "state"})
+
+        mock_connect.assert_called_once()
+        assert client._ws is replacement_ws
+
 
 # ============================================================================
 # Integration Tests (require running server)
