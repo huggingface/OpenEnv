@@ -596,7 +596,7 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         assert self._ws is not None
         try:
             raw = await asyncio.wait_for(self._ws.recv(), timeout=self._message_timeout)
-        except asyncio.TimeoutError:
+        except (asyncio.TimeoutError, asyncio.CancelledError):
             # The server may still write the response for this request to the
             # socket after we give up waiting on it. If we left the socket
             # open, the next call's `_receive()` would read that stale frame
@@ -604,6 +604,11 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
             # response after that would be shifted by one for the life of
             # the connection. Drop the socket so the next `_send()` opens a
             # fresh one instead of reusing a desynced one.
+            #
+            # An outer `asyncio.wait_for` around the whole call (e.g. a
+            # caller-imposed deadline on step()) cancels this await with
+            # CancelledError, not our own message_timeout's TimeoutError --
+            # same desync, different exception, so both are caught here.
             ws = self._ws
             self._ws = None
             self._ws_loop = None
