@@ -1,5 +1,6 @@
 import random
 import threading
+from typing import Dict, List
 
 import pytest
 from textarena_env.models import TextArenaAction, TextArenaMessage
@@ -310,3 +311,122 @@ def test_seed_window_excludes_other_session_operations(
         second.result(timeout=5)
     assert other._ta_env.draw == expected_draw
     assert random.getstate() == expected.getstate()
+
+
+def _seeded_stream(seed: int, count: int) -> List[float]:
+    """The draws TextArena would make from ``random.seed(seed)`` onwards."""
+    rng = random.Random(seed)
+    return [rng.random() for _ in range(count)]
+
+
+def test_seeded_trajectory_is_reproducible_across_sessions(fake_textarena):
+    """Equal seeds and equal actions must give equal draws through step, not
+    only through reset, and must follow the seed's own stream."""
+    first = fake_textarena()
+    second = fake_textarena()
+
+    draws = []
+    for env in (first, second):
+        env.reset(seed=1234)
+        trajectory = [env._ta_env.draw]
+        for _ in range(3):
+            env.step(TextArenaAction(message="draw"))
+            trajectory.append(env._ta_env.draw)
+        draws.append(trajectory)
+
+    assert draws[0] == draws[1], "same seed and actions diverged across sessions"
+    assert draws[0] == _seeded_stream(1234, 4), "steps left the seeded stream"
+
+
+def test_seeded_trajectory_survives_interleaved_sessions(fake_textarena):
+    """Other sessions and unrelated draws between a seeded session's calls
+    must not change that session's trajectory or see its RNG state."""
+    seeded = fake_textarena()
+    unseeded = fake_textarena()
+    other_seed = fake_textarena()
+
+    seeded.reset(seed=1234)
+    trajectory = [seeded._ta_env.draw]
+    for _ in range(3):
+        unseeded.reset()
+        unseeded.step(TextArenaAction(message="draw"))
+        other_seed.reset(seed=7)
+        other_seed.step(TextArenaAction(message="draw"))
+        random.random()
+
+        before = random.getstate()
+        seeded.step(TextArenaAction(message="draw"))
+        assert random.getstate() == before, "seeded step leaked into the global RNG"
+        trajectory.append(seeded._ta_env.draw)
+
+    assert trajectory == _seeded_stream(1234, 4)
+
+
+def test_failed_seeded_step_restores_rng_and_continues_stream(
+    fake_textarena, monkeypatch
+):
+    env = fake_textarena()
+    env.reset(seed=1234)
+    original_step = env._ta_env.step
+
+    def fail(message):
+        original_step(message)
+        raise RuntimeError("step failed")
+
+    monkeypatch.setattr(env._ta_env, "step", fail)
+    before = random.getstate()
+    with pytest.raises(RuntimeError, match="step failed"):
+        env.step(TextArenaAction(message="draw"))
+    assert random.getstate() == before
+
+    monkeypatch.setattr(env._ta_env, "step", original_step)
+    env.step(TextArenaAction(message="draw"))
+    # reset, failed step, then this step: the failed draw was still consumed.
+    assert env._ta_env.draw == _seeded_stream(1234, 3)[2]
+
+
+def test_unseeded_reset_returns_session_to_process_rng(fake_textarena):
+    """An unseeded reset after a seeded episode must draw from, and advance,
+    the process-global RNG rather than continue the old seeded stream."""
+    env = fake_textarena()
+    env.reset(seed=1234)
+    env.reset()
+
+    expected = random.Random()
+    expected.setstate(random.getstate())
+    expected_draw = expected.random()
+
+    env.step(TextArenaAction(message="draw"))
+
+    assert env._ta_env.draw == expected_draw
+    assert random.getstate() == expected.getstate()
+
+
+def _bandit_history(env: TextArenaEnvironment) -> Dict[str, List[float]]:
+    return env._ta_env.state.game_state["history"]
+
+
+def test_bandit_seeded_trajectory_is_reproducible_across_sessions():
+    """Bandit samples its rewards during step. Two sessions with the same seed
+    and actions must see identical rewards even with a third session in between."""
+    pytest.importorskip("textarena", reason="textarena not installed")
+    first, second, bystander = (
+        TextArenaEnvironment(env_id="Bandit-v0", download_nltk=False) for _ in range(3)
+    )
+    actions = ["[red]", "[blue]", "[red]", "[green]", "[red]", "[yellow]"]
+
+    first.reset(seed=1234)
+    second.reset(seed=1234)
+    assert (
+        first._ta_env.state.game_state["ground_truth"]
+        == second._ta_env.state.game_state["ground_truth"]
+    )
+
+    for message in actions:
+        first.step(TextArenaAction(message=message))
+        bystander.reset()
+        bystander.step(TextArenaAction(message=message))
+        second.step(TextArenaAction(message=message))
+
+    assert sum(len(v) for v in _bandit_history(first).values()) == len(actions)
+    assert _bandit_history(first) == _bandit_history(second)
