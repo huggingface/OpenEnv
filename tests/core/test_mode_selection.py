@@ -193,39 +193,33 @@ class TestModeBehavior:
                     )
 
     @pytest.mark.asyncio
-    async def test_production_mode_uses_jsonrpc_protocol(
-        self, clean_env, mock_websocket
-    ):
-        """Test that production mode uses JSON-RPC format for tool calls."""
+    async def test_production_mode_uses_jsonrpc_protocol(self, clean_env):
+        """Test that production mode uses HTTP /mcp JSON-RPC format for tool calls."""
+        from unittest.mock import AsyncMock
+
         client = MCPToolClient(base_url="http://localhost:8000", mode="production")
+        assert client.use_production_mode is True
 
-        with patch.object(client, "_send") as mock_send:
-            with patch.object(
-                client,
-                "_receive",
-                return_value={
-                    "type": "response",
-                    "data": {
-                        "observation": {"tools": []},
-                        "reward": None,
-                        "done": False,
-                    },
-                },
-            ):
-                with patch.object(client, "_ws", mock_websocket):
-                    await client.list_tools()
+        mock_mcp_request = AsyncMock(
+            side_effect=[
+                {"result": {"session_id": "session_123"}},
+                {"result": {"tools": [{"name": "add", "description": "Add two numbers"}]}},
+            ]
+        )
 
-                    # Should send step message with list_tools action
-                    call_args = mock_send.call_args_list
-                    step_call = [
-                        call for call in call_args if call[0][0].get("type") == "step"
-                    ]
-                    assert len(step_call) > 0, "Should send message with type='step'"
+        with patch.object(client, "_production_mcp_request", mock_mcp_request):
+            with patch.object(client, "_send") as mock_ws_send:
+                tools = await client.list_tools()
 
-                    # Check that the action payload is list_tools
-                    step_message = step_call[0][0][0]
-                    assert "data" in step_message
-                    assert step_message["data"].get("type") == "list_tools"
+                # Should call HTTP /mcp JSON-RPC endpoint (create session + list tools)
+                assert mock_mcp_request.call_count == 2
+                assert mock_mcp_request.call_args_list[0][0][0] == "openenv/session/create"
+                assert mock_mcp_request.call_args_list[1][0][0] == "tools/list"
+                assert len(tools) == 1
+                assert tools[0].name == "add"
+
+                # WebSocket step() path should NOT be called in production mode
+                mock_ws_send.assert_not_called()
 
 
 # ============================================================================
@@ -281,8 +275,9 @@ class TestCrossClientModeConsistency:
         """Test that MCPToolClient defaults to 'production' mode."""
         client = MCPToolClient(base_url="http://localhost:8000")
 
-        # MCPToolClient should default to production mode
+        # MCPToolClient should default to production mode and enable production HTTP MCP transport
         assert client._mode == "production"
+        assert client.use_production_mode is True
 
     def test_mcp_client_cannot_use_simulation_mode(self, clean_env):
         """Test that MCPToolClient raises error if simulation mode is requested."""
