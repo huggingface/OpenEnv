@@ -378,3 +378,64 @@ class TestEchoEnvAsMCPToolClient:
         assert hasattr(EchoEnv, "has_tool")
         assert hasattr(EchoEnv, "reset")
         assert hasattr(EchoEnv, "step")
+
+
+# =============================================================================
+# Production Session Consistency Tests
+# =============================================================================
+
+
+class TestMCPProductionSessionConsistency:
+    """Tests verifying production MCP session lifecycle and session identity."""
+
+    @pytest.mark.asyncio
+    async def test_production_session_persistence_and_reset(self):
+        """Test production mode uses a single session_id and resets it on reset()."""
+        client = MCPToolClient(base_url="http://localhost:8000", mode="production")
+        assert client.use_production_mode is True
+
+        requests_made = []
+
+        async def mock_mcp_request(method, params=None):
+            requests_made.append((method, params or {}))
+            if method == "openenv/session/create":
+                # Return a new session ID each time create is called
+                session_num = len([r for r in requests_made if r[0] == "openenv/session/create"])
+                return {"result": {"session_id": f"session_{session_num}"}}
+            elif method == "tools/list":
+                return {"result": {"tools": [{"name": "echo", "description": "Echo", "input_schema": {}}]}}
+            elif method == "tools/call":
+                return {"result": "echo_result"}
+            elif method == "openenv/session/close":
+                return {"result": {"closed": True}}
+            return {}
+
+        client._production_mcp_request = AsyncMock(side_effect=mock_mcp_request)
+
+        # First session creation on connect or initial request
+        session1 = await client._ensure_production_session()
+        assert session1 == "session_1"
+
+        # Calling list_tools and call_tool reuses session1
+        tools = await client.list_tools()
+        assert len(tools) == 1
+        assert client._production_session_id == "session_1"
+
+        result = await client.call_tool("echo", message="hello")
+        assert result == "echo_result"
+        assert client._production_session_id == "session_1"
+
+        # Resetting client closes session_1 and creates session_2
+        await client.reset()
+        assert client._production_session_id == "session_2"
+
+        # Subsequent step or call_tool uses session_2 consistently
+        res = await client.step(CallToolAction(tool_name="echo", arguments={"message": "hello"}))
+        assert res.observation.result == "echo_result"
+        assert client._production_session_id == "session_2"
+
+        # Closing client closes session_2
+        await client.close()
+        assert client._production_session_id is None
+        close_requests = [r for r in requests_made if r[0] == "openenv/session/close"]
+        assert len(close_requests) == 2  # Once for reset(), once for close()

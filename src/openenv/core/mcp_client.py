@@ -216,6 +216,106 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
             self._production_session_id = session_id
             return session_id
 
+    async def _connect_async(self) -> "MCPClientBase":
+        """Establish connection to the server.
+
+        In production mode, ensures the HTTP MCP session is initialized.
+        In simulation mode, connects via WebSocket.
+        """
+        if getattr(self, "use_production_mode", False):
+            self._start_provider_if_needed()
+            await self._ensure_production_session()
+            return self
+        return await super()._connect_async()
+
+    async def _reset_async(self, **kwargs: Any) -> StepResult[Observation]:
+        """Reset the environment.
+
+        In production mode, closes any existing HTTP MCP session and creates
+        a new server-side session environment.
+        """
+        if getattr(self, "use_production_mode", False):
+            async with self._production_session_lock:
+                if self._production_session_id is not None:
+                    try:
+                        await self._production_mcp_request(
+                            "openenv/session/close",
+                            {"session_id": self._production_session_id},
+                        )
+                    except Exception:
+                        pass
+                    finally:
+                        self._production_session_id = None
+            self._tools_cache = None
+            await self._ensure_production_session()
+            return StepResult(
+                observation=GenericMCPObservation(done=False),
+                done=False,
+            )
+        return await super()._reset_async(**kwargs)
+
+    async def _step_async(self, action: Any, **kwargs: Any) -> StepResult[Observation]:
+        """Execute an action.
+
+        In production mode, routes ListToolsAction and CallToolAction through
+        the HTTP /mcp session.
+        """
+        if getattr(self, "use_production_mode", False):
+            session_id = await self._ensure_production_session()
+            if isinstance(action, ListToolsAction):
+                data = await self._production_mcp_request(
+                    "tools/list",
+                    {"session_id": session_id},
+                )
+                if "error" in data:
+                    message = data.get("error", {}).get("message", "unknown error")
+                    raise RuntimeError(f"list_tools failed: {message}")
+                tools = [
+                    _tool_from_payload(t)
+                    for t in data.get("result", {}).get("tools", [])
+                ]
+                self._tools_cache = tools
+                return StepResult(
+                    observation=ListToolsObservation(tools=tools, done=False),
+                    done=False,
+                )
+            elif isinstance(action, CallToolAction):
+                data = await self._production_mcp_request(
+                    "tools/call",
+                    {
+                        "name": action.tool_name,
+                        "arguments": action.arguments,
+                        "session_id": session_id,
+                    },
+                )
+                if "error" in data:
+                    err_dict = data.get("error", {})
+                    message = err_dict.get("message", "unknown error")
+                    error = ToolError(
+                        error_type=ToolErrorType.GENERAL_ERROR,
+                        message=message,
+                    )
+                    return StepResult(
+                        observation=CallToolObservation(
+                            tool_name=action.tool_name,
+                            result=None,
+                            error=error,
+                            done=False,
+                        ),
+                        done=False,
+                    )
+                result = data.get("result")
+                return StepResult(
+                    observation=CallToolObservation(
+                        tool_name=action.tool_name,
+                        result=result,
+                        error=None,
+                        done=False,
+                    ),
+                    done=False,
+                )
+        return await super()._step_async(action, **kwargs)
+
     async def list_tools(self, use_cache: bool = True) -> List[Tool]:
         """
         Discover available tools from the environment.
