@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
+import ast
 import hashlib
 import json
 import subprocess
@@ -16,6 +17,7 @@ from openenv.discovery import (
     search_catalog,
     write_catalog,
 )
+from openenv.discovery.metadata import DiscoveryDeclaration
 
 
 def git(repository: Path, *args: str) -> str:
@@ -84,6 +86,107 @@ def build(repository: Path):
         repository_uri="https://github.com/example/environments.git",
         publisher="example.org",
         namespace="openenv",
+    )
+
+
+@pytest.fixture(scope="module")
+def maintained_inventory(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> tuple[CatalogSnapshot, list[str]]:
+    source_root = Path(__file__).resolve().parents[2]
+    repository = tmp_path_factory.mktemp("maintained-discovery")
+    git(repository, "init", "-q")
+
+    def copy_metadata(relative: str) -> None:
+        source = source_root / relative
+        assert not source.is_symlink(), f"Metadata must not be a symlink: {relative}"
+        if source.is_file():
+            destination = repository / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(source.read_bytes())
+
+    for filename in ("pyproject.toml", "LICENSE"):
+        copy_metadata(filename)
+    paths = []
+    for manifest in sorted((source_root / "envs").glob("*/openenv.yaml")):
+        path = manifest.parent.relative_to(source_root).as_posix()
+        paths.append(path)
+        for filename in (
+            "openenv.yaml",
+            "pyproject.toml",
+            "README.md",
+            "discovery.json",
+        ):
+            copy_metadata(f"{path}/{filename}")
+        declaration_path = source_root / path / "discovery.json"
+        if declaration_path.is_file():
+            declaration = DiscoveryDeclaration.model_validate_json(
+                declaration_path.read_text()
+            )
+            if declaration.agent_tools is not None:
+                copy_metadata(declaration.agent_tools.source)
+        (repository / path / "__init__.py").write_text(
+            "raise RuntimeError('discovery must not import candidate environments')\n"
+        )
+    commit(repository)
+    return build(repository), paths
+
+
+@pytest.mark.parametrize(
+    ("path", "query"),
+    [
+        ("envs/coding_env", "evaluate Python snippets and inspect standard error"),
+        ("envs/browsergym_env", "fill forms and click page controls with a web agent"),
+        ("envs/calendar_env", "schedule appointments and edit calendar events"),
+        ("envs/chess_env", "practice legal UCI moves against an opponent"),
+        (
+            "envs/reasoning_gym_env",
+            "single question episodes with dataset answer scoring",
+        ),
+    ],
+)
+def test_maintained_declarations_support_task_selection_without_imports(
+    maintained_inventory: tuple[CatalogSnapshot, list[str]], path: str, query: str
+) -> None:
+    snapshot, paths = maintained_inventory
+    assert snapshot.complete
+    assert snapshot.inventory.paths == paths
+    entry = next(item for item in snapshot.entries if item.data.source.path == path)
+    assert 2 <= len(entry.representative_queries) <= 5
+    assert (
+        entry.metadata["provenance"]["description"]
+        == f"{path}/discovery.json#description"
+    )
+    assert query not in entry.representative_queries
+    matches = search_catalog(snapshot, query)
+    assert matches
+    assert matches[0].entry.identifier == entry.identifier
+    assert resolve_entry(snapshot, entry.identifier).data == entry.data
+    assert entry.data.source.revision == snapshot.source.revision
+
+
+def test_calendar_declares_only_source_evidenced_event_tools() -> None:
+    source_root = Path(__file__).resolve().parents[2]
+    declaration_path = source_root / "envs/calendar_env/discovery.json"
+    assert declaration_path.is_file()
+    declaration = DiscoveryDeclaration.model_validate_json(declaration_path.read_text())
+    assert declaration.agent_tools is not None
+    assert declaration.agent_tools.protocol == "mcp"
+    source = source_root / declaration.agent_tools.source
+    definitions = ast.parse(source.read_text())
+    assignment = next(
+        node
+        for node in definitions.body
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "EVENTS_TOOLS"
+            for target in node.targets
+        )
+    )
+    tools = ast.literal_eval(assignment.value)
+    assert set(declaration.agent_tools.names) <= {tool["name"] for tool in tools}
+    assert not {"reset", "step", "state", "get_state"}.intersection(
+        declaration.agent_tools.names
     )
 
 

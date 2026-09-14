@@ -67,6 +67,25 @@ descriptions, tags, representative queries, artifact availability, applicable
 license declarations, or declared agent tools. Echo contains a worked example.
 The producer reads it from the same Git revision as the environment.
 
+The repository includes task-focused declarations for more than the Echo smoke
+test. They make these source definitions easier to select without claiming
+measured training quality or runtime validation:
+
+| Task family | Source definition | Useful declared signal |
+|-------------|-------------------|------------------------|
+| Python execution | `envs/coding_env` | Standard output, standard error and exit status |
+| Browser interaction | `envs/browsergym_env` | Page observations and browser actions |
+| Calendar scheduling | `envs/calendar_env` | Seeded scenarios and declared MCP event tools |
+| Chess | `envs/chess_env` | Legal UCI moves, FEN positions and configurable opponents |
+| Reasoning questions | `envs/reasoning_gym_env` | Single-step episodes and dataset-defined answer scoring |
+
+For example, after building a snapshot, try
+`openenv discover "Python snippets and standard error" --catalog catalog.json`.
+These examples are a small authored subset of the complete repository inventory,
+not a claim that every source has equally detailed discovery metadata. Calendar's
+tool names cite the existing event-tool definitions; interfaces for other sources
+are not inferred from their orchestration methods.
+
 Leave `representative_queries` empty or supply two to five hints. The declaration,
 generated entry and packaged JSON schemas enforce the same bounds.
 
