@@ -82,7 +82,7 @@ ruff check .
 
 ## Coordination
 
-OpenEnv is openly governed by a technical committee that includes Meta-PyTorch, Reflection, Unsloth, Modal, Prime Intellect, Nvidia, Mercor, Fleet AI, Microsoft, Hugging Face, and RadixArk. The committee coordinates project direction, major technical decisions, RFCs, and release planning in public.
+OpenEnv is openly governed by a technical committee that includes Meta-PyTorch, Reflection, Unsloth, Modal, Prime Intellect, Nvidia, Mercor, Fleet AI, Microsoft, Hugging Face, RadixArk, and Nebius. The committee coordinates project direction, major technical decisions, RFCs, and release planning in public.
 
 Use the [OpenEnv repository](https://github.com/huggingface/OpenEnv) to file
 issues, discuss substantial changes, and submit pull requests.
