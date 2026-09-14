@@ -842,6 +842,142 @@ class HTTPEnvServer:
                     request_id=request_id,
                 )
 
+            if method == "openenv/session/reset":
+                target_session_id = params.get("session_id")
+                if not target_session_id:
+                    return JsonRpcResponse.error_response(
+                        JsonRpcErrorCode.INVALID_PARAMS,
+                        "Invalid params - 'session_id' is required",
+                        request_id=request_id,
+                    )
+                async with self._session_lock:
+                    target_env = self._sessions.get(target_session_id, _MISSING)
+
+                if target_env is _MISSING:
+                    return JsonRpcResponse.error_response(
+                        JsonRpcErrorCode.INVALID_PARAMS,
+                        f"Unknown session_id: {target_session_id}",
+                        request_id=request_id,
+                    )
+                if target_env is None:
+                    return JsonRpcResponse.error_response(
+                        JsonRpcErrorCode.INVALID_REQUEST,
+                        f"Session {target_session_id} is still initializing; retry shortly",
+                        request_id=request_id,
+                    )
+
+                reset_kwargs = params.get("reset_kwargs", {})
+                if not isinstance(reset_kwargs, dict):
+                    reset_kwargs = {}
+
+                is_async = overrides_method(target_env.reset_async, Environment.reset_async)
+                if is_async:
+                    sig = inspect.signature(target_env.reset_async)
+                    valid_kwargs = self._get_valid_kwargs(sig, reset_kwargs)
+                    observation = await target_env.reset_async(**valid_kwargs)
+                else:
+                    sig = inspect.signature(target_env.reset)
+                    valid_kwargs = self._get_valid_kwargs(sig, reset_kwargs)
+                    observation = await self._run_in_session_executor(
+                        target_session_id,
+                        target_env.reset,
+                        **valid_kwargs,
+                    )
+
+                self._update_session_activity(target_session_id)
+                return JsonRpcResponse.success(
+                    result={
+                        "session_id": target_session_id,
+                        "observation": serialize_observation(observation),
+                    },
+                    request_id=request_id,
+                )
+
+            if method == "openenv/session/step":
+                target_session_id = params.get("session_id")
+                if not target_session_id:
+                    return JsonRpcResponse.error_response(
+                        JsonRpcErrorCode.INVALID_PARAMS,
+                        "Invalid params - 'session_id' is required",
+                        request_id=request_id,
+                    )
+                async with self._session_lock:
+                    target_env = self._sessions.get(target_session_id, _MISSING)
+
+                if target_env is _MISSING:
+                    return JsonRpcResponse.error_response(
+                        JsonRpcErrorCode.INVALID_PARAMS,
+                        f"Unknown session_id: {target_session_id}",
+                        request_id=request_id,
+                    )
+                if target_env is None:
+                    return JsonRpcResponse.error_response(
+                        JsonRpcErrorCode.INVALID_REQUEST,
+                        f"Session {target_session_id} is still initializing; retry shortly",
+                        request_id=request_id,
+                    )
+
+                action_data = params.get("action", {})
+                action = deserialize_action(action_data, self.action_cls)
+
+                is_async = overrides_method(target_env.step_async, Environment.step_async)
+                if is_async:
+                    observation = await target_env.step_async(action)
+                else:
+                    observation = await self._run_in_session_executor(
+                        target_session_id,
+                        target_env.step,
+                        action,
+                    )
+
+                self._update_session_activity(target_session_id, increment_step=True)
+                return JsonRpcResponse.success(
+                    result={
+                        "session_id": target_session_id,
+                        "observation": serialize_observation(observation),
+                    },
+                    request_id=request_id,
+                )
+
+            if method == "openenv/session/state":
+                target_session_id = params.get("session_id")
+                if not target_session_id:
+                    return JsonRpcResponse.error_response(
+                        JsonRpcErrorCode.INVALID_PARAMS,
+                        "Invalid params - 'session_id' is required",
+                        request_id=request_id,
+                    )
+                async with self._session_lock:
+                    target_env = self._sessions.get(target_session_id, _MISSING)
+
+                if target_env is _MISSING:
+                    return JsonRpcResponse.error_response(
+                        JsonRpcErrorCode.INVALID_PARAMS,
+                        f"Unknown session_id: {target_session_id}",
+                        request_id=request_id,
+                    )
+                if target_env is None:
+                    return JsonRpcResponse.error_response(
+                        JsonRpcErrorCode.INVALID_REQUEST,
+                        f"Session {target_session_id} is still initializing; retry shortly",
+                        request_id=request_id,
+                    )
+
+                state = target_env.state
+                if hasattr(state, "model_dump"):
+                    state_data = state.model_dump()
+                else:
+                    state_data = dict(state) if state else {}
+
+                self._update_session_activity(target_session_id)
+                return JsonRpcResponse.success(
+                    result={
+                        "session_id": target_session_id,
+                        "state": state_data,
+                    },
+                    request_id=request_id,
+                )
+
             requested_session_id = params.get("session_id")
             managed_session_id = session_id
 

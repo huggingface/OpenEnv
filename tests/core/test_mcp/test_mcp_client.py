@@ -390,7 +390,7 @@ class TestMCPProductionSessionConsistency:
 
     @pytest.mark.asyncio
     async def test_production_session_persistence_and_reset(self):
-        """Test production mode uses a single session_id and resets it on reset()."""
+        """Test production mode uses a single session_id and resets it via openenv/session/reset."""
         client = MCPToolClient(base_url="http://localhost:8000", mode="production")
         assert client.use_production_mode is True
 
@@ -399,13 +399,22 @@ class TestMCPProductionSessionConsistency:
         async def mock_mcp_request(method, params=None):
             requests_made.append((method, params or {}))
             if method == "openenv/session/create":
-                # Return a new session ID each time create is called
-                session_num = len([r for r in requests_made if r[0] == "openenv/session/create"])
-                return {"result": {"session_id": f"session_{session_num}"}}
+                return {"result": {"session_id": "session_1"}}
+            elif method == "openenv/session/reset":
+                return {
+                    "result": {
+                        "session_id": "session_1",
+                        "observation": {"status": "reset_done", "seed": params.get("reset_kwargs", {}).get("seed")},
+                    }
+                }
             elif method == "tools/list":
                 return {"result": {"tools": [{"name": "echo", "description": "Echo", "input_schema": {}}]}}
             elif method == "tools/call":
                 return {"result": "echo_result"}
+            elif method == "openenv/session/step":
+                return {"result": {"observation": {"status": "stepped"}}}
+            elif method == "openenv/session/state":
+                return {"result": {"state": {"step_count": 5}}}
             elif method == "openenv/session/close":
                 return {"result": {"closed": True}}
             return {}
@@ -425,17 +434,42 @@ class TestMCPProductionSessionConsistency:
         assert result == "echo_result"
         assert client._production_session_id == "session_1"
 
-        # Resetting client closes session_1 and creates session_2
-        await client.reset()
-        assert client._production_session_id == "session_2"
+        # Resetting client in production mode sends openenv/session/reset with kwargs
+        reset_res = await client.reset(seed=42)
+        assert getattr(reset_res.observation, "seed", None) == 42
+        assert client._production_session_id == "session_1"
 
-        # Subsequent step or call_tool uses session_2 consistently
-        res = await client.step(CallToolAction(tool_name="echo", arguments={"message": "hello"}))
-        assert res.observation.result == "echo_result"
-        assert client._production_session_id == "session_2"
+        # Verify reset_kwargs were passed to openenv/session/reset
+        reset_reqs = [r for r in requests_made if r[0] == "openenv/session/reset"]
+        assert len(reset_reqs) == 1
+        assert reset_reqs[0][1]["reset_kwargs"] == {"seed": 42}
 
-        # Closing client closes session_2
+        # Subsequent step or state uses session_1 consistently over HTTP /mcp
+        step_res = await client.step({"action": "custom"})
+        assert getattr(step_res.observation, "status", None) == "stepped"
+
+        state_res = await client.state()
+        assert state_res.step_count == 5
+
+        # Closing client closes session_1
         await client.close()
         assert client._production_session_id is None
         close_requests = [r for r in requests_made if r[0] == "openenv/session/close"]
-        assert len(close_requests) == 2  # Once for reset(), once for close()
+        assert len(close_requests) == 1
+
+    @pytest.mark.asyncio
+    async def test_production_connect_cleans_up_on_failure(self):
+        """Test production connect closes client/provider resources if session creation fails."""
+        mock_provider = AsyncMock()
+        mock_provider.start_container = AsyncMock(return_value="http://localhost:8000")
+
+        client = MCPToolClient(base_url="http://localhost:8000", provider=mock_provider, mode="production")
+        client._ensure_production_session = AsyncMock(side_effect=RuntimeError("Session creation failed"))
+        client.close = AsyncMock()
+
+        with pytest.raises(RuntimeError) as exc_info:
+            await client.connect()
+
+        assert "Session creation failed" in str(exc_info.value)
+        # Client close() must be invoked on connect failure to prevent provider leaks
+        client.close.assert_called_once()

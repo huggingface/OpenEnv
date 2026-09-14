@@ -223,42 +223,43 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
         In simulation mode, connects via WebSocket.
         """
         if getattr(self, "use_production_mode", False):
-            self._start_provider_if_needed()
-            await self._ensure_production_session()
+            try:
+                self._start_provider_if_needed()
+                await self._ensure_production_session()
+            except Exception:
+                await self.close()
+                raise
             return self
         return await super()._connect_async()
 
     async def _reset_async(self, **kwargs: Any) -> StepResult[Observation]:
         """Reset the environment.
 
-        In production mode, closes any existing HTTP MCP session and creates
-        a new server-side session environment.
+        In production mode, invokes the production session reset over HTTP /mcp,
+        preserving reset kwargs and returning the authentic initial observation.
         """
         if getattr(self, "use_production_mode", False):
-            async with self._production_session_lock:
-                if self._production_session_id is not None:
-                    try:
-                        await self._production_mcp_request(
-                            "openenv/session/close",
-                            {"session_id": self._production_session_id},
-                        )
-                    except Exception:
-                        pass
-                    finally:
-                        self._production_session_id = None
-            self._tools_cache = None
-            await self._ensure_production_session()
-            return StepResult(
-                observation=GenericMCPObservation(done=False),
-                done=False,
+            session_id = await self._ensure_production_session()
+            data = await self._production_mcp_request(
+                "openenv/session/reset",
+                {
+                    "session_id": session_id,
+                    "reset_kwargs": kwargs,
+                },
             )
+            if "error" in data:
+                message = data.get("error", {}).get("message", "unknown error")
+                raise RuntimeError(f"reset failed: {message}")
+            self._tools_cache = None
+            obs_payload = data.get("result", {}).get("observation", {})
+            return self._parse_result({"observation": obs_payload, "done": False, "reward": None})
         return await super()._reset_async(**kwargs)
 
     async def _step_async(self, action: Any, **kwargs: Any) -> StepResult[Observation]:
         """Execute an action.
 
-        In production mode, routes ListToolsAction and CallToolAction through
-        the HTTP /mcp session.
+        In production mode, routes all tool and non-tool actions through the HTTP /mcp
+        session.
         """
         if getattr(self, "use_production_mode", False):
             session_id = await self._ensure_production_session()
@@ -314,7 +315,39 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
                     ),
                     done=False,
                 )
+            else:
+                action_payload = self._step_payload(action)
+                data = await self._production_mcp_request(
+                    "openenv/session/step",
+                    {
+                        "session_id": session_id,
+                        "action": action_payload,
+                    },
+                )
+                if "error" in data:
+                    message = data.get("error", {}).get("message", "unknown error")
+                    raise RuntimeError(f"step failed: {message}")
+                obs_payload = data.get("result", {}).get("observation", {})
+                return self._parse_result({"observation": obs_payload})
         return await super()._step_async(action, **kwargs)
+
+    async def _state_async(self) -> State:
+        """Get environment state.
+
+        In production mode, routes the state query through the HTTP /mcp session.
+        """
+        if getattr(self, "use_production_mode", False):
+            session_id = await self._ensure_production_session()
+            data = await self._production_mcp_request(
+                "openenv/session/state",
+                {"session_id": session_id},
+            )
+            if "error" in data:
+                message = data.get("error", {}).get("message", "unknown error")
+                raise RuntimeError(f"state failed: {message}")
+            state_payload = data.get("result", {}).get("state", {})
+            return self._parse_state(state_payload)
+        return await super()._state_async()
 
     async def list_tools(self, use_cache: bool = True) -> List[Tool]:
         """
