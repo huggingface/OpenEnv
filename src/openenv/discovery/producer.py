@@ -72,7 +72,11 @@ def _license(
         (license_declaration(readme.get("license")), f"{path}/README.md"),
     ]
     known = [(value, origin) for value, origin in candidates if value is not None]
-    if len({value for value, _ in known}) > 1:
+    if len({value for value, _ in known}) > 1 or (
+        len(known) > 1
+        and known[0][0].expression == "other"
+        and known[0][0].text is None
+    ):
         return (
             "unknown",
             None,
@@ -81,22 +85,26 @@ def _license(
                 CatalogIssue(
                     path=path,
                     code="license_conflict",
-                    message="Package and README license declarations conflict",
+                    message=(
+                        "Package and README declarations do not identify one license"
+                    ),
                     severity="warning",
                 )
             ],
         )
     if known:
-        expression, origin = known[0]
+        parsed, origin = known[0]
+        expression = parsed.expression
         return (
             expression,
             None if expression == "unknown" else source.url(origin),
             origin,
             [],
         )
-    expression = license_declaration(root_project.get("license"))
-    if expression is None:
+    parsed = license_declaration(root_project.get("license"))
+    if parsed is None:
         return "unknown", None, None, []
+    expression = parsed.expression
     origin = "pyproject.toml"
     for filename in root_project.get("license-files", []):
         if isinstance(filename, str) and filename in source.files:

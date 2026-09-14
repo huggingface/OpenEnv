@@ -33,6 +33,8 @@ def git(repository: Path, *args: str) -> str:
             "-c",
             "commit.gpgsign=false",
             "-c",
+            "core.autocrlf=false",
+            "-c",
             "core.hooksPath=/dev/null",
             *args,
         ],
@@ -296,6 +298,80 @@ def test_license_conflicts_are_unknown_not_a_positive_claim(repository: Path) ->
     assert snapshot.complete
     assert entry.data.license == "unknown"
     assert any(issue.code == "license_conflict" for issue in snapshot.issues)
+
+
+@pytest.mark.parametrize(
+    ("package_license", "readme_license"),
+    [
+        ("Custom terms A.", "Custom terms B."),
+        ("Custom terms A.", "other"),
+        ("other", "other"),
+    ],
+)
+def test_custom_license_categories_do_not_establish_license_identity(
+    repository: Path, package_license: str, readme_license: str
+) -> None:
+    (repository / "envs/echo_env/pyproject.toml").write_text(
+        '[project]\nname="echo"\ndescription="Echo messages."\n'
+        f"license={{text={json.dumps(package_license)}}}\n"
+    )
+    (repository / "envs/echo_env/README.md").write_text(
+        f"---\nlicense: {json.dumps(readme_license)}\n---\n# Echo\n"
+    )
+    commit(repository)
+    snapshot = build(repository)
+    entry = next(item for item in snapshot.entries if item.data.name == "echo_env")
+    assert snapshot.complete
+    assert entry.data.license == "unknown"
+    assert entry.data.license_url is None
+    assert "license" not in entry.metadata["provenance"]
+    assert any(
+        issue.code == "license_conflict" and issue.path == "envs/echo_env"
+        for issue in snapshot.issues
+    )
+
+
+@pytest.mark.parametrize(
+    ("package_license", "readme_license", "expected"),
+    [
+        ("Custom terms A.", "Custom terms A.", "other"),
+        ("Custom terms.\nSecond line.", "Custom terms.\r\nSecond line.", "other"),
+        ("mit", "MIT", "MIT"),
+    ],
+)
+def test_equivalent_license_declarations_keep_their_source_evidence(
+    repository: Path, package_license: str, readme_license: str, expected: str
+) -> None:
+    (repository / "envs/echo_env/pyproject.toml").write_text(
+        '[project]\nname="echo"\ndescription="Echo messages."\n'
+        f"license={{text={json.dumps(package_license)}}}\n"
+    )
+    (repository / "envs/echo_env/README.md").write_text(
+        f"---\nlicense: {json.dumps(readme_license)}\n---\n# Echo\n"
+    )
+    revision = commit(repository)
+    snapshot = build(repository)
+    entry = next(item for item in snapshot.entries if item.data.name == "echo_env")
+    assert snapshot.complete
+    assert entry.data.license == expected
+    assert entry.data.license_url.endswith(f"/{revision}/envs/echo_env/pyproject.toml")
+    assert not any(issue.code == "license_conflict" for issue in snapshot.issues)
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n", "\r"], ids=["lf", "crlf", "cr"])
+def test_unclosed_frontmatter_is_invalid_with_each_line_ending(
+    repository: Path, newline: str
+) -> None:
+    (repository / "envs/echo_env/README.md").write_bytes(
+        newline.join(["---", "license: MIT", ""]).encode()
+    )
+    commit(repository)
+    snapshot = build(repository)
+    assert not snapshot.complete
+    assert any(
+        issue.code == "invalid_metadata" and issue.path == "envs/echo_env"
+        for issue in snapshot.issues
+    )
 
 
 def test_missing_license_is_explicitly_unknown(repository: Path) -> None:

@@ -4,11 +4,15 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
 from openenv.cli.__main__ import app
 from typer.testing import CliRunner
 
 
-def test_catalog_build_then_discover_is_a_read_only_metadata_workflow(tmp_path: Path):
+@pytest.mark.parametrize("newline", ["\n", "\r\n", "\r"], ids=["lf", "crlf", "cr"])
+def test_catalog_build_then_discover_is_a_read_only_metadata_workflow(
+    tmp_path: Path, newline: str
+):
     repository = tmp_path / "repository"
     environment = repository / "envs" / "echo_env"
     environment.mkdir(parents=True)
@@ -16,9 +20,19 @@ def test_catalog_build_then_discover_is_a_read_only_metadata_workflow(tmp_path: 
         "name: echo_env\nspec_version: 1\napp: server.app:app\n"
     )
     (environment / "pyproject.toml").write_text(
-        '[project]\nname="openenv-echo-env"\n'
-        'description="Echo messages for client smoke testing."\n'
-        'dependencies=["openenv>=0.3.1"]\n'
+        '[project]\nname="openenv-echo-env"\ndependencies=["openenv>=0.3.1"]\n'
+    )
+    (environment / "README.md").write_bytes(
+        newline.join(
+            [
+                "---",
+                "description: Echo messages for client smoke testing.",
+                "tags: [frontmatter]",
+                "---",
+                "# Echo",
+                "",
+            ]
+        ).encode()
     )
     (environment / "__init__.py").write_text(
         "raise RuntimeError('discovery must not execute this package')\n"
@@ -39,6 +53,8 @@ def test_catalog_build_then_discover_is_a_read_only_metadata_workflow(tmp_path: 
                 "user.email=catalog@example.invalid",
                 "-c",
                 "commit.gpgsign=false",
+                "-c",
+                "core.autocrlf=false",
                 "-c",
                 "core.hooksPath=/dev/null",
                 *arguments,
@@ -72,6 +88,7 @@ def test_catalog_build_then_discover_is_a_read_only_metadata_workflow(tmp_path: 
     data = json.loads(result.stdout)
     assert data["results"][0]["data"]["source"]["path"] == "envs/echo_env"
     assert data["results"][0]["data"]["license"] == "unknown"
+    assert data["results"][0]["tags"] == ["frontmatter"]
     assert data["metadataOnly"] is True
 
 

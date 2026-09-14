@@ -62,7 +62,27 @@ def relative_path(value: str) -> str:
     return value
 
 
-RelativePath = Annotated[NonEmpty, AfterValidator(relative_path)]
+# Positive components exclude "." and ".." without lookaround, which some
+# JSON Schema regex engines do not support.
+_PATH_COMPONENT_PATTERN = (
+    r"(?:[^./\\\x00]|\.[^./\\\x00]|\.\.[^./\\\x00]|\.\.\.)[^/\\\x00]*"
+)
+RelativePath = Annotated[
+    NonEmpty,
+    AfterValidator(relative_path),
+    Field(
+        json_schema_extra={
+            "allOf": [
+                {
+                    "pattern": (
+                        rf"^(?:\.|{_PATH_COMPONENT_PATTERN}"
+                        rf"(?:/{_PATH_COMPONENT_PATTERN})*)$"
+                    ),
+                },
+            ]
+        }
+    ),
+]
 
 
 def github_repository(uri: str) -> str:
@@ -164,6 +184,43 @@ Interface = Annotated[
 class EnvironmentCard(ProfileModel):
     """A revision-bound source declaration under the experimental 0.1 profile."""
 
+    model_config = ConfigDict(
+        json_schema_extra={
+            "$comment": (
+                "JSON Schema covers structure, relative paths and conditional "
+                "presence/cardinality. Full profile validation also requires "
+                "URI, SPDX and requirement parsing, source/artifact equality "
+                "and agent-tool revision/protocol checks. See "
+                "docs/source/guides/catalog-discovery.md#consumer-validation."
+            ),
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "artifact_availability": {"const": "resolvable"}
+                        },
+                        "required": ["artifact_availability"],
+                    },
+                    "then": {
+                        "properties": {"artifacts": {"minItems": 1}},
+                        "required": ["artifacts"],
+                    },
+                    "else": {"properties": {"artifacts": {"maxItems": 0}}},
+                },
+                {
+                    "if": {
+                        "properties": {"license": {"const": "other"}},
+                        "required": ["license"],
+                    },
+                    "then": {
+                        "properties": {"license_url": {"type": "string"}},
+                        "required": ["license_url"],
+                    },
+                },
+            ],
+        }
+    )
+
     schema_version: Literal["0.1-draft"]
     name: NonEmpty
     description: NonEmpty
@@ -173,7 +230,17 @@ class EnvironmentCard(ProfileModel):
     artifacts: list[GitArtifact] = Field(default_factory=list)
     license: NonEmpty
     license_url: MetadataURL | None = None
-    interfaces: list[Interface]
+    interfaces: list[Interface] = Field(
+        json_schema_extra={
+            "contains": {
+                "type": "object",
+                "properties": {"role": {"const": "orchestration"}},
+                "required": ["role"],
+            },
+            "minContains": 1,
+            "maxContains": 1,
+        }
+    )
     manifest_spec_version: int | str | None = None
     framework_requirement: NonEmpty | None = None
 

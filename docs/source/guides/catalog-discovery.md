@@ -30,6 +30,8 @@ tree. `--root` changes that explicitly scoped directory. It is not a global
 environment census.
 
 The producer reads the commit's manifest, project metadata and README frontmatter.
+Frontmatter accepts LF, CRLF and CR line endings. An opening frontmatter marker
+without a closing marker is invalid metadata under each format.
 It keeps a source URI, environment path and full revision on each card and its
 Git artifact. The snapshot has a separate content digest. Builds from identical
 committed inputs and publisher settings are byte-identical.
@@ -101,6 +103,14 @@ alone does not identify an SPDX or custom license. The producer does not classif
 the referenced file's contents or replace this unknown with a repository-wide
 license. A license table cannot contain both `file` and `text`.
 
+Custom license text is retained internally when comparing package and README
+declarations; the emitted card still uses `other`. Two different custom texts
+must not match merely because both normalize to that category. Identical custom
+text, allowing for line endings and outer whitespace, is a consistent declaration.
+Two bare `other` markers do not establish a shared license identity. Ambiguous
+or conflicting declarations produce `unknown` and a `license_conflict` warning,
+without borrowing a positive license claim from the repository.
+
 Tool declarations name repository-relative evidence within the environment and
 remain `declared`. Merely listing a tool name does not establish semantic safety.
 Simulation controls must not be exposed as agent tools. This profile rejects
@@ -124,6 +134,86 @@ Schemas are packaged in `openenv.discovery/schemas/0.1-draft/`. Regenerate them
 with `PYTHONPATH=src python scripts/generate_discovery_schemas.py`; `--check`
 detects drift. The Pydantic contract additionally enforces relational invariants
 such as matching artifact revisions and inventory accounting.
+
+### Resource type and schema scope
+
+The resource media type is
+`application/vnd.openenv.environment-card+json`. It describes an environment
+source definition, not an installable MCP-server configuration. Clients dispatch
+on the explicit ARD entry `type` and check the card's `data.schema_version`.
+Neither a display name nor a version string alone identifies this resource type.
+
+The ARD entry carries search-facing fields such as `displayName`, `description`,
+`tags`, `capabilities` and `representativeQueries`. Its inline `data` is the
+Environment Card. Preserve both the entry and the complete card rather than
+reconstructing the latter from search snippets.
+
+| Packaged schema | Applies to |
+|-----------------|------------|
+| `environment-card.schema.json` | One `entry.data` Environment Card |
+| `catalog.schema.json` | A complete repository snapshot; its `DiscoveryEntry` definition describes each entry |
+| `declaration.schema.json` | Producer-side `discovery.json` input, not a discovered resource |
+
+The schema `$id` is a schema identifier, not an instruction to fetch it or a
+guarantee that a draft has been published at that location. Pin the agreed
+schema/profile revision during review. Loading these self-contained schemas
+does not require fetching candidate resource URLs.
+
+### Consumer validation
+
+JSON Schema validation is necessary but is not the whole profile contract.
+The packaged schemas enforce object shape, required fields, relative-path
+safety, supported literals, conditional artifact/license-evidence presence, and
+exactly one orchestration interface. Other rules require semantic validation:
+
+| Subject | Additional rule |
+|---------|-----------------|
+| Repository source | Parse a credential-free GitHub HTTPS Git URI with no query, fragment or encoded path components; its repository identity must equal `source.id` |
+| Artifact binding | Every artifact's `uri`, `path` and `revision` must equal the selected `data.source` tuple |
+| Agent-tool declaration | `source_revision` must equal the environment revision; agent-tool protocols must be unique |
+| License | Parse an SPDX expression or the explicit `other`/`unknown` sentinel; evidence URLs must be credential-free HTTPS references |
+| Framework requirement | Parse the declared package requirement and verify that its normalized package name is `openenv`; this is not runtime compatibility evidence |
+| Entry identity | Require the canonical `urn:air:` prefix and the selected full source revision suffix; within a snapshot, the publisher must also match |
+| Capabilities | Require a source-bound agent-tool declaration; known simulation-control names are forbidden regardless of case |
+| Snapshot | Check source/publisher consistency, unique identities and paths, direct-child inventory scope, complete accounting and the snapshot digest before trusting a refresh |
+
+The Python models enforce these semantic rules. Consumers in other languages
+must implement equivalent checks; passing JSON Schema alone must not be labeled
+full conformance. A malformed or unsupported card must not become a resolved,
+validated or installable environment through guessed defaults.
+
+Tool evidence is still a declaration. Recognizing a protocol or checking a tool
+name does not prove its behavior, safety or suitability for training.
+
+### Source retrieval and environment setup
+
+Discovery reads metadata only. Source acquisition, installation and execution
+are separate actions:
+
+1. Select and validate a complete card, preserving its full identifier and
+   snapshot provenance.
+2. Only `artifact_availability: resolvable` supplies an immutable artifact
+   locator in this profile. `external` and `unknown` do not authorize a guessed
+   download from source metadata.
+3. After the caller's policy permits source retrieval, use the Git artifact's
+   `uri`, full `revision` and repository-relative `path`. Select that environment
+   within the pinned checkout while retaining any required monorepo build
+   context. The URN is not a URL, and the GitHub repository ID is not a Hub Space
+   identifier.
+4. Review the selected environment's setup instructions at the same revision.
+   Build/run and provider requirements are environment-specific. Do not assume
+   that installing the repository root installs the selected environment.
+
+The card does not specify a universal installer, an OCI image digest, a complete
+dependency lock, launch arguments, resource budgets or execution permissions.
+`framework_requirement` alone is not an installation recipe. A declared MCP
+agent-tool interface is not enough to construct an MCP-server install action.
+Automated install/launch handling needs its own explicit producer-consumer
+contract; it must not be inferred from discovery metadata.
+
+The first client action is read-only inspection and source navigation. A
+`resolvable` card does not establish caller access, a running deployment,
+reproducible build output, validated interfaces or approval to execute.
 
 The identifier is publisher-scoped and revision-qualified. Its locator component
 is SHA-256 over the declared repository URI, a newline and the environment path.

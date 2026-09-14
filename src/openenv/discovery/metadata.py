@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Literal
 
 import tomli
@@ -109,7 +110,7 @@ def project_metadata(source: GitMetadataSource, path: str) -> dict[str, Any]:
 
 def readme_metadata(source: GitMetadataSource, path: str) -> dict[str, Any]:
     text = source.read(path)
-    if text is None or not text.startswith("---\n"):
+    if text is None or not text.startswith(("---\n", "---\r")):
         return {}
     lines = text.splitlines()
     try:
@@ -134,7 +135,13 @@ def discovery_declaration(source: GitMetadataSource, path: str) -> DiscoveryDecl
     return DiscoveryDeclaration.model_validate(raw)
 
 
-def license_declaration(value: object) -> str | None:
+@dataclass(frozen=True)
+class _ParsedLicense:
+    expression: str
+    text: str | None = None
+
+
+def license_declaration(value: object) -> _ParsedLicense | None:
     if value is None:
         return None
     if isinstance(value, dict):
@@ -146,15 +153,16 @@ def license_declaration(value: object) -> str | None:
         value = value.get("text")
         if value is None:
             # A file pointer alone does not identify an SPDX or custom license.
-            return "unknown"
+            return _ParsedLicense("unknown")
     if not isinstance(value, str) or not value.strip():
-        return "unknown"
+        return _ParsedLicense("unknown")
+    value = value.strip()
     if value in {"unknown", "other"}:
-        return value
+        return _ParsedLicense(value)
     try:
-        return str(canonicalize_license_expression(value))
+        return _ParsedLicense(str(canonicalize_license_expression(value)))
     except InvalidLicenseExpression:
-        return "other"
+        return _ParsedLicense("other", value.replace("\r\n", "\n").replace("\r", "\n"))
 
 
 def framework_requirement(project: dict[str, Any]) -> str | None:

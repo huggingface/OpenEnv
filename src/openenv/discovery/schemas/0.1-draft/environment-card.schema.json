@@ -1,4 +1,5 @@
 {
+  "$comment": "JSON Schema covers structure, relative paths and conditional presence/cardinality. Full profile validation also requires URI, SPDX and requirement parsing, source/artifact equality and agent-tool revision/protocol checks. See docs/source/guides/catalog-discovery.md#consumer-validation.",
   "$defs": {
     "AgentToolsInterface": {
       "additionalProperties": false,
@@ -46,6 +47,11 @@
           "type": "string"
         },
         "path": {
+          "allOf": [
+            {
+              "pattern": "^(?:\\.|(?:[^./\\\\\\x00]|\\.[^./\\\\\\x00]|\\.\\.[^./\\\\\\x00]|\\.\\.\\.)[^/\\\\\\x00]*(?:/(?:[^./\\\\\\x00]|\\.[^./\\\\\\x00]|\\.\\.[^./\\\\\\x00]|\\.\\.\\.)[^/\\\\\\x00]*)*)$"
+            }
+          ],
           "maxLength": 8192,
           "minLength": 1,
           "pattern": "\\S",
@@ -89,6 +95,11 @@
           "type": "string"
         },
         "path": {
+          "allOf": [
+            {
+              "pattern": "^(?:\\.|(?:[^./\\\\\\x00]|\\.[^./\\\\\\x00]|\\.\\.[^./\\\\\\x00]|\\.\\.\\.)[^/\\\\\\x00]*(?:/(?:[^./\\\\\\x00]|\\.[^./\\\\\\x00]|\\.\\.[^./\\\\\\x00]|\\.\\.\\.)[^/\\\\\\x00]*)*)$"
+            }
+          ],
           "maxLength": 8192,
           "minLength": 1,
           "pattern": "\\S",
@@ -168,6 +179,59 @@
   "$id": "https://raw.githubusercontent.com/huggingface/OpenEnv/main/src/openenv/discovery/schemas/0.1-draft/environment-card.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "allOf": [
+    {
+      "else": {
+        "properties": {
+          "artifacts": {
+            "maxItems": 0
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "artifact_availability": {
+            "const": "resolvable"
+          }
+        },
+        "required": [
+          "artifact_availability"
+        ]
+      },
+      "then": {
+        "properties": {
+          "artifacts": {
+            "minItems": 1
+          }
+        },
+        "required": [
+          "artifacts"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "license": {
+            "const": "other"
+          }
+        },
+        "required": [
+          "license"
+        ]
+      },
+      "then": {
+        "properties": {
+          "license_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "license_url"
+        ]
+      }
+    }
+  ],
   "description": "A revision-bound source declaration under the experimental 0.1 profile.",
   "properties": {
     "artifact_availability": {
@@ -209,6 +273,17 @@
       "title": "Framework Requirement"
     },
     "interfaces": {
+      "contains": {
+        "properties": {
+          "role": {
+            "const": "orchestration"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "type": "object"
+      },
       "items": {
         "discriminator": {
           "mapping": {
@@ -226,6 +301,8 @@
           }
         ]
       },
+      "maxContains": 1,
+      "minContains": 1,
       "title": "Interfaces",
       "type": "array"
     },

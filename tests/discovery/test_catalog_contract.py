@@ -7,7 +7,7 @@ from importlib.resources import files
 from pathlib import Path
 
 import pytest
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, ValidationError as SchemaValidationError
 from openenv.discovery import CatalogError, EnvironmentCard, load_catalog
 from openenv.discovery.metadata import DiscoveryDeclaration
 from openenv.discovery.models import DiscoveryEntry
@@ -55,6 +55,13 @@ def card() -> dict:
     }
 
 
+@pytest.fixture
+def card_schema() -> Draft202012Validator:
+    root = files("openenv.discovery").joinpath("schemas", "0.1-draft")
+    schema = json.loads(root.joinpath("environment-card.schema.json").read_text())
+    return Draft202012Validator(schema)
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
@@ -76,13 +83,51 @@ def test_tool_declaration_cannot_borrow_another_revision(card):
 
 
 @pytest.mark.parametrize(
-    "path", ["/envs/echo", "../echo", "envs/../echo", "envs\\echo"]
+    "path",
+    [
+        "/envs/echo",
+        "../echo",
+        "envs/../echo",
+        "envs\\echo",
+        "envs//echo",
+        "envs/echo/",
+        "envs/./echo",
+        "envs/\x00echo",
+    ],
 )
-def test_environment_locator_is_a_safe_repository_relative_path(card, path):
+def test_environment_locator_is_a_safe_repository_relative_path(
+    card, path, card_schema
+):
     card["source"]["path"] = path
     card["artifacts"][0]["path"] = path
     with pytest.raises(ValidationError):
         EnvironmentCard.model_validate(card)
+    with pytest.raises(SchemaValidationError):
+        card_schema.validate(card)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ".",
+        "envs/echo",
+        "envs/.hidden",
+        "envs/...",
+        "envs/a..b",
+        "envs/with spaces",
+        "envs/trailing\n",
+        ".\n",
+        "..\n",
+        "envs/\n",
+        "envs/.\n",
+        "envs/..\n",
+    ],
+)
+def test_schema_and_model_preserve_valid_relative_locators(card, path, card_schema):
+    card["source"]["path"] = path
+    card["artifacts"][0]["path"] = path
+    assert EnvironmentCard.model_validate(card).source.path == path
+    card_schema.validate(card)
 
 
 def test_claimed_validated_tools_are_unsupported_in_the_declaration_profile(card):
@@ -101,34 +146,82 @@ def test_source_manifest_marker_does_not_become_a_protocol_version(card):
 
 
 @pytest.mark.parametrize(
-    "interfaces", [[], [{"role": "agent-tools", "protocol": "mcp"}]]
+    "interfaces",
+    [
+        [],
+        [
+            {
+                "role": "agent-tools",
+                "protocol": "mcp",
+                "status": "declared",
+                "source_revision": REVISION,
+            }
+        ],
+    ],
 )
-def test_orchestration_descriptor_is_required(card, interfaces):
+def test_orchestration_descriptor_is_required(card, interfaces, card_schema):
     card["interfaces"] = interfaces
     with pytest.raises(ValidationError):
         EnvironmentCard.model_validate(card)
+    with pytest.raises(SchemaValidationError):
+        card_schema.validate(card)
 
 
-def test_orchestration_must_not_be_duplicated(card):
+def test_orchestration_must_not_be_duplicated(card, card_schema):
     card["interfaces"].append(copy.deepcopy(card["interfaces"][0]))
     with pytest.raises(ValidationError):
         EnvironmentCard.model_validate(card)
+    with pytest.raises(SchemaValidationError):
+        card_schema.validate(card)
 
 
-def test_external_subject_does_not_claim_artifact_distribution(card):
-    card["artifact_availability"] = "external"
+@pytest.mark.parametrize("availability", ["external", "unknown"])
+def test_external_subject_does_not_claim_artifact_distribution(
+    card, availability, card_schema
+):
+    card["artifact_availability"] = availability
     with pytest.raises(ValidationError):
         EnvironmentCard.model_validate(card)
+    with pytest.raises(SchemaValidationError):
+        card_schema.validate(card)
     card["artifacts"] = []
     assert EnvironmentCard.model_validate(card).source.revision == REVISION
+    card_schema.validate(card)
 
 
-def test_other_license_requires_evidence_and_unknown_remains_unknown(card):
-    card["license"] = "other"
+@pytest.mark.parametrize("missing", [False, True], ids=["empty", "missing"])
+def test_resolvable_subject_requires_an_artifact(card, missing, card_schema):
+    if missing:
+        del card["artifacts"]
+    else:
+        card["artifacts"] = []
     with pytest.raises(ValidationError):
         EnvironmentCard.model_validate(card)
+    with pytest.raises(SchemaValidationError):
+        card_schema.validate(card)
+
+
+@pytest.mark.parametrize("null_evidence", [False, True], ids=["missing", "null"])
+def test_other_license_requires_evidence_and_unknown_remains_unknown(
+    card, null_evidence, card_schema
+):
+    card["license"] = "other"
+    if null_evidence:
+        card["license_url"] = None
+    with pytest.raises(ValidationError):
+        EnvironmentCard.model_validate(card)
+    with pytest.raises(SchemaValidationError):
+        card_schema.validate(card)
     card["license"] = "unknown"
     assert EnvironmentCard.model_validate(card).license == "unknown"
+    card_schema.validate(card)
+
+
+def test_schema_accepts_an_evidenced_custom_license(card, card_schema):
+    card["license"] = "other"
+    card["license_url"] = "https://example.org/license"
+    assert EnvironmentCard.model_validate(card).license == "other"
+    card_schema.validate(card)
 
 
 def test_invalid_package_requirement_is_not_presented_as_compatibility(card):
@@ -219,7 +312,7 @@ def test_loader_rejects_tampering_even_when_json_is_well_formed(tmp_path: Path, 
         load_catalog(path)
 
 
-def test_schema_files_ship_with_the_profile():
+def test_schema_files_ship_with_the_profile(card):
     root = files("openenv.discovery").joinpath("schemas", "0.1-draft")
     card_schema = json.loads(root.joinpath("environment-card.schema.json").read_text())
     catalog_schema = json.loads(root.joinpath("catalog.schema.json").read_text())
@@ -227,6 +320,17 @@ def test_schema_files_ship_with_the_profile():
     assert catalog_schema["$schema"] == card_schema["$schema"]
     assert card_schema["properties"]["schema_version"]["const"] == "0.1-draft"
     assert card_schema["properties"]["source"]["$ref"].startswith("#/$defs/")
+    declaration_schema = json.loads(
+        root.joinpath("declaration.schema.json").read_text()
+    )
+    for schema in (card_schema, catalog_schema, declaration_schema):
+        Draft202012Validator.check_schema(schema)
+    Draft202012Validator(card_schema).validate(
+        EnvironmentCard.model_validate(card).model_dump(by_alias=True, mode="json")
+    )
+    Draft202012Validator(declaration_schema).validate(
+        DiscoveryDeclaration().model_dump(mode="json")
+    )
 
 
 @pytest.mark.parametrize(
