@@ -371,8 +371,8 @@ These prompts were updated to reflect the actual helper surface the environment 
 
 ## Examples
 
-- [`examples/repl_with_llm.py`](../../examples/repl_with_llm.py)
-- [`examples/repl_oolong_simple.py`](../../examples/repl_oolong_simple.py)
+- [`examples/repl_with_llm.py`](https://github.com/huggingface/OpenEnv/blob/main/examples/repl_with_llm.py)
+- [`examples/repl_oolong_simple.py`](https://github.com/huggingface/OpenEnv/blob/main/examples/repl_oolong_simple.py)
 
 Default hosted model in the examples is currently `Qwen/Qwen3.5-9B`, but real hosted inference still depends on provider availability and token access.
 
