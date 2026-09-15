@@ -53,13 +53,17 @@ class SophistryBenchSprintEnv(EnvClient[AdvocacyAction, AdvocacyObservation, Sta
         error = obs_data.get("error") or ""
         if error and "error" not in metadata:
             metadata["error"] = error
+        # ``serialize_observation`` keeps reward and done on the envelope, not in
+        # the observation dict, so set them on the observation too. Without this
+        # ``result.observation.reward`` stayed None while ``result.reward`` was
+        # correct, which traps callers that read the observation.
+        reward = data.get("reward")
+        done = bool(data.get("done", False))
         # Construct once with metadata set, rather than mutating the model after.
-        observation = AdvocacyObservation(**obs_data, metadata=metadata)
-        return StepResult(
-            observation=observation,
-            reward=data.get("reward"),
-            done=data.get("done", False),
+        observation = AdvocacyObservation(
+            **obs_data, metadata=metadata, reward=reward, done=done
         )
+        return StepResult(observation=observation, reward=reward, done=done)
 
     def _parse_state(self, data: dict) -> State:
         return State(**data)

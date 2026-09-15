@@ -27,11 +27,11 @@ class AdvocacyObservation(Observation):
     eight reward components.
 
     ``reward``/``done`` are inherited from the base ``Observation`` (reward
-    defaults to ``None``). Read the post-step reward from ``StepResult.reward``,
-    not ``observation.reward``: the framework's serializer strips ``reward`` from
-    the observation payload, so only ``StepResult.reward`` carries the weighted
-    aggregate. ``reset()`` leaves ``reward`` as ``None`` (no action scored yet),
-    matching the framework convention.
+    defaults to ``None``). On step, the typed client mirrors the weighted
+    aggregate and terminal flag from the response envelope into the observation,
+    so they match ``StepResult.reward`` and ``StepResult.done``. ``reset()``
+    leaves ``reward`` as ``None`` (no action scored yet), matching the framework
+    convention.
 
     The eight reward components are also mirrored in the declared ``components``
     field. The base ``metadata`` dict is stripped by the framework's HTTP
