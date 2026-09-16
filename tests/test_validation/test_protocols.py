@@ -63,6 +63,12 @@ class FakeEntryPoints(list):
 class FakeRunningSubject:
     base_url = "http://localhost:8000"
 
+    def inspect(self):
+        return {}
+
+    def logs(self, max_bytes=65536):
+        return ""
+
     def exec(self, argv: list, timeout_s: float) -> ExecResult:
         return ExecResult(exit_code=0, stdout="", stderr="", duration_s=0.0)
 
@@ -72,11 +78,15 @@ class FakeRunningSubject:
 
 class FakeProvider:
     name = "fake"
+    supported_network_modes = frozenset({"public"})
     capabilities = frozenset(
         {ProviderCapability.NETWORK_POLICY, ProviderCapability.EXEC}
     )
 
-    def start(self, image_ref: str, *, network=None, env_vars=None):
+    def build(self, root, execution):
+        return "sha256:" + "a" * 64
+
+    def start(self, spec):
         return FakeRunningSubject()
 
 
