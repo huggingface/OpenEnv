@@ -210,6 +210,45 @@ def test_validate_command_runtime_target_without_json_outputs_human_readable() -
     assert "Verdict: PASS" in result.output
 
 
+def test_validate_command_runtime_target_failed_criterion_displays_expected_and_actual() -> (
+    None
+):
+    mock_report = {
+        "target": "https://example.com",
+        "validation_type": "running_environment",
+        "standard_version": "1.0.0",
+        "standard_profile": "openenv-http/1.x",
+        "mode": "simulation",
+        "passed": False,
+        "criteria": [
+            {
+                "id": "metadata_endpoint",
+                "description": "GET /metadata returns name and description",
+                "passed": False,
+                "details": "Failed to validate metadata schema",
+                "expected": {"status_code": 200, "fields": ["name", "description"]},
+                "actual": {"status_code": 500, "detail": "Internal error"},
+            }
+        ],
+    }
+
+    with patch(
+        "openenv.cli.commands.validate.validate_running_environment",
+        return_value=mock_report,
+    ):
+        result = runner.invoke(app, ["validate", "https://example.com"])
+
+    assert result.exit_code == 1
+    assert "FAIL  metadata_endpoint" in result.output
+    assert "Failed to validate metadata schema" in result.output
+    assert (
+        "expected: {'status_code': 200, 'fields': ['name', 'description']}"
+        in result.output
+    )
+    assert "actual: {'status_code': 500, 'detail': 'Internal error'}" in result.output
+    assert "Verdict: FAIL" in result.output
+
+
 def test_validate_command_runtime_target_with_output_writes_file(
     tmp_path: Path,
 ) -> None:
@@ -297,7 +336,6 @@ def test_validate_command_runtime_target_output_write_failure(
 
     assert result.exit_code == 3
     assert "Internal error:" in result.output
-
 
 
 def test_validate_command_local_path_without_validation_block_fails(

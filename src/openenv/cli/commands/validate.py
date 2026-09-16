@@ -51,6 +51,12 @@ def _render_report(report: ValidationReport | dict[str, Any]) -> str:
                 details = criterion.get("details")
                 if details:
                     lines.append(f"          {details}")
+                expected = criterion.get("expected")
+                if expected is not None:
+                    lines.append(f"          expected: {expected}")
+                actual = criterion.get("actual")
+                if actual is not None:
+                    lines.append(f"          actual: {actual}")
         verdict = "PASS" if report.get("passed", False) else "FAIL"
         lines.append(f"Verdict: {verdict}")
         return "\n".join(lines)
