@@ -1,0 +1,10 @@
+spec_version: 1
+name: harbor_env
+version: "0.1.0"
+description: "Run Harbor task directories — including everything Repo2RLEnv emits — as an OpenEnv environment"
+type: space
+runtime: fastapi
+app: server.app:app
+port: 8000
+action: HarborAction
+observation: HarborObservation

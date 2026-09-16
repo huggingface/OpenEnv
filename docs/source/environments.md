@@ -188,6 +188,13 @@ The OpenEnv community has built a catalog of ready-to-run environments that cove
       </div>
     </div>
     <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Harbor</div>
+      <p class="text-sm">Runs Harbor task directories — including everything Repo2RLEnv generates from a GitHub repo — unchanged, with local and Docker execution and rewards forwarded from the task's own verifier.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/harbor" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
       <div class="font-bold mb-2">Julia</div>
       <p class="text-sm">Julia code execution environment with test result tracking and reward calculation for RL training on Julia programming tasks.</p>
       <div class="flex gap-2 mt-3">
