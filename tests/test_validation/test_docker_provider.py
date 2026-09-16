@@ -81,6 +81,8 @@ def commands(monkeypatch):
         if argv[1] == "inspect":
             if argv[-1] in removed:
                 return 1, "", "No such container"
+            if "--format" in argv:
+                return 0, "test-run", ""
             return 0, json.dumps([details(argv[-1])]), ""
         if argv[1] == "rm":
             removed.add(argv[-1])
@@ -167,6 +169,8 @@ def test_image_volumes_are_rejected_before_execution(commands, monkeypatch):
         if argv[1] == "inspect":
             if removed:
                 return 1, "", "No such container"
+            if "--format" in argv:
+                return 0, "test-run", ""
             return 0, json.dumps([details(mounts=[{"Type": "volume"}])]), ""
         if argv[1] == "rm":
             removed = True
@@ -190,6 +194,8 @@ def test_create_failure_still_attempts_owned_cleanup(commands, monkeypatch):
         if argv[1] == "inspect":
             if removed:
                 return 1, "", "No such container"
+            if "--format" in argv:
+                return 0, "test-run", ""
             return 0, json.dumps([details(argv[-1])]), ""
         if argv[1] == "rm":
             removed = True
@@ -351,3 +357,30 @@ def test_logs_remain_byte_bounded_after_redaction_expands_short_values(
     output = subject.logs(max_bytes=32)
     assert len(output.encode("utf-8")) <= 32
     assert "x" not in output
+
+
+def test_large_image_metadata_cannot_prevent_cleanup_after_inspection_failure(
+    monkeypatch,
+):
+    calls = []
+    removed = False
+
+    def run(argv, *args):
+        nonlocal removed
+        calls.append(argv)
+        if argv[1] == "inspect":
+            if removed:
+                return 1, "", "No such container"
+            if "--format" in argv:
+                return 0, "test-run\n", ""
+            # Simulate the retained tail after image metadata exceeds 64 KiB.
+            return 0, "x" * docker._MAX_OUTPUT, ""
+        if argv[1] == "rm":
+            removed = True
+        return 0, "created", ""
+
+    monkeypatch.setattr(docker, "_command", run)
+    with pytest.raises(StartupError, match="invalid inspection evidence"):
+        docker.DockerValidationProvider().start(launch_spec())
+    assert removed
+    assert calls[-1][1:4] == ["inspect", "--format", "{{.Id}}"]
