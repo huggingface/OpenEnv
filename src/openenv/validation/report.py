@@ -11,7 +11,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .manifest import NormalizedManifest
+from .manifest import NormalizedManifest, NormalizedManifestV2
 from .types import CheckStatus, Lane, Level, SignatureKind, Verdict
 
 
@@ -71,7 +71,22 @@ class ValidationReport(BaseModel):
     verdict: Verdict
 
 
-def write_report(report: ValidationReport, path: Path | None = None) -> str:
+class ValidationReportV2(ValidationReport):
+    """
+    Report version 2 preserves runtime declarations and parse-failure reporting.
+
+    A runtime request may target a version 1 package without an execution binding,
+    or fail before producing any manifest. Both remain representable so the report
+    can explain the unmet prerequisite or manifest error.
+    """
+
+    report_schema_version: Literal["2"]
+    manifest: NormalizedManifestV2 | NormalizedManifest | None
+
+
+def write_report(
+    report: ValidationReport | ValidationReportV2, path: Path | None = None
+) -> str:
     """
     Serialize a validation report to schema-versioned JSON.
 
