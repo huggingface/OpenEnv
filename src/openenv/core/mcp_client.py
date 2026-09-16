@@ -357,7 +357,7 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
             step_count=payload.get("step_count", 0),
         )
 
-    async def close(self) -> None:
+    async def _close_async(self) -> None:
         """
         Close client resources.
 
@@ -384,7 +384,7 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
             finally:
                 self._http_client = None
 
-        await super().close()
+        await super()._close_async()
 
 
 class MCPToolClient(MCPClientBase):
