@@ -166,11 +166,10 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
         return self._jsonrpc_request_id
 
     def _production_mcp_url(self) -> str:
-        """Build HTTP MCP endpoint URL from the client's websocket URL."""
-        url = self._ws_url.replace("ws://", "http://").replace("wss://", "https://")
-        if url.endswith("/ws"):
-            url = url[: -len("/ws")]
-        return url.rstrip("/") + "/mcp"
+        """Build the HTTP MCP endpoint URL from the stable base URL."""
+        if self._base_url is None:
+            raise RuntimeError("MCP client is not connected to a server.")
+        return self._base_url.rstrip("/") + "/mcp"
 
     async def _get_http_client(self) -> Any:
         """Return a shared httpx.AsyncClient, creating one lazily."""
@@ -372,6 +371,10 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
 
         In production MCP mode, this also closes the server-side persistent
         MCP session (best effort) before closing websocket/provider resources.
+
+        Override `_close_async` rather than `close` so sync teardown
+        (`SyncEnvClient.close`, sync `__exit__`, and `_dispatch`) still cleans
+        up the HTTP MCP session.
         """
         if self._production_session_id is not None:
             try:
