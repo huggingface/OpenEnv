@@ -74,4 +74,6 @@ def test_the_mcp_override_runs_and_then_calls_up(monkeypatch):
     )
     client = Fake()
     asyncio.run(client._close_async())
-    assert order == ["disconnect", "parent"], "the parent's teardown must still be reached"
+    assert order == ["disconnect", "parent"], (
+        "the parent's teardown must still be reached"
+    )
