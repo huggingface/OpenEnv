@@ -35,6 +35,7 @@ def test_deployment_pin_reaches_harbor_installer(
 ):
     import json
 
+    pytest.importorskip("harbor.models.trial.config")
     monkeypatch.setenv("OPENENV_HARBOR_AGENT_VERSIONS", json.dumps({harness: version}))
     config = rollout.build_trial_config(
         task_dir=tmp_path,
@@ -53,6 +54,7 @@ def test_deployment_pin_reaches_harbor_installer(
     "pin", ['{"codex":"latest"}', '{"codex":"0.1;echo bad"}', "[]"]
 )
 def test_invalid_installer_pin_rejected(monkeypatch, tmp_path, pin):
+    pytest.importorskip("harbor.models.trial.config")
     monkeypatch.setenv("OPENENV_HARBOR_AGENT_VERSIONS", pin)
     with pytest.raises(ValueError, match="exact numeric versions"):
         rollout.build_trial_config(
