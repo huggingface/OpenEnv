@@ -171,7 +171,16 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
         """Build the HTTP MCP endpoint URL from the stable base URL."""
         if self._base_url is None:
             raise RuntimeError("MCP client is not connected to a server.")
-        return self._base_url.rstrip("/") + "/mcp"
+        parts = urlsplit(self._base_url)
+        scheme = {"ws": "http", "wss": "https"}.get(parts.scheme, parts.scheme)
+        return urlunsplit(
+            parts._replace(
+                scheme=scheme,
+                path=parts.path.rstrip("/") + "/mcp",
+                query="",
+                fragment="",
+            )
+        )
 
     async def _get_http_client(self) -> Any:
         """Return a shared httpx.AsyncClient, creating one lazily."""

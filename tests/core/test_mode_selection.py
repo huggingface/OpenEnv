@@ -166,6 +166,20 @@ class TestEnvironmentVariableModeSelection:
 class TestModeBehavior:
     """Test that different modes result in different client behavior."""
 
+    @pytest.mark.parametrize(
+        ("base_url", "expected_url"),
+        [
+            ("http://localhost:8000", "http://localhost:8000/mcp"),
+            ("https://example.com/env", "https://example.com/env/mcp"),
+            ("ws://localhost:8000", "http://localhost:8000/mcp"),
+            ("wss://example.com/env", "https://example.com/env/mcp"),
+        ],
+    )
+    def test_production_mcp_url_uses_http_scheme(self, base_url, expected_url):
+        """HTTP MCP requests normalize WebSocket base URL schemes."""
+        client = MCPToolClient(base_url=base_url, mode="production")
+        assert client._production_mcp_url() == expected_url
+
     @pytest.mark.asyncio
     async def test_simulation_mode_uses_gym_protocol(self, clean_env, mock_websocket):
         """Test that simulation mode uses Gym-style WebSocket messages."""
