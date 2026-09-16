@@ -841,6 +841,26 @@ class TestHTTPMCPSessionLifecycle:
         )
         assert close_response.json()["result"]["closed"] is True
 
+        replacement_response = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "openenv/session/create",
+                "params": {},
+                "id": 5,
+            },
+        )
+        replacement_id = replacement_response.json()["result"]["session_id"]
+        client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "openenv/session/close",
+                "params": {"session_id": replacement_id},
+                "id": 6,
+            },
+        )
+
     def test_http_session_allows_only_one_attached_websocket(self, app):
         """A second WebSocket cannot concurrently mutate the same session."""
         client = TestClient(app)

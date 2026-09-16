@@ -411,6 +411,30 @@ class TestModeBehavior:
             mock_http_client.aclose.assert_awaited_once()
             assert client._http_client is None
 
+    @pytest.mark.asyncio
+    async def test_production_close_detaches_websocket_before_session_close(
+        self, clean_env
+    ):
+        """Shared WebSocket ownership is released before HTTP session teardown."""
+        client = MCPToolClient(base_url="http://localhost:8000", mode="production")
+        client._production_session_id = "test-session"
+        teardown_events = []
+
+        async def disconnect():
+            teardown_events.append("websocket")
+
+        async def request(method, params=None):
+            teardown_events.append("session")
+            return {"result": {"closed": True}}
+
+        with (
+            patch.object(client, "_disconnect_async", side_effect=disconnect),
+            patch.object(client, "_production_mcp_request", side_effect=request),
+        ):
+            await client.close()
+
+        assert teardown_events[:2] == ["websocket", "session"]
+
 
 # ============================================================================
 # Mode Immutability Tests
