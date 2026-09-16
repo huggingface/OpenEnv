@@ -28,6 +28,20 @@ def test_no_step_limit_leaves_the_config_alone():
     assert "config" not in kwargs
 
 
+def test_training_profile_disables_nested_opencode_calls_without_losing_provider():
+    seam = seams.get("opencode")
+    _, train, _, _ = seam.resolve(
+        base_url="http://proxy", session="s1", model="m", training=True
+    )
+    config = train["opencode_config"]
+    assert config["tools"] == {"task": False, "question": False, "webfetch": False}
+    provider = config["provider"][seams.OPENCODE_PROVIDER]
+    assert provider["options"]["baseURL"] == "http://proxy/v1"
+    assert provider["options"]["apiKey"] == "s1"
+    _, evaluation, _, _ = seam.resolve(base_url="http://proxy", session="s2", model="m")
+    assert "tools" not in evaluation["opencode_config"]
+
+
 def test_a_step_limit_merges_instead_of_replacing_a_seams_own_config():
     """opencode carries a provider block. A shallow update would drop it along with the base_url."""
     seam = seams.Seam(
@@ -51,5 +65,41 @@ def test_a_harness_that_cannot_cap_steps_warns_rather_than_dropping_it(caplog):
         _, kwargs, _, _ = seams.get("opencode").resolve(
             base_url="http://proxy", session="s1", model="m", step_limit=20
         )
-    assert "no way to express a step limit" in caplog.text
+    assert "capture proxy enforces the model-call budget" in caplog.text
     assert "step_limit" not in str(kwargs)
+
+
+def test_copilot_byok_routes_without_a_github_model_service():
+    from openenv.harbor.seams import SEAMS
+
+    _, _, env, _ = SEAMS["copilot-cli"].resolve(
+        base_url="https://capture.test", session="session-key", model="Qwen3.5-4B"
+    )
+    assert env["COPILOT_PROVIDER_BASE_URL"] == "https://capture.test/v1"
+    assert env["COPILOT_PROVIDER_API_KEY"] == "session-key"
+    assert env["COPILOT_OFFLINE"] == "true"
+
+
+def test_grok_primary_and_auxiliary_models_share_capture_endpoint():
+    from openenv.harbor.seams import SEAMS
+
+    _, kwargs, env, _ = SEAMS["grok-build"].resolve(
+        base_url="https://capture.test", session="session-key", model="Qwen3.5-4B"
+    )
+    config = kwargs["grok_config"]
+    assert set(config["models"].values()) == {"Qwen3.5-4B"}
+    assert config["model"]["Qwen3.5-4B"]["base_url"] == "https://capture.test/v1"
+    assert config["model"]["Qwen3.5-4B"]["env_key"] == "OPENAI_API_KEY"
+    assert env["OPENAI_API_KEY"] == "session-key"
+
+
+def test_antigravity_uses_the_existing_native_google_endpoint_setting():
+    from openenv.harbor.seams import SEAMS
+
+    model, _, env, _ = SEAMS["antigravity-cli"].resolve(
+        base_url="https://capture.test", session="session-key", model="Qwen3.5-4B"
+    )
+    assert model == "google/Qwen3.5-4B"
+    assert env["GOOGLE_GEMINI_BASE_URL"] == "https://capture.test"
+    assert env["GEMINI_API_KEY"] == "session-key"
+    assert env["AGY_ADC_AUTH"] == "false"

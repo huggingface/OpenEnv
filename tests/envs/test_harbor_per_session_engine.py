@@ -142,13 +142,13 @@ def test_an_unprobeable_engine_is_the_weakest_tier_not_a_crash():
     assert model == "m"
 
 
-def test_the_credential_is_not_part_of_the_cache_key():
-    """Two sessions differing only by credential hit the same endpoint with the same capabilities,
-    and a secret in a dict key is how secrets reach logs."""
+def test_credentials_isolate_clients_without_exposing_secrets():
+    """Credentials may select different tenants, quotas, and capabilities at the same URL."""
     a = sessions.Upstream(llm_url="http://x/v1", model="m", api_key="secret-a")
     b = sessions.Upstream(llm_url="http://x/v1", model="m", api_key="secret-b")
-    assert a.cache_key == b.cache_key
+    assert a.cache_key != b.cache_key
     assert "secret-a" not in str(a.cache_key)
+    assert "secret-a" not in repr(a)
 
 
 def test_the_outgoing_model_comes_from_the_session_engine(monkeypatch):
@@ -176,7 +176,9 @@ def test_the_outgoing_model_comes_from_the_session_engine(monkeypatch):
             json={"llm_url": "http://train:8000", "model": "Qwen/Qwen3.5-2B"},
         ).json()
         # Swap in a client that records what it was asked to send.
-        key = ("http://train:8000", "Qwen/Qwen3.5-2B", "Authorization")
+        key = sessions.Upstream(
+            llm_url="http://train:8000", model="Qwen/Qwen3.5-2B"
+        ).cache_key
         app.state.upstreams._by_engine[key] = (FakeClient(), "tokens")
         client.post(
             "/v1/chat/completions",

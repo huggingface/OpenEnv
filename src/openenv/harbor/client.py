@@ -90,8 +90,12 @@ class HarborEnv(MCPToolClient):
         model: str = "",
         api_key: str = "",
         auth_header: str = "",
+        provider: str = "openai",
+        purpose: str = "auto",
+        eval_sampling: dict[str, Any] | None = None,
         agent_timeout_sec: float = 0.0,
         agent_step_limit: int = 0,
+        sampling: dict[str, Any] | None = None,
     ) -> HarborRolloutResult:
         """Run one rollout and return its result.
 
@@ -121,13 +125,14 @@ class HarborEnv(MCPToolClient):
             auth_header (`str`, *optional*):
                 Header to send the credential under, when not `Authorization`.
             agent_step_limit (`int`, *optional*):
-                Stop the agent after this many steps. `0` leaves it unbounded. Worth setting for
-                training: each turn re-sends the whole conversation, so a packed training row grows
-                with the square of the turn count.
+                Cap model calls at the proxy, including auxiliary calls, and set a native step
+                limit where supported. `0` leaves model calls uncapped.
             agent_timeout_sec (`float`, *optional*):
-                Hard ceiling on this rollout. `0` defers to the task file's own `[agent] timeout_sec`,
-                which covers the agent run but not sandbox setup — so a wedged boot is bounded only by
-                this. Worth setting from a trainer, where a stuck rollout holds a slot.
+                Override the agent's execution timeout; `0` uses the task's configured value.
+                Sandbox setup retains its separate build and healthcheck timeouts.
+            sampling (`dict`, *optional*):
+                Explicit full-vocabulary training policy, e.g. `{"temperature": 0.8}`. Use the
+                trainer's recompute temperature. Requested and submitted policies remain separate.
 
         Returns:
             [`HarborRolloutResult`]: Reward, per-turn token ids and logprobs, and findings.
@@ -145,8 +150,12 @@ class HarborEnv(MCPToolClient):
             model=model,
             api_key=api_key,
             auth_header=auth_header,
+            provider=provider,
+            purpose=purpose,
+            eval_sampling=eval_sampling,
             agent_timeout_sec=agent_timeout_sec,
             agent_step_limit=agent_step_limit,
+            **({"sampling": sampling} if sampling is not None else {}),
         )
         return HarborRolloutResult.model_validate_json(_as_text(raw))
 

@@ -69,6 +69,7 @@ class HarborService:
         expose: str = "gradio",
         api_key: str | None = None,
         auth_header: str = "Authorization",
+        provider: str = "openai",
         capture_level: str = "tokens",
         max_output_tokens: int | None = 8192,
     ) -> None:
@@ -85,7 +86,7 @@ class HarborService:
         self.llm_url = llm_url
         self.model = model
         self.datasets = datasets
-        self.capture_level = capture_level
+        self.capture_level = "text" if provider == "anthropic" else capture_level
         self.capture = CaptureServer(
             llm_url=llm_url,
             model=model,
@@ -93,6 +94,7 @@ class HarborService:
             max_output_tokens=max_output_tokens,
             api_key=api_key,
             auth_header=auth_header,
+            provider=provider,
             capture_level=capture_level,
             admin_key=self.admin_key,
         )
@@ -172,6 +174,7 @@ def serve_harbor(
     env_file: str | None = None,
     api_key: str | None = None,
     auth_header: str = "Authorization",
+    provider: str = "openai",
     max_output_tokens: int | None = 8192,
 ) -> None:
     """Boot the capture proxy, then serve the env server with the UI mounted.
@@ -210,6 +213,7 @@ def serve_harbor(
         quiet=False,
         api_key=api_key,
         auth_header=auth_header,
+        provider=provider,
     )
     model = caps.llm.get("model") or model or ""
     # `tokens` only when an engine was actually measured at it. With no default engine the default
@@ -227,6 +231,7 @@ def serve_harbor(
         expose=expose,
         api_key=api_key,
         auth_header=auth_header,
+        provider=provider,
         capture_level=capture_level,
         max_output_tokens=max_output_tokens,
     )

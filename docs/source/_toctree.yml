@@ -15,6 +15,8 @@
     title: Catalog Discovery
   - local: guides/rl-integration
     title: RL Training
+  - local: guides/harbor-provider-qualification
+    title: Harbor Provider Qualification
   - local: guides/rewards
     title: Rewards
   - local: guides/concepts

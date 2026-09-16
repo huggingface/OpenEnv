@@ -139,12 +139,12 @@ def test_a_provider_rejecting_logprobs_too_lands_on_text(monkeypatch):
                 )
             ),
             http_400(unsupported("logprobs")),
-            http_400(unsupported("top_logprobs")),
             reply(),
         ],
     )
     assert (report.capture_level, report.rollout_type) == ("text", "eval")
     assert "logprobs" not in sent[-1]
+    assert "top_logprobs" not in sent[-1]
     assert report.reachable
 
 

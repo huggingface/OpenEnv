@@ -26,6 +26,7 @@ theoretical one.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import secrets
 import threading
@@ -34,6 +35,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .graph import RolloutGraph
+from .upstream import training_sampling
 
 # Session ids become dict keys, filenames, and URL path segments.
 _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
@@ -77,19 +79,61 @@ class Upstream:
     Pinning the engine at boot made the long-lived thing hostage to the short-lived one.
 
     `cache_key` is what lets N concurrent sessions on one engine share a single client and a single
-    capability probe. The api key is deliberately NOT part of it: two sessions differing only by
-    credential still talk to the same endpoint with the same capabilities, and putting a secret in a
-    dict key is how secrets end up in logs.
+    capability probe. A credential digest separates authenticated clients without putting the key
+    itself in a cache key or repr: different credentials can select different tenants or capabilities.
     """
 
     llm_url: str
     model: str = ""
-    api_key: str | None = None
+    api_key: str | None = field(default=None, repr=False)
     auth_header: str = "Authorization"
+    provider: str = "openai"
 
     @property
-    def cache_key(self) -> tuple[str, str, str]:
-        return (self.llm_url.rstrip("/"), self.model, self.auth_header)
+    def cache_key(self) -> tuple[str, str, str, str, str]:
+        credential = hashlib.sha256((self.api_key or "").encode()).hexdigest()
+        return (
+            self.llm_url.rstrip("/"),
+            self.model,
+            self.auth_header.lower(),
+            credential,
+            self.provider,
+        )
+
+
+def evaluation_sampling(value: dict[str, Any] | None) -> dict[str, Any]:
+    """An explicit eval policy override, distinct from the train-only policy contract."""
+    import math
+
+    if value is None:
+        return {}
+    if not isinstance(value, dict) or set(value) - {"temperature", "top_p", "top_k"}:
+        raise ValueError("eval_sampling supports temperature, top_p, and top_k only")
+    for key, number in value.items():
+        if (
+            isinstance(number, bool)
+            or not isinstance(number, (int, float))
+            or not math.isfinite(number)
+        ):
+            raise ValueError("eval_sampling values must be finite numbers")
+        if key == "temperature" and not 0 <= number <= 2:
+            raise ValueError("eval temperature must be between 0 and 2")
+        if key == "top_p" and not 0 < number <= 1:
+            raise ValueError("eval top_p must be in (0, 1]")
+        if key == "top_k" and (
+            type(number) is not int or (number != -1 and number < 1)
+        ):
+            raise ValueError("eval top_k must be -1 or a positive integer")
+    return dict(value)
+
+
+def rollout_type_for(purpose: str, capture_level: str) -> str:
+    """Separate requested use from observed engine capability; keep legacy auto behavior."""
+    if purpose not in {"auto", "eval", "train"}:
+        raise ValueError("purpose must be auto, eval, or train")
+    if purpose == "train" and capture_level != "tokens":
+        raise ValueError("training requires exact engine token capture")
+    return "eval" if purpose == "eval" or capture_level != "tokens" else "train"
 
 
 @dataclass
@@ -109,6 +153,8 @@ class Session:
     # Empty means "not measured here", so the server default applies. Never assumed optimistically:
     # claiming `tokens` without evidence is how an eval rollout gets stamped trainable.
     capture_level: str = ""
+    purpose: str = "auto"
+    eval_sampling: dict[str, Any] = field(default_factory=dict)
     # Model calls FORWARDED for this rollout, and the ceiling. 0 means unlimited.
     #
     # Counted on forward rather than read off the graph, because a turn whose logprobs were rejected
@@ -123,6 +169,8 @@ class Session:
     # per-rollout step count.
     model_calls: int = 0
     max_model_calls: int = 0
+    budget_stop_count: int = 0
+    sampling: dict[str, float | int] = field(default_factory=dict)
 
     @property
     def over_budget(self) -> bool:
@@ -149,13 +197,30 @@ class SessionRegistry:
         *,
         upstream: Upstream | None = None,
         capture_level: str = "",
+        purpose: str = "auto",
+        eval_sampling: dict[str, Any] | None = None,
         max_model_calls: int = 0,
+        sampling: dict[str, Any] | None = None,
         **metadata: Any,
     ) -> Session:
+        if type(max_model_calls) is not int or max_model_calls < 0:
+            raise ValueError("max_model_calls must be a non-negative integer")
+        if purpose not in {"auto", "eval", "train"}:
+            raise ValueError("purpose must be auto, eval, or train")
+        if purpose == "eval" and sampling is not None:
+            raise ValueError("eval purpose cannot apply a training sampling override")
+        if capture_level:
+            rollout_type_for(purpose, capture_level)
+        eval_policy = evaluation_sampling(eval_sampling)
+        if eval_policy and purpose != "eval":
+            raise ValueError("eval_sampling requires explicit eval purpose")
+        policy = training_sampling(sampling)
         sid = clean_session_id(session_id) or f"s{secrets.token_hex(12)}"
         with self._lock:
             session = self._sessions.get(sid) or Session(session_id=sid)
             session.metadata.update(metadata)
+            session.purpose = purpose
+            session.eval_sampling = eval_policy
             if upstream is not None:
                 session.upstream = upstream
             if capture_level:
@@ -164,6 +229,8 @@ class SessionRegistry:
             # cap and an evaluation run that wants none, at the same time.
             if max_model_calls:
                 session.max_model_calls = max_model_calls
+            if policy:
+                session.sampling = policy
             self._sessions[sid] = session
         return session
 

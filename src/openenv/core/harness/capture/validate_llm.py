@@ -149,6 +149,7 @@ def _post(
         data=json.dumps(body).encode(),
         headers={
             "Content-Type": "application/json",
+            "User-Agent": "OpenEnv-provider-probe/1.0",
             **auth_headers(api_key, auth_header),
         },
     )
@@ -454,10 +455,74 @@ def probe_logprobs_mode(
     return "raw" if abs(ratio - 1.0) < abs(ratio - expected_processed) else "processed"
 
 
+def _validate_anthropic(llm_url, model, *, timeout, api_key, check_tools):
+    """Probe native Messages without inferring token IDs from hosted text."""
+    base = normalise_engine_base(llm_url)
+    report = LLMReport(ok=False, llm_url=base, model=model)
+    if not model:
+        report.findings.append("Native Anthropic requires an explicit model")
+        return report
+    body = {
+        "model": model,
+        "max_tokens": 64,
+        "messages": [{"role": "user", "content": "Reply with ok."}],
+    }
+    if check_tools:
+        body["messages"][0]["content"] = "Call report_ok with value ok."
+        body["tools"] = [
+            {
+                "name": "report_ok",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"value": {"type": "string"}},
+                    "required": ["value"],
+                },
+            }
+        ]
+        body["tool_choice"] = {"type": "tool", "name": "report_ok"}
+    request = urllib.request.Request(
+        f"{base}/v1/messages",
+        data=json.dumps(body).encode(),
+        headers={
+            "Content-Type": "application/json",
+            "anthropic-version": "2023-06-01",
+            **auth_headers(api_key, "x-api-key"),
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            payload = json.loads(response.read())
+        if payload.get("type") != "message" or not isinstance(
+            payload.get("content"), list
+        ):
+            raise ValueError("Native Messages returned an invalid response shape")
+        if not payload["content"]:
+            raise ValueError("Native Messages returned no content")
+        report.reachable = True
+        report.capture_level = "text"
+        if check_tools:
+            report.tool_support = (
+                "ok"
+                if any(
+                    block.get("type") == "tool_use"
+                    and block.get("name") == "report_ok"
+                    and isinstance(block.get("input"), dict)
+                    for block in payload["content"]
+                )
+                else "no-tool-call"
+            )
+    except urllib.error.HTTPError as exc:
+        report.findings.append(f"Native Messages HTTP {exc.code}")
+    except Exception as exc:
+        report.findings.append(f"Native Messages probe failed: {type(exc).__name__}")
+    return report
+
+
 def validate_llm(
     llm_url: str,
     model: str,
     *,
+    provider: str = "openai",
     timeout: float = 120.0,
     api_key: str | None = None,
     auth_header: str = "Authorization",
@@ -488,6 +553,12 @@ def validate_llm(
     """
     # Accepts both `http://host:8000` and `http://host:8000/v1`, so a URL that works with any
     # OpenAI SDK also works here instead of probing `/v1/v1/models` and reporting it dead.
+    if provider not in {"openai", "anthropic", "hf", "vllm"}:
+        raise ValueError(f"Unknown upstream provider: {provider}")
+    if provider == "anthropic":
+        return _validate_anthropic(
+            llm_url, model, timeout=timeout, api_key=api_key, check_tools=check_tools
+        )
     base = normalise_engine_base(llm_url)
     served = list_models(
         base, timeout=min(timeout, 30.0), api_key=api_key, auth_header=auth_header
@@ -497,7 +568,8 @@ def validate_llm(
     # or gate it behind different scopes than inference, and refusing there would reject an endpoint
     # that serves completions perfectly well. The completion probe below is the real test; a missing
     # list only costs us the model-name check.
-    if served and model not in served:
+    listed_model = model.rsplit(":", 1)[0] if provider == "hf" else model
+    if served and model not in served and listed_model not in served:
         # Worth failing on rather than warning: a mismatched name is silently accepted by some
         # servers and then every request 404s at rollout time instead of at startup.
         return LLMReport(
@@ -540,7 +612,14 @@ def validate_llm(
         except urllib.error.HTTPError as exc:
             detail = exc.read()[:600].decode(errors="replace")
             fix = None
-            if exc.code == 400 and len(fixes) < MAX_FIXES:
+            if (
+                exc.code == 400
+                or (
+                    exc.code == 403
+                    and "You are not allowed to request logprobs from this model"
+                    in detail
+                )
+            ) and len(fixes) < MAX_FIXES:
                 try:
                     fix = diagnose(json.loads(detail))
                 except json.JSONDecodeError:

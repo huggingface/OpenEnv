@@ -1,24 +1,11 @@
 """What a rollout hands a trainer.
 
-The contract is one thing, and it is small:
+The mask-aware training contract is `to_trace_entries`: one engine prompt, sampled completion,
+behavior logprobs, and a loss mask over prompt+completion per retained model call. Prompt ids and
+sampled ids are never reconstructed from text. Masks are authoritative after reconciliation.
 
-    per turn -> (prompt_token_ids, completion_token_ids, per_token_logps)
-
-That is everything an on-policy method needs. `prompt_token_ids` is the engine's own tokenisation of
-the conversation up to that turn, `completion_token_ids` is what it sampled, and `per_token_logps`
-are the behaviour-policy logprobs for exactly those sampled tokens. `to_turn_records` emits it, and
-it is lossless because nothing is ever re-derived.
-
-`to_trace_entries` is an ADAPTER to TRL's `TraceEntry` shape, and it now carries the same ids plus
-the message bodies a harness-facing consumer expects. It USED TO DROP the prompt ids, and this
-docstring used to tell you to re-render the prompt with `apply_chat_template` to recover them. That
-advice was wrong and expensive, so it is recorded here rather than deleted: measured against Qwen3.5
-the re-render was 0/6 turns exact, off by two tokens every turn, until thinking was disabled — and on
-Qwen3.5-4B, whose `enable_thinking` default is inverted relative to -2B's, it was 0 of 28. A prompt
-that differs by one token from what the model saw reads as divergence, so a long conversation
-silently fragments into several short ones and every fragment still trains. Nothing here re-renders
-anything any more, and `_turns_from_trace` on the TRL side now hard-fails rather than falling back to
-a re-render.
+`to_turn_records` provides the older three-array tuple for fully supervised completions. It skips
+fully masked turns and rejects partial masks because a tuple cannot represent their eligibility.
 
 `measure_retokenization_skew` stays, not as a cost estimate for a re-render you were going to do
 anyway, but as the measurement that catches a producer which has quietly stopped emitting ids.
@@ -35,8 +22,12 @@ import logging
 from typing import Any
 
 from .graph import RolloutGraph, TurnNode
+from .validate import check_turn, validate_training_turn
 
 logger = logging.getLogger(__name__)
+
+# Control text emitted by the proxy, never sampled or eligible for training.
+BUDGET_STOP_MESSAGE = "Step budget exhausted; stopping."
 
 
 def _usable(node: TurnNode) -> bool:
@@ -56,6 +47,7 @@ def _usable(node: TurnNode) -> bool:
         bool(node.sampled_ids)
         and bool(logprobs)
         and len(logprobs) == len(node.sampled_ids)
+        and check_turn(node.prompt_ids, node.sampled_ids, logprobs).ok
     )
 
 
@@ -126,9 +118,8 @@ def to_trace_entries(
     boundary.
 
     `loss_mask` spans `prompt_token_ids + completion_token_ids`: 0 across the prompt (context) and 1
-    across the sampled tokens, EXCEPT where `graph.sequence_for` masked a turn out because its
-    logprobs were rejected on ingest -- there the tokens stay as context and the mask stays 0, which
-    is not inferable downstream.
+    at eligible sampled positions. Zero bits from reconciliation remain zero, including partial
+    completion masks; eligibility is not inferable downstream.
 
     Auxiliary roots and discarded retries are already excluded here, so the caller does not need an
     `agent_turn_fn`. That hook exists because a flat trace cannot tell an aux call from an agent
@@ -140,10 +131,15 @@ def to_trace_entries(
     _require_trainable(document)
     entries = []
     nodes = _agent_nodes(graph, document)
+    masks = _completion_masks(graph, document)
     _warn_skipped(nodes)
     for node in nodes:
         if not _usable(node):
             continue
+        mask = [0] * len(node.prompt_ids) + masks[node.node_id]
+        validate_training_turn(
+            node.prompt_ids, node.sampled_ids, node.sampled_logprobs, mask
+        )
         entries.append(
             {
                 "request": {
@@ -167,17 +163,45 @@ def to_trace_entries(
                 # field is emitted anyway rather than left for the consumer to synthesise: a
                 # consumer that assumes "all sampled tokens are trainable" is right only because of
                 # a filter it cannot see from here.
-                "loss_mask": [0] * len(node.prompt_ids) + [1] * len(node.sampled_ids),
+                "loss_mask": mask,
                 "metadata": {
                     "node_id": node.node_id,
                     "index": node.index,
                     "model": node.model,
                     "n_tools": node.n_tools,
                     "harness_session_id": node.harness_session_id,
+                    "sampling_params": dict(node.sampling_params),
+                    "requested_sampling_params": dict(node.requested_sampling_params),
                 },
             }
         )
     return entries
+
+
+def _completion_masks(
+    graph: RolloutGraph, document: dict[str, Any]
+) -> dict[str, list[int]]:
+    """Read authoritative masks after reconciliation, deduplicating shared nodes."""
+    masks: dict[str, list[int]] = {}
+    for row in document["sequences"]:
+        if row["role"] != "agent":
+            continue
+        mask = row.get("loss_mask")
+        if mask is None:
+            # Older callers supply only graph membership; use the graph's validated mask.
+            mask = graph.sequence_for(row["node_ids"][-1]).loss_mask
+        for node_id in row["node_ids"]:
+            node = graph.get(node_id)
+            start = len(node.prompt_ids)
+            span = list(mask[start : start + len(node.sampled_ids)])
+            if len(span) != len(node.sampled_ids):
+                raise ValueError(f"incomplete completion mask for node {node_id}")
+            if node_id in masks and masks[node_id] != span:
+                raise ValueError(
+                    f"inconsistent completion masks for shared node {node_id}"
+                )
+            masks[node_id] = span
+    return masks
 
 
 def to_turn_records(
@@ -185,8 +209,8 @@ def to_turn_records(
 ) -> list[tuple[list[int], list[int], list[float]]]:
     """Rollout graph -> `(prompt_ids, output_ids, output_log_probs)` per turn, losslessly.
 
-    Maps 1:1 onto TRL's `TurnRecord`, using the engine's own prompt tokenization. Returned as plain
-    tuples so this module stays importable without TRL on the path.
+    For fully supervised completions only. Fully masked calls are skipped; partial masks raise
+    rather than silently restoring supervision. Use `to_trace_entries` for the mask-aware contract.
 
     Raises:
         ValueError: If `document` is an eval rollout. See `_require_trainable`.
@@ -194,10 +218,15 @@ def to_turn_records(
     _require_trainable(document)
     nodes = _agent_nodes(graph, document)
     _warn_skipped(nodes)
+    masks = _completion_masks(graph, document)
+    if any(any(mask) and not all(mask) for mask in masks.values()):
+        raise ValueError(
+            "to_turn_records cannot represent partial masks; use to_trace_entries"
+        )
     return [
         (node.prompt_ids, node.sampled_ids, node.sampled_logprobs or [])
         for node in nodes
-        if _usable(node)
+        if _usable(node) and any(masks[node.node_id])
     ]
 
 

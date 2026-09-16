@@ -29,6 +29,95 @@ OpenClaw = openclaw_mod.OpenClaw
 _CONTAINER_PATH = "/logs/agent/openclaw.txt"
 _SESSION_FILE = "/root/.openclaw/agents/main/sessions/790c93f1.jsonl"
 
+
+def test_sqlite_export_preserves_per_call_usage_for_harbor(tmp_path, monkeypatch):
+    import subprocess
+    from types import SimpleNamespace
+
+    meta = {"sessionId": "session-1", "sessionFile": "agent:main:main"}
+    (tmp_path / "openclaw.txt").write_text(json.dumps({"meta": {"agentMeta": meta}}))
+    entries = [
+        {
+            "type": "message",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "answer"}],
+                "usage": {"input": 100 + count, "output": count},
+            },
+        }
+        for count in [137, 124, 96, 5]
+    ]
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    (bundle / "session-branch.json").write_text(json.dumps({"entries": entries}))
+
+    def run(command, **kwargs):
+        assert command[:5] == [
+            "openclaw",
+            "sessions",
+            "export-trajectory",
+            "--session-key",
+            "agent:main:main",
+        ]
+        assert kwargs["check"] and kwargs["timeout"] == 60
+        return SimpleNamespace(
+            stdout=json.dumps({"sessionId": "session-1", "outputDir": str(bundle)})
+        )
+
+    monkeypatch.setattr(subprocess, "run", run)
+    install_fixes._export_openclaw_sqlite_transcript(str(tmp_path))
+    target = tmp_path / "openclaw.session.jsonl"
+    assert [json.loads(line) for line in target.read_text().splitlines()] == entries
+    steps = openclaw_mod.openclaw_session_jsonl_to_atif_steps(
+        target, instruction="task", model_name="test"
+    )
+    assert [
+        step.metrics.completion_tokens for step in steps if step.source == "agent"
+    ] == [137, 124, 96, 5]
+
+
+def test_sqlite_export_rejects_other_session(tmp_path, monkeypatch):
+    import subprocess
+    from types import SimpleNamespace
+
+    (tmp_path / "openclaw.txt").write_text(
+        json.dumps(
+            {
+                "meta": {
+                    "agentMeta": {
+                        "sessionId": "expected",
+                        "sessionFile": "agent:main:main",
+                    }
+                }
+            }
+        )
+    )
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            stdout=json.dumps({"sessionId": "other"})
+        ),
+    )
+    with pytest.raises(ValueError, match="different session"):
+        install_fixes._export_openclaw_sqlite_transcript(str(tmp_path))
+    assert not (tmp_path / "openclaw.session.jsonl").exists()
+
+
+def test_sqlite_export_preserves_existing_native_jsonl(tmp_path, monkeypatch):
+    import subprocess
+
+    target = tmp_path / "openclaw.session.jsonl"
+    target.write_text("existing native transcript\n")
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: pytest.fail("must preserve legacy transcript"),
+    )
+    install_fixes._export_openclaw_sqlite_transcript(str(tmp_path))
+    assert target.read_text() == "existing native transcript\n"
+
+
 # The shape openclaw actually produces: a pretty-printed envelope whose closing brace sits at
 # column 0, and whose LAST nested object is the `completion` block. Both details matter below, and
 # the key ORDER is taken from a real capture file (`payloads` first, `meta` last) because the
@@ -136,3 +225,96 @@ def test_a_backwards_scan_without_the_suffix_rule_latches_onto_the_wrong_object(
 
     assert found == {"stopReason": "stop", "finishReason": "stop"}
     assert "meta" not in found
+
+
+@pytest.mark.asyncio
+async def test_openhands_clean_install_still_prepares_local_runtime(monkeypatch):
+    """A dependency-successful install must not leave LocalRuntime invoking real Poetry."""
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr(install_fixes.OpenHands, "install", AsyncMock())
+    agent = object.__new__(install_fixes.InterceptOpenHands)
+    root_exec = AsyncMock()
+    monkeypatch.setattr(agent, "exec_as_root", root_exec)
+    environment = object()
+    await agent.install(environment)
+    commands = [call.kwargs["command"] for call in root_exec.call_args_list]
+    assert len(commands) == 3
+    assert all('/opt/openhands-venv/bin/python "$@"' in command for command in commands)
+    assert any("/usr/local/bin/poetry" in command for command in commands)
+    assert any("/opt/openhands-venv/bin/poetry" in command for command in commands)
+
+
+def test_kimi_terminal_signal_does_not_kill_its_exec_transport():
+    import subprocess
+
+    wrapped = install_fixes._isolated_process_group("echo finished; kill 0")
+    completed = subprocess.run(
+        ["bash", "-c", wrapped],
+        start_new_session=True,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    assert completed.returncode == 143
+    assert completed.stdout.strip() == "finished"
+
+
+@pytest.mark.asyncio
+async def test_openclaw_install_and_runtime_select_supported_node(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    execution = AsyncMock()
+    monkeypatch.setattr(install_fixes.OpenClaw, "exec_as_agent", execution)
+    agent = object.__new__(install_fixes.InterceptOpenClaw)
+    await agent.exec_as_agent(
+        object(), command="nvm install 22 && nvm use 22 && openclaw --version"
+    )
+    assert (
+        execution.call_args.kwargs["command"]
+        == "nvm install 24.16.0 && nvm use 24.16.0 && openclaw --version"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "adapter,parent",
+    [
+        (install_fixes.InterceptOpenClaw, install_fixes.OpenClaw),
+        (install_fixes.InterceptKimi, install_fixes.KimiCli),
+    ],
+)
+async def test_command_wrappers_preserve_harbor_positional_call_contract(
+    monkeypatch, adapter, parent
+):
+    from unittest.mock import AsyncMock
+
+    execution = AsyncMock(return_value="executed")
+    monkeypatch.setattr(parent, "exec_as_agent", execution)
+    agent = object.__new__(adapter)
+    environment = object()
+    env = {"TEST_SETTING": "test"}
+    result = await agent.exec_as_agent(environment, "echo ready", env, "/tmp", 30)
+    assert result == "executed"
+    execution.assert_awaited_once_with(
+        environment, command="echo ready", env=env, cwd="/tmp", timeout_sec=30
+    )
+
+
+def test_openclaw_catalog_model_id_is_local_to_its_provider(tmp_path):
+    from openenv.harbor.seams import get
+
+    selected, kwargs, env, _ = get("openclaw").resolve(
+        base_url="https://capture.example",
+        session="session-test",
+        model="Qwen/Qwen3.5-4B",
+    )
+    agent = install_fixes.InterceptOpenClaw(
+        logs_dir=tmp_path, model_name=selected, extra_env=env, **kwargs
+    )
+    config = agent._build_full_openclaw_config()
+    provider, model_id = selected.split("/", 1)
+    catalog = config["models"]["providers"][provider]
+    assert any(model["id"] == model_id for model in catalog["models"])
+    assert catalog["baseUrl"] == "https://capture.example/v1"
+    assert catalog["apiKey"] == "session-test"

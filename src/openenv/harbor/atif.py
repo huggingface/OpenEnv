@@ -36,6 +36,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from openenv.core.harness.capture.contract import BUDGET_STOP_MESSAGE
 from openenv.core.harness.capture.validate import FATAL, INFO, Report, WARN
 
 
@@ -191,6 +192,43 @@ def _reconcile_eval(
     return report
 
 
+def _partial_usage_matches_by_call_id(turns, steps) -> bool:
+    """Match missing usage by unique native call identity, never by treating None as zero.
+
+    ACP can report usage only on the final response while retaining model-generated
+    tool call IDs on preceding steps. Known counts must still agree exactly. The
+    equal-length/order requirement deliberately does not infer auxiliary calls.
+    """
+    if len(turns) != len(steps) or not steps:
+        return False
+    counts = [(step.get("metrics") or {}).get("completion_tokens") for step in steps]
+    if all(count is None for count in counts) or all(
+        count is not None for count in counts
+    ):
+        return False
+    seen = set()
+    for turn, step, count in zip(turns, steps, counts, strict=True):
+        if count is not None:
+            if count != turn["n_sampled"]:
+                return False
+            continue
+        ours = [
+            call.get("id")
+            for call in ((turn.get("response_message") or {}).get("tool_calls") or [])
+        ]
+        theirs = [call.get("tool_call_id") for call in step.get("tool_calls", []) or []]
+        if (
+            not ours
+            or ours != theirs
+            or any(not isinstance(value, str) or not value for value in ours)
+        ):
+            return False
+        if len(set(ours)) != len(ours) or seen.intersection(ours):
+            return False
+        seen.update(ours)
+    return True
+
+
 def reconcile(document: dict[str, Any], atif: dict[str, Any] | None) -> Report:
     """Compare the exported rollout against ATIF. Disagreement is the signal.
 
@@ -211,6 +249,58 @@ def reconcile(document: dict[str, Any], atif: dict[str, Any] | None) -> Report:
         f"schema {atif.get('schema_version')} "
         f"agent {(atif.get('agent') or {}).get('name')}",
     )
+
+    # The proxy's terminal budget response is not a model call. Some harnesses log it as an
+    # assistant step anyway. Only discount exact zero-token control messages backed by the
+    # proxy's own counter; an unknown zero-token step or a sampled copy of this text still fails.
+    remaining_stops = document.get("budget_stop_count", 0)
+    steps = []
+    skipped_stops = 0
+    skipped_api_errors = 0
+    for step in atif.get("steps") or []:
+        metrics = step.get("metrics") or {}
+        # Claude Code writes its terminal API error as an assistant message with
+        # the reserved <synthetic> model name. Harbor preserves that provenance.
+        # It is not a sampled response; ordinary zero-token or unmarked records
+        # still participate in the strict comparison below.
+        if (
+            step.get("source") == "agent"
+            and step.get("model_name") == "<synthetic>"
+            and str(step.get("message", "")).startswith("API Error: ")
+            and not step.get("tool_calls")
+            and metrics.get("completion_tokens") == 0
+            and metrics.get("prompt_tokens") == 0
+            and metrics.get("cached_tokens", 0) == 0
+        ):
+            skipped_api_errors += 1
+            continue
+        if (
+            remaining_stops > 0
+            and step.get("source") == "agent"
+            and step.get("message") == BUDGET_STOP_MESSAGE
+            and not step.get("tool_calls")
+            and metrics.get("completion_tokens") in (None, 0)
+            and metrics.get("prompt_tokens") in (None, 0)
+        ):
+            remaining_stops -= 1
+            skipped_stops += 1
+        else:
+            steps.append(step)
+    if skipped_stops or skipped_api_errors:
+        atif = {**atif, "steps": steps}
+    if skipped_api_errors:
+        report.add(
+            WARN,
+            "atif_synthetic_api_error",
+            f"excluded {skipped_api_errors} explicitly synthetic zero-token API error record(s); "
+            "only actual model responses are compared and trained",
+        )
+    if skipped_stops:
+        report.add(
+            INFO,
+            "proxy_budget_stops",
+            f"excluded {skipped_stops} zero-token proxy stop message(s) from the model-call cross-check",
+        )
 
     if document.get("rollout_type", "train") == "eval":
         return _reconcile_eval(document, atif, report)
@@ -248,6 +338,17 @@ def reconcile(document: dict[str, Any], atif: dict[str, Any] | None) -> Report:
     turns = [t for t in document.get("turns", []) if t["root_id"] in agent_roots]
     ours_all = [t["n_sampled"] for t in turns]
     theirs = atif_turn_lengths(atif)
+
+    if _partial_usage_matches_by_call_id(turns, agent_steps(atif)):
+        report.add(
+            WARN,
+            "atif_partial_usage",
+            "ATIF omits some per-call token counts. All reported counts agree; "
+            "missing-count steps match captured responses by unique tool-call IDs in order. "
+            "No calls were inferred auxiliary or removed. Exact token supervision remains "
+            "engine-derived; the missing counts have no independent token cross-check.",
+        )
+        return report
 
     # A converter that never fills in token counts gives us nothing to compare against. vibe reports
     # completion_tokens=0 on every step while capturing perfectly (reward 1.0, 6 turns, 1197

@@ -181,19 +181,11 @@ class TurnNode:
     # manifest is part of the rendered prompt, so a re-tokenization without it does not match what
     # the engine actually saw.
     request_tools: list[dict[str, Any]] | None = None
-    # The sampling parameters the harness actually asked for, recorded because they change what the
-    # captured logprob MEANS.
-    #
-    # With `--logprobs-mode processed_logprobs` vLLM applies log_softmax after every logit processor,
-    # so a harness sampling with top_p<1, top_k, or a repetition penalty yields logprobs over a
-    # truncated and renormalised distribution — while a trainer recomputing over the full vocabulary
-    # gets different numbers for the same tokens. Neither side is wrong; they are answers to different
-    # questions, and the mismatch is invisible unless the parameters travel with the turn.
-    #
-    # Not stripped: they are the policy that produced these tokens, and removing them would change
-    # what was sampled. Recorded instead, so a recompute can reproduce the same processors — and so a
-    # rollout using them is at least identifiable after the fact.
+    # Parameters actually submitted to inference, after capture preparation and compatibility
+    # edits. Missing values are engine defaults, not a verified training policy. An explicit
+    # session policy pins every sampling field; the original harness request stays separate.
     sampling_params: dict[str, Any] = field(default_factory=dict)
+    requested_sampling_params: dict[str, Any] = field(default_factory=dict)
     response_message: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -270,7 +262,7 @@ class RolloutGraph:
         return node
 
     def _adopt_orphaned_roots(self, node: TurnNode) -> None:
-        """Re-parent existing roots that this node turns out to precede.
+        """Re-parent descendants when a closer exact-prefix predecessor arrives late.
 
         `_find_parent` only looks backwards, and it skips any candidate whose `end_ids` is longer than
         the new node's prompt. So a turn that arrives BEFORE its own ancestor was permanently orphaned:
@@ -281,8 +273,7 @@ class RolloutGraph:
         harnesses issue concurrent requests — and the existing arrival-order test only covered the
         ancestor-first direction. Linking is symmetric now: on insert, look forwards too.
 
-        Only roots are considered. A node that already has a parent was matched against a longer, more
-        specific prefix, and stealing it would move a turn away from its immediate predecessor.
+        A,C,B must produce the same chain as A,B,C: C may already be attached to A when B arrives.
         """
         end = node.end_ids
         if not end:
@@ -291,11 +282,17 @@ class RolloutGraph:
             if candidate_id == node.node_id:
                 continue
             candidate = self._nodes[candidate_id]
-            if candidate.parent_id is not None:
+            if len(node.prompt_ids) >= len(candidate.prompt_ids):
                 continue
+            if candidate.parent_id is not None:
+                parent = self._nodes[candidate.parent_id]
+                if len(parent.end_ids) >= len(end):
+                    continue
             if len(end) > len(candidate.prompt_ids):
                 continue
             if common_prefix_len(end, candidate.prompt_ids) == len(end):
+                if candidate.parent_id is not None:
+                    self._children[candidate.parent_id].remove(candidate_id)
                 candidate.parent_id = node.node_id
                 self._children[node.node_id].append(candidate_id)
 
@@ -318,6 +315,8 @@ class RolloutGraph:
         for candidate_id in self._order:
             candidate = self._nodes[candidate_id]
             end = candidate.end_ids
+            if len(candidate.prompt_ids) >= len(node.prompt_ids):
+                continue
             if len(end) > len(node.prompt_ids) or len(end) <= best_len:
                 continue
             if common_prefix_len(end, node.prompt_ids) == len(end):

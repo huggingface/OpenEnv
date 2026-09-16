@@ -167,6 +167,11 @@ class ParamFix:
                 return False
             body[self.param] = self.value
             return True
+        if self.param == "logprobs" and not self.replacement:
+            changed = "logprobs" in body or "top_logprobs" in body
+            body.pop("logprobs", None)
+            body.pop("top_logprobs", None)
+            return changed
         if self.param not in body:
             return False
         value = body.pop(self.param)
@@ -203,6 +208,12 @@ def diagnose(body: dict[str, Any] | str | None) -> ParamFix | None:
         param, message, code = None, error, ""
     else:
         return None
+
+    if (
+        message.strip().lower()
+        == "you are not allowed to request logprobs from this model"
+    ):
+        return ParamFix(param="logprobs")
 
     # Two parameters that conflict. Resolved before anything else because the message names both and
     # neither is individually wrong, so every other rule here would either miss it or pick a field out

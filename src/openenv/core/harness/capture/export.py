@@ -119,8 +119,14 @@ def export_session(
         `dict[str, Any]`: The rollout document.
     """
     graph = session.graph
-    rollout_report = check_rollout(graph, capture_level=capture_level)
-    trainable_capture = capture_level == "tokens"
+    rollout_report = check_rollout(
+        graph,
+        capture_level=capture_level,
+        budget_stop_count=getattr(session, "budget_stop_count", 0),
+    )
+    trainable_capture = (
+        capture_level == "tokens" and getattr(session, "purpose", "auto") != "eval"
+    )
 
     # Sequences are built at every level, because they are the rollout's STRUCTURE — which calls
     # belong to which conversation, which path is the agent working, which branches died — and that
@@ -146,10 +152,12 @@ def export_session(
                 "node_ids": seq.node_ids,
                 "n_turns": seq.n_turns,
                 "prompt_len": seq.prompt_len,
-                "n_trainable": seq.n_trainable,
+                "n_trainable": seq.n_trainable if trainable_capture else 0,
                 "turn_lengths": seq.turn_lengths(),
                 "input_ids": seq.input_ids,
-                "loss_mask": seq.loss_mask,
+                "loss_mask": seq.loss_mask
+                if trainable_capture
+                else [0] * len(seq.input_ids),
                 "logprobs": seq.logprobs,
                 "trainable": bool(report and report.ok and role == AGENT),
                 "validation": [str(f) for f in report.findings] if report else [],
@@ -173,6 +181,8 @@ def export_session(
             # Travels with the turn because it decides whether a trainer's recompute is comparable to
             # the captured logprob at all. See `TurnNode.sampling_params`.
             "sampling_params": node.sampling_params,
+            "requested_sampling_params": node.requested_sampling_params,
+            "sampled_logprobs": node.sampled_logprobs,
             "discarded": node.node_id in discarded_ids,
             **(
                 {
@@ -191,6 +201,7 @@ def export_session(
     return {
         "session_id": session.session_id,
         "metadata": session.metadata,
+        "budget_stop_count": getattr(session, "budget_stop_count", 0),
         "turns": turns,
         "stats": {
             **graph.stats(),

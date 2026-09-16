@@ -92,6 +92,39 @@ def test_identical_turn_lengths_reconcile():
     assert not fatal_codes(report)
 
 
+def test_explicit_synthetic_api_error_is_not_a_model_response():
+    native = trace([10, 20, 0])
+    native["steps"][-1].update(
+        model_name="<synthetic>", message="API Error: 400 unsupported image"
+    )
+    native["steps"][-1]["metrics"].update(prompt_tokens=0, cached_tokens=0)
+    report = reconcile(document([10, 20]), native)
+    assert report.ok
+    assert "atif_synthetic_api_error" in codes(report)
+    assert len(native["steps"]) == 3  # Preserve the native evidence.
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"model_name": "Qwen3.5-2B"},
+        {"message": "An ordinary empty reply"},
+        {"tool_calls": [{"name": "read"}]},
+        {"metrics": {"prompt_tokens": 2, "completion_tokens": 0}},
+        {"metrics": {"prompt_tokens": 0, "completion_tokens": 1}},
+    ],
+)
+def test_unproven_or_sampled_zero_token_steps_still_fail(change):
+    native = trace([10, 20, 0])
+    native["steps"][-1].update(
+        model_name="<synthetic>",
+        message="API Error: 400 unsupported image",
+        metrics={"prompt_tokens": 0, "completion_tokens": 0},
+    )
+    native["steps"][-1].update(change)
+    assert "turn_mismatch" in fatal_codes(reconcile(document([10, 20]), native))
+
+
 def test_no_atif_is_not_a_failure():
     """Three of sixteen harnesses emit no trajectory; that is an absent cross-check, not a fault."""
     report = reconcile(document([10]), None)
@@ -104,6 +137,40 @@ def test_atif_logging_more_calls_than_were_captured_is_fatal():
     """Calls the harness made that never reached the proxy mean the capture is incomplete."""
     report = reconcile(document([10, 20]), trace([10, 20, 30]))
     assert not report.ok
+
+
+@pytest.mark.parametrize("recorded_stops", [0, 1])
+def test_proxy_stop_requires_recorded_provenance_and_leaves_trace_unchanged(
+    recorded_stops,
+):
+    doc = document([10, 20])
+    doc["budget_stop_count"] = recorded_stops
+    native = trace([10, 20, 0])
+    native["steps"][-1]["message"] = atif.BUDGET_STOP_MESSAGE
+    report = reconcile(doc, native)
+    assert report.ok == bool(recorded_stops)
+    assert len(native["steps"]) == 3
+
+
+@pytest.mark.parametrize(
+    "message,count",
+    [("unexpected missing generation", 0), (atif.BUDGET_STOP_MESSAGE, 7)],
+)
+def test_stop_allowance_cannot_hide_unknown_or_sampled_model_turns(message, count):
+    doc = document([10])
+    doc["budget_stop_count"] = 1
+    native = trace([10, count])
+    native["steps"][-1]["message"] = message
+    assert not reconcile(doc, native).ok
+
+
+def test_stop_allowance_is_bounded_by_responses_actually_emitted():
+    doc = document([10])
+    doc["budget_stop_count"] = 1
+    native = trace([10, 0, 0])
+    for step in native["steps"][1:]:
+        step["message"] = atif.BUDGET_STOP_MESSAGE
+    assert not reconcile(doc, native).ok
 
 
 def test_extra_captured_calls_embed_as_auxiliary_when_coverage_is_high():
@@ -183,3 +250,52 @@ def test_eval_rollouts_still_notice_a_truncated_harness_trace():
     enough to see it, which is why the eval path bothers comparing at all."""
     report = reconcile(document([0] * 2, rollout_type="eval"), trace([1] * 6))
     assert "atif_calls_missing" in codes(report)
+
+
+def _partial_usage_pair():
+    doc = document([64, 199, 10])
+    native = trace([None, None, 10])
+    for index in range(2):
+        call_id = f"model-call-{index}"
+        doc["turns"][index]["response_message"] = {"tool_calls": [{"id": call_id}]}
+        native["steps"][index]["tool_calls"] = [{"tool_call_id": call_id}]
+    return doc, native
+
+
+def test_partial_usage_requires_exact_ordered_call_identity():
+    doc, native = _partial_usage_pair()
+    report = reconcile(doc, native)
+    assert report.ok
+    assert "atif_partial_usage" in codes(report)
+    assert "turns_match" not in codes(report)
+    assert not report.aux_node_ids
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "different_id",
+        "missing_id",
+        "duplicate_id",
+        "known_count",
+        "explicit_zero",
+        "extra_step",
+    ],
+)
+def test_partial_usage_cannot_hide_disagreement(failure):
+    doc, native = _partial_usage_pair()
+    if failure == "different_id":
+        native["steps"][0]["tool_calls"][0]["tool_call_id"] = "different"
+    elif failure == "missing_id":
+        doc["turns"][0]["response_message"] = {}
+    elif failure == "duplicate_id":
+        for index in range(2):
+            doc["turns"][index]["response_message"]["tool_calls"][0]["id"] = "duplicate"
+            native["steps"][index]["tool_calls"][0]["tool_call_id"] = "duplicate"
+    elif failure == "known_count":
+        native["steps"][-1]["metrics"]["completion_tokens"] = 11
+    elif failure == "explicit_zero":
+        native["steps"][0]["metrics"]["completion_tokens"] = 0
+    else:
+        native["steps"].append({"source": "agent", "metrics": {"completion_tokens": 5}})
+    assert not reconcile(doc, native).ok

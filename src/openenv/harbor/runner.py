@@ -41,6 +41,7 @@ async def run_batch(
     env_file: str | None = None,
     api_key: str | None = None,
     auth_header: str = "Authorization",
+    provider: str = "openai",
 ) -> list[HarborRolloutResult]:
     """Run `task_indices` from `dataset` and print a per-rollout report.
 
@@ -76,6 +77,7 @@ async def run_batch(
         quiet=False,
         api_key=api_key,
         auth_header=auth_header,
+        provider=provider,
     )
     model = caps.llm.get("model") or model or ""
     capture_level = caps.llm.get("capture_level") or "tokens"
@@ -98,6 +100,7 @@ async def run_batch(
         port=port,
         api_key=api_key,
         auth_header=auth_header,
+        provider=provider,
         capture_level=capture_level,
     )
     capture.start()

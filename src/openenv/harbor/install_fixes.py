@@ -141,6 +141,8 @@ class InterceptOpenHands(OpenHands):
         """
         try:
             await super().install(environment)
+            # Runtime startup needs the shim even when upstream dependencies installed cleanly.
+            await self._install_poetry_shim(environment)
             return
         except Exception as exc:  # noqa: BLE001 - remediate, then re-verify honestly
             self.logger.warning(
@@ -196,7 +198,8 @@ class InterceptOpenHands(OpenHands):
         # "Poetry could not find a pyproject.toml", not "poetry: command not found", so a real poetry
         # is already on PATH ahead of ~/.local/bin. Shadowing it is the only way the shim is reached.
         # /usr/local/bin precedes ~/.local/bin on every image we run.
-        for directory in ("/usr/local/bin", "/usr/bin"):
+        # The launch command activates the venv, putting its own Poetry first.
+        for directory in (f"{self.VENV}/bin", "/usr/local/bin", "/usr/bin"):
             await self.exec_as_root(
                 environment,
                 command=(
@@ -262,6 +265,75 @@ if p.is_file():
 """
 
 
+def _export_openclaw_sqlite_transcript(log_dir="/logs/agent"):
+    """Run inside the sandbox; export native SQLite records using OpenClaw's CLI.
+
+    OpenClaw 2026.9.4 returns a session key in agentMeta.sessionFile. Harbor
+    0.20.0 treats that value as a filesystem path and loses per-call metrics.
+    Keep legacy JSONL captures, and use the official export for session keys.
+    """
+    import json
+    import subprocess
+    from pathlib import Path
+
+    root = Path(log_dir)
+    target = root / "openclaw.session.jsonl"
+    if target.is_file():
+        return
+    text = (root / "openclaw.txt").read_text().strip()
+    decoder = json.JSONDecoder()
+    envelope = None
+    for start in range(len(text) - 1, -1, -1):
+        if text[start] != "{":
+            continue
+        try:
+            candidate, length = decoder.raw_decode(text[start:])
+        except ValueError:
+            continue
+        if isinstance(candidate, dict) and not text[start + length :].strip():
+            envelope = candidate
+            break
+    if not envelope:
+        return
+    meta = envelope.get("meta", {}).get("agentMeta", {})
+    key = meta.get("sessionFile")
+    if not isinstance(key, str) or not key.startswith("agent:"):
+        return
+    result = subprocess.run(
+        [
+            "openclaw",
+            "sessions",
+            "export-trajectory",
+            "--session-key",
+            key,
+            "--workspace",
+            str(root),
+            "--json",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    summary = json.loads(result.stdout)
+    if summary.get("sessionId") != meta.get("sessionId"):
+        raise ValueError("OpenClaw exported a different session")
+    branch = json.loads(
+        (Path(summary["outputDir"]) / "session-branch.json").read_text()
+    )
+    entries = branch.get("entries")
+    if (
+        not isinstance(entries, list)
+        or not entries
+        or not all(isinstance(e, dict) for e in entries)
+    ):
+        raise ValueError("OpenClaw export has no native transcript entries")
+    # Preserve native messages, tool IDs and usage; never split aggregate usage.
+    temporary = target.with_suffix(".tmp")
+    temporary.write_text("".join(json.dumps(entry) + "\n" for entry in entries))
+    temporary.replace(target)
+
+
 class InterceptOpenClaw(OpenClaw):
     """openclaw, with its config actually present inside the sandbox.
 
@@ -281,6 +353,28 @@ class InterceptOpenClaw(OpenClaw):
     copy in `run()` finds it. Harbor's own `_build_full_openclaw_config` is reused, so the content
     stays whatever Harbor intended, merges included.
     """
+
+    DEFAULT_VERSION = "2026.9.4"
+    NODE_VERSION = "24.16.0"
+
+    def __init__(self, *args: Any, **kwargs: Any):
+        kwargs.setdefault("version", self.DEFAULT_VERSION)
+        super().__init__(*args, **kwargs)
+
+    async def exec_as_agent(
+        self, environment, command, env=None, cwd=None, timeout_sec=None
+    ):
+        # Harbor hardcodes Node 22; the observed package requires Node >=24.16.
+        import re
+
+        command = re.sub(
+            r"\bnvm (install|use) 22\b",
+            lambda match: f"nvm {match[1]} {self.NODE_VERSION}",
+            command,
+        )
+        return await super().exec_as_agent(
+            environment, command=command, env=env, cwd=cwd, timeout_sec=timeout_sec
+        )
 
     async def setup(self, environment: BaseEnvironment) -> None:
         await super().setup(environment)
@@ -343,6 +437,22 @@ class InterceptOpenClaw(OpenClaw):
                 str(exc)[:160],
             )
         await super()._copy_openclaw_session_file_to_agent_logs(environment, env)
+        import inspect
+
+        script = inspect.getsource(_export_openclaw_sqlite_transcript)
+        script += "\n_export_openclaw_sqlite_transcript()\n"
+        try:
+            await self.exec_as_agent(
+                environment,
+                command=". ~/.nvm/nvm.sh && nvm use 22 && python3 -c "
+                + shlex.quote(script),
+                env=env,
+                timeout_sec=90,
+            )
+        except Exception as exc:  # noqa: BLE001 - capture validation rejects missing per-call evidence
+            self.logger.warning(
+                "OpenClaw native transcript export failed: %s", str(exc)[:160]
+            )
 
 
 class InterceptCline(ClineCli):
@@ -369,6 +479,9 @@ class InterceptCline(ClineCli):
         self, *args: Any, intercept_config: dict[str, str] | None = None, **kwargs: Any
     ):
         self._intercept_config = intercept_config or {}
+        # Harbor uses a separate cline_version knob; honor the shared exact-version pin.
+        if kwargs.get("version") and not kwargs.get("cline_version"):
+            kwargs["cline_version"] = kwargs["version"]
         super().__init__(*args, **kwargs)
 
     def create_run_agent_commands(self, instruction: str):
@@ -399,8 +512,33 @@ class InterceptCline(ClineCli):
             "p.write_text(json.dumps(cfg))\n"
             "__HARBOR_CLINE_SETTINGS__"
         )
+        # Current Cline stores provider configuration separately from the legacy globalState.
+        # Use its supported noninteractive auth configuration command; credentials stay in env.
+        auth = ExecInput(
+            command='export NVM_DIR="$HOME/.nvm"; '
+            'if [ -s "$NVM_DIR/nvm.sh" ]; then . "$NVM_DIR/nvm.sh"; nvm use 22 >/dev/null 2>&1 || true; fi; '
+            'cline auth --provider openai-compatible --apikey "$API_KEY" '
+            '--modelid "$MODELID" --baseurl "$OPENENV_CLINE_BASE_URL"',
+            env={
+                "API_KEY": api_key,
+                "MODELID": model,
+                "OPENENV_CLINE_BASE_URL": f"{base_url}/v1",
+            },
+        )
         commands.insert(1, ExecInput(command=merge))
+        commands.insert(2, auth)
         return commands
+
+
+def _isolated_process_group(command: str) -> str:
+    import shlex
+
+    launcher = (
+        "import subprocess,sys; "
+        "result=subprocess.run(['bash','-c',sys.argv[1]],start_new_session=True); "
+        "sys.exit(128-result.returncode if result.returncode < 0 else result.returncode)"
+    )
+    return f"python3 -c {shlex.quote(launcher)} {shlex.quote(command)}"
 
 
 class InterceptKimi(KimiCli):
@@ -451,6 +589,17 @@ class InterceptKimi(KimiCli):
         ("RemoteProtocolError", "StreamReset"),
         ("ConnectError", "Error reading content"),
     )
+
+    async def exec_as_agent(
+        self, environment, command, env=None, cwd=None, timeout_sec=None
+    ):
+        # The wire terminal event triggers `kill 0`. Give that process tree its own session,
+        # preserving the sandbox exec transport and Harbor's expected exit-143 handling.
+        if "kimi --" in command and "--wire" in command and "kill 0" in command:
+            command = _isolated_process_group(command)
+        return await super().exec_as_agent(
+            environment, command=command, env=env, cwd=cwd, timeout_sec=timeout_sec
+        )
 
     async def run(self, instruction, environment, context) -> None:  # type: ignore[override]
         try:

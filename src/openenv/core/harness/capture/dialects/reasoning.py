@@ -30,6 +30,17 @@ def make_signature(reasoning_text: str) -> str:
     return "sg_oe_" + base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
 
+def make_google_signature(reasoning_text: str) -> str:
+    """Encode a proxy-local thought marker as Google's JSON bytes field.
+
+    This is only for responses synthesized by our OpenAI-to-Google bridge;
+    it is not a native Gemini signature and must not replace native signatures.
+    Standard padded base64 is required by clients decoding the field as bytes.
+    """
+    marker = make_signature(reasoning_text)
+    return base64.b64encode(marker.encode("ascii")).decode("ascii")
+
+
 def encrypt_reasoning(reasoning_text: str) -> str:
     """Pack reasoning into Responses-style `encrypted_content`.
 

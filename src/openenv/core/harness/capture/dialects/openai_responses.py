@@ -12,6 +12,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Optional
 
+from ..upstream import UpstreamRequestError
 from .base import BaseTransformer
 from .images import openai_responses_input_content_to_chat
 from .reasoning import encrypt_reasoning, extract_reasoning_from_responses_item
@@ -412,7 +413,13 @@ class OpenAIResponsesTransformer(BaseTransformer):
         if isinstance(input_data, str):
             messages.append({"role": "user", "content": input_data})
         elif isinstance(input_data, list):
+            if any(not isinstance(item, dict) for item in input_data):
+                raise UpstreamRequestError("Responses input items must be objects")
             messages.extend(self._convert_input_items_to_messages(input_data))
+        else:
+            raise UpstreamRequestError(
+                "Responses input must be a string or an array of objects"
+            )
 
         result: dict[str, Any] = {"messages": messages}
         if "model" in body:
@@ -450,7 +457,12 @@ class OpenAIResponsesTransformer(BaseTransformer):
 
         # SGLang rejects tool_choice without a non-empty tools list; bind
         # the pair so one can't be forwarded without the other.
-        tools = self._convert_tools(body.get("tools", []))
+        declared_tools = body.get("tools", [])
+        if not isinstance(declared_tools, list):
+            raise UpstreamRequestError("Responses tools must be an array")
+        if any(not isinstance(tool, dict) for tool in declared_tools):
+            raise UpstreamRequestError("Responses tools must be objects")
+        tools = self._convert_tools(declared_tools)
         if tools:
             result["tools"] = tools
             if "tool_choice" in body:

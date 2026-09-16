@@ -84,6 +84,10 @@ class UpstreamError(RuntimeError):
     """Any failure talking to the engine. Never leaks httpx types to callers."""
 
 
+class UpstreamRequestError(UpstreamError):
+    """The caller's request cannot be represented by the selected inference backend."""
+
+
 class UpstreamHTTPError(UpstreamError):
     """Engine answered with a non-2xx status."""
 
@@ -136,9 +140,9 @@ def normalise_engine_base(url: str) -> str:
 # to their no-op values; at `logprobs`/`text` they are left exactly as the harness sent them, because an
 # eval rollout should score the model the harness actually asked for.
 #
-# What the harness requested is still recorded per turn (`server.SAMPLING_KEYS` ->
-# `TurnNode.sampling_params`), read from the caller's dict before this copy is edited, so overriding
-# here does not hide the original request from the trace.
+# The original request is recorded as `requested_sampling_params`. `sampling_params` records the
+# actual submitted policy, including compatibility edits; explicit training sessions reject edits
+# that change the pinned policy.
 NON_POLICY_SAMPLING: dict[str, float | int] = {
     "top_p": 1.0,
     "top_k": -1,
@@ -147,6 +151,38 @@ NON_POLICY_SAMPLING: dict[str, float | int] = {
     "presence_penalty": 0.0,
     "repetition_penalty": 1.0,
 }
+
+
+def training_sampling(sampling: dict[str, Any] | None) -> dict[str, float | int]:
+    """Validate an explicit full-vocabulary training policy for a capture session."""
+    if sampling is None:
+        return {}
+    if not isinstance(sampling, dict):
+        raise ValueError("sampling must be a JSON object")
+    unknown = set(sampling) - {"temperature", *NON_POLICY_SAMPLING}
+    if unknown:
+        raise ValueError(
+            f"unsupported training sampling fields: {', '.join(sorted(unknown))}"
+        )
+    temperature = sampling.get("temperature")
+    if (
+        isinstance(temperature, bool)
+        or not isinstance(temperature, (float, int))
+        or not 0 < temperature < float("inf")
+    ):
+        raise ValueError("training sampling requires a finite positive temperature")
+    for key, value in sampling.items():
+        if key == "temperature":
+            continue
+        if isinstance(value, bool) or not isinstance(value, (float, int)):
+            raise ValueError(f"training sampling {key} must be numeric")
+        if key == "top_k" and value == 0:
+            continue
+        if value != NON_POLICY_SAMPLING[key]:
+            raise ValueError(
+                f"training sampling requires {key}={NON_POLICY_SAMPLING[key]}"
+            )
+    return {"temperature": float(temperature), **NON_POLICY_SAMPLING}
 
 
 def truncating_params(request: dict[str, Any]) -> dict[str, Any]:
@@ -383,7 +419,14 @@ class InferenceClient:
         api_key: str | None = None,
         auth_header: str = "Authorization",
         capture_level: str = "tokens",
+        provider: str = "openai",
     ) -> None:
+        if provider not in ("openai", "anthropic", "hf", "vllm"):
+            raise ValueError(f"unknown upstream provider: {provider}")
+        self.provider = provider
+        if provider == "anthropic":
+            capture_level = "text"
+            auth_header = "x-api-key"
         self.base_url = normalise_engine_base(base_url)
         self.served_model = served_model
         self.api_key = api_key or None
@@ -402,7 +445,14 @@ class InferenceClient:
                 timeout=httpx.Timeout(
                     self._LIVENESS_TIMEOUT_S, connect=self._CONNECT_TIMEOUT_S
                 ),
-                headers=auth_headers(self.api_key, self.auth_header),
+                headers={
+                    **auth_headers(self.api_key, self.auth_header),
+                    **(
+                        {"anthropic-version": "2023-06-01"}
+                        if self.provider == "anthropic"
+                        else {}
+                    ),
+                },
             )
         return self._client
 
@@ -413,12 +463,42 @@ class InferenceClient:
 
     async def completion(self, request: dict[str, Any]) -> dict[str, Any]:
         """One non-streaming chat completion, prepared for capture and normalised on the way back."""
+        if self.provider == "anthropic":
+            from .providers import anthropic_request, anthropic_response
+
+            body = anthropic_request(
+                request, self.served_model or request.get("model", "")
+            )
+            # Native request fields cannot pass through OpenAI-specific parameter repair.
+            native_headers = {
+                key: value
+                for key, value in request.get("_openenv_native_headers", {}).items()
+                if key in {"anthropic-beta", "anthropic-version"}
+            }
+            payload = await self._post_with_retries(
+                "/v1/messages", body, headers=native_headers
+            )
+            response = anthropic_response(
+                payload,
+                native_passthrough=request.get("_openenv_native_request") is not None,
+            )
+            response["_openenv_sampling"] = {
+                k: body[k] for k in ("temperature", "top_p", "top_k") if k in body
+            }
+            return response
         body = prepare_request(
             dict(request),
             served_model=self.served_model,
             capture_level=self.capture_level,
         )
         payload = await self._post("/v1/chat/completions", body)
+        # The body now includes any compatibility edits made by `_post`. Keep the actual
+        # submitted policy separate from the harness's request; the server removes this marker.
+        payload["_openenv_sampling"] = {
+            key: body[key]
+            for key in ("temperature", *NON_POLICY_SAMPLING)
+            if key in body
+        }
         return normalize_response(payload)
 
     async def list_models(self) -> dict[str, Any]:
@@ -444,7 +524,14 @@ class InferenceClient:
             try:
                 return await self._post_with_retries(path, body)
             except UpstreamHTTPError as exc:
-                if exc.status_code != 400 or len(self.param_fixes) >= MAX_FIXES:
+                permission_for_logprobs = (
+                    exc.status_code == 403
+                    and "You are not allowed to request logprobs from this model"
+                    in str(exc.body)
+                )
+                if (exc.status_code != 400 and not permission_for_logprobs) or len(
+                    self.param_fixes
+                ) >= MAX_FIXES:
                     raise
                 fix = diagnose(exc.body)
                 # `apply` returning False means the parameter it named is not in this body, so
@@ -460,12 +547,14 @@ class InferenceClient:
                 )
 
     async def _post_with_retries(
-        self, path: str, body: dict[str, Any]
+        self, path: str, body: dict[str, Any], *, headers: dict[str, str] | None = None
     ) -> dict[str, Any]:
         client = await self._get_client()
         for attempt in range(1, self._MAX_ATTEMPTS + 1):
             try:
-                response = await client.post(path, json=body)
+                response = await client.post(
+                    path, json=body, **({"headers": headers} if headers else {})
+                )
             except httpx.RequestError as exc:
                 raise self._transport_error(exc) from exc
             if response.is_success:

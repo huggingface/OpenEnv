@@ -12,7 +12,7 @@ from .images import (
     google_part_to_openai_chat,
     openai_chat_content_to_google_parts,
 )
-from .reasoning import extract_reasoning_from_gemini_parts, make_signature
+from .reasoning import extract_reasoning_from_gemini_parts, make_google_signature
 
 
 @dataclass
@@ -61,7 +61,7 @@ class _GoogleStreamState:
                 {
                     "thought": True,
                     "text": reasoning,
-                    "thoughtSignature": make_signature(reasoning),
+                    "thoughtSignature": make_google_signature(reasoning),
                 }
             )
         content = delta.get("content")
@@ -353,7 +353,7 @@ class GoogleTransformer(BaseTransformer):
                     {
                         "thought": True,
                         "text": reasoning,
-                        "thoughtSignature": make_signature(reasoning),
+                        "thoughtSignature": make_google_signature(reasoning),
                     }
                 )
             content = message.get("content")
@@ -409,7 +409,7 @@ class GoogleTransformer(BaseTransformer):
                     {
                         "thought": True,
                         "text": reasoning_chunk,
-                        "thoughtSignature": make_signature(reasoning_chunk),
+                        "thoughtSignature": make_google_signature(reasoning_chunk),
                     }
                 )
             content = delta.get("content")

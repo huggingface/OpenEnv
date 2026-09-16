@@ -20,13 +20,17 @@ it does not force unlike ones together. A suite with three distinct images yield
 whatever the shared name is.
 
 Opt-in through `HARBOR_SHARED_ENV_NAME`, the same variable an older Harbor honoured natively before
-the knob was removed.
+the knob was removed. The opt-in hook also retries transport failures on the read-only alias lookup
+up to three attempts; sandbox creation and command execution retain Harbor's own retry policies.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +60,26 @@ def enable_shared_templates(name: str = "") -> bool:
         return False
 
     original = e2b.E2BEnvironment.__init__
+    original_template_exists = e2b.E2BEnvironment._does_template_exist
+
+    async def template_exists(self):
+        # This is a read-only alias lookup. Retrying sandbox creation or commands here could
+        # duplicate side effects. In particular, a reused HTTP/2 connection can close on PING
+        # before this GET returns; let the pool acquire another connection for the next attempt.
+        for attempt in range(3):
+            try:
+                return await original_template_exists(self)
+            except httpx.TransportError as exc:
+                if attempt == 2:
+                    raise
+                delay = 2**attempt
+                logger.warning(
+                    "E2B template lookup transport failure (%s); retry %s/2 in %ss",
+                    type(exc).__name__,
+                    attempt + 1,
+                    delay,
+                )
+                await asyncio.sleep(delay)
 
     def __init__(self, *args, **kwargs):  # noqa: N807
         # Keyword-only in practice: Harbor passes `environment_name=` from three call sites. Handled
@@ -73,6 +97,7 @@ def enable_shared_templates(name: str = "") -> bool:
         return original(self, *args, **kwargs)
 
     e2b.E2BEnvironment.__init__ = __init__
+    e2b.E2BEnvironment._does_template_exist = template_exists
     _applied = True
     logger.info(
         "E2B templates share the name %r; the environment hash still distinguishes unlike images",

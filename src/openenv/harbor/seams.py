@@ -87,6 +87,16 @@ def agent_facing_model(served_model: str) -> str:
         raise ValueError(
             f"cannot derive a harness-facing model name from {served_model!r}"
         )
+    # HF provider routes (for example :together) are meaningful upstream, but
+    # Harbor's hosted_vllm model parser rejects colons and identifiers >=64 chars.
+    # The capture server restores the exact served ID; this is only a local alias.
+    import hashlib
+    import re
+
+    if len(leaf) >= 64 or re.search(r"[^A-Za-z0-9._-]", leaf):
+        stem = re.sub(r"[^A-Za-z0-9._-]", "-", leaf)[:54]
+        digest = hashlib.sha256(leaf.encode()).hexdigest()[:8]
+        return f"{stem}-{digest}"
     return leaf
 
 
@@ -132,6 +142,8 @@ class Seam:
     agent_env: dict[str, str] = field(default_factory=dict)
     env: dict[str, str] = field(default_factory=dict)
     kwargs: Callable[[str, str, str], dict[str, Any]] | None = None
+    # Native harness settings used only when a rollout requests an explicit training policy.
+    training_kwargs: dict[str, Any] = field(default_factory=dict)
     # How THIS harness expresses "stop after N agent steps", if it can. Per-agent knowledge, so it
     # belongs here rather than in the caller.
     #
@@ -151,6 +163,7 @@ class Seam:
         session: str,
         model: str,
         step_limit: int | None = None,
+        training: bool = False,
     ) -> tuple[str, dict[str, Any], dict[str, str], dict[str, str]]:
         """-> (model_name, AgentConfig.kwargs, AgentConfig.env, os.environ vars).
 
@@ -166,11 +179,13 @@ class Seam:
         agent_env = {k: v.format(**fmt) for k, v in self.agent_env.items()}
         proc_env = {k: v.format(**fmt) for k, v in self.env.items()}
         extra = self.kwargs(base_url, session, model) if self.kwargs else {}
+        if training:
+            extra = _deep_merge(extra, self.training_kwargs)
         if step_limit:
             if self.step_limit is None:
                 logger.warning(
-                    "%s has no way to express a step limit; this rollout runs unbounded "
-                    "(bounded only by its timeout)",
+                    "%s has no native step-limit setting; the capture proxy enforces the "
+                    "model-call budget and the agent timeout still applies",
                     self.name,
                 )
             else:
@@ -199,6 +214,32 @@ def _mini_swe_agent_step_limit(limit: int) -> dict[str, Any]:
     return {"config": {"agent": {"step_limit": limit}}}
 
 
+def _grok_build(base_url: str, session: str, model: str) -> dict[str, Any]:
+    """Use Harbor's supported config merge, including all auxiliary model routes."""
+    return {
+        "grok_config": {
+            "models": {
+                key: model
+                for key in (
+                    "default",
+                    "session_summary",
+                    "image_description",
+                    "web_search",
+                )
+            },
+            "model": {
+                model: {
+                    "name": model,
+                    "model": model,
+                    "base_url": f"{base_url}/v1",
+                    "env_key": "OPENAI_API_KEY",
+                    "api_backend": "chat_completions",
+                }
+            },
+        }
+    }
+
+
 def _opencode(base_url: str, session: str, model: str) -> dict[str, Any]:
     """opencode needs a full provider block; Harbor exposes exactly the right seam for it.
 
@@ -225,6 +266,39 @@ def _opencode(base_url: str, session: str, model: str) -> dict[str, Any]:
                 }
             }
         }
+    }
+
+
+def acp_opencode_config(base_url: str, session: str, model: str) -> dict[str, Any]:
+    """Explicit ACP qualification profile using OpenCode's native ACP command.
+
+    Qualifies Harbor's ACP transport with this pinned implementation only;
+    it does not imply that arbitrary ACP registry entries support the proxy.
+    """
+    import json
+
+    config = _opencode(base_url, session, model)["opencode_config"]
+    config.update(
+        model=f"{OPENCODE_PROVIDER}/{model}",
+        small_model=f"{OPENCODE_PROVIDER}/{model}",
+        permission="allow",
+        autoupdate=False,
+    )
+    return {
+        "auth_policy": "disabled",
+        "registry_entry": {
+            "id": "opencode",
+            "name": "OpenCode (ACP qualification profile)",
+            "version": "1.18.30",
+            "description": "OpenCode native ACP, routed through OpenEnv capture",
+            "distribution": {
+                "npx": {
+                    "package": "opencode-ai@1.18.30",
+                    "args": ["acp"],
+                    "env": {"OPENCODE_CONFIG_CONTENT": json.dumps(config)},
+                }
+            },
+        },
     }
 
 
@@ -273,6 +347,13 @@ SEAMS: dict[str, Seam] = {
         # the grader's key survives untouched.
         env={},
         kwargs=_opencode,
+        # Reuse the DataAgent training profile: no delegation, interactive questions or web fetch.
+        # ATIF omits nested OpenCode sessions, so those rollouts cannot be attributed for training.
+        training_kwargs={
+            "opencode_config": {
+                "tools": {"task": False, "question": False, "webfetch": False}
+            }
+        },
         status="validated",
         notes="Needed 3 global server fixes: SSE replay, stream_options strip, session-id priority.",
     ),
@@ -500,7 +581,7 @@ SEAMS: dict[str, Seam] = {
                             "baseUrl": f"{base_url}/v1",
                             "apiKey": session,
                             "api": "openai-completions",
-                            "models": [{"id": f"openai/{model}", "name": model}],
+                            "models": [{"id": model, "name": model}],
                         }
                     }
                 }
@@ -675,26 +756,34 @@ SEAMS: dict[str, Seam] = {
         name="copilot-cli",
         dialect="openai_chat",
         model_fmt="openai/{model}",
-        agent_env={"OPENAI_BASE_URL": "{base_url}/v1", "OPENAI_API_KEY": "{session}"},
-        notes="Needs GITHUB_TOKEN / COPILOT_GITHUB_TOKEN and a Copilot subscription.",
+        agent_env={
+            "COPILOT_PROVIDER_TYPE": "openai",
+            "COPILOT_PROVIDER_BASE_URL": "{base_url}/v1",
+            "COPILOT_PROVIDER_API_KEY": "{session}",
+            "COPILOT_MODEL": "{model}",
+            "COPILOT_OFFLINE": "true",
+        },
+        notes="Native BYOK provider configuration routes model requests through capture; no GitHub model service required.",
     ),
     "antigravity-cli": Seam(
         name="antigravity-cli",
-        dialect="openai_chat",
-        model_fmt="openai/{model}",
-        agent_env={"OPENAI_BASE_URL": "{base_url}/v1", "OPENAI_API_KEY": "{session}"},
-        notes="Google Antigravity; auth via AGY_AUTH_JSON_PATH.",
+        dialect="google",
+        model_fmt="google/{model}",
+        agent_env={
+            "GOOGLE_GEMINI_BASE_URL": "{base_url}",
+            "GEMINI_API_KEY": "{session}",
+            "GOOGLE_API_KEY": "{session}",
+            "AGY_ADC_AUTH": "false",
+        },
+        notes="Harbor's native Gemini base-URL configuration and custom model registration route requests through capture.",
     ),
     "grok-build": Seam(
         name="grok-build",
         dialect="openai_chat",
         model_fmt="openai/{model}",
-        agent_env={
-            "OPENAI_BASE_URL": "{base_url}/v1",
-            "OPENAI_API_KEY": "{session}",
-            "XAI_API_KEY": "{session}",
-        },
-        notes="xAI; expected to need an xAI key.",
+        agent_env={"OPENAI_API_KEY": "{session}"},
+        kwargs=_grok_build,
+        notes="Harbor grok_config points the primary and auxiliary models to capture using its supported custom endpoint configuration.",
     ),
     "rovodev-cli": Seam(
         name="rovodev-cli",
@@ -841,7 +930,37 @@ PRIORITY = [
 ]
 
 
-def get(name: str) -> Seam:
+def get(name: str, *, profile: str | None = None) -> Seam:
     if name not in SEAMS:
         raise KeyError(f"no seam for {name!r}. Known: {sorted(SEAMS)}")
-    return SEAMS[name]
+    if profile is None:
+        return SEAMS[name]
+    if name == "acp" and profile == "opencode-1.18.30":
+        from dataclasses import replace
+
+        return replace(
+            SEAMS[name],
+            model_fmt=OPENCODE_PROVIDER + "/{model}",
+            kwargs=acp_opencode_config,
+        )
+    if name == "nemo-agent" and profile == "shell-1.9.0":
+        from dataclasses import replace
+        from pathlib import Path
+
+        package = (
+            Path(__file__).resolve().parents[3] / "examples/harbor/nemo_shell_profile"
+        )
+        if not (package / "pyproject.toml").is_file():
+            raise ValueError(
+                "NeMo shell profile requires the example workflow package in this checkout"
+            )
+        return replace(
+            SEAMS[name],
+            import_path="openenv.harbor.nemo_profile:NemoShellProfile",
+            kwargs=lambda base_url, session, model: {
+                "llm_type": "openai",
+                "version": "1.9.0",
+                "workflow_package": str(package),
+            },
+        )
+    raise ValueError(f"unsupported harness profile {profile!r} for {name!r}")

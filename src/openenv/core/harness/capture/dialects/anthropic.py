@@ -12,6 +12,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Optional
 
+from ..upstream import UpstreamRequestError
 from .base import BaseTransformer
 from .images import (
     anthropic_content_to_openai_chat,
@@ -346,7 +347,12 @@ class AnthropicTransformer(BaseTransformer):
                 messages.append({"role": "system", "content": system_content})
 
         # Transform messages
-        for msg in body.get("messages", []):
+        request_messages = body.get("messages", [])
+        if not isinstance(request_messages, list):
+            raise UpstreamRequestError("Anthropic messages must be an array")
+        if any(not isinstance(message, dict) for message in request_messages):
+            raise UpstreamRequestError("Anthropic messages must be objects")
+        for msg in request_messages:
             transformed = self._transform_message(msg)
             if transformed:
                 if isinstance(transformed, list):
@@ -386,7 +392,12 @@ class AnthropicTransformer(BaseTransformer):
         # turns; forwarding tool_choice without a non-empty tools list makes
         # SGLang reject with "tool_choice only allowed when tools specified".
         if "tools" in body:
-            tools = self._transform_tools_to_openai(body["tools"])
+            declared_tools = body["tools"]
+            if not isinstance(declared_tools, list):
+                raise UpstreamRequestError("Anthropic tools must be an array")
+            if any(not isinstance(tool, dict) for tool in declared_tools):
+                raise UpstreamRequestError("Anthropic tools must be objects")
+            tools = self._transform_tools_to_openai(declared_tools)
             if tools:
                 result["tools"] = tools
                 result["tool_choice"] = self._transform_tool_choice_to_openai(

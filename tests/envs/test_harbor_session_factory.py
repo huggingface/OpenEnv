@@ -108,6 +108,24 @@ def test_a_train_rollout_becomes_trace_entries():
     )
 
 
+def test_factory_passes_an_explicit_training_policy_to_each_rollout():
+    env = FakeEnv(result())
+    session = factory_with(env, sampling={"temperature": 0.8}).create(
+        [{"role": "user", "content": "first task"}]
+    )
+    assert session.wait_for_completion() == 0
+    policy = env.calls[0]["sampling"]
+    assert policy["temperature"] == 0.8
+    assert policy["top_p"] == 1.0 and policy["top_k"] == -1
+
+
+def test_factory_rejects_an_invalid_training_policy_before_opening_a_client():
+    with pytest.raises(ValueError, match="temperature"):
+        harness.HarborSessionFactory(
+            "http://unused.invalid", sampling={"temperature": 0}
+        )
+
+
 def test_an_eval_rollout_yields_nothing_trainable():
     """It has a reward and a readable trace; what it has no business producing is training rows."""
     env = FakeEnv(result(rollout_type="eval", capture_level="text", turns=[]))

@@ -23,13 +23,9 @@ server at the vLLM it is currently syncing weights into. The server probes that 
 follows from what it can return: token ids plus processed logprobs give a trainable rollout, anything
 less gives an eval one. That is what lets a training run and an eval run share one server.
 
-ONE HONEST LIMITATION. `fetch_proxy_trace` returns TRL's `TraceEntry` shape, which has no field for
-the prompt's token ids, so TRL re-renders each prompt with `apply_chat_template`. The completions are
-exact — they come straight off the engine — but the prompts are not guaranteed to be. Whether that
-matters is measurable rather than arguable: `measure_prompt_skew` below compares the re-render against
-the engine's own `prompt_token_ids` for the model and harness you are actually using. If it is 1.0 the
-path is lossless; if it is not, `_chain_to_sequences` forks the conversation at the first divergence,
-so it degrades visibly rather than silently.
+The trace carries the engine's prompt ids, sampled ids, behavior logprobs and full per-token loss
+mask. No prompt is reconstructed locally. For training, pass `sampling={"temperature": ...}` with
+the trainer's temperature: the session pins the full-vocabulary policy across all harnesses.
 """
 
 from __future__ import annotations
@@ -46,7 +42,9 @@ from openenv.core.harness import (
     ToolResult,
     VerifyResult,
 )
+from openenv.core.harness.capture.upstream import training_sampling
 from openenv.harbor.client import HarborEnv
+from openenv.harbor.contract import to_trace_entries
 from openenv.harbor.models import HarborRolloutResult
 
 logger = logging.getLogger(__name__)
@@ -61,103 +59,6 @@ def instruction_id(instruction: str) -> str:
     completions, and what the agent is actually asked to do) instead of smuggling an index through it.
     """
     return hashlib.sha1(instruction.strip().encode()).hexdigest()
-
-
-def _openai_tool_calls(flat: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """`{name, arguments}` -> OpenAI's `{id, type, function: {name, arguments}}`.
-
-    `HarborTurn.tool_calls` is deliberately flattened: a reward function checking which tool ran should
-    not have to walk a wire envelope. But TRL reads `message["tool_calls"]` verbatim, and both
-    `has_tool_call` and `apply_chat_template` expect the nested form. Handing over the flat shape makes
-    `has_tool_call` false for every turn, so `train_turn_fn=has_tool_call` — the documented default for
-    a coding agent — discards the entire rollout while the run still looks healthy. Templates that
-    iterate `call.function.name` would raise instead.
-
-    `arguments` is left exactly as captured. It is a JSON *string* on the wire, and TRL's
-    `_decode_tool_call_arguments` parses it before rendering, so parsing it here would hand the
-    template a dict it does not expect.
-    """
-    out: list[dict[str, Any]] = []
-    for index, call in enumerate(flat or []):
-        if not isinstance(call, dict):
-            continue
-        # Already nested (a future capture change, or another dialect): pass it through untouched.
-        if call.get("function"):
-            out.append(call)
-            continue
-        name = call.get("name")
-        if not name:
-            continue
-        out.append(
-            {
-                # An id is required by the schema and is what pairs a call with its tool result. The
-                # capture does not keep the harness's own id, so a positional one is minted: within a
-                # single assistant message that is enough to keep the pairing unambiguous.
-                "id": str(call.get("id") or f"call_{index}"),
-                "type": "function",
-                "function": {
-                    "name": str(name),
-                    "arguments": call.get("arguments", ""),
-                },
-            }
-        )
-    return out
-
-
-def to_trace_entries(result: HarborRolloutResult) -> list[dict[str, Any]]:
-    """`HarborRolloutResult` -> TRL `TraceEntry` records, one per trainable turn.
-
-    Auxiliary calls and discarded retries are already excluded by the server, so a caller needs no
-    `agent_turn_fn`: the capture layer can tell an aux call from an agent turn structurally, which a
-    flat trace cannot.
-
-    `request_messages` is what makes this possible at all. Without it the token fields say what was
-    produced but not what produced them, and no `TraceEntry` can be built.
-    """
-    entries: list[dict[str, Any]] = []
-    for turn in result.turns or []:
-        if turn.discarded or not turn.trainable or not turn.completion_token_ids:
-            continue
-        entries.append(
-            {
-                "request": {
-                    "messages": list(turn.request_messages),
-                    "tools": turn.request_tools,
-                },
-                "response": {
-                    "choices": [
-                        {
-                            "message": {
-                                "role": "assistant",
-                                "content": turn.text,
-                                "tool_calls": _openai_tool_calls(turn.tool_calls)
-                                or None,
-                            },
-                            "finish_reason": turn.finish_reason,
-                        }
-                    ]
-                },
-                # The engine's own tokenization, carried through rather than dropped. HarborTurn has
-                # held this since it was introduced ("not a local re-render", models.py); it simply
-                # had nowhere to go until TraceEntry gained the field. A consumer that has it must
-                # not call apply_chat_template -- that re-render matched the engine on 0 of 28
-                # measured turns and collapsed a run at its first weight update.
-                "prompt_token_ids": list(turn.prompt_token_ids),
-                "completion_token_ids": list(turn.completion_token_ids),
-                "per_token_logps": list(turn.per_token_logps),
-                # Every turn reaching here passed `turn.trainable` above, so the mask is context
-                # across the prompt and train across the sample. Emitted rather than inferred for
-                # the same reason as in capture.contract: the filter is invisible downstream.
-                "loss_mask": [0] * len(turn.prompt_token_ids)
-                + [1] * len(turn.completion_token_ids),
-                "metadata": {
-                    "turn": turn.turn,
-                    "n_tools": turn.n_tools,
-                    "finish_reason": turn.finish_reason,
-                },
-            }
-        )
-    return entries
 
 
 def _decoded_arguments(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -276,6 +177,7 @@ class HarborSession(ResourceSession):
         auth_header: str = "",
         agent_timeout_sec: float = 0.0,
         agent_step_limit: int = 0,
+        sampling: dict[str, Any] | None = None,
         owns_env: bool = False,
     ) -> None:
         self._env = env
@@ -294,6 +196,7 @@ class HarborSession(ResourceSession):
         self._auth_header = auth_header
         self._agent_timeout_sec = agent_timeout_sec
         self._agent_step_limit = agent_step_limit
+        self._sampling = training_sampling(sampling) if sampling is not None else None
         self.result: HarborRolloutResult | None = None
 
     # --- ResourceSession -----------------------------------------------------
@@ -361,6 +264,7 @@ class HarborSession(ResourceSession):
                 # file", and `or` silently replaces it with the factory default. `OpenCodeSession`
                 # takes the same care for the same reason.
                 agent_step_limit=self._agent_step_limit,
+                **({"sampling": self._sampling} if self._sampling is not None else {}),
                 agent_timeout_sec=(
                     timeout_s if timeout_s is not None else self._agent_timeout_sec
                 ),
@@ -449,13 +353,13 @@ class HarborSessionFactory(ResourceSessionFactory[HarborSession]):
         sandbox (`str`, *optional*, defaults to `"e2b"`):
             Harbor sandbox backend.
         agent_step_limit (`int`, *optional*, defaults to `0`):
-            Stop the agent after this many steps; `0` leaves it unbounded. AsyncGRPO packs every turn
-            of a rollout into one training row and each turn re-sends the whole conversation, so
-            packed length grows with the SQUARE of the turn count — an unbounded rollout can OOM the
-            loss step while every rollout log line looks healthy.
+            Model-call budget at the proxy, including auxiliary calls. Also sets a native step
+            limit when supported. `0` leaves model calls uncapped.
         agent_timeout_sec (`float`, *optional*, defaults to `600.0`):
-            Ceiling on one rollout. Worth setting: a rollout holds a generation slot for the length of
-            the call, and the task file's own timeout covers the agent run but not sandbox setup.
+            Override the agent execution timeout. Sandbox setup has separate timeouts.
+        sampling (`dict`, *optional*):
+            Explicit full-vocabulary training policy with the trainer's temperature. Validated
+            before opening clients and forwarded on every session, regardless of harness.
 
     Examples:
 
@@ -483,6 +387,7 @@ class HarborSessionFactory(ResourceSessionFactory[HarborSession]):
         auth_header: str = "",
         agent_timeout_sec: float = 600.0,
         agent_step_limit: int = 0,
+        sampling: dict[str, Any] | None = None,
         num_tasks: int | None = None,
         indices: list[int] | None = None,
         max_message_size_mb: float = 4096.0,
@@ -497,6 +402,7 @@ class HarborSessionFactory(ResourceSessionFactory[HarborSession]):
         self.auth_header = auth_header
         self.agent_timeout_sec = agent_timeout_sec
         self.agent_step_limit = agent_step_limit
+        self.sampling = training_sampling(sampling) if sampling is not None else None
         self._num_tasks = num_tasks
         # Specific tasks, rather than the first N of the split. Which tasks a group trains on decides
         # whether it can learn anything at all: a task every generation solves and one none solves both
@@ -648,6 +554,7 @@ class HarborSessionFactory(ResourceSessionFactory[HarborSession]):
             auth_header=self.auth_header,
             agent_timeout_sec=self.agent_timeout_sec,
             agent_step_limit=self.agent_step_limit,
+            sampling=self.sampling,
         )
 
 

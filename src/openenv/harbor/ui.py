@@ -35,7 +35,20 @@ _CSS = """
    what makes "pick a model" and "pick a task" look like two separate decisions. */
 .hb-cell  { border: 1px solid var(--border-color-primary); border-radius: 10px;
             padding: 14px 16px; }
-.hb-cell + .hb-cell { margin-left: 12px; }
+.hb-panel { border: 1px solid var(--border-color-primary) !important;
+            border-radius: 10px !important; padding: 16px !important;
+            background: var(--block-background-fill); }
+.hb-cell { min-width: 0 !important; }
+.hb-wrap .hb-panel + .hb-panel { margin-top: 12px; }
+.hb-tx, .hb-card { overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+    .hb-cell, .hb-panel { padding: 12px !important; }
+    .hb-hero { flex-wrap: wrap; }
+    .hb-kv { gap: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .hb-pulse, .hb-step.now .hb-dot { animation: none; }
+}
 
 /* Live conversation. Roles are colour-coded down the left edge so the shape of the loop
    (assistant calls a tool, tool answers, assistant calls again) is readable at a glance. */
@@ -346,7 +359,7 @@ def _transcript_html(session: Any) -> str:
     response = latest.response_message or {}
     tail = _render_message(
         {**response, "role": "assistant"},
-        label=f"assistant · turn {latest.index} · generating",
+        label=f"assistant · completed call {latest.index + 1}",
     )
     if tail:
         rows.append(tail)
@@ -371,14 +384,11 @@ def _transcript_html(session: Any) -> str:
     )
 
 
-# What happens before the agent's first model call, in order. Harbor exposes no progress hook, so
-# the stage is inferred from what capture has seen: no session means the trial has not reached the
-# agent yet, a session with no turns means the agent is installed and starting up.
+# Capture-session creation precedes sandbox allocation; it is not evidence that
+# setup has finished. Only a completed captured call proves the agent is running.
 _SETUP_STEPS = (
-    "creating the sandbox",
-    "uploading the task",
-    "installing the agent",
-    "waiting for the first model call",
+    "preparing the sandbox, task and agent",
+    "waiting for a completed model call",
 )
 
 
@@ -729,29 +739,10 @@ def _write_contract(r: dict[str, Any]) -> str | None:
     turns = r.get("turns") or []
     if not turns or r.get("rollout_type", "train") == "eval":
         return None
-    contract = {
-        "task_id": r.get("task_id", ""),
-        "task_name": r.get("task_name", ""),
-        "dataset": r.get("dataset", ""),
-        "harness": r.get("harness", ""),
-        "sandbox": r.get("sandbox", ""),
-        "trial_name": r.get("trial_name", ""),
-        "reward": r.get("reward"),
-        "rewards": r.get("rewards") or {},
-        "reward_key": r.get("reward_key", ""),
-        "n_trainable_tokens": r.get("n_trainable_tokens", 0),
-        "turns": [
-            {
-                "turn": t.get("turn"),
-                "prompt_token_ids": t.get("prompt_token_ids") or [],
-                "completion_token_ids": t.get("completion_token_ids") or [],
-                "per_token_logps": t.get("per_token_logps") or [],
-                "finish_reason": t.get("finish_reason"),
-                "discarded": bool(t.get("discarded")),
-            }
-            for t in turns
-        ],
-    }
+    from .contract import export_training_contract
+    from .models import HarborRolloutResult
+
+    contract = export_training_contract(HarborRolloutResult.model_validate(r))
     name = re.sub(r"[^A-Za-z0-9_.-]", "_", str(r.get("task_name") or "rollout"))
     target = (
         _Path(tempfile.mkdtemp(prefix="harbor-contract-")) / f"{name}.contract.json"
@@ -817,11 +808,18 @@ def harbor_gradio_builder(
 
     datasets = list(datasets or [])
 
-    def on_validate(url: str, model: str, api_key: str):
+    def on_validate(
+        url: str,
+        model: str,
+        api_key: str,
+        provider: str = "openai",
+        purpose: str = "eval",
+        include_experimental: bool = False,
+    ):
         from openenv.core.harness.capture.validate_llm import list_models, validate_llm
 
         from .capabilities import capabilities
-        from .seams import agent_facing_model
+        from .seams import agent_facing_model, get as get_seam
         from .serving import HarborService
 
         url = (url or "").strip().rstrip("/")
@@ -852,9 +850,13 @@ def harbor_gradio_builder(
                 )
             model = served[0]
 
-        report = validate_llm(url, model, api_key=api_key)
-        if not report.reachable:
-            why = "; ".join(report.findings) or "unreachable"
+        report = validate_llm(url, model, api_key=api_key, provider=provider)
+        if not report.reachable or (purpose == "train" and not report.trainable):
+            why = "; ".join(report.findings) or (
+                "Exact engine tokens are required for training"
+                if report.reachable
+                else "unreachable"
+            )
             return (
                 f"**Not usable** — {why}\n\n"
                 "Needs vLLM with `--return-tokens-as-token-ids --logprobs-mode "
@@ -878,32 +880,79 @@ def harbor_gradio_builder(
             },
         )
         sandboxes = caps.available_sandboxes
-        by_dialect: dict[str, list[str]] = {}
-        for h in caps.harnesses:
-            if h.status == "validated":
-                by_dialect.setdefault(h.dialect, []).append(h.name)
+        from .qualification import harness_maturity_rows
+
+        try:
+            evidence = (
+                json.loads(Path(report_path).read_text()) if report_path else None
+            )
+            tiers = {
+                name: tier
+                for name, tier, _ in harness_maturity_rows(
+                    [h.name for h in caps.harnesses], evidence
+                )
+            }
+        except (OSError, ValueError, TypeError):
+            tiers = {h.name: "experimental" for h in caps.harnesses}
+            evidence = None
+        profile_provider = "vllm" if purpose == "train" else provider
+        harness_profiles = {}
+        unavailable_profiles = set()
+        for cell in (evidence or {}).get("cells", []):
+            if cell.get("provider") != profile_provider:
+                continue
+            config = cell.get("configuration") or {}
+            profile = config.get("acp_profile") or config.get("nemo_profile")
+            if profile:
+                name = cell["harness"]
+                harness_profiles[name] = profile
+                try:
+                    get_seam(name, profile=profile)
+                except (ValueError, KeyError):
+                    unavailable_profiles.add(name)
         choices = [
-            (f"{n}  ({d})", n)
-            for d, names in sorted(by_dialect.items())
-            for n in sorted(names)
+            (
+                f"{h.name} ({h.dialect}; {tiers[h.name]}"
+                + (
+                    f"; profile: {harness_profiles[h.name]}"
+                    if h.name in harness_profiles
+                    else ""
+                )
+                + ")",
+                h.name,
+            )
+            for h in sorted(caps.harnesses, key=lambda h: h.name)
+            if h.name not in unavailable_profiles
+            and (
+                tiers[h.name] == "stable"
+                or (include_experimental and tiers[h.name] == "experimental")
+            )
         ]
         values = [v for _, v in choices]
 
         leaf = agent_facing_model(model)
-        if report.trainable:
-            lines = [f"**Ready — TRAIN** · `{model}` · token ids + logprobs ✓"]
+        if purpose == "train":
+            lines = [
+                f"**Endpoint ready — TRAINING CAPTURE** · `{model}` · token ids + logprobs ✓"
+            ]
         else:
             detail = (
-                "logprobs, no token ids"
+                "token capture available; training export disabled for this eval"
+                if report.capture_level == "tokens"
+                else "logprobs, no token ids"
                 if report.capture_level == "logprobs"
                 else "no token ids, no logprobs"
             )
             lines = [
-                f"**Ready — EVAL ONLY** · `{model}` · {detail}",
+                f"**Endpoint ready — EVAL** · `{model}` · {detail}",
                 "Rollouts carry the reward and the full trace, but nothing trainable.",
             ]
         if leaf != model:
             lines.append(f"Sent to agents as `{leaf}`, rewritten back on the way out.")
+        if not values:
+            lines.append(
+                "No agents match the support filter. Load qualification evidence or explicitly include experimental adapters."
+            )
         for fix in report.param_fixes:
             lines.append(f"<span style='opacity:.7'>upstream compat: {fix}</span>")
         # The one thing a user cannot discover by reading the endpoint's own docs: whether a model
@@ -959,10 +1008,16 @@ def harbor_gradio_builder(
                 # URL. `gr.State` is held server-side and this is never rendered back into the page,
                 # which is the same rule the API key box itself follows.
                 "api_key": api_key or "",
+                "provider": provider,
+                "purpose": purpose,
+                "allowed_harnesses": values,
+                "harness_profiles": harness_profiles,
             },
             gr.update(
-                interactive=bool(sandboxes),
-                value="Run rollout" if report.trainable else "Run eval rollout",
+                interactive=bool(sandboxes and values),
+                value="Run training capture"
+                if purpose == "train"
+                else "Run eval rollout",
             ),
         )
 
@@ -1005,6 +1060,16 @@ def harbor_gradio_builder(
         if not engine.get("ok"):
             yield _UNVALIDATED, "", "", "{}", None, gr.update(interactive=True)
             return
+        if harness not in engine.get("allowed_harnesses", []):
+            yield (
+                "Selected harness is outside the validated support filter. Validate again.",
+                "",
+                "",
+                "{}",
+                None,
+                gr.update(interactive=False),
+            )
+            return
         service = HarborService.current()
         if service is None:
             yield (
@@ -1030,6 +1095,7 @@ def harbor_gradio_builder(
             return
 
         done: queue.Queue = queue.Queue(maxsize=1)
+        live_sessions: queue.Queue[str] = queue.Queue(maxsize=1)
 
         async def _run_with_engine():
             """Resolve the engine the user validated, then run against it.
@@ -1048,6 +1114,7 @@ def harbor_gradio_builder(
                     llm_url=typed_url,
                     model=str((engine or {}).get("model") or ""),
                     api_key=str((engine or {}).get("api_key") or "") or None,
+                    provider=str((engine or {}).get("provider") or "openai"),
                 )
                 client, level = await pool.resolve(upstream)
                 served = client.served_model or upstream.model
@@ -1061,6 +1128,7 @@ def harbor_gradio_builder(
             return await _run(
                 task_dir=task_dir,
                 harness=harness,
+                harness_profile=engine.get("harness_profiles", {}).get(harness),
                 sandbox=sandbox,
                 registry=service.capture.registry,
                 intercept_url=service.public_url,
@@ -1068,8 +1136,10 @@ def harbor_gradio_builder(
                 trials_dir=Path("/tmp/openenv-harbor-trials"),
                 dataset=spec,
                 capture_level=level,
+                purpose=str((engine or {}).get("purpose") or "eval"),
                 upstream=upstream,
                 inference=client,
+                on_session_created=live_sessions.put_nowait,
             )
 
         def worker() -> None:
@@ -1079,7 +1149,6 @@ def harbor_gradio_builder(
             except Exception as exc:  # noqa: BLE001 - show it, never take the server down
                 done.put(("err", f"{type(exc).__name__}: {exc}"))
 
-        before = set(service.capture.registry.list_ids())
         thread = threading.Thread(target=worker, daemon=True)
         started = time.monotonic()
         thread.start()
@@ -1087,9 +1156,10 @@ def harbor_gradio_builder(
 
         while thread.is_alive():
             if session_id is None:
-                session_id = next(
-                    iter(set(service.capture.registry.list_ids()) - before), None
-                )
+                try:
+                    session_id = live_sessions.get_nowait()
+                except queue.Empty:
+                    pass
             stats, phase, stage = None, "starting up", 0
             if session_id:
                 session = service.capture.registry.get(session_id)
@@ -1114,10 +1184,8 @@ def harbor_gradio_builder(
                         # from session creation, which renders as a stall during a normal boot.
                         stats["since last call"] = f"{session.idle_seconds:.0f}s"
                     else:
-                        # The session exists, so the trial reached the agent: the sandbox is up and
-                        # the task is uploaded. What is left is the agent's own startup.
-                        stage = 2
-                        phase = "sandbox ready, starting the agent"
+                        stage = 0
+                        phase = "preparing the run or waiting for its first response"
             # The transcript rides in the graph slot: it is empty until the run finishes anyway,
             # and the two answer the same question at different times.
             transcript = ""
@@ -1149,12 +1217,20 @@ def harbor_gradio_builder(
                 gr.update(interactive=True),
             )
             return
+        contract = None
+        contract_error = ""
+        try:
+            contract = _write_contract(payload)
+        except (ValueError, TypeError) as exc:
+            contract_error = (
+                "<p>Training export rejected: " + html.escape(str(exc)) + "</p>"
+            )
         yield (
-            _result_html(payload),
+            _result_html(payload) + contract_error,
             _conversation_html(payload),
             _turns_html(payload),
             _summary_json(payload),
-            _write_contract(payload),
+            contract,
             gr.update(interactive=True),
         )
 
@@ -1164,57 +1240,66 @@ def harbor_gradio_builder(
 
         with gr.Column(elem_classes="hb-wrap"):
             gr.Markdown(
-                "## Harbor\nRun a coding agent on a Harbor task. Against vLLM or SGLang you get "
-                "every token and logprob it produced, ready to train on; against any other "
-                "OpenAI-spec endpoint you get the reward and the full trace."
+                "## Harbor task playground\nChoose a model, validate the connection, then run an agent "
+                "on a task. Follow its tool calls and results below. "
+                "Evaluation works with supported hosted providers; training capture requires "
+                "verified engine token IDs and log probabilities."
             )
 
             with gr.Row(equal_height=False):
                 # left — the model
                 with gr.Column(scale=1, elem_classes="hb-cell"):
-                    gr.Markdown("### LLM")
-                    # Deliberately empty. Prefilling meant the box already held whatever URL the
-                    # server was started with, so Validate confirmed a value nobody chose and a
-                    # stale endpoint could be used without anyone noticing it was stale.
-                    url_in = gr.Textbox(
-                        label="LLM URL",
-                        placeholder="https://…  any OpenAI-spec endpoint",
-                        info="vLLM, SGLang, OpenAI, Anthropic, HF Inference Providers. "
-                        "Accepts a bare root or one ending in /v1.",
-                    )
-                    gr.HTML(_labelled("API key (optional)", _KEY_TIP))
-                    key_in = gr.Textbox(
-                        label="",
-                        type="password",
-                        placeholder="only for a hosted provider",
-                        show_label=False,
-                    )
-                    model_in = gr.Textbox(
-                        label="Model (optional)",
-                        placeholder="read from the endpoint",
-                        info="Required when the endpoint serves more than one model.",
-                    )
-                    validate_btn = gr.Button("Validate", variant="secondary")
-                    gr.HTML(_labelled("Capture level", _LEVEL_TIP))
-                    engine_md = gr.Markdown(_UNVALIDATED)
-                    gr.Markdown("### Agent")
-                    harness_in = gr.Dropdown(
-                        label="Agent",
-                        choices=[],
-                        info="The coding agent to run. Its dialect is shown in brackets; the "
-                        "proxy translates all four to one upstream call.",
-                    )
-                    sandbox_in = gr.Dropdown(
-                        label="Sandbox",
-                        choices=[],
-                        info="Where the agent executes. Harbor's backends, not OpenEnv's "
-                        "container providers — only those with working credentials are listed.",
-                    )
+                    with gr.Column(elem_classes="hb-panel"):
+                        gr.Markdown("### 1 · Connect a model")
+                        # Deliberately empty. Prefilling meant the box already held whatever URL the
+                        # server was started with, so Validate confirmed a value nobody chose and a
+                        # stale endpoint could be used without anyone noticing it was stale.
+                        provider_in = gr.Dropdown(
+                            label="Upstream provider",
+                            choices=[
+                                ("OpenAI-compatible", "openai"),
+                                ("Anthropic native", "anthropic"),
+                                ("Hugging Face Inference Providers", "hf"),
+                                ("vLLM", "vllm"),
+                            ],
+                            value="openai",
+                            info="Select the upstream API. Exact training tokens are verified separately.",
+                        )
+                        purpose_in = gr.Dropdown(
+                            label="Use",
+                            choices=[
+                                ("Evaluation", "eval"),
+                                ("Training capture", "train"),
+                            ],
+                            value="eval",
+                        )
+                        url_in = gr.Textbox(
+                            label="LLM URL",
+                            placeholder="https://your-endpoint/v1",
+                            info="vLLM, SGLang, OpenAI, Anthropic, HF Inference Providers. "
+                            "Accepts a bare root or one ending in /v1.",
+                        )
+                        gr.HTML(_labelled("API key (optional)", _KEY_TIP))
+                        key_in = gr.Textbox(
+                            label="",
+                            type="password",
+                            placeholder="only for a hosted provider",
+                            show_label=False,
+                        )
+                        model_in = gr.Textbox(
+                            label="Model (optional)",
+                            placeholder="read from the endpoint",
+                            info="Required when the endpoint serves more than one model.",
+                        )
+                        validate_btn = gr.Button(
+                            "Validate connection", variant="secondary"
+                        )
+                        gr.HTML(_labelled("Capture level", _LEVEL_TIP))
+                        engine_md = gr.Markdown(_UNVALIDATED)
 
-                # right — the task. Everything but the picker is folded away: the instruction alone
-                # runs to a screenful, and it pushed the Run button below the fold.
-                with gr.Column(scale=2, elem_classes="hb-cell"):
-                    gr.Markdown("### Task")
+                # right — task preview and agent. Implementation files stay folded away.
+                with gr.Column(scale=1, elem_classes="hb-cell"):
+                    gr.Markdown("### 2 · Choose a task")
                     with gr.Row():
                         ds_in = gr.Dropdown(
                             label="Dataset",
@@ -1227,11 +1312,10 @@ def harbor_gradio_builder(
                         )
                     count_md = gr.Markdown()
                     task_md = gr.Markdown()
-                    with gr.Accordion("Task details", open=False):
-                        with gr.Accordion("Instruction", open=True):
-                            instruction_box = gr.Code(
-                                label="", language="markdown", lines=16
-                            )
+                    instruction_box = gr.Code(
+                        label="Task instruction", language="markdown", lines=10
+                    )
+                    with gr.Accordion("Task files and grader", open=False):
                         with gr.Accordion("Dockerfile", open=False):
                             dockerfile_box = gr.Code(
                                 label="", language="dockerfile", lines=12
@@ -1241,33 +1325,165 @@ def harbor_gradio_builder(
                         with gr.Accordion("Grader", open=False):
                             tests_box = gr.Code(label="", language="shell", lines=12)
 
+                    with gr.Column(elem_classes="hb-panel"):
+                        gr.Markdown("### 3 · Choose an agent")
+                        experimental_in = gr.Checkbox(
+                            label="Include experimental adapters",
+                            value=False,
+                            info="Stable adapters are shown by default. Unstable adapters remain excluded.",
+                        )
+                        harness_in = gr.Dropdown(
+                            label="Agent",
+                            choices=[],
+                            info="The coding agent to run. Its dialect is shown in brackets; the "
+                            "capture proxy connects it to your selected provider.",
+                        )
+                        sandbox_in = gr.Dropdown(
+                            label="Sandbox",
+                            choices=[],
+                            info="Where the agent executes. Harbor's backends, not OpenEnv's "
+                            "container providers — only those with working credentials are listed.",
+                        )
+
             # Full width, under both columns: the action belongs to the pair, not to either one.
             run_btn = gr.Button(
                 "Run rollout", variant="primary", interactive=False, scale=1
             )
 
-            gr.Markdown("---")
-            result_html = gr.HTML()
-            # Live transcript while running, then the full conversation once finished.
-            convo_html = gr.HTML()
-            # Per-turn analysis plus the token-flow graph.
-            analysis_html = gr.HTML()
-            # The training contract as a file: token ids and the behaviour-policy logprobs, which
-            # are the part that cannot be reconstructed after the fact.
-            contract_file = gr.File(
-                label="contract.json — token ids, logprobs and reward "
-                "(train rollouts only)",
-                interactive=False,
-                visible=True,
-            )
+            with gr.Column(elem_classes="hb-panel"):
+                gr.Markdown("### Run status")
+                result_html = gr.HTML(
+                    '<p class="hb-dim">Validate your model and choose a task to begin.</p>'
+                )
+            with gr.Column(elem_classes="hb-panel"):
+                gr.Markdown(
+                    "### Live trace\nAgent messages, tool calls and tool results appear as "
+                    "model calls complete. A request in progress may take a moment."
+                )
+                convo_html = gr.HTML()
+            with gr.Accordion("Token details and training export", open=False):
+                analysis_html = gr.HTML()
+                contract_file = gr.File(
+                    label="Training contract — captured tokens, log probabilities and reward",
+                    interactive=False,
+                    visible=True,
+                )
+            with gr.Accordion("Harness/provider qualification evidence", open=False):
+                import os
+                from pathlib import Path
+
+                from .qualification import (
+                    harness_maturity_rows,
+                    qualification_details,
+                    qualification_rows,
+                )
+                from .seams import SEAMS
+
+                report_path = os.environ.get("OPENENV_HARBOR_QUALIFICATION_REPORT", "")
+
+                def read_qualification_evidence():
+                    try:
+                        evidence = (
+                            json.loads(Path(report_path).read_text())
+                            if report_path
+                            else None
+                        )
+                        return (
+                            qualification_rows(list(SEAMS), evidence),
+                            qualification_details(evidence),
+                            harness_maturity_rows(list(SEAMS), evidence),
+                            "Loaded recorded evidence."
+                            if evidence
+                            else "No qualification report configured.",
+                        )
+                    except (OSError, ValueError, TypeError) as exc:
+                        return (
+                            qualification_rows(list(SEAMS)),
+                            [],
+                            harness_maturity_rows(list(SEAMS)),
+                            "Invalid qualification report: " + str(exc),
+                        )
+
+                evidence_rows, evidence_details, maturity_rows, evidence_status = (
+                    read_qualification_evidence()
+                )
+                gr.Markdown(
+                    "Recorded results apply to the listed model, harness version, and captures. "
+                    "They do not certify the endpoint currently selected above. "
+                    "Capture/reader passes exclude optimizer validation; optimizer details state "
+                    "whether the test used diagnostic replay and whether it covered weight sync."
+                )
+                evidence_status_md = gr.Markdown(evidence_status)
+                gr.Markdown(
+                    "Stable means all four recorded profiles passed, including optimizer replay. "
+                    "It is limited to this test coverage, not a production-scale guarantee. "
+                    "Experimental adapters have partial or pending support; unstable adapters "
+                    "have no passing profile in the recorded matrix."
+                )
+                maturity_table = gr.Dataframe(
+                    headers=["Harness", "Maturity", "Qualification scope"],
+                    value=maturity_rows,
+                    interactive=False,
+                )
+                evidence_table = gr.Dataframe(
+                    headers=[
+                        "Harness",
+                        "OpenAI eval",
+                        "Anthropic eval",
+                        "HF eval",
+                        "vLLM training",
+                    ],
+                    value=evidence_rows,
+                    interactive=False,
+                )
+                evidence_detail_table = gr.Dataframe(
+                    headers=[
+                        "Harness",
+                        "Provider",
+                        "Status",
+                        "Model",
+                        "Harness version",
+                        "Tasks",
+                        "Workflow profile",
+                        "Optimizer scope",
+                        "Optimizer model revision",
+                        "Capture evidence",
+                        "Reason",
+                    ],
+                    value=evidence_details,
+                    interactive=False,
+                )
+                refresh_evidence = gr.Button("Refresh recorded evidence")
+                refresh_evidence.click(
+                    read_qualification_evidence,
+                    [],
+                    [
+                        evidence_table,
+                        evidence_detail_table,
+                        maturity_table,
+                        evidence_status_md,
+                    ],
+                )
             with gr.Accordion("Result JSON", open=False):
                 raw_json = gr.Code(language="json", lines=22)
 
         validate_btn.click(
             on_validate,
-            [url_in, model_in, key_in],
+            [url_in, model_in, key_in, provider_in, purpose_in, experimental_in],
             [engine_md, harness_in, sandbox_in, state, run_btn],
         )
+        for setting in (
+            url_in,
+            model_in,
+            key_in,
+            provider_in,
+            purpose_in,
+            experimental_in,
+        ):
+            setting.change(
+                lambda: ({}, gr.update(interactive=False), _UNVALIDATED),
+                outputs=[state, run_btn, engine_md],
+            )
         ds_in.change(on_dataset, [ds_in], [idx_in, count_md])
         ds_in.change(
             on_task,

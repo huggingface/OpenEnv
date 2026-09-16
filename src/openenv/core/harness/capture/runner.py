@@ -97,6 +97,7 @@ class CaptureServer:
         api_key: str | None = None,
         auth_header: str = "Authorization",
         capture_level: str = "tokens",
+        provider: str = "openai",
         admin_key: str | None = None,
         max_model_calls: int = 0,
     ) -> None:
@@ -107,10 +108,11 @@ class CaptureServer:
             api_key=api_key,
             auth_header=auth_header,
             capture_level=capture_level,
+            provider=provider,
             admin_key=admin_key,
             max_model_calls=max_model_calls,
         )
-        self.capture_level = capture_level
+        self.capture_level = "text" if provider == "anthropic" else capture_level
         self.admin_key = admin_key
         self.port = port
         self._thread: threading.Thread | None = None

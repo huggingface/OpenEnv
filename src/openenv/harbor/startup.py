@@ -78,6 +78,7 @@ def prepare(
     quiet: bool = False,
     api_key: str | None = None,
     auth_header: str = "Authorization",
+    provider: str = "openai",
 ) -> Capabilities:
     """Run every startup check and return what this server can do.
 
@@ -150,7 +151,13 @@ def prepare(
             model = served[0] if len(served) == 1 else ""
 
         report = (
-            validate_llm(llm_url, model, api_key=api_key, auth_header=auth_header)
+            validate_llm(
+                llm_url,
+                model,
+                api_key=api_key,
+                auth_header=auth_header,
+                provider=provider,
+            )
             if model
             else None
         )

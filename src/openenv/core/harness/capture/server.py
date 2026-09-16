@@ -43,6 +43,7 @@ import os
 import secrets
 import threading
 import uuid
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
 from typing import Any
 
@@ -50,18 +51,27 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from . import sse
-from .contract import to_trace_entries
+from .contract import BUDGET_STOP_MESSAGE, to_trace_entries
 from .detection import APIType, detect
 from .dialects import TransformManager
 from .export import export_session
 from .graph import TurnNode
 from .sessions import (
+    evaluation_sampling,
     extract_api_key,
     extract_harness_session,
+    rollout_type_for,
     SessionRegistry,
     Upstream,
 )
-from .upstream import InferenceClient, truncating_params, UpstreamError
+from .upstream import (
+    InferenceClient,
+    training_sampling,
+    truncating_params,
+    UpstreamError,
+    UpstreamHTTPError,
+    UpstreamRequestError,
+)
 from .validate import check_turn, check_turn_eval
 
 logger = logging.getLogger("intercept")
@@ -245,12 +255,15 @@ def clamp_output_tokens(chat_request: dict[str, Any], cap: int | None) -> int | 
     """
     if not cap:
         return None
+    replaced = None
     for key in _MAX_TOKENS_KEYS:
         value = chat_request.get(key)
         if isinstance(value, int) and value > cap:
             chat_request[key] = cap
-            return value
-    return None
+            replaced = max(replaced or 0, value)
+    if not any(chat_request.get(key) is not None for key in _MAX_TOKENS_KEYS):
+        chat_request["max_tokens"] = cap
+    return replaced
 
 
 def normalise_for_capture(chat_request: dict[str, Any]) -> None:
@@ -370,7 +383,7 @@ class UpstreamPool:
 
       * **Re-probing.** Deciding a tier means sending real completions (`validate_llm`). Doing that per
         session would add several round trips to every rollout, so the measurement is cached per
-        `(url, model, auth_header)` and shared by every session on that engine.
+        `(url, model, auth_header, credential_digest)` and shared by matching sessions.
       * **Client churn.** One `InferenceClient` per engine rather than per rollout, so connection
         pooling and the discovered `param_fixes` are shared.
 
@@ -378,9 +391,14 @@ class UpstreamPool:
     rollout is never stamped trainable without evidence.
     """
 
+    _probes = ThreadPoolExecutor(max_workers=4, thread_name_prefix="capture-probe")
+
     def __init__(self, *, default_client: InferenceClient, default_level: str) -> None:
         self._default = (default_client, default_level)
-        self._by_engine: dict[tuple[str, str, str], tuple[InferenceClient, str]] = {}
+        self._by_engine: dict[
+            tuple[str, str, str, str, str], tuple[InferenceClient, str]
+        ] = {}
+        self._pending: dict[tuple[str, str, str, str, str], Future] = {}
         self._lock = threading.Lock()
 
     @property
@@ -400,7 +418,7 @@ class UpstreamPool:
                     "model": client.served_model or "",
                     "capture_level": level,
                 }
-                for (url, _requested, _header), (
+                for (url, _requested, _header, _credential, _provider), (
                     client,
                     level,
                 ) in self._by_engine.items()
@@ -411,25 +429,33 @@ class UpstreamPool:
         key = upstream.cache_key
         with self._lock:
             hit = self._by_engine.get(key)
-        if hit is not None:
-            return hit
+            if hit is not None:
+                return hit
+            pending = self._pending.get(key)
+            if pending is None:
+                pending = self._probes.submit(self._resolve_once, upstream)
+                self._pending[key] = pending
+        # Shield shared work: cancelling one waiter must not cancel another rollout's probe.
+        return await asyncio.shield(asyncio.wrap_future(pending))
 
-        # `validate_llm` is synchronous urllib and sends several real completions, so it cannot run on
-        # the event loop: it would stall every other in-flight rollout for the length of a probe.
-        model, level = await asyncio.to_thread(self._probe, upstream)
-        client = InferenceClient(
-            base_url=upstream.llm_url.rstrip("/"),
-            served_model=model,
-            api_key=upstream.api_key,
-            auth_header=upstream.auth_header,
-            capture_level=level,
-        )
-        with self._lock:
-            # Two sessions naming the same new engine can probe concurrently. Keeping the first result
-            # means one client per engine either way; the loser is discarded before it ever opens a
-            # connection, so there is nothing to close.
-            self._by_engine.setdefault(key, (client, level))
-            return self._by_engine[key]
+    def _resolve_once(self, upstream: Upstream) -> tuple[InferenceClient, str]:
+        key = upstream.cache_key
+        try:
+            model, level = self._probe(upstream)
+            client = InferenceClient(
+                base_url=upstream.llm_url.rstrip("/"),
+                served_model=model,
+                api_key=upstream.api_key,
+                auth_header=upstream.auth_header,
+                capture_level=level,
+                provider=upstream.provider,
+            )
+            with self._lock:
+                self._by_engine[key] = (client, level)
+            return client, level
+        finally:
+            with self._lock:
+                self._pending.pop(key, None)
 
     def _probe(self, upstream: Upstream) -> tuple[str, str]:
         """`(served_model, capture_level)`. Blocking; always called on a worker thread."""
@@ -457,6 +483,7 @@ class UpstreamPool:
                 model,
                 api_key=upstream.api_key,
                 auth_header=upstream.auth_header,
+                provider=upstream.provider,
             )
             level = report.capture_level or "text"
             logger.warning(
@@ -495,7 +522,7 @@ def _budget_stop_response(model: str) -> dict[str, Any]:
                 "index": 0,
                 "message": {
                     "role": "assistant",
-                    "content": "Step budget exhausted; stopping.",
+                    "content": BUDGET_STOP_MESSAGE,
                     "tool_calls": None,
                 },
                 "finish_reason": "stop",
@@ -514,6 +541,7 @@ def create_app(
     max_output_tokens: int | None = 8192,
     api_key: str | None = None,
     auth_header: str = "Authorization",
+    provider: str = "openai",
     capture_level: str = "tokens",
     admin_key: str | None = None,
     max_model_calls: int = 0,
@@ -553,6 +581,8 @@ def create_app(
             model calls at `steps=3`, `maxSteps=3` and unset alike), and one runaway rollout holds its
             whole GRPO group hostage.
     """
+    if provider == "anthropic":
+        capture_level = "text"
     app = FastAPI(title="openenv-capture")
 
     # Identifies this app instance on /health. A caller that binds a port cannot tell "my server is
@@ -571,6 +601,7 @@ def create_app(
             api_key=api_key,
             auth_header=auth_header,
             capture_level=capture_level,
+            provider=provider,
         )
         if llm_url
         else None
@@ -683,6 +714,12 @@ def create_app(
             status_code=401,
         )
 
+    def _invalid_request(message: str) -> JSONResponse:
+        return JSONResponse(
+            {"error": {"message": message, "type": "invalid_request_error"}},
+            status_code=400,
+        )
+
     @app.post("/sessions")
     async def create_session(
         request: Request, payload: dict[str, Any] | None = None
@@ -700,6 +737,31 @@ def create_app(
         if not _admin_ok(request):
             return _forbidden()
         payload = payload or {}
+        metadata = payload.get("metadata")
+        if metadata is not None and not isinstance(metadata, dict):
+            return _invalid_request("metadata must be a JSON object")
+        metadata = metadata or {}
+        reserved = {
+            "session_id",
+            "upstream",
+            "capture_level",
+            "max_model_calls",
+            "sampling",
+            "purpose",
+            "eval_sampling",
+        } & metadata.keys()
+        if reserved:
+            noun = "key" if len(reserved) == 1 else "keys"
+            return _invalid_request(
+                f"metadata cannot include reserved {noun}: {', '.join(sorted(reserved))}"
+            )
+        budget = payload.get("max_model_calls", app.state.max_model_calls)
+        if type(budget) is not int or budget < 0:
+            return _invalid_request("max_model_calls must be a non-negative integer")
+        try:
+            policy = training_sampling(payload.get("sampling"))
+        except ValueError as exc:
+            return _invalid_request(str(exc))
         upstream = None
         level = ""
         llm_url = str(payload.get("llm_url") or "").strip()
@@ -709,6 +771,7 @@ def create_app(
                 model=str(payload.get("model") or "").strip(),
                 api_key=payload.get("api_key") or None,
                 auth_header=str(payload.get("auth_header") or "Authorization"),
+                provider=str(payload.get("provider") or "openai"),
             )
             # Probe now. The cache means this costs round trips only for an engine never seen before,
             # so a whole GRPO group naming the same vLLM pays for it once.
@@ -716,22 +779,35 @@ def create_app(
             # Carry the model the probe settled on: the caller may have left it blank for a
             # single-model endpoint, and the proxy needs the resolved name to rewrite requests.
             upstream = replace(upstream, model=client.served_model or upstream.model)
+        purpose = payload.get("purpose", "auto")
+        try:
+            rollout_type = rollout_type_for(purpose, level or app.state.capture_level)
+            eval_policy = evaluation_sampling(payload.get("eval_sampling"))
+            if eval_policy and purpose != "eval":
+                raise ValueError("eval_sampling requires explicit eval purpose")
+            if purpose == "eval" and payload.get("sampling") is not None:
+                raise ValueError(
+                    "eval purpose cannot apply a training sampling override"
+                )
+        except (ValueError, TypeError) as exc:
+            return _invalid_request(str(exc))
         session = app.state.registry.create(
             payload.get("session_id"),
+            purpose=purpose,
+            eval_sampling=eval_policy,
             upstream=upstream,
             capture_level=level,
             # Falls back to the server default, so a deployment can cap every rollout without its
             # callers knowing, and a caller can still tighten it per rollout.
-            max_model_calls=int(
-                payload.get("max_model_calls") or app.state.max_model_calls
-            ),
-            **(payload.get("metadata") or {}),
+            max_model_calls=budget,
+            sampling=policy or None,
+            **metadata,
         )
         effective = _level_of(session)
         return {
             "session_id": session.session_id,
             "capture_level": effective,
-            "rollout_type": "train" if effective == "tokens" else "eval",
+            "rollout_type": rollout_type,
             "max_model_calls": session.max_model_calls,
             "llm_url": upstream.llm_url if upstream else app.state.llm_url,
             "model": upstream.model if upstream else app.state.model,
@@ -839,9 +915,9 @@ def create_app(
         try:
             body = await request.json()
         except Exception:  # noqa: BLE001
-            return JSONResponse(
-                {"error": {"message": "body must be JSON"}}, status_code=400
-            )
+            return _invalid_request("body must be JSON")
+        if not isinstance(body, dict):
+            return _invalid_request("body must be a JSON object")
 
         # Answered, never recorded. Must come before session routing and dialect handling: an aux
         # route is not a model turn, so it has no business creating a node or a session.
@@ -868,7 +944,9 @@ def create_app(
         api_type: APIType = detect(f"/{path}", headers, body)
         transformer = app.state.transforms.get(api_type)
 
-        original_request = dict(body)
+        import copy
+
+        original_request = copy.deepcopy(body)
         # Include the query string: Google puts `alt=sse` there, not in the body.
         full_target = (
             f"/{path}?{request.url.query}" if request.url.query else f"/{path}"
@@ -897,6 +975,7 @@ def create_app(
                 session.session_id,
                 session.max_model_calls,
             )
+            session.budget_stop_count += 1
             stop = _budget_stop_response(_model_of(session) or app.state.model)
             if client_wants_stream:
                 return StreamingResponse(
@@ -907,7 +986,6 @@ def create_app(
             payload = transformer.transform_response(stop, original_request)
             normalise_client_payload(payload, api_type)
             return JSONResponse(payload)
-        session.model_calls += 1
         # The served model name has to be on the body BEFORE the transformer runs: each dialect
         # reads `_served_model` inside `transform_request` to decide per-model request fixes, and
         # `BaseTransformer._normalize_request` strips it again on the way out. Setting it afterwards,
@@ -917,19 +995,77 @@ def create_app(
         served_model = _model_of(session)
         if served_model:
             incoming["_served_model"] = served_model
-        chat_request = transformer.transform_request(incoming)
+        try:
+            chat_request = transformer.transform_request(incoming)
+        except UpstreamRequestError as exc:
+            return _invalid_request(str(exc))
+        if chat_request.get("n", 1) != 1 or isinstance(chat_request.get("n"), bool):
+            return _invalid_request(
+                "capture supports exactly one completion per request (n=1)"
+            )
         if served_model:
             chat_request["model"] = served_model
         normalise_for_capture(chat_request)
-        clamped = clamp_output_tokens(chat_request, app.state.max_output_tokens)
+        requested_sampling = {
+            key: chat_request[key] for key in SAMPLING_KEYS if key in chat_request
+        }
+        if getattr(session, "eval_sampling", None):
+            chat_request.update(session.eval_sampling)
+        if session.sampling:
+            # These alter logits beyond the full-vocabulary, temperature-only policy the
+            # trainer recomputes. Capture cannot reconstruct an unreported grammar mask.
+            constrained = [
+                key
+                for key in (
+                    "logit_bias",
+                    "allowed_token_ids",
+                    "structured_outputs",
+                    "guided_json",
+                    "guided_regex",
+                    "guided_choice",
+                    "guided_grammar",
+                    "min_tokens",
+                )
+                if chat_request.get(key)
+            ]
+            response_format = chat_request.get("response_format") or {}
+            if not isinstance(response_format, dict):
+                return _invalid_request("response_format must be a JSON object")
+            if response_format.get("type", "text") != "text":
+                constrained.append("response_format")
+            tool_choice = chat_request.get("tool_choice")
+            if tool_choice is not None and tool_choice not in ("auto", "none"):
+                constrained.append("tool_choice")
+            if constrained:
+                return _invalid_request(
+                    "training sampling cannot reproduce constrained logits: "
+                    + ", ".join(constrained)
+                )
+            chat_request.update(session.sampling)
+        output_cap = session.metadata.get("max_output_tokens")
+        if output_cap is not None and (type(output_cap) is not int or output_cap < 1):
+            return _invalid_request(
+                "session max_output_tokens must be a positive integer"
+            )
+        if app.state.max_output_tokens:
+            output_cap = (
+                min(output_cap, app.state.max_output_tokens)
+                if output_cap
+                else app.state.max_output_tokens
+            )
+        clamped = clamp_output_tokens(chat_request, output_cap)
         if clamped:
             logger.info(
                 "clamped requested output tokens %d -> %d",
                 clamped,
-                app.state.max_output_tokens,
+                output_cap,
             )
 
         upstream_client, session_level = await _upstream_for(session)
+        if session.sampling and session_level != "tokens":
+            return _invalid_request(
+                "training sampling requires an endpoint with token capture"
+            )
         if upstream_client is None:
             # No engine on the session and none on the server. Saying so beats forwarding to an empty
             # base URL, which surfaces as a connection error that names neither cause.
@@ -942,25 +1078,149 @@ def create_app(
                 },
                 status_code=503,
             )
-        try:
-            response = await upstream_client.completion(chat_request)
-        except UpstreamError as exc:
-            session.upstream_errors += 1
-            logger.warning("upstream error [%s]: %s", session.session_id, exc)
-            return JSONResponse({"error": {"message": str(exc)}}, status_code=502)
+        # Reserve after validation and upstream resolution. No await separates the check and
+        # increment, so concurrent requests on the capture loop cannot exceed the session budget.
+        if session.over_budget:
+            session.budget_stop_count += 1
+            stop = _budget_stop_response(_model_of(session) or app.state.model)
+            if client_wants_stream:
+                return StreamingResponse(
+                    sse.replay(api_type, transformer, stop, original_request),
+                    media_type="text/event-stream",
+                    headers=sse.SSE_HEADERS,
+                )
+            payload = transformer.transform_response(stop, original_request)
+            normalise_client_payload(payload, api_type)
+            return JSONResponse(payload)
+        if (
+            getattr(upstream_client, "provider", "openai") == "anthropic"
+            and api_type == APIType.ANTHROPIC
+        ):
+            chat_request["_openenv_native_request"] = {
+                **original_request,
+                **getattr(session, "eval_sampling", {}),
+            }
+            chat_request["_openenv_native_headers"] = {
+                key: request.headers[key]
+                for key in ("anthropic-beta", "anthropic-version")
+                if key in request.headers
+            }
+        session.model_calls += 1
 
-        normalise_response(response)
-        _ingest(session, chat_request, response, api_type, session_level)
+        async def complete_response():
+            try:
+                response = await upstream_client.completion(chat_request)
+            except UpstreamError as exc:
+                # A known context limit ends the rollout's compute budget. Let the
+                # harness terminate normally so Harbor can grade its current answer.
+                # Like the model-call stop, this control response is never ingested.
+                if isinstance(exc, UpstreamHTTPError) and exc.status_code == 400:
+                    error = (
+                        exc.body.get("error", exc.body)
+                        if isinstance(exc.body, dict)
+                        else {}
+                    )
+                    code = error.get("code") if isinstance(error, dict) else None
+                    message = str(exc).lower()
+                    if code == "context_length_exceeded" or (
+                        "maximum context length" in message and "tokens" in message
+                    ):
+                        session.findings.append(
+                            "[WARN] context_budget_exhausted: " + str(exc)
+                        )
+                        session.budget_stop_count += 1
+                        stop = _budget_stop_response(
+                            _model_of(session) or app.state.model
+                        )
+                        if client_wants_stream:
+                            return StreamingResponse(
+                                sse.replay(
+                                    api_type, transformer, stop, original_request
+                                ),
+                                media_type="text/event-stream",
+                                headers=sse.SSE_HEADERS,
+                            )
+                        payload = transformer.transform_response(stop, original_request)
+                        normalise_client_payload(payload, api_type)
+                        return JSONResponse(payload)
+                session.upstream_errors += 1
+                logger.warning("upstream error [%s]: %s", session.session_id, exc)
+                # Preserve a permanent request error: converting a 400 (for example,
+                # an image sent to a text-only engine) into 502 makes harnesses retry
+                # unchanged input for minutes. Transient failures retain the gateway
+                # response, and auth statuses are not exposed as harness credentials.
+                from .providers import ProviderConversionError
+
+                status = (
+                    400
+                    if isinstance(exc, ProviderConversionError)
+                    else exc.status_code
+                    if isinstance(exc, UpstreamHTTPError)
+                    and exc.status_code in (400, 413, 422)
+                    else 502
+                )
+                return JSONResponse(
+                    {"error": {"message": str(exc)}}, status_code=status
+                )
+
+            native_response = response.pop("_openenv_native_response", None)
+            effective_sampling = response.pop("_openenv_sampling", None)
+            if session.sampling and (
+                effective_sampling is None
+                or any(
+                    effective_sampling.get(key) != value
+                    for key, value in session.sampling.items()
+                )
+            ):
+                session.findings.append(
+                    "[FATAL] sampling_policy_changed: upstream did not preserve the session training policy"
+                )
+                session.upstream_errors += 1
+                return JSONResponse(
+                    {
+                        "error": {
+                            "message": "upstream did not preserve the session training sampling policy"
+                        }
+                    },
+                    status_code=502,
+                )
+            if effective_sampling is not None:
+                for key in SAMPLING_KEYS:
+                    chat_request.pop(key, None)
+                chat_request.update(effective_sampling)
+            normalise_response(response)
+            _ingest(
+                session,
+                chat_request,
+                response,
+                api_type,
+                session_level,
+                requested_sampling,
+            )
+
+            if native_response is not None and api_type == APIType.ANTHROPIC:
+                if client_wants_stream:
+                    from .providers import replay_anthropic
+
+                    return StreamingResponse(
+                        replay_anthropic(native_response),
+                        media_type="text/event-stream",
+                        headers=sse.SSE_HEADERS,
+                    )
+                return JSONResponse(native_response)
+            if client_wants_stream:
+                return StreamingResponse(
+                    sse.replay(api_type, transformer, response, original_request),
+                    media_type="text/event-stream",
+                    headers=sse.SSE_HEADERS,
+                )
+            payload = transformer.transform_response(response, original_request)
+            normalise_client_payload(payload, api_type)
+            return JSONResponse(payload)
 
         if client_wants_stream:
-            return StreamingResponse(
-                sse.replay(api_type, transformer, response, original_request),
-                media_type="text/event-stream",
-                headers=sse.SSE_HEADERS,
-            )
-        payload = transformer.transform_response(response, original_request)
-        normalise_client_payload(payload, api_type)
-        return JSONResponse(payload)
+            return await sse.keepalive_response(complete_response(), api_type)
+        return await complete_response()
 
     def _ingest(
         session,
@@ -968,6 +1228,7 @@ def create_app(
         response: dict[str, Any],
         api_type: APIType,
         capture_level: str,
+        requested_sampling: dict[str, Any] | None = None,
     ) -> None:
         """Turn one upstream response into a graph node, validating before it lands.
 
@@ -1042,7 +1303,7 @@ def create_app(
             # A rewritten request is how an eval number becomes unreproducible, so say so — once per
             # session, since every turn of a given harness sends the same knobs.
             if capture_level == "tokens":
-                overridden = truncating_params(chat_request)
+                overridden = truncating_params(requested_sampling or chat_request)
                 if overridden and not session.metadata.get("sampling_overridden"):
                     session.metadata["sampling_overridden"] = overridden
                     session.findings.append(
@@ -1050,7 +1311,8 @@ def create_app(
                         + ", ".join(f"{k}={v}" for k, v in sorted(overridden.items()))
                         + "; these were sent upstream at their no-op values because a processed "
                         "logprob is taken after they are applied, which would bias a full-vocab "
-                        "recompute. Trace records the request as sent by the harness."
+                        "recompute. requested_sampling_params preserves the harness request; "
+                        "sampling_params records the submitted policy."
                     )
 
             session.graph.add_turn(
@@ -1071,12 +1333,16 @@ def create_app(
                         for key in SAMPLING_KEYS
                         if chat_request.get(key) is not None
                     },
+                    requested_sampling_params=requested_sampling or {},
                     response_message=choice.get("message") or {},
                 )
             )
             session.last_turn_at = __import__("time").time()
             session.metadata.setdefault("api_type", api_type.value)
         except Exception:  # noqa: BLE001
+            session.findings.append(
+                "[FATAL] capture_ingest_failed: an upstream response could not be recorded"
+            )
             logger.exception("[%s] ingest failed; turn dropped", session.session_id)
 
     return app

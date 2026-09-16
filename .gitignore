@@ -144,3 +144,6 @@ docs/source/sg_execution_times.rst
 
 # Gradio UI build artifacts
 .gradio/
+
+# Local preservation archives and isolated preparation worktrees
+/temp/

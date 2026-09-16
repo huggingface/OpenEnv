@@ -95,17 +95,20 @@ class HarborEnvironment(MCPEnvironment):
             auth_header: str = "",
             agent_timeout_sec: float = 0.0,
             agent_step_limit: int = 0,
+            sampling: dict[str, Any] | None = None,
+            provider: str = "openai",
+            purpose: str = "auto",
+            eval_sampling: dict[str, Any] | None = None,
         ) -> str:
             """Run one Harbor rollout and return a JSON `HarborRolloutResult`.
 
             `harness`, `sandbox` AND the engine are all per-call, so consecutive rollouts can use
             different agents, different backends and different engines against the same server.
 
-            `agent_timeout_sec` bounds the whole rollout from the caller's side; 0 defers to the
-            task file. `agent_step_limit` bounds how many steps the agent takes; 0 leaves it
-            unbounded. A cap is worth setting for training: every turn re-sends the whole
-            conversation, so packed training rows grow with the SQUARE of the turn count, and only
-            some harnesses can express a limit at all (the rest log a warning).
+            `agent_timeout_sec` overrides the agent's execution timeout. `agent_step_limit` caps
+            captured model calls, including auxiliary calls, and sets a native step limit where
+            supported. Zero leaves calls uncapped. `sampling={"temperature": ...}` pins an explicit
+            full-vocabulary training policy; use the same temperature as the trainer.
 
             Naming `llm_url` probes that engine (once per engine, then cached) and decides this
             rollout's tier from what it can actually return: token ids and processed logprobs mean
@@ -127,6 +130,10 @@ class HarborEnvironment(MCPEnvironment):
                 auth_header,
                 agent_timeout_sec,
                 agent_step_limit,
+                sampling,
+                provider,
+                purpose,
+                eval_sampling,
             )
 
         @mcp.tool
@@ -234,6 +241,10 @@ class HarborEnvironment(MCPEnvironment):
         auth_header: str = "",
         agent_timeout_sec: float = 0.0,
         agent_step_limit: int = 0,
+        sampling: dict[str, Any] | None = None,
+        provider: str = "openai",
+        purpose: str = "auto",
+        eval_sampling: dict[str, Any] | None = None,
     ) -> str:
         from .models import HarborRolloutResult
         from .rollout import run_rollout as _run
@@ -282,6 +293,7 @@ class HarborEnvironment(MCPEnvironment):
                     model=model,
                     api_key=api_key or None,
                     auth_header=auth_header or "Authorization",
+                    provider=provider,
                 )
                 client, level = await pool.resolve(upstream)
                 served = client.served_model or model
@@ -305,6 +317,8 @@ class HarborEnvironment(MCPEnvironment):
                 keep_sandbox=keep_sandbox,
                 force_build=force_build,
                 capture_level=level,
+                purpose=purpose,
+                eval_sampling=eval_sampling,
                 upstream=upstream,
                 inference=client,
                 # 0 means "whatever the task file says". A caller that needs a harder bound can set
@@ -314,6 +328,7 @@ class HarborEnvironment(MCPEnvironment):
                 # rather than by anything that knew what it was waiting for.
                 agent_timeout_sec=agent_timeout_sec or None,
                 agent_step_limit=agent_step_limit or None,
+                sampling=sampling,
             )
 
         result = await _resolve_and_run()

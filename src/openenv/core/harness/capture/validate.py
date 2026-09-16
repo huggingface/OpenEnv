@@ -20,6 +20,7 @@ invariants), and `check_rollout` runs on the whole graph (structure).
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -73,6 +74,29 @@ def check_turn(
     report = Report()
     tag = f"turn {index}"
 
+    for name, ids in (("prompt", prompt_ids), ("sampled", sampled_ids)):
+        if any(type(token) is not int or token < 0 for token in ids):
+            report.add(
+                FATAL,
+                "invalid_token_id",
+                f"{tag}: {name} ids must be non-negative integers",
+            )
+
+    if logprobs is not None:
+        if any(
+            isinstance(lp, bool)
+            or not isinstance(lp, (int, float))
+            or not math.isfinite(lp)
+            for lp in logprobs
+        ):
+            report.add(
+                FATAL, "invalid_logprob", f"{tag}: logprobs must be finite numbers"
+            )
+        elif any(lp > 0 for lp in logprobs):
+            report.add(
+                FATAL, "positive_logprob", f"{tag}: logprobs must not be positive"
+            )
+
     if not prompt_ids:
         report.add(
             FATAL,
@@ -117,6 +141,29 @@ def check_turn(
             "here shifts credit onto the wrong tokens and still trains.",
         )
     return report
+
+
+def validate_training_turn(prompt_ids, sampled_ids, logprobs, loss_mask) -> None:
+    """Reject a malformed trainer-facing turn, preserving partial completion masks.
+
+    The mask covers prompt plus completion. Masked completion tokens may retain their real
+    logprobs; the mask controls supervision, while the logprobs retain capture provenance.
+    """
+    report = check_turn(prompt_ids, sampled_ids, logprobs)
+    if len(loss_mask) != len(prompt_ids) + len(sampled_ids):
+        report.add(
+            FATAL, "length_mismatch", "loss_mask must cover prompt plus completion"
+        )
+    elif any(type(m) is not int or m not in (0, 1) for m in loss_mask):
+        report.add(
+            FATAL, "invalid_loss_mask", "loss_mask must contain only integer 0 or 1"
+        )
+    elif any(loss_mask[: len(prompt_ids)]):
+        report.add(FATAL, "trainable_prompt", "prompt tokens must remain context")
+    if not report.ok:
+        raise ValueError(
+            "invalid training turn: " + "; ".join(str(f) for f in report.fatal)
+        )
 
 
 def check_turn_eval(response_message, *, finish_reason=None, index=0) -> Report:
@@ -165,6 +212,17 @@ def check_sequence(seq, *, min_trainable: int = 1) -> Report:
             f"input_ids={n} loss_mask={len(seq.loss_mask)} logprobs={len(seq.logprobs)}",
         )
         return report  # every later check would be meaningless
+
+    try:
+        validate_training_turn(
+            seq.input_ids[: seq.prompt_len],
+            seq.input_ids[seq.prompt_len :],
+            seq.logprobs[seq.prompt_len :],
+            seq.loss_mask,
+        )
+    except ValueError as exc:
+        report.add(FATAL, "invalid_training_sequence", str(exc))
+        return report
 
     trainable = sum(seq.loss_mask)
     if trainable < min_trainable:
@@ -220,7 +278,11 @@ def check_sequence(seq, *, min_trainable: int = 1) -> Report:
 
 # --- per rollout -------------------------------------------------------
 def check_rollout(
-    graph, *, expect_single_root: bool = False, capture_level: str = "tokens"
+    graph,
+    *,
+    expect_single_root: bool = False,
+    capture_level: str = "tokens",
+    budget_stop_count: int = 0,
 ) -> Report:
     """Validate graph structure. This is where harness-specific weirdness shows up first.
 
@@ -249,16 +311,16 @@ def check_rollout(
         #
         # WARN, not FATAL. Each turn is still an exact prompt with exact sampled tokens and real
         # logprobs, which is perfectly good SINGLE-turn training data. What is lost is cross-turn
-        # structure: the interstitial tool results are never masked-in as context, so credit cannot
-        # flow across turns. Calling that unusable would throw away correct data; calling it clean
-        # would hide a real degradation. So: trainable, and labelled.
+        # structure: each row repeats its own context. Rollout-level rewards still supervise
+        # these turns correctly, but repeated context increases compute and packing cost.
         if capture_level == "tokens":
             report.add(
                 WARN,
                 "per_turn_capture_only",
                 f"every turn is its own root ({stats['n_turns']}). This harness re-renders its "
                 "prompt rather than appending, so rows are single-turn. Tokens and logprobs are "
-                "exact; multi-turn credit assignment is not available.",
+                "exact; rollout rewards can still supervise every retained turn. Repeated context "
+                "increases training cost.",
             )
         else:
             report.add(
@@ -281,7 +343,11 @@ def check_rollout(
     elif expect_single_root and stats["n_roots"] != 1:
         report.add(FATAL, "root_count", f"expected 1 root, got {stats['n_roots']}")
 
-    if stats["n_turns"] == 1:
+    if stats["n_turns"] == 1 and budget_stop_count <= 0:
+        # A recorded proxy budget stop explains a one-turn rollout. In particular, a tool can
+        # return enough data after the first call to exhaust the next prompt's context budget.
+        # Its original verifier score and sampled tokens remain valid; rejecting it here would
+        # turn a legitimate bounded attempt into an unintended retry.
         # ONE call for an entire agentic task. Capture is trivially self-consistent here (a single
         # turn has nothing to stitch to and no prefix to disagree with), so every other check in this
         # file passes and the rollout reads as clean. It is not: an agent that made one model call

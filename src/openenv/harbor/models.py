@@ -42,6 +42,9 @@ class HarborTurn(BaseModel):
     prompt_token_ids: list[int] = Field(default_factory=list)
     completion_token_ids: list[int] = Field(default_factory=list)
     per_token_logps: list[float] = Field(default_factory=list)
+    # Full prompt+completion mask; None supports older serialized Harbor results.
+    loss_mask: list[int] | None = None
+    node_id: str = ""
     n_tools: int = 0
     discarded: bool = False
     # Whether THIS turn's logprobs may be trained on. False when ingest rejected them (`check_turn`
@@ -50,10 +53,10 @@ class HarborTurn(BaseModel):
     # flag those zeros are indistinguishable from a genuine logprob of 0.0, i.e. a p=1.0 token, and a
     # per-turn trainer would take them at face value.
     trainable: bool = True
-    # What the harness asked for when this turn was sampled. A processed logprob is taken over the
-    # distribution AFTER these are applied, so a trainer recomputing over the full vocabulary will not
-    # match unless it applies them too.
+    # Submitted inference policy, after overrides and compatibility edits. A processed logprob
+    # includes these transformations. Preserve the harness's original request separately.
     sampling_params: dict[str, Any] = Field(default_factory=dict)
+    requested_sampling_params: dict[str, Any] = Field(default_factory=dict)
 
     # What the model actually produced, in readable form. Only the assistant's own output is kept,
     # never the prompt side: the prompt is already present as token ids and repeating it as text
@@ -137,6 +140,8 @@ class HarborRolloutResult(BaseModel):
     conversations: list[HarborConversation] = Field(default_factory=list)
     n_turns: int = 0
     n_roots: int = 0
+    # Terminal responses emitted by the proxy; never model tokens or training turns.
+    budget_stop_count: int = 0
     n_trainable_tokens: int = 0
     multi_turn: bool = False
     atif: str = "none"
@@ -272,7 +277,7 @@ def turns_from_document(document: dict[str, Any]) -> list[HarborTurn]:
     # Forked paths share their prefix, and each live path is exported as its own sequence, so the
     # same node appears in more than one of them. Emit each node once: a duplicated row is the same
     # model call credited twice, which quietly doubles its weight in the gradient.
-    seen: set[str] = set()
+    seen: dict[str, list[int]] = {}
     index = 0
 
     for sequence in document.get("sequences", []):
@@ -281,9 +286,6 @@ def turns_from_document(document: dict[str, Any]) -> list[HarborTurn]:
         input_ids = sequence["input_ids"]
         logprobs = sequence["logprobs"]
         for node_id in sequence["node_ids"]:
-            if node_id in seen:
-                continue
-            seen.add(node_id)
             node = by_node.get(node_id, {})
             response = node.get("response_message") or {}
 
@@ -300,16 +302,30 @@ def turns_from_document(document: dict[str, Any]) -> list[HarborTurn]:
             n_sampled = int(node.get("n_sampled", 0))
             end = n_prompt + n_sampled
 
-            # `sequence_for` masks a whole turn in or out, so the mask over a turn's sampled span is
-            # uniform and one boolean carries it. Read from the mask rather than recomputed, so this
-            # cannot drift from the decision the flattener already made.
+            # Reconciliation can mask only part of a completion. Preserve each bit; `trainable`
+            # means some supervision remains, and cannot replace the per-token mask.
             mask = sequence.get("loss_mask") or []
             span = mask[n_prompt:end]
-            trainable = bool(span) and all(m == 1 for m in span)
+            if (
+                n_prompt < 0
+                or n_sampled < 0
+                or end > len(input_ids)
+                or len(span) != n_sampled
+            ):
+                raise ValueError(f"incomplete token or mask span for node {node_id}")
+            if node_id in seen:
+                if seen[node_id] != span:
+                    raise ValueError(
+                        f"inconsistent completion masks for shared node {node_id}"
+                    )
+                continue
+            seen[node_id] = list(span)
+            trainable = bool(span) and any(m == 1 for m in span)
 
             rows.append(
                 HarborTurn(
                     turn=index,
+                    node_id=node_id,
                     finish_reason=node.get("finish_reason"),
                     # Every turn, not just the first. This is the engine's own tokenisation of
                     # everything the model saw before it generated, which is what the training
@@ -319,11 +335,15 @@ def turns_from_document(document: dict[str, Any]) -> list[HarborTurn]:
                     # Straight off the node, which already recorded exactly what was sent upstream.
                     request_messages=list(node.get("request_messages") or []),
                     request_tools=node.get("request_tools"),
-                    per_token_logps=logprobs[n_prompt:end],
+                    per_token_logps=node.get("sampled_logprobs")
+                    or logprobs[n_prompt:end],
+                    loss_mask=[0] * n_prompt + list(span),
                     n_tools=node.get("n_tools", 0),
                     discarded=bool(node.get("discarded")),
                     trainable=trainable,
                     sampling_params=node.get("sampling_params") or {},
+                    requested_sampling_params=node.get("requested_sampling_params")
+                    or {},
                     text=_assistant_text(response),
                     tool_calls=_tool_calls(response),
                 )

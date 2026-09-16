@@ -28,6 +28,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from openenv.core.harness.capture.server import create_app
+from openenv.core.harness.capture.upstream import UpstreamHTTPError
 
 
 class _CountingEngine:
@@ -78,6 +79,103 @@ def _chat(client: TestClient, session_id: str) -> Any:
     )
 
 
+@pytest.mark.parametrize("stream", [False, True])
+def test_context_limit_stops_without_fabricating_a_captured_turn(
+    app_and_engine, stream
+):
+    app, engine = app_and_engine
+    session = app.state.registry.create(max_model_calls=17)
+    with TestClient(app) as client:
+        _chat(client, session.session_id)
+        before = session.graph.stats()["n_turns"]
+
+        async def too_long(request):
+            raise UpstreamHTTPError(
+                400,
+                {
+                    "error": {
+                        "message": (
+                            "This model's maximum context length is 131072 tokens. "
+                            "However, you requested 4096 output tokens and your prompt contains "
+                            "at least 126977 input tokens."
+                        )
+                    }
+                },
+            )
+
+        engine.completion = too_long
+        response = client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": f"Bearer {session.session_id}"},
+            json={
+                "model": "test-model",
+                "messages": [{"role": "user", "content": "long"}],
+                "stream": stream,
+            },
+        )
+    assert response.status_code == 200
+    assert session.budget_stop_count == 1
+    assert session.upstream_errors == 0
+    assert session.graph.stats()["n_turns"] == before
+    assert any("context_budget_exhausted" in finding for finding in session.findings)
+    from openenv.core.harness.capture.export import export_session
+
+    document = export_session(session, capture_level="text")
+    assert not any(
+        "degenerate_rollout" in finding for finding in document["validation"]
+    )
+    if stream:
+        assert response.headers["content-type"].startswith("text/event-stream")
+        assert '"finish_reason":"stop"' in response.text.replace(" ", "")
+    else:
+        assert response.json()["choices"][0]["finish_reason"] == "stop"
+
+
+@pytest.mark.parametrize(
+    "upstream_status, expected_status", [(400, 400), (413, 413), (422, 422), (500, 502)]
+)
+def test_other_upstream_errors_are_not_converted_to_budget_stops(
+    app_and_engine, upstream_status, expected_status
+):
+    app, engine = app_and_engine
+    session = app.state.registry.create()
+
+    async def invalid(request):
+        raise UpstreamHTTPError(
+            upstream_status, {"error": {"message": "invalid tools"}}
+        )
+
+    engine.completion = invalid
+    with TestClient(app) as client:
+        assert _chat(client, session.session_id).status_code == expected_status
+    assert session.budget_stop_count == 0
+    assert session.upstream_errors == 1
+    assert session.graph.stats()["n_turns"] == 0
+
+
+def test_single_turn_without_recorded_budget_stop_still_fails(app_and_engine):
+    from openenv.core.harness.capture.export import export_session
+
+    app, _ = app_and_engine
+    session = app.state.registry.create()
+    with TestClient(app) as client:
+        _chat(client, session.session_id)
+    document = export_session(session, capture_level="text")
+    assert any(
+        "[FATAL] degenerate_rollout" in finding for finding in document["validation"]
+    )
+
+
+def test_budget_stop_does_not_make_an_empty_capture_valid(app_and_engine):
+    from openenv.core.harness.capture.export import export_session
+
+    app, _ = app_and_engine
+    session = app.state.registry.create()
+    session.budget_stop_count = 1
+    document = export_session(session, capture_level="text")
+    assert any("[FATAL] no_turns" in finding for finding in document["validation"])
+
+
 def test_budget_stops_forwarding_at_the_cap(app_and_engine):
     app, engine = app_and_engine
     session = app.state.registry.create(max_model_calls=3)
@@ -104,6 +202,34 @@ def test_the_capped_turn_is_terminal_and_never_captured(app_and_engine):
     assert over["choices"][0]["message"]["content"].strip()
     # And it is not in the graph. A synthetic turn in the training data is the failure this guards.
     assert session.graph.stats()["n_turns"] == 1
+
+    # The harness may put the terminal response in ATIF. The independent cross-check needs
+    # explicit evidence that this zero-token step came from the proxy, rather than the model.
+    from openenv.core.harness.capture.export import export_session
+    from openenv.harbor.atif import reconcile
+
+    document = export_session(session, capture_level="text")
+    trace = {
+        "steps": [
+            {
+                "source": "agent",
+                "message": "turn 1",
+                "metrics": {"completion_tokens": 1},
+            },
+            {
+                "source": "agent",
+                "message": over["choices"][0]["message"]["content"],
+                "metrics": over["usage"],
+            },
+        ]
+    }
+    assert document["budget_stop_count"] == 1
+    assert not any(
+        "degenerate_rollout" in finding for finding in document["validation"]
+    )
+    report = reconcile(document, trace)
+    assert "proxy_budget_stops" in {f.code for f in report.findings}
+    assert "atif_calls_missing" not in {f.code for f in report.findings}
 
 
 def test_the_stop_is_streamed_when_the_caller_streams(app_and_engine):

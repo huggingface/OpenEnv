@@ -22,8 +22,12 @@ here, because in Polar they live in `server.py` next to its node/dispatcher laye
 
 from __future__ import annotations
 
+import asyncio
 import json
-from typing import Any
+from contextlib import suppress
+from typing import Any, Awaitable
+
+from starlette.responses import Response, StreamingResponse
 
 from .detection import APIType
 from .dialects.base import BaseTransformer
@@ -35,6 +39,82 @@ SSE_HEADERS = {
     # it over at once, which defeats the point for the client even though the bytes are correct.
     "X-Accel-Buffering": "no",
 }
+
+# The shared relay can time out both delayed headers and an idle response body
+# after 60 seconds. Comments keep SSE alive without representing model output.
+KEEPALIVE_INTERVAL_S = 10.0
+KEEPALIVE = ": openenv keepalive\n\n"
+
+
+def _error_event(api_type: APIType, response: Response) -> str:
+    payload = json.loads(response.body)
+    error = payload.get("error", payload)
+    message = error.get("message", "upstream request failed")
+    if api_type == APIType.ANTHROPIC:
+        return _format_typed_events(
+            [{"type": "error", "error": {"type": "api_error", "message": message}}]
+        )
+    if api_type == APIType.OPENAI_RESPONSES:
+        return _format_typed_events(
+            [
+                {
+                    "type": "error",
+                    "code": "server_error",
+                    "message": message,
+                    "param": None,
+                    "sequence_number": 0,
+                }
+            ]
+        )
+    return _format_data_only({"error": {**error, "code": response.status_code}})
+
+
+async def keepalive_response(
+    pending: Awaitable[Response], api_type: APIType
+) -> Response:
+    """Keep a delayed replay connected while capturing the complete upstream reply.
+
+    Fast responses retain their original HTTP status, including validation and
+    upstream errors. Once SSE headers are committed, a later error is an error
+    event in the client's dialect. It never becomes a synthetic assistant turn.
+    """
+    task = asyncio.ensure_future(pending)
+    try:
+        done, _ = await asyncio.wait({task}, timeout=KEEPALIVE_INTERVAL_S)
+    except BaseException:
+        task.cancel()
+        with suppress(asyncio.CancelledError, Exception):
+            await task
+        raise
+    if done:
+        return task.result()
+
+    async def body():
+        while not task.done():
+            yield KEEPALIVE
+            await asyncio.wait({task}, timeout=KEEPALIVE_INTERVAL_S)
+        response = task.result()
+        if response.status_code >= 400:
+            yield _error_event(api_type, response)
+            return
+        if not isinstance(response, StreamingResponse):
+            raise RuntimeError("streaming capture returned a non-streaming success")
+        async for chunk in response.body_iterator:
+            yield chunk
+
+    class PendingResponse(StreamingResponse):
+        async def __call__(self, scope, receive, send):
+            try:
+                await super().__call__(scope, receive, send)
+            finally:
+                # A dropped client must not leave a capture task running after
+                # its request owner has gone away, including before body start.
+                if not task.done():
+                    task.cancel()
+                with suppress(asyncio.CancelledError, Exception):
+                    await task
+
+    return PendingResponse(body(), media_type="text/event-stream", headers=SSE_HEADERS)
 
 
 def _format_typed_events(events: list[dict[str, Any]]) -> str:

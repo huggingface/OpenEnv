@@ -21,6 +21,61 @@ seams = pytest.importorskip("openenv.harbor.seams")
 _pick_reward = rollout._pick_reward
 
 
+@pytest.mark.parametrize(
+    "harness,version",
+    [
+        ("opencode", "1.18.31"),
+        ("claude-code", "2.1.270"),
+        ("codex", "0.154.0"),
+        ("mini-swe-agent", "2.4.6"),
+    ],
+)
+def test_deployment_pin_reaches_harbor_installer(
+    monkeypatch, tmp_path, harness, version
+):
+    import json
+
+    monkeypatch.setenv("OPENENV_HARBOR_AGENT_VERSIONS", json.dumps({harness: version}))
+    config = rollout.build_trial_config(
+        task_dir=tmp_path,
+        harness=harness,
+        sandbox="e2b",
+        intercept_url="http://proxy",
+        session_id="test",
+        model="Qwen/Qwen3.5-2B",
+        trial_name="test",
+        trials_dir=tmp_path,
+    )
+    assert config.agent.kwargs["version"] == version
+
+
+@pytest.mark.parametrize(
+    "pin", ['{"codex":"latest"}', '{"codex":"0.1;echo bad"}', "[]"]
+)
+def test_invalid_installer_pin_rejected(monkeypatch, tmp_path, pin):
+    monkeypatch.setenv("OPENENV_HARBOR_AGENT_VERSIONS", pin)
+    with pytest.raises(ValueError, match="exact numeric versions"):
+        rollout.build_trial_config(
+            task_dir=tmp_path,
+            harness="codex",
+            sandbox="e2b",
+            intercept_url="http://proxy",
+            session_id="test",
+            model="Qwen/Qwen3.5-2B",
+            trial_name="test",
+            trials_dir=tmp_path,
+        )
+
+
+def test_reward_preference_uses_the_existing_verifier_result():
+    assert _pick_reward({"reward": 0.0}, "correctness,reward") == (0.0, "reward")
+    assert _pick_reward({"correctness": 0.0, "reward": 1.0}, "correctness,reward") == (
+        0.0,
+        "correctness",
+    )
+    assert _pick_reward({"a,b": 0.25, "a": 1.0}, "a,b") == (0.25, "a,b")
+
+
 # --- reward selection -------------------------------------------------------
 def test_no_rewards_means_ungraded_not_zero():
     """The verifier never ran. Scoring that as 0 makes a dead sandbox look like a wrong answer."""
@@ -206,6 +261,32 @@ class _FakeSession:
         self.graph = None
 
 
+def test_invalid_eval_policy_returns_failure_before_allocating_session(tmp_path):
+    import asyncio
+
+    from openenv.core.harness.capture.sessions import SessionRegistry
+
+    registry = SessionRegistry()
+    result = asyncio.run(
+        rollout.run_rollout(
+            task_dir=tmp_path,
+            harness="opencode",
+            sandbox="e2b",
+            registry=registry,
+            intercept_url="http://127.0.0.1:9",
+            model="m",
+            trials_dir=tmp_path,
+            purpose="eval",
+            eval_sampling={"temperature": float("nan")},
+        )
+    )
+    assert not result.ok
+    assert result.reward is None
+    assert result.exception_type == "ValueError"
+    assert "finite" in result.error
+    assert not result.session_id
+
+
 class _FakeRegistry:
     """Enough of `SessionRegistry` for `run_rollout` to mint and delete a session."""
 
@@ -214,3 +295,60 @@ class _FakeRegistry:
 
     def delete(self, _session_id):
         return True
+
+
+def test_hf_routing_suffix_gets_a_stable_harness_alias():
+    import re
+
+    served = "Qwen/Qwen3.5-9B:together"
+    alias = seams.agent_facing_model(served)
+    assert re.fullmatch(r"[A-Za-z0-9._-]{1,63}", alias)
+    assert alias == seams.agent_facing_model(served)
+    assert alias != seams.agent_facing_model("Qwen/Qwen3.5-9B-together")
+    assert alias != seams.agent_facing_model("Qwen/Qwen3.5-9B:other")
+    model, _, _, _ = seams.get("terminus-2").resolve(
+        base_url="https://capture.example", session="test", model=served
+    )
+    assert model == "hosted_vllm/" + alias
+
+
+def test_long_harness_alias_is_bounded_without_colliding_on_prefix():
+    left = seams.agent_facing_model("a" * 100 + "x")
+    right = seams.agent_facing_model("a" * 100 + "y")
+    assert len(left) == len(right) == 63
+    assert left != right
+
+
+def test_session_observer_gets_owned_id_and_cleanup_survives_observer_failure(tmp_path):
+    import asyncio
+
+    from openenv.core.harness.capture.sessions import SessionRegistry
+
+    registry = SessionRegistry()
+    unrelated = registry.create("other-rollout")
+    observed = []
+
+    def observe(session_id):
+        assert registry.get(session_id) is not None
+        assert session_id != unrelated.session_id
+        observed.append(session_id)
+        raise RuntimeError("observer failed")
+
+    result = asyncio.run(
+        rollout.run_rollout(
+            task_dir=tmp_path,
+            harness="opencode",
+            sandbox="e2b",
+            registry=registry,
+            intercept_url="http://127.0.0.1:9",
+            model="m",
+            trials_dir=tmp_path,
+            purpose="eval",
+            capture_level="text",
+            on_session_created=observe,
+        )
+    )
+    assert observed == [result.session_id]
+    assert result.ok is False and result.error == "observer failed"
+    assert registry.get(result.session_id) is None
+    assert registry.get(unrelated.session_id) is unrelated

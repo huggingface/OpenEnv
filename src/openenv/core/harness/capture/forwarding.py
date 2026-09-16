@@ -33,13 +33,17 @@ why `SessionRegistry.require_registered` defaults to True.
 
 from __future__ import annotations
 
+import logging
 import re
 import secrets
 import select
 import shutil
 import subprocess
+import threading
 import time
 from abc import ABC, abstractmethod
+
+logger = logging.getLogger(__name__)
 
 
 class ForwardingError(RuntimeError):
@@ -131,6 +135,8 @@ class GradioForwarder(PortForwarder):
         super().__init__()
         self._share_server = share_server_address
         self._tls_cert = share_server_tls_certificate
+        self._tunnel = None
+        self._readers: list[threading.Thread] = []
 
     @classmethod
     def preflight(cls) -> None:
@@ -143,23 +149,70 @@ class GradioForwarder(PortForwarder):
 
     def start(self, local_port: int, *, local_host: str = "127.0.0.1") -> str:
         from gradio.networking import setup_tunnel
+        from gradio.tunneling import CURRENT_TUNNELS
 
+        self.stop()
+        share_token = secrets.token_hex(16)
         try:
             url = setup_tunnel(
                 local_host=local_host,
                 local_port=local_port,
-                share_token=secrets.token_hex(16),
+                share_token=share_token,
                 share_server_address=self._share_server,
                 share_server_tls_certificate=self._tls_cert,
             )
         except Exception as exc:  # noqa: BLE001
             raise ForwardingError(f"gradio forward failed to open: {exc}") from exc
+        # Gradio reads stdout only until the URL appears, and never reads stderr.
+        # Drain both pipes for the lifetime of this child: a full pipe can block
+        # frpc's logging thread and prevent it from maintaining the relay.
+        self._tunnel = next(
+            (tunnel for tunnel in CURRENT_TUNNELS if tunnel.share_token == share_token),
+            None,
+        )
+        if self._tunnel is None or self._tunnel.proc is None:
+            raise ForwardingError(
+                "gradio returned a URL without a managed tunnel process"
+            )
+        for pipe in (self._tunnel.proc.stdout, self._tunnel.proc.stderr):
+            if pipe is not None:
+                reader = threading.Thread(target=self._drain, args=(pipe,), daemon=True)
+                reader.start()
+                self._readers.append(reader)
         self._local_port, self._url = local_port, url
         return url
 
+    @staticmethod
+    def _drain(pipe) -> None:
+        try:
+            for line in iter(pipe.readline, b""):
+                text = line.decode(errors="replace").rstrip()
+                if any(
+                    marker in text.lower() for marker in ("error", "failed", "warn")
+                ):
+                    logger.warning("gradio tunnel: %s", text[:1000])
+                else:
+                    logger.debug("gradio tunnel: %s", text[:1000])
+        except (OSError, ValueError):
+            pass  # The owner may close the pipe during shutdown.
+
     def stop(self) -> None:
-        # frpc runs in-process and dies with it. That coupling is deliberate: a forward outliving the
-        # intercept it points at is a 502 generator.
+        if self._tunnel is not None:
+            process = self._tunnel.proc
+            self._tunnel.kill()
+            if process is not None:
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
+                for reader in self._readers:
+                    reader.join(timeout=1)
+                for pipe in (process.stdout, process.stderr):
+                    if pipe is not None:
+                        pipe.close()
+            self._tunnel = None
+        self._readers.clear()
         self._url = None
 
 
