@@ -202,12 +202,15 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
         """
         Establish connection to the server.
 
-        In production mode (use_production_mode=True), creates and caches a
-        persistent HTTP MCP session instead of establishing a WebSocket connection.
+        In production mode (`use_production_mode=True`), open the WebSocket used
+        by `reset` / `step` / `state` and create a persistent HTTP MCP session
+        for `list_tools` / `call_tool`. Tool calls bypass `step()` over `/mcp`,
+        but the Gym lifecycle still requires `/ws` until production routing
+        covers those methods end-to-end.
         """
         if getattr(self, "use_production_mode", False):
             try:
-                self._start_provider_if_needed()
+                await super()._connect_async()
                 await self._ensure_production_session()
             except Exception:
                 await self.close()
