@@ -1,0 +1,50 @@
+name: Validation runtime
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime:
+    name: Runtime validation / Linux Docker
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12.13"
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.9.3"
+          enable-cache: true
+          cache-dependency-glob: tests/validation_runtime/uv.lock
+      - name: Install locked runtime
+        run: uv sync --project tests/validation_runtime --frozen
+      - name: Fast and real protocol tests
+        run: |
+          uv run --project tests/validation_runtime --frozen python scripts/validation/reproduce.py --suite fast --require-complete
+          uv run --project tests/validation_runtime --frozen python scripts/validation/reproduce.py --suite protocol --require-complete
+      - name: Exact-wheel Docker acceptance
+        run: uv run --project tests/validation_runtime --frozen python scripts/validation/reproduce.py --suite docker --require-complete
+      - name: Verify evidence inventory
+        run: |
+          for bundle in outputs/validation-runtime/*; do
+            python scripts/validation/verify_artifacts.py "$bundle"
+          done
+      - name: Retain evidence on success or failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-runtime-${{ github.event.pull_request.head.sha || github.sha }}
+          path: outputs/validation-runtime/
+          if-no-files-found: warn
+          retention-days: 14

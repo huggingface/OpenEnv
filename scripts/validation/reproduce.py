@@ -1,0 +1,414 @@
+#!/usr/bin/env python3
+"""One pinned entry point for local and CI runtime-validation evidence."""
+
+import argparse
+import hashlib
+import json
+import os
+import platform
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import uuid
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+PROJECT = ROOT / "tests/validation_runtime"
+FIXTURE = ROOT / "tests/fixtures/validation/runtime/served_probe"
+MAX_LOG_BYTES = 1024 * 1024
+
+
+def digest(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def hashes(root):
+    return {
+        str(path.relative_to(root)): digest(path)
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and "__pycache__" not in path.parts
+    }
+
+
+def write_json(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+
+
+def run(argv, *, cwd=ROOT, timeout=600, log=None, env=None):
+    process = subprocess.Popen(
+        [str(arg) for arg in argv],
+        cwd=cwd,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        stdin=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    tail = bytearray()
+
+    def drain():
+        try:
+            while chunk := process.stdout.read(8192):
+                tail.extend(chunk)
+                if len(tail) > MAX_LOG_BYTES:
+                    del tail[:-MAX_LOG_BYTES]
+        finally:
+            process.stdout.close()
+
+    reader = threading.Thread(target=drain, daemon=True)
+    reader.start()
+    try:
+        process.wait(timeout=timeout)
+    except BaseException:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait()
+        raise
+    finally:
+        reader.join(timeout=5)
+        if reader.is_alive():
+            # A descendant may retain a pipe after the main command exited.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            reader.join(timeout=5)
+        output = bytes(tail).decode("utf-8", "replace")
+        output = re.sub(
+            r"(?:hf_|ghp_|github_pat_|sk-)[A-Za-z0-9_-]{8,}", "[REDACTED]", output
+        )
+        if log:
+            log.parent.mkdir(parents=True, exist_ok=True)
+            log.write_text(output)
+    if process.returncode:
+        raise RuntimeError(
+            f"Command failed ({process.returncode}): {argv[0:3]}\n{output[-4000:]}"
+        )
+    return output.strip()
+
+
+def snapshot_source(destination):
+    """Hash exactly the files used for the wheel, including local source edits."""
+    if any(path.is_symlink() for path in (ROOT / "src").rglob("*")):
+        raise RuntimeError("Source snapshots do not permit symlinks")
+    destination.mkdir()
+    for name in ("pyproject.toml", "README.md", "LICENSE"):
+        shutil.copyfile(ROOT / name, destination / name)
+    shutil.copytree(
+        ROOT / "src",
+        destination / "src",
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.egg-info"),
+    )
+    for path in destination.rglob("*"):
+        if path.is_symlink():
+            raise RuntimeError("Source snapshots do not permit symlinks")
+    return hashes(destination)
+
+
+def select_linux_requirements(path, arch):
+    """Evaluate lock markers for the target, not pip's macOS host environment."""
+    from packaging.markers import default_environment
+    from packaging.requirements import Requirement
+
+    target = default_environment()
+    target.update(
+        {
+            "sys_platform": "linux",
+            "platform_system": "Linux",
+            "os_name": "posix",
+            "platform_machine": arch,
+            "python_version": "3.12",
+            "python_full_version": "3.12.13",
+        }
+    )
+    blocks = []
+    for line in path.read_text().splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if not line[0].isspace():
+            blocks.append([line])
+        else:
+            blocks[-1].append(line)
+    selected = []
+    for block in blocks:
+        requirement = Requirement(block[0].rstrip(" \\"))
+        if requirement.marker is not None and not requirement.marker.evaluate(target):
+            continue
+        requirement.marker = None
+        selected.append(str(requirement) + " \\\n" + "\n".join(block[1:]))
+    path.write_text("\n".join(selected) + "\n")
+
+
+def stage_image(work, output, pins, manifest):
+    source = work / "source"
+    manifest["wheel_source_hashes"] = snapshot_source(source)
+    wheel_dir = output / "wheel"
+    run(
+        [
+            "uv",
+            "build",
+            "--wheel",
+            "--no-build-isolation",
+            "--python",
+            sys.executable,
+            "--out-dir",
+            wheel_dir,
+            source,
+        ],
+        log=output / "logs/wheel-build.log",
+    )
+    wheels = list(wheel_dir.glob("*.whl"))
+    if len(wheels) != 1:
+        raise RuntimeError("Expected one exact-source OpenEnv wheel")
+    wheel = wheels[0]
+    manifest["wheel_sha256"] = digest(wheel)
+    # Replace only OpenEnv in this dedicated, non-editable test environment.
+    run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--no-deps",
+            "--force-reinstall",
+            wheel,
+        ],
+        log=output / "logs/wheel-install.log",
+    )
+    requirements = output / "requirements.txt"
+    run(
+        [
+            "uv",
+            "export",
+            "--project",
+            PROJECT,
+            "--frozen",
+            "--no-dev",
+            "--no-emit-project",
+            "--no-emit-package",
+            "openenv",
+            "--output-file",
+            requirements,
+        ],
+        log=output / "logs/dependency-export.log",
+    )
+    context = work / "subject"
+    context.mkdir()
+    wheelhouse = output / "wheelhouse"
+    architecture = run(["docker", "info", "--format", "{{.Architecture}}"])
+    arch = {
+        "x86_64": "x86_64",
+        "amd64": "x86_64",
+        "aarch64": "aarch64",
+        "arm64": "aarch64",
+    }.get(architecture)
+    if arch is None:
+        raise RuntimeError(f"Unsupported Docker architecture: {architecture}")
+    manifest["docker_platform"] = "linux/amd64" if arch == "x86_64" else "linux/arm64"
+    select_linux_requirements(requirements, arch)
+    run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "download",
+            "--no-deps",
+            "--require-hashes",
+            "--only-binary=:all:",
+            "--python-version",
+            "3.12",
+            "--implementation",
+            "cp",
+            "--platform",
+            f"manylinux_2_28_{arch}",
+            "--platform",
+            f"manylinux2014_{arch}",
+            "--platform",
+            f"linux_{arch}",
+            "-r",
+            requirements,
+            "--dest",
+            wheelhouse,
+        ],
+        timeout=900,
+        log=output / "logs/dependency-acquisition.log",
+    )
+    shutil.copyfile(wheel, wheelhouse / wheel.name)
+    manifest["wheelhouse_hashes"] = hashes(wheelhouse)
+    shutil.copytree(wheelhouse, context / "wheelhouse")
+    # The exact wheel hash joins the locked third-party hashes for offline installation.
+    with requirements.open("a") as stream:
+        stream.write(
+            f"\nopenenv=={wheel.name.split('-')[1]} --hash=sha256:{digest(wheel)}\n"
+        )
+    shutil.copyfile(requirements, context / "requirements.txt")
+    shutil.copytree(
+        FIXTURE, context / "served_probe", ignore=shutil.ignore_patterns("__pycache__")
+    )
+    for name in ("Dockerfile", "openenv.yaml"):
+        shutil.copyfile(FIXTURE / name, context / name)
+    shutil.copytree(FIXTURE / "validation", context / "validation")
+    # Assert the checked-in Dockerfile and declared base pin cannot drift independently.
+    if pins["base_image"] not in (context / "Dockerfile").read_text():
+        raise RuntimeError("Fixture base image differs from toolchain.json")
+    from openenv.validation.manifest import ExecutionDeclaration
+    from openenv.validation.providers.docker import DockerValidationProvider
+
+    provider = DockerValidationProvider(build_timeout_s=600)
+    image = provider.build(
+        context, ExecutionDeclaration(kind="openenv_ws", agent_boundary="api")
+    )
+    manifest["image_ref"] = image
+    manifest["build_context_hashes"] = hashes(context)
+    return context, image
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--suite", required=True, choices=("fast", "protocol", "docker")
+    )
+    parser.add_argument("--require-complete", action="store_true")
+    parser.add_argument(
+        "--output", type=Path, default=ROOT / "outputs/validation-runtime"
+    )
+    args = parser.parse_args()
+    pins = json.loads((PROJECT / "toolchain.json").read_text())
+    if platform.python_version() != pins["python"]:
+        parser.error(f"Use pinned Python {pins['python']} via tests/validation_runtime")
+    uv_version = run(["uv", "--version"])
+    if uv_version.split()[1] != pins["uv"]:
+        parser.error(f"Use pinned uv {pins['uv']}")
+    run_id = f"l2-{uuid.uuid4().hex[:12]}"
+    output = (args.output / run_id).resolve()
+    output.mkdir(parents=True)
+    print(f"Evidence: {output}", flush=True)
+    manifest = {
+        "schema_version": "1",
+        "run_id": run_id,
+        "suite": args.suite,
+        "argv": sys.argv,
+        "head_sha": run(["git", "rev-parse", "HEAD"]),
+        "dirty": bool(run(["git", "status", "--porcelain"])),
+        "diff_sha256": hashlib.sha256(
+            run(["git", "diff", "HEAD", "--binary"]).encode()
+        ).hexdigest(),
+        "toolchain": pins,
+        "python": platform.python_version(),
+        "uv": uv_version,
+        "platform": platform.platform(),
+        "lock_sha256": digest(PROJECT / "uv.lock"),
+        "fixture_hashes": hashes(FIXTURE),
+        "require_complete": args.require_complete,
+    }
+    started = time.monotonic()
+    status = 1
+    environment = os.environ.copy()
+    environment.pop("PYTHONPATH", None)
+    environment["OPENENV_VALIDATION_ARTIFACTS"] = str(output)
+    environment["OPENENV_REQUIRE_COMPLETE"] = "1" if args.require_complete else "0"
+    try:
+        with tempfile.TemporaryDirectory(prefix="openenv-validation-") as temporary:
+            if args.suite == "docker":
+                manifest["docker_info"] = json.loads(
+                    run(["docker", "info", "--format", "{{json .}}"], timeout=30)
+                )
+                # Exclude host-specific paths, labels and proxy settings from retained evidence.
+                manifest["docker_info"] = {
+                    key: manifest["docker_info"].get(key)
+                    for key in (
+                        "ServerVersion",
+                        "Architecture",
+                        "OperatingSystem",
+                        "OSType",
+                        "KernelVersion",
+                        "Driver",
+                        "CgroupDriver",
+                        "CgroupVersion",
+                        "MemoryLimit",
+                        "SwapLimit",
+                    )
+                }
+                context, image = stage_image(Path(temporary), output, pins, manifest)
+                environment.update(
+                    {
+                        "OPENENV_VALIDATION_IMAGE": image,
+                        "OPENENV_VALIDATION_CONTEXT": str(context),
+                        "OPENENV_REQUIRE_DOCKER": "1",
+                    }
+                )
+                test_args = [
+                    str(ROOT / "tests/test_validation/integration"),
+                    "-m",
+                    "docker",
+                ]
+            elif args.suite == "protocol":
+                test_args = [
+                    str(ROOT / "tests/test_validation/integration"),
+                    "-m",
+                    "not docker",
+                ]
+            else:
+                test_args = [
+                    str(ROOT / "tests/test_validation"),
+                    "--ignore=" + str(ROOT / "tests/test_validation/integration"),
+                ]
+            run(
+                [
+                    sys.executable,
+                    "-m",
+                    "pytest",
+                    *test_args,
+                    "-q",
+                    "--junitxml",
+                    output / "junit.xml",
+                ],
+                cwd=output,
+                env=environment,
+                timeout=600,
+                log=output / "logs/tests.log",
+            )
+            status = 0
+    except (RuntimeError, subprocess.TimeoutExpired, OSError) as error:
+        manifest["error"] = str(error)
+        print(str(error), file=sys.stderr)
+    finally:
+        manifest["elapsed_seconds"] = round(time.monotonic() - started, 3)
+        manifest["success"] = status == 0
+        write_json(output / "run-manifest.json", manifest)
+        entries = hashes(output)
+        (output / "SHA256SUMS").write_text(
+            "".join(f"{value}  {name}\n" for name, value in entries.items())
+        )
+    if status == 0 and args.require_complete:
+        from verify_artifacts import verify
+
+        try:
+            verify(output)
+        except ValueError as error:
+            status = 1
+            manifest.update(success=False, error=str(error))
+            write_json(output / "run-manifest.json", manifest)
+            entries = {
+                name: value
+                for name, value in hashes(output).items()
+                if name != "SHA256SUMS"
+            }
+            (output / "SHA256SUMS").write_text(
+                "".join(f"{value}  {name}\n" for name, value in entries.items())
+            )
+            print(str(error), file=sys.stderr)
+    print(f"{'PASS' if status == 0 else 'FAIL'}: {output}")
+    return status
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
