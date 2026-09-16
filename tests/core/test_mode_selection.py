@@ -262,6 +262,8 @@ class TestModeBehavior:
         """Test that connect() in production mode initializes the HTTP MCP session AND connects WebSocket using the same session ID."""
         client = MCPToolClient(base_url="http://localhost:8000", mode="production")
         assert client.use_production_mode is True
+        client._ws_url = f"{client._ws_url}?some_session_id=keep"
+        original_ws_url = client._ws_url
 
         with patch.object(
             client,
@@ -279,7 +281,10 @@ class TestModeBehavior:
 
                 # Should create HTTP session and connect WS with session_id query param
                 mock_ws_connect.assert_called_once()
-                assert "session_id=test-session" in mock_ws_connect.call_args[0][0]
+                connected_url = mock_ws_connect.call_args[0][0]
+                assert "session_id=test-session" in connected_url
+                assert "some_session_id=keep" in connected_url
+                assert client._ws_url == original_ws_url
                 assert client._production_session_id == "test-session"
                 mock_mcp_request.assert_called_once_with("openenv/session/create")
 

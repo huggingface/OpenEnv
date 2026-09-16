@@ -804,6 +804,19 @@ class TestHTTPMCPSessionLifecycle:
             websocket.send_json({"type": "state"})
             state_response = websocket.receive_json()
             assert state_response["type"] == "state"
+
+            active_close_response = client.post(
+                "/mcp",
+                json={
+                    "jsonrpc": "2.0",
+                    "method": "openenv/session/close",
+                    "params": {"session_id": session_id},
+                    "id": 2,
+                },
+            )
+            assert (
+                "active WebSocket" in active_close_response.json()["error"]["message"]
+            )
             websocket.send_json({"type": "close"})
 
         tools_response = client.post(
@@ -812,7 +825,7 @@ class TestHTTPMCPSessionLifecycle:
                 "jsonrpc": "2.0",
                 "method": "tools/list",
                 "params": {"session_id": session_id},
-                "id": 2,
+                "id": 3,
             },
         )
         assert "result" in tools_response.json()
@@ -823,7 +836,43 @@ class TestHTTPMCPSessionLifecycle:
                 "jsonrpc": "2.0",
                 "method": "openenv/session/close",
                 "params": {"session_id": session_id},
-                "id": 3,
+                "id": 4,
+            },
+        )
+        assert close_response.json()["result"]["closed"] is True
+
+    def test_http_session_allows_only_one_attached_websocket(self, app):
+        """A second WebSocket cannot concurrently mutate the same session."""
+        client = TestClient(app)
+        create_response = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "openenv/session/create",
+                "params": {},
+                "id": 1,
+            },
+        )
+        session_id = create_response.json()["result"]["session_id"]
+
+        with client.websocket_connect(f"/ws?session_id={session_id}") as first_socket:
+            with client.websocket_connect(
+                f"/ws?session_id={session_id}"
+            ) as second_socket:
+                error_response = second_socket.receive_json()
+                assert (
+                    "already has an attached WebSocket"
+                    in (error_response["data"]["message"])
+                )
+            first_socket.send_json({"type": "close"})
+
+        close_response = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "openenv/session/close",
+                "params": {"session_id": session_id},
+                "id": 2,
             },
         )
         assert close_response.json()["result"]["closed"] is True

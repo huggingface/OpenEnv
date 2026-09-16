@@ -56,6 +56,7 @@ Examples:
 
 import asyncio
 from typing import Any, Dict, List, Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import ConfigDict
 
@@ -156,6 +157,7 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
         self._tools_cache: Optional[List[Tool]] = None
         self.use_production_mode = self._mode == "production"
         self._production_session_id: Optional[str] = None
+        self._production_connect_lock = asyncio.Lock()
         self._production_session_lock = asyncio.Lock()
         self._jsonrpc_request_id = 0
         self._http_client: Optional[Any] = None  # lazily-created httpx.AsyncClient
@@ -206,20 +208,25 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
         and HTTP MCP (list_tools/call_tool) share the exact same server-side environment session.
         """
         if getattr(self, "use_production_mode", False):
-            try:
-                self._start_provider_if_needed()
-                session_id = await self._ensure_production_session()
-                original_ws_url = self._ws_url
-                if self._ws_url and "session_id=" not in self._ws_url:
-                    sep = "&" if "?" in self._ws_url else "?"
-                    self._ws_url = f"{self._ws_url}{sep}session_id={session_id}"
+            async with self._production_connect_lock:
                 try:
-                    await super()._connect_async()
-                finally:
-                    self._ws_url = original_ws_url
-            except Exception:
-                await self.close()
-                raise
+                    self._start_provider_if_needed()
+                    session_id = await self._ensure_production_session()
+                    original_ws_url = self._ws_url
+                    if original_ws_url is None:
+                        raise RuntimeError("MCP client has no WebSocket URL.")
+
+                    parts = urlsplit(original_ws_url)
+                    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+                    query["session_id"] = session_id
+                    self._ws_url = urlunsplit(parts._replace(query=urlencode(query)))
+                    try:
+                        await super()._connect_async()
+                    finally:
+                        self._ws_url = original_ws_url
+                except Exception:
+                    await self.close()
+                    raise
             return self
 
         return await super()._connect_async()

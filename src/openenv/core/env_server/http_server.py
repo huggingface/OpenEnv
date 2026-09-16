@@ -248,6 +248,7 @@ class HTTPEnvServer:
         self._session_executors: Dict[str, ThreadPoolExecutor] = {}
         self._session_stacks: Dict[str, AsyncExitStack] = {}
         self._session_info: Dict[str, SessionInfo] = {}
+        self._session_websocket_attachments: set[str] = set()
         self._session_lock = asyncio.Lock()
 
         # Create thread pool for running sync code in async context
@@ -451,6 +452,7 @@ class HTTPEnvServer:
             executor = self._session_executors.pop(session_id, None)
             stack = self._session_stacks.pop(session_id, None)
             self._session_info.pop(session_id, None)
+            self._session_websocket_attachments.discard(session_id)
 
         await self._cleanup_session_resources(env, executor, stack)
 
@@ -522,7 +524,10 @@ class HTTPEnvServer:
                 stale_ids: list[str] = []
                 async with self._session_lock:
                     for sid, info in self._session_info.items():
-                        if now - info.last_activity_at > timeout:
+                        if (
+                            sid not in self._session_websocket_attachments
+                            and now - info.last_activity_at > timeout
+                        ):
                             stale_ids.append(sid)
                 for sid in stale_ids:
                     # Re-check under lock: activity may have arrived since
@@ -532,7 +537,11 @@ class HTTPEnvServer:
                     now = time.time()
                     async with self._session_lock:
                         info = self._session_info.get(sid)
-                        if info is None or (now - info.last_activity_at) <= timeout:
+                        if (
+                            info is None
+                            or sid in self._session_websocket_attachments
+                            or (now - info.last_activity_at) <= timeout
+                        ):
                             continue
                     await self._destroy_session(sid)
             except asyncio.CancelledError:
@@ -804,14 +813,28 @@ class HTTPEnvServer:
                     )
 
                 async with self._session_lock:
-                    env = self._sessions.pop(target_session_id, _MISSING)
-                    if env is not _MISSING:
+                    if target_session_id in self._session_websocket_attachments:
+                        env = _MISSING
+                        attached = True
+                        executor = None
+                        stack = None
+                    else:
+                        attached = False
+                        env = self._sessions.pop(target_session_id, _MISSING)
+                    if not attached and env is not _MISSING:
                         executor = self._session_executors.pop(target_session_id, None)
                         stack = self._session_stacks.pop(target_session_id, None)
                         self._session_info.pop(target_session_id, None)
-                    else:
+                    elif not attached:
                         executor = None
                         stack = None
+
+                if attached:
+                    return JsonRpcResponse.error_response(
+                        JsonRpcErrorCode.INVALID_REQUEST,
+                        f"Session {target_session_id} has an active WebSocket",
+                        request_id=request_id,
+                    )
 
                 if env is _MISSING:
                     return JsonRpcResponse.error_response(
@@ -1498,6 +1521,7 @@ all schema information needed to interact with the environment.
             session_id = None
             session_env = None
             owns_session = False
+            attached_session = False
 
             try:
                 requested_session_id = websocket.query_params.get("session_id")
@@ -1506,16 +1530,23 @@ all schema information needed to interact with the environment.
                         attached_env = self._sessions.get(
                             requested_session_id, _MISSING
                         )
-                    if attached_env is _MISSING:
-                        raise RuntimeError(
-                            f"Unknown session_id: {requested_session_id}"
-                        )
-                    if attached_env is None:
-                        raise RuntimeError(
-                            f"Session {requested_session_id} is still initializing"
-                        )
-                    session_id = requested_session_id
-                    session_env = attached_env
+                        if attached_env is _MISSING:
+                            raise RuntimeError(
+                                f"Unknown session_id: {requested_session_id}"
+                            )
+                        if attached_env is None:
+                            raise RuntimeError(
+                                f"Session {requested_session_id} is still initializing"
+                            )
+                        if requested_session_id in self._session_websocket_attachments:
+                            raise RuntimeError(
+                                f"Session {requested_session_id} already has "
+                                "an attached WebSocket"
+                            )
+                        self._session_websocket_attachments.add(requested_session_id)
+                        session_id = requested_session_id
+                        session_env = attached_env
+                        attached_session = True
                     self._update_session_activity(session_id)
                 else:
                     session_id, session_env = await self._create_session()
@@ -1710,7 +1741,10 @@ all schema information needed to interact with the environment.
                 )
                 await websocket.send_text(error_resp.model_dump_json())
             finally:
-                if owns_session and session_id:
+                if attached_session and session_id:
+                    async with self._session_lock:
+                        self._session_websocket_attachments.discard(session_id)
+                elif owns_session and session_id:
                     await self._destroy_session(session_id)
                 try:
                     await websocket.close()
