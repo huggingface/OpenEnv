@@ -11,6 +11,8 @@
     title: Deploying an Env
   - local: guides/auto-discovery
     title: Auto-Discovery
+  - local: guides/catalog-discovery
+    title: Catalog Discovery
   - local: guides/rl-integration
     title: RL Training
   - local: guides/rewards

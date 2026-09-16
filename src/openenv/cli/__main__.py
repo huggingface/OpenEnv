@@ -12,6 +12,7 @@ import sys
 import typer
 from openenv.cli.commands import (
     build,
+    catalog,
     collect,
     fork,
     import_env,
@@ -60,6 +61,8 @@ app.command(
     name="collect",
     help="Collect rollouts from a deployed OpenEnv environment",
 )(collect.collect)
+app.add_typer(catalog.app, name="catalog")
+app.command(name="discover")(catalog.discover)
 
 
 # Entry point for setuptools

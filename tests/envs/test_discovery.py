@@ -12,18 +12,45 @@ Tests cover:
 5. Helper functions (_normalize_env_name, _is_hub_url, etc.)
 """
 
+import json
+import os
+import stat
+import tempfile
 from unittest.mock import Mock, patch
 
+import openenv.auto._discovery as _discovery_module
+import pytest
 from openenv.auto._discovery import (
     _create_env_info_from_package,
+    _default_cache_file,
     _infer_class_name,
     _is_hub_url,
+    _is_trusted_cache_file,
     _normalize_env_name,
+    _open_trusted_cache,
     EnvironmentDiscovery,
     EnvironmentInfo,
     get_discovery,
     reset_discovery,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_discovery_cache(tmp_path, monkeypatch):
+    """Keep every test off the real per-user discovery cache.
+
+    The cache used to live in the shared temp directory, so tests that
+    exercised `_save_cache`/`clear_cache` against a default-constructed
+    `EnvironmentDiscovery` only ever disturbed a throwaway file. Now that it
+    lives under `$XDG_CACHE_HOME`, the same tests would write to (and
+    `clear_cache()` would delete) the cache belonging to whoever runs the
+    suite. Redirecting the default path keeps that entirely inside `tmp_path`.
+    """
+    monkeypatch.setattr(
+        _discovery_module,
+        "_default_cache_file",
+        lambda: tmp_path / "openenv" / "discovery_cache.json",
+    )
 
 
 class TestEnvironmentInfo:
@@ -304,6 +331,215 @@ class TestEnvironmentDiscovery:
         assert not discovery._cache_file.exists()
 
 
+class TestCacheSecurity:
+    """The discovery cache must not be plantable/redirectable by another local user.
+
+    A world-writable shared path let a local attacker pre-create the cache and
+    redirect discovery's later ``import_module`` to attacker-chosen modules/classes
+    (CWE-377 insecure temp file + CWE-427 uncontrolled load path).
+    """
+
+    def test_cache_file_is_per_user_not_shared_tmp(self):
+        path = _default_cache_file()
+        assert tempfile.gettempdir() not in str(path)
+        assert path.parent.name == "openenv"
+
+    def test_world_writable_cache_is_not_trusted(self, tmp_path):
+        f = tmp_path / "cache.json"
+        f.write_text("{}")
+        os.chmod(f, 0o666)
+        # Rejected on POSIX; non-POSIX has no ownership model so it stays trusted.
+        assert _is_trusted_cache_file(f) is (os.name != "posix")
+
+    def test_owner_only_cache_is_trusted(self, tmp_path):
+        f = tmp_path / "cache.json"
+        f.write_text("{}")
+        os.chmod(f, 0o600)
+        assert _is_trusted_cache_file(f) is True
+
+    def test_load_cache_ignores_world_writable_file(self, tmp_path):
+        planted = tmp_path / "cache.json"
+        planted.write_text(
+            json.dumps(
+                {
+                    "evil": {
+                        "env_key": "evil",
+                        "name": "evil",
+                        "package_name": "openenv-evil",
+                        "version": "1.0.0",
+                        "description": "",
+                        "client_module_path": "os",
+                        "client_class_name": "system",
+                        "action_class_name": "A",
+                        "observation_class_name": "O",
+                        "default_image": "i",
+                    }
+                }
+            )
+        )
+        os.chmod(planted, 0o666)
+        discovery = EnvironmentDiscovery()
+        discovery._cache_file = planted
+        if os.name == "posix":
+            assert discovery._load_cache() is None
+
+    def test_saved_cache_is_owner_only(self, tmp_path):
+        discovery = EnvironmentDiscovery()
+        discovery._cache_file = tmp_path / "sub" / "cache.json"
+        env = EnvironmentInfo(
+            env_key="t",
+            name="t",
+            package_name="openenv-t",
+            version="1.0.0",
+            description="",
+            client_module_path="t.client",
+            client_class_name="T",
+            action_class_name="A",
+            observation_class_name="O",
+            default_image="i",
+        )
+        discovery._save_cache({"t": env})
+        assert discovery._cache_file.exists()
+        if os.name == "posix":
+            assert stat.S_IMODE(discovery._cache_file.stat().st_mode) == 0o600
+        assert discovery._load_cache() is not None
+
+    @pytest.fixture(autouse=True)
+    def _tmp(self, tmp_path):
+        self.tmp = tmp_path
+
+    def test_symlinked_cache_is_refused(self, tmp_path):
+        """The trust check must apply to the object actually read.
+
+        Checking the path and then opening it separately leaves a window: an
+        attacker who can write in the cache directory swaps the verified file
+        for a symlink before the read. Opening with ``O_NOFOLLOW`` and
+        inspecting the resulting descriptor closes it, so a symlink is refused
+        outright rather than followed to a file that was never checked.
+        """
+        if os.name != "posix":
+            return
+
+        target = tmp_path / "attacker.json"
+        target.write_text(
+            json.dumps(
+                {
+                    "evil": {
+                        "env_key": "evil",
+                        "name": "evil",
+                        "package_name": "openenv-evil",
+                        "version": "1.0.0",
+                        "description": "",
+                        "client_module_path": "os",
+                        "client_class_name": "system",
+                        "action_class_name": "A",
+                        "observation_class_name": "O",
+                        "default_image": "i",
+                    }
+                }
+            )
+        )
+        os.chmod(target, 0o600)
+
+        link = tmp_path / "cache.json"
+        link.symlink_to(target)
+
+        discovery = EnvironmentDiscovery()
+        discovery._cache_file = link
+        assert discovery._load_cache() is None
+
+    def test_save_does_not_rely_on_a_follow_up_chmod(self, tmp_path):
+        """The cache must be created owner-only, not widened then narrowed.
+
+        ``open()`` honours the umask, so creating the file and calling
+        ``chmod`` afterwards leaves a window in which the cache is
+        world-readable. Creating the descriptor with the mode already set
+        removes it; `os.chmod` is made to fail here so the test only passes if
+        nothing depends on it.
+        """
+        if os.name != "posix":
+            return
+
+        discovery = EnvironmentDiscovery()
+        discovery._cache_file = tmp_path / "sub" / "cache.json"
+        env = EnvironmentInfo(
+            env_key="t",
+            name="t",
+            package_name="openenv-t",
+            version="1.0.0",
+            description="",
+            client_module_path="t.client",
+            client_class_name="T",
+            action_class_name="A",
+            observation_class_name="O",
+            default_image="i",
+        )
+
+        real_umask = os.umask(0)
+        real_chmod = os.chmod
+
+        def _no_chmod(*args, **kwargs):
+            raise AssertionError("cache permissions must not depend on chmod")
+
+        os.chmod = _no_chmod
+        try:
+            discovery._save_cache({"t": env})
+        finally:
+            os.chmod = real_chmod
+            os.umask(real_umask)
+
+        assert discovery._cache_file.exists()
+        assert stat.S_IMODE(discovery._cache_file.stat().st_mode) == 0o600
+
+    def test_a_fifo_cache_does_not_block_discovery(self):
+        """A planted FIFO must be refused, not waited on.
+
+        Opening a FIFO read-only blocks until a writer appears, and that
+        happens before the descriptor can be inspected, so a trust check that
+        runs after the open never gets to reject it. The open must not block,
+        and only a regular file is acceptable.
+        """
+        if os.name != "posix":
+            return
+
+        import threading
+
+        fifo = self.tmp / "fifo.json"
+        os.mkfifo(fifo, 0o600)
+
+        outcome = {}
+
+        def attempt():
+            outcome["fd"] = _open_trusted_cache(fifo)
+
+        worker = threading.Thread(target=attempt, daemon=True)
+        worker.start()
+        worker.join(timeout=5.0)
+
+        assert not worker.is_alive(), "opening a FIFO cache blocked"
+        assert outcome["fd"] is None
+
+    def test_saving_over_a_world_writable_file_does_not_keep_its_mode(self):
+        """`O_CREAT` only applies the mode when it creates the file.
+
+        Writing through an existing inode therefore leaves whatever mode that
+        file already had, so a cache that is already group/world-writable stays
+        that way and the data just written is readable by everyone.
+        """
+        if os.name != "posix":
+            return
+
+        existing = self.tmp / "cache.json"
+        existing.write_text("{}")
+        os.chmod(existing, 0o666)
+
+        discovery = EnvironmentDiscovery()
+        discovery._cache_file = existing
+        discovery._save_cache({})
+
+        assert stat.S_IMODE(existing.stat().st_mode) == 0o600
+
+
 class TestGlobalDiscovery:
     """Test global discovery instance management."""
 
@@ -326,6 +562,26 @@ class TestGlobalDiscovery:
 
         # Should be different instances after reset
         assert discovery1 is not discovery2
+
+    def test_reset_discovery_does_not_unlink_disk_cache(self, tmp_path, monkeypatch):
+        """Singleton reset must not delete the persistent per-user cache.
+
+        Regression for Bugbot on #1167: `reset_discovery()` used to call
+        `clear_cache()`, and suites that only needed a fresh singleton
+        (e.g. `test_auto_env.py`) would delete `~/.cache/openenv/...`.
+        """
+        cache = tmp_path / "discovery_cache.json"
+        cache.write_text("{}")
+        monkeypatch.setattr(_discovery_module, "_default_cache_file", lambda: cache)
+        reset_discovery()
+
+        discovery = get_discovery()
+        assert discovery._cache_file == cache
+
+        reset_discovery()
+
+        assert cache.exists(), "reset_discovery() must not delete the on-disk cache"
+        assert cache.read_text() == "{}"
 
 
 class TestListEnvironments:
