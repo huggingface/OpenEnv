@@ -174,11 +174,130 @@ def test_validate_command_runtime_target_outputs_json() -> None:
         "openenv.cli.commands.validate.validate_running_environment",
         return_value=mock_report,
     ) as mock_validate:
-        result = runner.invoke(app, ["validate", "https://example.com"])
+        result = runner.invoke(app, ["validate", "https://example.com", "--json"])
 
     assert result.exit_code == 0
     assert json.loads(result.output) == mock_report
     mock_validate.assert_called_once_with("https://example.com", timeout_s=5.0)
+
+
+def test_validate_command_runtime_target_without_json_outputs_human_readable() -> None:
+    mock_report = {
+        "target": "https://example.com",
+        "validation_type": "running_environment",
+        "standard_version": "1.0.0",
+        "standard_profile": "openenv-http/1.x",
+        "mode": "simulation",
+        "passed": True,
+        "criteria": [
+            {
+                "id": "health_endpoint",
+                "description": "GET /health returns healthy status",
+                "passed": True,
+            }
+        ],
+    }
+
+    with patch(
+        "openenv.cli.commands.validate.validate_running_environment",
+        return_value=mock_report,
+    ):
+        result = runner.invoke(app, ["validate", "https://example.com"])
+
+    assert result.exit_code == 0
+    assert "Validation report for https://example.com" in result.output
+    assert "PASS  health_endpoint" in result.output
+    assert "Verdict: PASS" in result.output
+
+
+def test_validate_command_runtime_target_with_output_writes_file(
+    tmp_path: Path,
+) -> None:
+    out_file = tmp_path / "report.json"
+    mock_report = {
+        "target": "https://example.com",
+        "validation_type": "running_environment",
+        "standard_version": "1.0.0",
+        "passed": True,
+        "criteria": [],
+    }
+
+    with patch(
+        "openenv.cli.commands.validate.validate_running_environment",
+        return_value=mock_report,
+    ):
+        result = runner.invoke(
+            app, ["validate", "https://example.com", "--output", str(out_file)]
+        )
+
+    assert result.exit_code == 0
+    assert out_file.exists()
+    assert json.loads(out_file.read_text()) == mock_report
+    assert "Validation report for https://example.com" in result.output
+
+
+def test_validate_command_runtime_target_with_output_and_json(
+    tmp_path: Path,
+) -> None:
+    out_file = tmp_path / "report.json"
+    mock_report = {
+        "target": "https://example.com",
+        "validation_type": "running_environment",
+        "standard_version": "1.0.0",
+        "passed": True,
+        "criteria": [],
+    }
+
+    with patch(
+        "openenv.cli.commands.validate.validate_running_environment",
+        return_value=mock_report,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "validate",
+                "https://example.com",
+                "--output",
+                str(out_file),
+                "--json",
+            ],
+        )
+
+    assert result.exit_code == 0
+    assert out_file.exists()
+    assert json.loads(out_file.read_text()) == mock_report
+    assert json.loads(result.output) == mock_report
+
+
+def test_validate_command_runtime_target_output_write_failure(
+    tmp_path: Path,
+) -> None:
+    out_file = tmp_path / "non_existent_dir" / "report.json"
+    mock_report = {
+        "target": "https://example.com",
+        "validation_type": "running_environment",
+        "standard_version": "1.0.0",
+        "passed": True,
+        "criteria": [],
+    }
+
+    with patch(
+        "openenv.cli.commands.validate.validate_running_environment",
+        return_value=mock_report,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "validate",
+                "https://example.com",
+                "--output",
+                str(out_file),
+            ],
+        )
+
+    assert result.exit_code == 3
+    assert "Internal error:" in result.output
+
 
 
 def test_validate_command_local_path_without_validation_block_fails(

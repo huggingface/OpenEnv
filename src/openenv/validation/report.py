@@ -6,6 +6,7 @@ an author is never shown a check they cannot red-to-green. Hub and statistical c
 ids are reserved in this schema so operator reports and local reports share it.
 """
 
+import json
 from pathlib import Path
 from typing import Any, Literal
 
@@ -71,12 +72,14 @@ class ValidationReport(BaseModel):
     verdict: Verdict
 
 
-def write_report(report: ValidationReport, path: Path | None = None) -> str:
+def write_report(
+    report: ValidationReport | dict[str, Any], path: Path | None = None
+) -> str:
     """
     Serialize a validation report to schema-versioned JSON.
 
     Args:
-        report ([`~openenv.validation.report.ValidationReport`]):
+        report ([`~openenv.validation.report.ValidationReport`] or `dict`):
             The completed report.
         path (`Path`, *optional*):
             When set, the JSON is also written to this file.
@@ -84,7 +87,10 @@ def write_report(report: ValidationReport, path: Path | None = None) -> str:
     Returns:
         `str`: the JSON payload, without a trailing newline.
     """
-    payload = report.model_dump_json(indent=2)
+    if isinstance(report, dict):
+        payload = json.dumps(report, indent=2)
+    else:
+        payload = report.model_dump_json(indent=2)
     if path is not None:
         path.write_text(payload + "\n")
     return payload
