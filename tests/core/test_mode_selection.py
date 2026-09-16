@@ -21,6 +21,7 @@ Test coverage:
 - Environment: Code mode with mode-aware tool registration
 """
 
+import asyncio
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -166,6 +167,20 @@ class TestEnvironmentVariableModeSelection:
 class TestModeBehavior:
     """Test that different modes result in different client behavior."""
 
+    @pytest.mark.parametrize(
+        ("base_url", "expected_url"),
+        [
+            ("http://localhost:8000", "http://localhost:8000/mcp"),
+            ("https://example.com/env", "https://example.com/env/mcp"),
+            ("ws://localhost:8000", "http://localhost:8000/mcp"),
+            ("wss://example.com/env", "https://example.com/env/mcp"),
+        ],
+    )
+    def test_production_mcp_url_uses_http_scheme(self, base_url, expected_url):
+        """HTTP MCP requests normalize WebSocket base URL schemes."""
+        client = MCPToolClient(base_url=base_url, mode="production")
+        assert client._production_mcp_url() == expected_url
+
     @pytest.mark.asyncio
     async def test_simulation_mode_uses_gym_protocol(self, clean_env, mock_websocket):
         """Test that simulation mode uses Gym-style WebSocket messages."""
@@ -256,15 +271,14 @@ class TestModeBehavior:
                 )
 
     @pytest.mark.asyncio
-    async def test_production_mode_connect_opens_websocket_and_http_session(
+    async def test_production_mode_connect_creates_single_session_with_websocket(
         self, clean_env
     ):
-        """Production connect must open WebSocket (reset/step/state) and HTTP MCP session."""
+        """Test that connect() in production mode initializes the HTTP MCP session AND connects WebSocket using the same session ID."""
         client = MCPToolClient(base_url="http://localhost:8000", mode="production")
         assert client.use_production_mode is True
-
-        mock_ws = MagicMock()
-        mock_ws.closed = False
+        client._ws_url = f"{client._ws_url}?some_session_id=keep"
+        original_ws_url = client._ws_url
 
         with patch.object(
             client,
@@ -275,17 +289,21 @@ class TestModeBehavior:
             ],
         ) as mock_mcp_request:
             with patch(
-                "openenv.core.env_client.ws_connect",
-                new_callable=AsyncMock,
-                return_value=mock_ws,
+                "openenv.core.env_client.ws_connect", new_callable=AsyncMock
             ) as mock_ws_connect:
+                # Explicit connect (e.g. from async with client:)
                 await client.connect()
 
+                # Should create HTTP session and connect WS with session_id query param
                 mock_ws_connect.assert_called_once()
-                assert client._ws is mock_ws
+                connected_url = mock_ws_connect.call_args[0][0]
+                assert "session_id=test-session" in connected_url
+                assert "some_session_id=keep" in connected_url
+                assert client._ws_url == original_ws_url
                 assert client._production_session_id == "test-session"
                 mock_mcp_request.assert_called_once_with("openenv/session/create")
 
+                # Subsequent call_tool should reuse the same session
                 result = await client.call_tool("echo", message="hello world")
                 assert result == "hello world"
                 assert mock_mcp_request.call_count == 2
@@ -304,61 +322,154 @@ class TestModeBehavior:
         client = MCPToolClient(base_url="http://localhost:8000", mode="production")
         assert client.use_production_mode is True
 
-        mock_ws = MagicMock()
-        mock_ws.closed = False
-        mock_ws.close = AsyncMock()
-
-        with patch(
-            "openenv.core.env_client.ws_connect",
-            new_callable=AsyncMock,
-            return_value=mock_ws,
+        with patch.object(
+            client,
+            "_ensure_production_session",
+            side_effect=RuntimeError("Session creation failed"),
         ):
-            with patch.object(
-                client,
-                "_ensure_production_session",
-                side_effect=RuntimeError("Session creation failed"),
-            ):
-                with patch.object(client, "close", wraps=client.close) as mock_close:
-                    with pytest.raises(RuntimeError, match="Session creation failed"):
-                        await client.connect()
+            with patch.object(client, "close", wraps=client.close) as mock_close:
+                with pytest.raises(RuntimeError, match="Session creation failed"):
+                    await client.connect()
 
-                    mock_close.assert_called_once()
+                mock_close.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_production_mode_sync_close_closes_mcp_session(self, clean_env):
-        """Sync close must tear down the HTTP MCP session via `_close_async`."""
+    async def test_cancelled_production_connect_closes_allocated_session(
+        self, clean_env
+    ):
+        """Cancellation during WebSocket connect releases the HTTP session."""
         client = MCPToolClient(base_url="http://localhost:8000", mode="production")
-        assert client.use_production_mode is True
+        mock_http_client = AsyncMock()
+        client._http_client = mock_http_client
 
-        mock_ws = MagicMock()
-        mock_ws.closed = False
-        mock_ws.close = AsyncMock()
+        with (
+            patch.object(
+                client,
+                "_production_mcp_request",
+                side_effect=[
+                    {"result": {"session_id": "test-session"}},
+                    {"result": {"session_id": "test-session", "closed": True}},
+                ],
+            ) as mock_mcp_request,
+            patch(
+                "openenv.core.env_client.ws_connect",
+                new_callable=AsyncMock,
+                side_effect=asyncio.CancelledError,
+            ),
+        ):
+            with pytest.raises(asyncio.CancelledError):
+                await client.connect()
+
+        mock_mcp_request.assert_any_call(
+            "openenv/session/close",
+            {"session_id": "test-session"},
+        )
+        assert client._production_session_id is None
+        mock_http_client.aclose.assert_awaited_once()
+        assert client._http_client is None
+
+    def test_production_mode_sync_close_closes_mcp_session(self, clean_env):
+        """Test that production sync close() closes the MCP session and releases HTTP client."""
+        client = MCPToolClient(
+            base_url="http://localhost:8000", mode="production"
+        ).sync()
+        client._async._production_session_id = "test-session-sync"
+
+        mock_http_client = AsyncMock()
+        client._async._http_client = mock_http_client
+
+        with patch.object(
+            client._async,
+            "_production_mcp_request",
+            new_callable=AsyncMock,
+            return_value={"result": {"status": "closed"}},
+        ) as mock_mcp_req:
+            client.close()
+
+            mock_mcp_req.assert_awaited_once_with(
+                "openenv/session/close",
+                {"session_id": "test-session-sync"},
+            )
+            assert client._async._production_session_id is None
+            mock_http_client.aclose.assert_awaited_once()
+            assert client._async._http_client is None
+
+    def test_production_mode_sync_context_manager_closes_mcp_session(self, clean_env):
+        """Test that production sync context-manager exit closes the MCP session and releases HTTP client."""
+        client = MCPToolClient(
+            base_url="http://localhost:8000", mode="production"
+        ).sync()
+        client._async._production_session_id = "test-session-context"
+
+        mock_http_client = AsyncMock()
+        client._async._http_client = mock_http_client
+
+        with patch.object(
+            client._async,
+            "_production_mcp_request",
+            new_callable=AsyncMock,
+            return_value={"result": {"status": "closed"}},
+        ) as mock_mcp_req:
+            with patch.object(client._async, "_connect_async", new_callable=AsyncMock):
+                with client:
+                    pass
+
+            mock_mcp_req.assert_awaited_once_with(
+                "openenv/session/close",
+                {"session_id": "test-session-context"},
+            )
+            assert client._async._production_session_id is None
+            mock_http_client.aclose.assert_awaited_once()
+            assert client._async._http_client is None
+
+    @pytest.mark.asyncio
+    async def test_production_mode_async_close_closes_mcp_session(self, clean_env):
+        """Test that production async close() closes the MCP session and releases HTTP client."""
+        client = MCPToolClient(base_url="http://localhost:8000", mode="production")
+        client._production_session_id = "test-session-async"
+
+        mock_http_client = AsyncMock()
+        client._http_client = mock_http_client
 
         with patch.object(
             client,
             "_production_mcp_request",
-            side_effect=[
-                {"result": {"session_id": "test-session"}},
-                {"result": {}},
-            ],
-        ) as mock_mcp_request:
-            with patch(
-                "openenv.core.env_client.ws_connect",
-                new_callable=AsyncMock,
-                return_value=mock_ws,
-            ):
-                sync_client = client.sync()
-                sync_client.connect()
-                assert client._production_session_id == "test-session"
+            new_callable=AsyncMock,
+            return_value={"result": {"status": "closed"}},
+        ) as mock_mcp_req:
+            await client.close()
 
-                sync_client.close()
+            mock_mcp_req.assert_awaited_once_with(
+                "openenv/session/close",
+                {"session_id": "test-session-async"},
+            )
+            assert client._production_session_id is None
+            mock_http_client.aclose.assert_awaited_once()
+            assert client._http_client is None
 
-                assert client._production_session_id is None
-                assert mock_mcp_request.call_count == 2
-                mock_mcp_request.assert_any_call(
-                    "openenv/session/close",
-                    {"session_id": "test-session"},
-                )
+    @pytest.mark.asyncio
+    async def test_production_close_detaches_websocket_before_session_close(
+        self, clean_env
+    ):
+        """Shared WebSocket ownership is released before HTTP session teardown."""
+        client = MCPToolClient(base_url="http://localhost:8000", mode="production")
+        client._production_session_id = "test-session"
+        teardown_events = []
+
+        async def disconnect():
+            teardown_events.append("websocket")
+
+        async def request(method, params=None):
+            teardown_events.append("session")
+            return {"result": {"closed": True}}
+
+        with (
+            patch.object(client, "_disconnect_async", side_effect=disconnect),
+            patch.object(client, "_production_mcp_request", side_effect=request),
+        ):
+            await client.close()
+
+        assert teardown_events[:2] == ["websocket", "session"]
 
 
 # ============================================================================
