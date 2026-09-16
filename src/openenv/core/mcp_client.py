@@ -154,7 +154,7 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
             mode=mode,
         )
         self._tools_cache: Optional[List[Tool]] = None
-        self.use_production_mode = False
+        self.use_production_mode = self._mode == "production"
         self._production_session_id: Optional[str] = None
         self._production_session_lock = asyncio.Lock()
         self._jsonrpc_request_id = 0
@@ -197,6 +197,24 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
         )
         response.raise_for_status()
         return response.json()
+
+    async def _connect_async(self) -> EnvClient:
+        """
+        Establish connection to the server.
+
+        In production mode (use_production_mode=True), creates and caches a
+        persistent HTTP MCP session instead of establishing a WebSocket connection.
+        """
+        if getattr(self, "use_production_mode", False):
+            try:
+                self._start_provider_if_needed()
+                await self._ensure_production_session()
+            except Exception:
+                await self.close()
+                raise
+            return self
+
+        return await super()._connect_async()
 
     async def _ensure_production_session(self) -> str:
         """Create and cache a persistent HTTP MCP session id if needed."""
@@ -339,12 +357,16 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
             step_count=payload.get("step_count", 0),
         )
 
-    async def close(self) -> None:
+    async def _close_async(self) -> None:
         """
         Close client resources.
 
         In production MCP mode, this also closes the server-side persistent
         MCP session (best effort) before closing websocket/provider resources.
+
+        Override `_close_async` rather than `close` so sync teardown
+        (`SyncEnvClient.close`, sync `__exit__`, and `_dispatch`) still cleans
+        up the HTTP MCP session.
         """
         if self._production_session_id is not None:
             try:
@@ -366,7 +388,7 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
             finally:
                 self._http_client = None
 
-        await super().close()
+        await super()._close_async()
 
 
 class MCPToolClient(MCPClientBase):
