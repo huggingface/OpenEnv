@@ -36,6 +36,9 @@ src/
 │   │   ├── client_types.py       # Client-side type definitions
 │   │   ├── utils.py              # Shared utilities
 │   │   │
+│   │   ├── harness/              # Agent protocols and captured trace collection
+│   │   │   └── capture/              # Dialect adapters, session routing, exact tokens, SSE replay
+│   │   │
 │   │   ├── env_server/           # Server-side components
 │   │   │   ├── interfaces.py         # Environment abstract base class
 │   │   │   ├── http_server.py        # HTTPEnvServer (FastAPI + WebSocket)
@@ -57,6 +60,8 @@ src/
 │   │   └── tools/                # Reusable tool implementations
 │   │       ├── local_python_executor.py  # Python code execution
 │   │       └── git_server_client.py      # Git operations
+│   │
+│   ├── harbor/               # Harbor tasks, harness seams, provider qualification, live UI
 │   │
 │   ├── discovery/            # RFC 011 metadata-only repository catalogs
 │   │   ├── models.py             # Declaration profile and identity invariants
@@ -111,6 +116,7 @@ envs/
 │       ├── echo_environment.py       # Environment implementation
 │       └── Dockerfile                # Container definition
 │
+├── harbor_env/              # Thin Harbor package and trainer session factory
 ├── thinkingbox_env/           # Stateful MCP business-workflow benchmark adapter
 ├── coding_env/               # Python code execution environment
 ├── chat_env/                 # Conversational environment
@@ -273,3 +279,9 @@ ThinkingBox examples: `example_usage.py` is a public-client smoke test, while `e
 | `envs/echo_env/` | Reference implementation - start here |
 | `rfcs/001-abstractions.md` | Core architectural decisions |
 | `.claude/docs/INVARIANTS.md` | Rules that must never be broken |
+
+## Harbor integration
+
+`src/openenv/core/harness/capture/` records inference calls independently of a trainer or tokenizer. `src/openenv/harbor/` runs Harbor tasks, reconciles their trajectories, and exposes the shared training contract through clients and the Gradio playground. `envs/harbor_env/` is the installable environment wrapper. `examples/harbor/nemo_shell_profile/` provides the explicitly qualified NeMo shell workflow.
+
+See `docs/source/guides/harbor-provider-qualification.md` for provider and adapter evidence, `rfcs/012-harbor-capture-providers.md` for explicit evaluation/training and session ownership, and `tests/envs/test_harbor*.py` / `test_capture*.py` for deterministic capture regressions.

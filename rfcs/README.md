@@ -93,6 +93,8 @@ Each RFC should include the following sections:
 ### Agentic Harnesses
 - [005-agentic-harnesses.md](./005-agentic-harnesses.md) - Agentic Harness Integration (OpenClaw, Claude Code, etc.)
 
+- [012-harbor-capture-providers.md](./012-harbor-capture-providers.md) - Harbor evaluation/training purpose, provider fidelity, exact export and live-session ownership
+
 ### Validation
 - [008-environment-auto-validation.md](./008-environment-auto-validation.md) - Environment Auto-Validation: local `openenv validate` levels 1-3 + the contracts for operator-run hubs
 

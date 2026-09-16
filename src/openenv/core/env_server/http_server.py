@@ -1281,7 +1281,7 @@ class HTTPEnvServer:
                     await self._destroy_session(session_id)
                 try:
                     await websocket.close()
-                except RuntimeError:
+                except (RuntimeError, WebSocketDisconnect):
                     pass
 
         # Register simulation control routes only in simulation mode
@@ -1758,7 +1758,7 @@ all schema information needed to interact with the environment.
                     await self._destroy_session(session_id)
                 try:
                     await websocket.close()
-                except RuntimeError:
+                except (RuntimeError, WebSocketDisconnect):
                     pass
 
 
