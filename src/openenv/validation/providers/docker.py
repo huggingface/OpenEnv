@@ -459,22 +459,25 @@ class DockerRunningSubject:
     def stop(self) -> None:
         if self._stopped:
             return
-        code, output, stderr = _command(["docker", "inspect", self.name], 10)
+        # Ask Docker for only the owner label: arbitrary image ENV/labels can
+        # exceed the bounded full-inspection output and must not block cleanup.
+        code, output, stderr = _command(
+            [
+                "docker",
+                "inspect",
+                "--format",
+                f'{{{{index .Config.Labels "{_LABEL}"}}}}',
+                self.name,
+            ],
+            10,
+        )
         if code:
             if "No such object" in stderr or "No such container" in stderr:
                 self._stopped = True
                 return
             raise ProviderError("Could not verify container ownership for cleanup")
-        try:
-            labels = json.loads(output)[0]["Config"].get("Labels", {})
-            if labels.get(_LABEL) != self.run_id:
-                raise ProviderError(
-                    "Refusing cleanup of a container with another owner"
-                )
-        except (ValueError, IndexError, KeyError, TypeError, AttributeError):
-            raise ProviderError(
-                "Could not verify container ownership for cleanup"
-            ) from None
+        if output.strip() != self.run_id:
+            raise ProviderError("Refusing cleanup of a container with another owner")
         code, _, stderr = _command(
             ["docker", "rm", "--force", "--volumes", self.name], 10
         )
@@ -483,7 +486,9 @@ class DockerRunningSubject:
                 "Could not remove validation container: "
                 + _safe_text(stderr[-4096:], self._secrets)
             )
-        code, _, stderr = _command(["docker", "inspect", self.name], 10)
+        code, _, stderr = _command(
+            ["docker", "inspect", "--format", "{{.Id}}", self.name], 10
+        )
         if not code or not (
             "No such object" in stderr or "No such container" in stderr
         ):
