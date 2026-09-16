@@ -786,6 +786,78 @@ class TestHTTPMCPSessionLifecycle:
             response2 = json.loads(response_text2)
             assert response2["data"]["result"]["session_id"] == ws_session_id
 
+    def test_websocket_can_attach_to_http_session_without_destroying_it(self, app):
+        """An attached WebSocket shares and preserves an HTTP-created session."""
+        client = TestClient(app)
+        create_response = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "openenv/session/create",
+                "params": {},
+                "id": 1,
+            },
+        )
+        session_id = create_response.json()["result"]["session_id"]
+
+        with client.websocket_connect(f"/ws?session_id={session_id}") as websocket:
+            websocket.send_json({"type": "state"})
+            state_response = websocket.receive_json()
+            assert state_response["type"] == "state"
+            websocket.send_json({"type": "close"})
+
+        tools_response = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "tools/list",
+                "params": {"session_id": session_id},
+                "id": 2,
+            },
+        )
+        assert "result" in tools_response.json()
+
+        close_response = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "openenv/session/close",
+                "params": {"session_id": session_id},
+                "id": 3,
+            },
+        )
+        assert close_response.json()["result"]["closed"] is True
+
+    def test_websocket_still_destroys_its_own_session(self, app):
+        """A WebSocket-created session is destroyed when the socket closes."""
+        client = TestClient(app)
+
+        with client.websocket_connect("/ws") as websocket:
+            websocket.send_json(
+                {
+                    "type": "mcp",
+                    "data": {
+                        "jsonrpc": "2.0",
+                        "method": "openenv/session/create",
+                        "params": {},
+                        "id": 1,
+                    },
+                }
+            )
+            session_id = websocket.receive_json()["data"]["result"]["session_id"]
+            websocket.send_json({"type": "close"})
+
+        tools_response = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "tools/list",
+                "params": {"session_id": session_id},
+                "id": 2,
+            },
+        )
+        assert tools_response.json()["error"]["code"] == -32602
+
     def test_session_close_missing_session_id_param(self, app):
         """Test openenv/session/close without session_id returns INVALID_PARAMS."""
         from starlette.testclient import TestClient
