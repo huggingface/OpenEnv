@@ -202,13 +202,22 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
         """
         Establish connection to the server.
 
-        In production mode (use_production_mode=True), creates and caches a
-        persistent HTTP MCP session instead of establishing a WebSocket connection.
+        In production mode (use_production_mode=True), creates an HTTP MCP session
+        and connects the WebSocket using that session ID so that WebSocket (reset/step/state)
+        and HTTP MCP (list_tools/call_tool) share the exact same server-side environment session.
         """
         if getattr(self, "use_production_mode", False):
             try:
                 self._start_provider_if_needed()
-                await self._ensure_production_session()
+                session_id = await self._ensure_production_session()
+                original_ws_url = self._ws_url
+                if self._ws_url and "session_id=" not in self._ws_url:
+                    sep = "&" if "?" in self._ws_url else "?"
+                    self._ws_url = f"{self._ws_url}{sep}session_id={session_id}"
+                try:
+                    await super()._connect_async()
+                finally:
+                    self._ws_url = original_ws_url
             except Exception:
                 await self.close()
                 raise

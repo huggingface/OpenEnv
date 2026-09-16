@@ -22,7 +22,7 @@ Test coverage:
 """
 
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastmcp import FastMCP
@@ -256,10 +256,10 @@ class TestModeBehavior:
                 )
 
     @pytest.mark.asyncio
-    async def test_production_mode_connect_creates_http_session_without_websocket(
+    async def test_production_mode_connect_creates_single_session_with_websocket(
         self, clean_env
     ):
-        """Test that connect() in production mode initializes the HTTP MCP session without creating a WebSocket."""
+        """Test that connect() in production mode initializes the HTTP MCP session AND connects WebSocket using the same session ID."""
         client = MCPToolClient(base_url="http://localhost:8000", mode="production")
         assert client.use_production_mode is True
 
@@ -271,13 +271,15 @@ class TestModeBehavior:
                 {"result": {"data": "hello world"}},
             ],
         ) as mock_mcp_request:
-            with patch("openenv.core.env_client.ws_connect") as mock_ws_connect:
+            with patch(
+                "openenv.core.env_client.ws_connect", new_callable=AsyncMock
+            ) as mock_ws_connect:
                 # Explicit connect (e.g. from async with client:)
                 await client.connect()
 
-                # Should create HTTP session and not connect WS
-                mock_ws_connect.assert_not_called()
-                assert client._ws is None
+                # Should create HTTP session and connect WS with session_id query param
+                mock_ws_connect.assert_called_once()
+                assert "session_id=test-session" in mock_ws_connect.call_args[0][0]
                 assert client._production_session_id == "test-session"
                 mock_mcp_request.assert_called_once_with("openenv/session/create")
 
@@ -295,9 +297,7 @@ class TestModeBehavior:
                 )
 
     @pytest.mark.asyncio
-    async def test_production_mode_connect_failure_cleans_up_resources(
-        self, clean_env
-    ):
+    async def test_production_mode_connect_failure_cleans_up_resources(self, clean_env):
         """Test that failure during production mode connect() triggers client.close() cleanup."""
         client = MCPToolClient(base_url="http://localhost:8000", mode="production")
         assert client.use_production_mode is True
@@ -312,6 +312,150 @@ class TestModeBehavior:
                     await client.connect()
 
                 mock_close.assert_called_once()
+
+    def test_production_mode_sync_close_closes_mcp_session(self, clean_env):
+        """Test that production sync close() closes the MCP session and releases HTTP client."""
+        client = MCPToolClient(
+            base_url="http://localhost:8000", mode="production"
+        ).sync()
+        client._async._production_session_id = "test-session-sync"
+
+        mock_http_client = AsyncMock()
+        client._async._http_client = mock_http_client
+
+        with patch.object(
+            client._async,
+            "_production_mcp_request",
+            new_callable=AsyncMock,
+            return_value={"result": {"status": "closed"}},
+        ) as mock_mcp_req:
+            client.close()
+
+            mock_mcp_req.assert_awaited_once_with(
+                "openenv/session/close",
+                {"session_id": "test-session-sync"},
+            )
+            assert client._async._production_session_id is None
+            mock_http_client.aclose.assert_awaited_once()
+            assert client._async._http_client is None
+
+    def test_production_mode_sync_context_manager_closes_mcp_session(self, clean_env):
+        """Test that production sync context-manager exit closes the MCP session and releases HTTP client."""
+        client = MCPToolClient(
+            base_url="http://localhost:8000", mode="production"
+        ).sync()
+        client._async._production_session_id = "test-session-context"
+
+        mock_http_client = AsyncMock()
+        client._async._http_client = mock_http_client
+
+        with patch.object(
+            client._async,
+            "_production_mcp_request",
+            new_callable=AsyncMock,
+            return_value={"result": {"status": "closed"}},
+        ) as mock_mcp_req:
+            with patch.object(client._async, "_connect_async", new_callable=AsyncMock):
+                with client:
+                    pass
+
+            mock_mcp_req.assert_awaited_once_with(
+                "openenv/session/close",
+                {"session_id": "test-session-context"},
+            )
+            assert client._async._production_session_id is None
+            mock_http_client.aclose.assert_awaited_once()
+            assert client._async._http_client is None
+
+    @pytest.mark.asyncio
+    async def test_production_mode_async_close_closes_mcp_session(self, clean_env):
+        """Test that production async close() closes the MCP session and releases HTTP client."""
+        client = MCPToolClient(base_url="http://localhost:8000", mode="production")
+        client._production_session_id = "test-session-async"
+
+        mock_http_client = AsyncMock()
+        client._http_client = mock_http_client
+
+        with patch.object(
+            client,
+            "_production_mcp_request",
+            new_callable=AsyncMock,
+            return_value={"result": {"status": "closed"}},
+        ) as mock_mcp_req:
+            await client.close()
+
+            mock_mcp_req.assert_awaited_once_with(
+                "openenv/session/close",
+                {"session_id": "test-session-async"},
+            )
+            assert client._production_session_id is None
+            mock_http_client.aclose.assert_awaited_once()
+            assert client._http_client is None
+
+    @pytest.mark.asyncio
+    async def test_websocket_disconnect_preserves_attached_http_session(self):
+        """Test that a WebSocket attaching to an existing session does NOT destroy that session when disconnected."""
+        from fastapi import FastAPI
+        from openenv.core.env_server.http_server import HTTPEnvServer
+        from starlette.testclient import TestClient
+        from tests.core.test_production_mode_routes import (
+            MinimalAction,
+            MinimalEnvironment,
+            MinimalObservation,
+        )
+
+        server = HTTPEnvServer(
+            env=MinimalEnvironment,
+            action_cls=MinimalAction,
+            observation_cls=MinimalObservation,
+        )
+        app = FastAPI()
+        server.register_routes(app)
+
+        # 1. Create session via HTTP / HTTPEnvServer
+        session_id, env_instance = await server._create_session()
+        assert session_id in server._sessions
+
+        # 2. Attach WebSocket to existing session_id
+        with TestClient(app) as test_client:
+            with test_client.websocket_connect(f"/ws?session_id={session_id}") as ws:
+                ws.send_json({"type": "close"})
+
+        # 3. Session must remain alive because WebSocket didn't create it
+        assert session_id in server._sessions
+        assert server._sessions[session_id] is env_instance
+
+        # 4. Clean up
+        await server._destroy_session(session_id)
+        assert session_id not in server._sessions
+
+    @pytest.mark.asyncio
+    async def test_websocket_disconnect_destroys_websocket_created_session(self):
+        """Test that a WebSocket creating its own session DOES destroy that session when disconnected."""
+        from fastapi import FastAPI
+        from openenv.core.env_server.http_server import HTTPEnvServer
+        from starlette.testclient import TestClient
+        from tests.core.test_production_mode_routes import (
+            MinimalAction,
+            MinimalEnvironment,
+            MinimalObservation,
+        )
+
+        server = HTTPEnvServer(
+            env=MinimalEnvironment,
+            action_cls=MinimalAction,
+            observation_cls=MinimalObservation,
+        )
+        app = FastAPI()
+        server.register_routes(app)
+
+        with TestClient(app) as test_client:
+            with test_client.websocket_connect("/ws") as ws:
+                assert len(server._sessions) == 1
+                ws.send_json({"type": "close"})
+
+        # After WebSocket disconnects, the session created by WebSocket should be destroyed
+        assert len(server._sessions) == 0
 
 
 # ============================================================================
