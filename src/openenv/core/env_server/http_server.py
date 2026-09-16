@@ -249,6 +249,7 @@ class HTTPEnvServer:
         self._session_stacks: Dict[str, AsyncExitStack] = {}
         self._session_info: Dict[str, SessionInfo] = {}
         self._session_websocket_attachments: set[str] = set()
+        self._session_pending_closes: set[str] = set()
         self._session_lock = asyncio.Lock()
 
         # Create thread pool for running sync code in async context
@@ -453,6 +454,7 @@ class HTTPEnvServer:
             stack = self._session_stacks.pop(session_id, None)
             self._session_info.pop(session_id, None)
             self._session_websocket_attachments.discard(session_id)
+            self._session_pending_closes.discard(session_id)
 
         await self._cleanup_session_resources(env, executor, stack)
 
@@ -816,6 +818,7 @@ class HTTPEnvServer:
                     if target_session_id in self._session_websocket_attachments:
                         env = _MISSING
                         attached = True
+                        self._session_pending_closes.add(target_session_id)
                         executor = None
                         stack = None
                     else:
@@ -830,9 +833,12 @@ class HTTPEnvServer:
                         stack = None
 
                 if attached:
-                    return JsonRpcResponse.error_response(
-                        JsonRpcErrorCode.INVALID_REQUEST,
-                        f"Session {target_session_id} has an active WebSocket",
+                    return JsonRpcResponse.success(
+                        result={
+                            "session_id": target_session_id,
+                            "closed": False,
+                            "closing": True,
+                        },
                         request_id=request_id,
                     )
 
@@ -1742,8 +1748,12 @@ all schema information needed to interact with the environment.
                 await websocket.send_text(error_resp.model_dump_json())
             finally:
                 if attached_session and session_id:
-                    async with self._session_lock:
-                        self._session_websocket_attachments.discard(session_id)
+                    # Do not await the lock before releasing ownership: a task
+                    # cancelled while waiting would leave this session
+                    # permanently exempt from idle reaping.
+                    self._session_websocket_attachments.discard(session_id)
+                    if session_id in self._session_pending_closes:
+                        await asyncio.shield(self._destroy_session(session_id))
                 elif owns_session and session_id:
                     await self._destroy_session(session_id)
                 try:

@@ -814,9 +814,12 @@ class TestHTTPMCPSessionLifecycle:
                     "id": 2,
                 },
             )
-            assert (
-                "active WebSocket" in active_close_response.json()["error"]["message"]
-            )
+            close_result = active_close_response.json()["result"]
+            assert close_result == {
+                "session_id": session_id,
+                "closed": False,
+                "closing": True,
+            }
             websocket.send_json({"type": "close"})
 
         tools_response = client.post(
@@ -828,18 +831,7 @@ class TestHTTPMCPSessionLifecycle:
                 "id": 3,
             },
         )
-        assert "result" in tools_response.json()
-
-        close_response = client.post(
-            "/mcp",
-            json={
-                "jsonrpc": "2.0",
-                "method": "openenv/session/close",
-                "params": {"session_id": session_id},
-                "id": 4,
-            },
-        )
-        assert close_response.json()["result"]["closed"] is True
+        assert tools_response.json()["error"]["code"] == -32602
 
         replacement_response = client.post(
             "/mcp",
@@ -847,7 +839,7 @@ class TestHTTPMCPSessionLifecycle:
                 "jsonrpc": "2.0",
                 "method": "openenv/session/create",
                 "params": {},
-                "id": 5,
+                "id": 4,
             },
         )
         replacement_id = replacement_response.json()["result"]["session_id"]
@@ -857,7 +849,7 @@ class TestHTTPMCPSessionLifecycle:
                 "jsonrpc": "2.0",
                 "method": "openenv/session/close",
                 "params": {"session_id": replacement_id},
-                "id": 6,
+                "id": 5,
             },
         )
 
