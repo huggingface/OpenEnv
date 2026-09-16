@@ -255,6 +255,45 @@ class TestModeBehavior:
                     },
                 )
 
+    @pytest.mark.asyncio
+    async def test_production_mode_connect_creates_http_session_without_websocket(
+        self, clean_env
+    ):
+        """Test that connect() in production mode initializes the HTTP MCP session without creating a WebSocket."""
+        client = MCPToolClient(base_url="http://localhost:8000", mode="production")
+        assert client.use_production_mode is True
+
+        with patch.object(
+            client,
+            "_production_mcp_request",
+            side_effect=[
+                {"result": {"session_id": "test-session"}},
+                {"result": {"data": "hello world"}},
+            ],
+        ) as mock_mcp_request:
+            with patch("openenv.core.env_client.ws_connect") as mock_ws_connect:
+                # Explicit connect (e.g. from async with client:)
+                await client.connect()
+
+                # Should create HTTP session and not connect WS
+                mock_ws_connect.assert_not_called()
+                assert client._ws is None
+                assert client._production_session_id == "test-session"
+                mock_mcp_request.assert_called_once_with("openenv/session/create")
+
+                # Subsequent call_tool should reuse the same session
+                result = await client.call_tool("echo", message="hello world")
+                assert result == "hello world"
+                assert mock_mcp_request.call_count == 2
+                mock_mcp_request.assert_called_with(
+                    "tools/call",
+                    {
+                        "name": "echo",
+                        "arguments": {"message": "hello world"},
+                        "session_id": "test-session",
+                    },
+                )
+
 
 # ============================================================================
 # Mode Immutability Tests

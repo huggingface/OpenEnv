@@ -198,6 +198,24 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
         response.raise_for_status()
         return response.json()
 
+    async def _connect_async(self) -> EnvClient:
+        """
+        Establish connection to the server.
+
+        In production mode (use_production_mode=True), creates and caches a
+        persistent HTTP MCP session instead of establishing a WebSocket connection.
+        """
+        if getattr(self, "use_production_mode", False):
+            try:
+                self._start_provider_if_needed()
+            except Exception:
+                await self.close()
+                raise
+            await self._ensure_production_session()
+            return self
+
+        return await super()._connect_async()
+
     async def _ensure_production_session(self) -> str:
         """Create and cache a persistent HTTP MCP session id if needed."""
         async with self._production_session_lock:
