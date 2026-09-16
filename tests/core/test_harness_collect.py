@@ -253,6 +253,102 @@ class TestRolloutSerializer:
         ids = [json.loads(line)["episode_id"] for line in lines]
         assert ids == ["ep1", "ep2"]
 
+    def test_append_separates_complete_record_without_trailing_newline(
+        self, tmp_path: Path
+    ):
+        serializer = RolloutSerializer(tmp_path)
+        serializer.results_path.write_text(json.dumps({"episode_id": "ep1"}))
+
+        serializer.write_episode(
+            EpisodeRecord.from_rollout("ep2", _fake_rollout(), _fake_verify())
+        )
+
+        lines = serializer.results_path.read_text().splitlines()
+        assert [json.loads(line)["episode_id"] for line in lines] == ["ep1", "ep2"]
+
+    def test_append_does_not_read_the_entire_results_file(self, tmp_path: Path):
+        serializer = RolloutSerializer(tmp_path)
+        serializer.results_path.write_text('{"episode_id": "ep1"}\n')
+
+        with patch.object(
+            Path, "read_bytes", side_effect=AssertionError("full-file read")
+        ):
+            serializer.write_episode(
+                EpisodeRecord.from_rollout("ep2", _fake_rollout(), _fake_verify())
+            )
+
+        lines = serializer.results_path.read_text().splitlines()
+        assert [json.loads(line)["episode_id"] for line in lines] == ["ep1", "ep2"]
+
+    def test_append_scans_a_long_final_record_across_chunks(self, tmp_path: Path):
+        serializer = RolloutSerializer(tmp_path)
+        serializer.results_path.write_text(
+            json.dumps({"episode_id": "ep1", "payload": "x" * 10_000})
+        )
+
+        serializer.write_episode(
+            EpisodeRecord.from_rollout("ep2", _fake_rollout(), _fake_verify())
+        )
+
+        lines = serializer.results_path.read_text().splitlines()
+        assert [json.loads(line)["episode_id"] for line in lines] == ["ep1", "ep2"]
+
+    def test_append_after_unterminated_blank_line(self, tmp_path: Path):
+        serializer = RolloutSerializer(tmp_path)
+        serializer.results_path.write_text('{"episode_id": "ep1"}\n   ')
+
+        serializer.write_episode(
+            EpisodeRecord.from_rollout("ep2", _fake_rollout(), _fake_verify())
+        )
+
+        records = [
+            json.loads(line)
+            for line in serializer.results_path.read_text().splitlines()
+            if line.strip()
+        ]
+        assert [record["episode_id"] for record in records] == ["ep1", "ep2"]
+
+    def test_append_rejects_partial_trailing_record_without_modifying_file(
+        self, tmp_path: Path
+    ):
+        serializer = RolloutSerializer(tmp_path)
+        original = b'{"episode_id": "ep1"}\n{"episode_id":'
+        serializer.results_path.write_bytes(original)
+
+        with pytest.raises(
+            ValueError, match=r"results\.jsonl:final line: invalid JSON"
+        ):
+            serializer.write_episode(
+                EpisodeRecord.from_rollout("ep2", _fake_rollout(), _fake_verify())
+            )
+
+        assert serializer.results_path.read_bytes() == original
+
+    def test_resume_rejects_malformed_interior_record(self, tmp_path: Path):
+        serializer = RolloutSerializer(tmp_path)
+        serializer.results_path.write_text(
+            '{"episode_id": "ep1"}\n{"episode_id":\n{"episode_id": "ep3"}\n'
+        )
+
+        with pytest.raises(ValueError, match=r"results\.jsonl:2: invalid JSON"):
+            serializer.collected_episode_ids()
+
+    def test_resume_rejects_non_object_record(self, tmp_path: Path):
+        serializer = RolloutSerializer(tmp_path)
+        serializer.results_path.write_text('{"episode_id": "ep1"}\n["ep2"]\n')
+
+        with pytest.raises(ValueError, match=r"results\.jsonl:2: expected an object"):
+            serializer.collected_episode_ids()
+
+    def test_resume_rejects_record_without_episode_id(self, tmp_path: Path):
+        serializer = RolloutSerializer(tmp_path)
+        serializer.results_path.write_text('{"episode_id": "ep1"}\n{"messages": []}\n')
+
+        with pytest.raises(
+            ValueError, match=r"results\.jsonl:2: expected a string episode_id"
+        ):
+            serializer.collected_episode_ids()
+
 
 class _FakeSession(ResourceSession):
     """Minimal session that returns a fixed reward on verify()."""
@@ -413,6 +509,23 @@ class TestCollectRunner:
         assert second.num_skipped == 2
         # Only the 3 new episodes should have triggered a factory.create().
         assert len(factory2.created) == 3
+
+    def test_resume_rejects_corrupt_file_before_starting_sessions(self, tmp_path: Path):
+        original = b'{"episode_id": "ep-000000"}\n{"episode_id":'
+        results_path = tmp_path / "results.jsonl"
+        results_path.write_bytes(original)
+        factory = _FakeFactory()
+        runner = CollectRunner(
+            session_factory=factory,
+            harness_adapter=_FakeAdapter(),
+            serializer=RolloutSerializer(tmp_path),
+        )
+
+        with pytest.raises(ValueError, match=r"results\.jsonl:2: invalid JSON"):
+            runner.run(model_step=_noop_model_step, num_episodes=2)
+
+        assert factory.created == []
+        assert results_path.read_bytes() == original
 
     def test_resume_false_forces_full_rerun(self, tmp_path: Path):
         runner = CollectRunner(
