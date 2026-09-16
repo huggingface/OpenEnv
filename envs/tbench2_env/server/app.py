@@ -30,12 +30,16 @@ Usage:
 Environment Variables:
     TB2_MODE: Execution mode - "local" (default) or "docker"
     MAX_CONCURRENT_ENVS: Maximum concurrent WebSocket sessions (default: 8)
+    SESSION_IDLE_TIMEOUT_S: Idle seconds before a session is reaped and its
+        container reclaimed (default: 3600). Guards against leaked slots from
+        half-open WebSocket connections that never fire a clean disconnect.
 """
 
 import os
 
 
 try:
+    from openenv.core.env_server import ConcurrencyConfig
     from openenv.core.env_server.http_server import create_app
 
     # In-repo imports
@@ -46,6 +50,7 @@ except Exception as e:  # pragma: no cover
     from models import Tbench2Action, Tbench2Observation
 
     # Standalone imports (when environment is standalone with openenv from pip)
+    from openenv.core.env_server import ConcurrencyConfig
     from openenv.core.env_server.http_server import create_app
     from server.tbench2_env_environment import (
         Tbench2DockerEnvironment,
@@ -74,13 +79,17 @@ else:
 
 # Create the app with web interface and README integration
 max_concurrent = int(os.getenv("MAX_CONCURRENT_ENVS", "8"))
+session_idle_timeout = float(os.getenv("SESSION_IDLE_TIMEOUT_S", "3600"))
 
 app = create_app(
     _DEFAULT_ENVIRONMENT,
     Tbench2Action,
     Tbench2Observation,
     env_name="tbench2_env" + _ENV_SUFFIX,
-    max_concurrent_envs=max_concurrent,
+    concurrency_config=ConcurrencyConfig(
+        max_concurrent_envs=max_concurrent,
+        session_timeout=session_idle_timeout,
+    ),
 )
 
 
