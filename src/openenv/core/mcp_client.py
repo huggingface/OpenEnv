@@ -208,10 +208,10 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
         if getattr(self, "use_production_mode", False):
             try:
                 self._start_provider_if_needed()
+                await self._ensure_production_session()
             except Exception:
                 await self.close()
                 raise
-            await self._ensure_production_session()
             return self
 
         return await super()._connect_async()

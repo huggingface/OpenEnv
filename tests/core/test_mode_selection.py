@@ -294,6 +294,25 @@ class TestModeBehavior:
                     },
                 )
 
+    @pytest.mark.asyncio
+    async def test_production_mode_connect_failure_cleans_up_resources(
+        self, clean_env
+    ):
+        """Test that failure during production mode connect() triggers client.close() cleanup."""
+        client = MCPToolClient(base_url="http://localhost:8000", mode="production")
+        assert client.use_production_mode is True
+
+        with patch.object(
+            client,
+            "_ensure_production_session",
+            side_effect=RuntimeError("Session creation failed"),
+        ):
+            with patch.object(client, "close", wraps=client.close) as mock_close:
+                with pytest.raises(RuntimeError, match="Session creation failed"):
+                    await client.connect()
+
+                mock_close.assert_called_once()
+
 
 # ============================================================================
 # Mode Immutability Tests
