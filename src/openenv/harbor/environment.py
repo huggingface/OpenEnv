@@ -321,11 +321,9 @@ class HarborEnvironment(MCPEnvironment):
                 eval_sampling=eval_sampling,
                 upstream=upstream,
                 inference=client,
-                # 0 means "whatever the task file says". A caller that needs a harder bound can set
-                # one: a trainer holds a rollout slot for the whole call, and the task's own timeout
-                # covers the AGENT run only — a sandbox that wedges during setup is outside it, which
-                # is how a rollout ran past 30 minutes and was killed by the client's socket timeout
-                # rather than by anything that knew what it was waiting for.
+                # 0 defers to the task file. This bounds agent execution only;
+                # Harbor's environment build/healthcheck timeouts govern setup.
+                # It is not a wall-clock deadline for the whole RPC.
                 agent_timeout_sec=agent_timeout_sec or None,
                 agent_step_limit=agent_step_limit or None,
                 sampling=sampling,

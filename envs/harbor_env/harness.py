@@ -248,6 +248,10 @@ class HarborSession(ResourceSession):
         `self.result.error` — returned rather than raised, because a rollout failing is an outcome the
         trainer has to score around, while an exception here would take down the rollout loop and with
         it every training rank waiting on the next batch.
+
+        `timeout_s` overrides agent execution time, as `agent_timeout_sec` does.
+        Harbor's sandbox setup and teardown have separate timeouts; this is not
+        an end-to-end RPC deadline.
         """
         try:
             self.result = self._env.run_rollout(

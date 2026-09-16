@@ -596,9 +596,9 @@ async def run_rollout(
             # aux masking. Reading it here made the total always 0, because `turns` is still empty at this
             # point in the function.
             result.multi_turn = result.n_turns > result.n_roots
-            result.findings = [
+            result.findings.extend(
                 f for f in document.get("validation", []) if not f.startswith("[INFO]")
-            ]
+            )
             # Sequence-level findings were never surfaced. `check_sequence` FATALs — a positive logprob, a
             # length mismatch, nothing trainable — live on the row rather than in the document's own
             # validation list, so a rollout carrying one of them came back with a clean `findings` list and

@@ -354,3 +354,40 @@ def test_session_observer_gets_owned_id_and_cleanup_survives_observer_failure(tm
     assert result.ok is False and result.error == "observer failed"
     assert registry.get(result.session_id) is None
     assert registry.get(unrelated.session_id) is unrelated
+
+
+def test_verifier_exclusions_survive_capture_export(monkeypatch, tmp_path):
+    import asyncio
+    from types import SimpleNamespace
+
+    from openenv.core.harness.capture.sessions import SessionRegistry
+
+    trial_module = pytest.importorskip("harbor.trial.trial")
+
+    class Trial:
+        @classmethod
+        async def create(cls, config):
+            return cls()
+
+        async def run(self):
+            return SimpleNamespace(
+                verifier_result=SimpleNamespace(rewards={"reward": 1.0, "aux": None})
+            )
+
+    monkeypatch.setattr(trial_module, "Trial", Trial)
+    monkeypatch.setattr(rollout, "build_trial_config", lambda **kwargs: None)
+    result = asyncio.run(
+        rollout.run_rollout(
+            task_dir=tmp_path,
+            harness="opencode",
+            sandbox="e2b",
+            registry=SessionRegistry(),
+            intercept_url="http://127.0.0.1:9",
+            model="m",
+            trials_dir=tmp_path,
+        )
+    )
+    assert result.reward == 1.0
+    assert any(
+        "verifier keys dropped" in item and "aux" in item for item in result.findings
+    )
