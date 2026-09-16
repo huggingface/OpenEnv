@@ -161,7 +161,7 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
             max_message_size_mb=max_message_size_mb,
         )
         self._tools_cache: Optional[List[Tool]] = None
-        self.use_production_mode = False
+        self.use_production_mode = self._mode == "production"
         self._production_session_id: Optional[str] = None
         self._production_session_lock = asyncio.Lock()
         self._jsonrpc_request_id = 0
@@ -204,6 +204,27 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
         )
         response.raise_for_status()
         return response.json()
+
+    async def _connect_async(self) -> EnvClient:
+        """
+        Establish connection to the server.
+
+        In production mode (`use_production_mode=True`), open the WebSocket used
+        by `reset` / `step` / `state` and create a persistent HTTP MCP session
+        for `list_tools` / `call_tool`. Tool calls bypass `step()` over `/mcp`,
+        but the Gym lifecycle still requires `/ws` until production routing
+        covers those methods end-to-end.
+        """
+        if getattr(self, "use_production_mode", False):
+            try:
+                await super()._connect_async()
+                await self._ensure_production_session()
+            except Exception:
+                await self.close()
+                raise
+            return self
+
+        return await super()._connect_async()
 
     async def _ensure_production_session(self) -> str:
         """Create and cache a persistent HTTP MCP session id if needed."""
@@ -353,15 +374,9 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
         In production MCP mode, this also closes the server-side persistent
         MCP session (best effort) before closing websocket/provider resources.
 
-        Overrides `_close_async`, NOT `close`. `EnvClient.close` is synchronous and dispatches here
-        through `_dispatch`, which returns an awaitable in async code and a result in sync code — so
-        both `client.close()` and `await client.close()` keep working.
-
-        Overriding `close` with an `async def`, as this used to, silently broke every synchronous
-        caller: `client.close()` built a coroutine, dropped it un-awaited, and returned. The websocket
-        stayed open, so the server never ran its `_destroy_session` cleanup and sessions accumulated
-        until `max_concurrent_envs` was exhausted — measured as exactly 16 successful connects out of
-        20 against a cap of 16, with the rest failing as `ConnectionClosedOK`.
+        Override `_close_async` rather than `close` so sync teardown
+        (`SyncEnvClient.close`, sync `__exit__`, and `_dispatch`) still cleans
+        up the HTTP MCP session.
         """
         if self._production_session_id is not None:
             try:

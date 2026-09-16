@@ -236,6 +236,25 @@ def _required_start_container_parameters(provider: Any) -> list[str]:
     ]
 
 
+async def _best_effort_close(ws: ClientConnection) -> None:
+    """Close a socket without letting a slow handshake or failure propagate.
+
+    Scheduled as a background task (never awaited directly) so a dropped
+    socket's close handshake can't hold up the caller that triggered the
+    drop -- see `EnvClient._receive()`. `EnvClient._close_async()` awaits
+    any still-running instance of this task before it returns, so a real
+    `close()` call does wait for the handshake; only the caller that
+    happened to trigger the drop is spared. `CancelledError` is caught
+    alongside `Exception` because that awaiting is exactly what would
+    otherwise cancel this mid-handshake if a caller called `close()`
+    concurrently.
+    """
+    try:
+        await ws.close()
+    except (Exception, asyncio.CancelledError):
+        pass  # Best effort
+
+
 class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
     """
     Async environment client for persistent sessions.
@@ -337,6 +356,9 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         self._execution_mode: Optional[str] = None
         self._sync_client: Optional["SyncEnvClient[ActT, ObsT, StateT]"] = None
         self._ws_loop: Optional[asyncio.AbstractEventLoop] = None
+        # Strong references for fire-and-forget socket closes (see _receive),
+        # so the task isn't garbage-collected mid-close. Discarded on done.
+        self._pending_close_tasks: set[asyncio.Task] = set()
         if base_url is not None:
             self._set_base_url(base_url)
 
@@ -594,7 +616,35 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         never sent. The next complete operation may reconnect in `_send()`.
         """
         assert self._ws is not None
-        raw = await asyncio.wait_for(self._ws.recv(), timeout=self._message_timeout)
+        try:
+            raw = await asyncio.wait_for(self._ws.recv(), timeout=self._message_timeout)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            # The server may still write the response for this request to the
+            # socket after we give up waiting on it. If we left the socket
+            # open, the next call's `_receive()` would read that stale frame
+            # and silently pair it with an unrelated request -- and every
+            # response after that would be shifted by one for the life of
+            # the connection. Drop the socket so the next `_send()` opens a
+            # fresh one instead of reusing a desynced one.
+            #
+            # An outer `asyncio.wait_for` around the whole call (e.g. a
+            # caller-imposed deadline on step()) cancels this await with
+            # CancelledError, not our own message_timeout's TimeoutError --
+            # same desync, different exception, so both are caught here.
+            ws = self._ws
+            self._ws = None
+            self._ws_loop = None
+            # Fire-and-forget: `close()` waits out the library's close
+            # handshake (`close_timeout`, 10s by default) if the server is
+            # slow to ack, and *awaiting* that here would hold up this
+            # exception -- so an outer `asyncio.wait_for(..., timeout=50ms)`
+            # would actually block for up to 10s before its deadline was
+            # honored. Scheduling it lets the exception propagate
+            # immediately while the close still happens in the background.
+            close_task = asyncio.ensure_future(_best_effort_close(ws))
+            self._pending_close_tasks.add(close_task)
+            close_task.add_done_callback(self._pending_close_tasks.discard)
+            raise
         return json.loads(raw)
 
     async def _send_and_receive(self, message: Dict[str, Any]) -> Dict[str, Any]:
@@ -913,6 +963,15 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         self._child_clients.clear()
 
         try:
+            # Wait out any backgrounded closes from a dropped socket (see
+            # `_receive()` / `_best_effort_close`) so a real close() call still
+            # sees the handshake through. SyncEnvClient.close() waits for
+            # `_close_async()` before stopping its loop, so the relevant risk
+            # is async-context cancellation of close itself — not `_stop_loop()`.
+            # Keep this gather inside the provider-teardown try/finally so a
+            # cancelled close cannot skip container/process cleanup.
+            if self._pending_close_tasks:
+                await asyncio.gather(*self._pending_close_tasks, return_exceptions=True)
             await self._disconnect_async()
         finally:
             try:
