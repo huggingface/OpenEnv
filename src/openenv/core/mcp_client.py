@@ -154,7 +154,7 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
             mode=mode,
         )
         self._tools_cache: Optional[List[Tool]] = None
-        self.use_production_mode = False
+        self.use_production_mode = self._mode == "production"
         self._production_session_id: Optional[str] = None
         self._production_session_lock = asyncio.Lock()
         self._jsonrpc_request_id = 0
