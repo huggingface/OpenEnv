@@ -439,3 +439,19 @@ def test_client_serializes_sampling_in_the_mcp_rollout_arguments():
     assert sent["tool"] == "run_rollout"
     assert sent["sampling"] == {"temperature": 0.8}
     assert sent["agent_step_limit"] == 17
+    assert not {"provider", "purpose", "eval_sampling"} & sent.keys()
+
+
+def test_client_never_drops_explicit_new_provider_semantics():
+    client = object.__new__(HarborEnv)
+    sent = {}
+
+    def call(name, **kwargs):
+        sent.update(kwargs)
+        return HarborRolloutResult().model_dump()
+
+    client._call = call
+    client.run_rollout(provider="anthropic", purpose="eval", eval_sampling={})
+    assert sent["provider"] == "anthropic"
+    assert sent["purpose"] == "eval"
+    assert sent["eval_sampling"] == {}

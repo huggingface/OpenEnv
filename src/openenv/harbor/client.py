@@ -150,9 +150,12 @@ class HarborEnv(MCPToolClient):
             model=model,
             api_key=api_key,
             auth_header=auth_header,
-            provider=provider,
-            purpose=purpose,
-            eval_sampling=eval_sampling,
+            # Preserve the established OpenAI/auto wire contract with older
+            # servers. Explicit new semantics must still be sent (and rejected
+            # by a server that cannot implement them).
+            **({"provider": provider} if provider != "openai" else {}),
+            **({"purpose": purpose} if purpose != "auto" else {}),
+            **({"eval_sampling": eval_sampling} if eval_sampling is not None else {}),
             agent_timeout_sec=agent_timeout_sec,
             agent_step_limit=agent_step_limit,
             **({"sampling": sampling} if sampling is not None else {}),
