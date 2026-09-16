@@ -8,11 +8,13 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from openenv.cli.__main__ import app
 from openenv.cli._validation import (
     validate_multi_mode_deployment,
     validate_running_environment,
 )
+from openenv.validation import ValidationReport, write_report
 from typer.testing import CliRunner
 
 
@@ -482,3 +484,9 @@ def test_validate_command_rejects_mixed_path_and_url(tmp_path: Path) -> None:
 
     assert result.exit_code != 0
     assert "Cannot combine a local path argument with --url" in result.output
+
+
+def test_write_report_validation_report_only() -> None:
+    assert write_report.__annotations__["report"] is ValidationReport
+    with pytest.raises(AttributeError):
+        write_report({"target": "http://example.com"})  # type: ignore[arg-type]

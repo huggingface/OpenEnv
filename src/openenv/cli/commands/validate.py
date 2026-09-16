@@ -2,6 +2,7 @@
 
 """OpenEnv validate command."""
 
+import json
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -77,6 +78,13 @@ def _render_report(report: ValidationReport | dict[str, Any]) -> str:
                 lines.append(f"          remediation: {result.remediation}")
     lines.append(f"Verdict: {report.verdict.value.upper()}")
     return "\n".join(lines)
+
+
+def _write_runtime_report(report: dict[str, Any], path: Path | None = None) -> str:
+    payload = json.dumps(report, indent=2)
+    if path is not None:
+        path.write_text(payload + "\n")
+    return payload
 
 
 def validate(
@@ -187,7 +195,7 @@ def validate(
             raise typer.Exit(EXIT_FAIL) from exc
 
         try:
-            report_json = write_report(report, output)
+            report_json = _write_runtime_report(report, output)
         except Exception as exc:
             typer.echo(f"Internal error: {exc}", err=True)
             raise typer.Exit(EXIT_INTERNAL) from exc
