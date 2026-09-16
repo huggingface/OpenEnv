@@ -233,7 +233,10 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
                         await super()._connect_async()
                     finally:
                         self._ws_url = original_ws_url
-                except Exception:
+                except BaseException:
+                    # Cancellation after the HTTP session is allocated must
+                    # release that session and any started provider before the
+                    # cancellation propagates.
                     await self.close()
                     raise
             return self

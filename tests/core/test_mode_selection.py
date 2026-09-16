@@ -21,6 +21,7 @@ Test coverage:
 - Environment: Code mode with mode-aware tool registration
 """
 
+import asyncio
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -331,6 +332,41 @@ class TestModeBehavior:
                     await client.connect()
 
                 mock_close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cancelled_production_connect_closes_allocated_session(
+        self, clean_env
+    ):
+        """Cancellation during WebSocket connect releases the HTTP session."""
+        client = MCPToolClient(base_url="http://localhost:8000", mode="production")
+        mock_http_client = AsyncMock()
+        client._http_client = mock_http_client
+
+        with (
+            patch.object(
+                client,
+                "_production_mcp_request",
+                side_effect=[
+                    {"result": {"session_id": "test-session"}},
+                    {"result": {"session_id": "test-session", "closed": True}},
+                ],
+            ) as mock_mcp_request,
+            patch(
+                "openenv.core.env_client.ws_connect",
+                new_callable=AsyncMock,
+                side_effect=asyncio.CancelledError,
+            ),
+        ):
+            with pytest.raises(asyncio.CancelledError):
+                await client.connect()
+
+        mock_mcp_request.assert_any_call(
+            "openenv/session/close",
+            {"session_id": "test-session"},
+        )
+        assert client._production_session_id is None
+        mock_http_client.aclose.assert_awaited_once()
+        assert client._http_client is None
 
     def test_production_mode_sync_close_closes_mcp_session(self, clean_env):
         """Test that production sync close() closes the MCP session and releases HTTP client."""
