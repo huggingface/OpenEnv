@@ -696,6 +696,9 @@ class HTTPEnvServer:
 
             try:
                 session_id, session_env = await self._create_session()
+                # Protect the live harness from idle reaping and HTTP session
+                # close, including startup and turns that emit no events.
+                self._session_websocket_attachments.add(session_id)
 
                 async with AsyncExitStack() as stack:
                     mcp_session_factory = getattr(session_env, "mcp_session", None)
@@ -746,7 +749,7 @@ class HTTPEnvServer:
                             adapter = session_env.adapter
                             async for event in adapter.send_message_streaming(content):
                                 await websocket.send_text(event.model_dump_json())
-                                # Long turns must not be reaped as idle
+                                # Record progress throughout the turn.
                                 self._update_session_activity(session_id)
                                 saw_terminal = (
                                     event.type is HarnessEventType.TURN_COMPLETE
@@ -798,7 +801,23 @@ class HTTPEnvServer:
                     pass
             finally:
                 if session_id:
-                    await self._destroy_session(session_id)
+                    # Release ownership without an await so cancellation cannot
+                    # leave a session permanently exempt from idle reaping.
+                    self._session_websocket_attachments.discard(session_id)
+                    cleanup = asyncio.create_task(self._destroy_session(session_id))
+                    try:
+                        await asyncio.shield(cleanup)
+                    except asyncio.CancelledError:
+                        # ASGI cancellation must not orphan a running harness.
+                        # Finish teardown before propagating cancellation, even
+                        # when the request's cancel scope cancels us repeatedly.
+                        while not cleanup.done():
+                            try:
+                                await asyncio.shield(cleanup)
+                            except asyncio.CancelledError:
+                                pass
+                        cleanup.result()
+                        raise
                 try:
                     await websocket.close()
                 except (RuntimeError, WebSocketDisconnect):

@@ -12,7 +12,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from openenv.core.env_server.http_server import create_fastapi_app, HTTPEnvServer
-from openenv.core.env_server.types import Observation, ServerMode
+from openenv.core.env_server.types import ConcurrencyConfig, Observation, ServerMode
 from openenv.core.harness import (
     AgenticHarnessAdapter,
     HarnessAction,
@@ -227,6 +227,72 @@ class TestHarnessWebSocket:
         assert server.active_sessions == 0
         assert "stop" in session_adapter.calls
         assert session_adapter.alive is False
+
+    def test_silent_turn_survives_idle_session_reaper(self):
+        class SilentAdapter(FakeAdapter):
+            async def send_message_streaming(self, message):
+                # The real reaper has a five-second minimum polling interval.
+                # Do not emit events while it checks this otherwise idle session.
+                await asyncio.sleep(5.2)
+                yield HarnessEvent(
+                    type=HarnessEventType.TURN_COMPLETE,
+                    data={"response": message, "alive": self.alive},
+                )
+
+        app = FastAPI()
+        server = HTTPEnvServer(
+            lambda: HarnessEnvironment(adapter=SilentAdapter(), mcp=None),
+            HarnessAction,
+            Observation,
+            concurrency_config=ConcurrencyConfig(session_timeout=0.05),
+        )
+        server.register_routes(app, mode=ServerMode.PRODUCTION)
+
+        with TestClient(app) as client:
+            with client.websocket_connect("/harness") as websocket:
+                websocket.receive_json()  # session_started
+                websocket.send_json({"type": "message", "content": "silent turn"})
+                event = websocket.receive_json()
+                assert event["type"] == "turn_complete"
+                assert event["data"]["alive"] is True
+                assert server.active_sessions == 1
+
+            assert server.active_sessions == 0
+            assert not server._session_websocket_attachments
+
+    def test_http_close_defers_harness_cleanup_until_disconnect(self):
+        app, server = make_app(ServerMode.PRODUCTION)
+        with TestClient(app) as client:
+            with client.websocket_connect("/harness") as websocket:
+                started = websocket.receive_json()
+                session_id = started["data"]["session_id"]
+                adapter = [a for a in FakeAdapter.created if a.alive][0]
+
+                response = client.post(
+                    "/mcp",
+                    json={
+                        "jsonrpc": "2.0",
+                        "method": "openenv/session/close",
+                        "params": {"session_id": session_id},
+                        "id": 1,
+                    },
+                )
+                assert response.json()["result"] == {
+                    "session_id": session_id,
+                    "closed": False,
+                    "closing": True,
+                }
+                assert adapter.alive is True
+                assert server.active_sessions == 1
+
+                websocket.send_json({"type": "message", "content": "finish"})
+                assert websocket.receive_json()["type"] == "tool_call"
+                assert websocket.receive_json()["type"] == "turn_complete"
+
+            assert server.active_sessions == 0
+            assert adapter.alive is False
+            assert not server._session_websocket_attachments
+            assert not server._session_pending_closes
 
     def test_capacity_limit_rejects_second_connection(self):
         app, _ = make_app(ServerMode.PRODUCTION, max_concurrent_envs=1)
