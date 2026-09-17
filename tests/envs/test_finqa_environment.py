@@ -553,6 +553,52 @@ class TestTools:
         assert "Error" in result
 
 
+class TestToolsPathTraversal:
+    """Agent-supplied company/table names must not escape the data directory (CWE-22).
+
+    Self-contained (synthetic data, no downloaded dataset needed) so it runs in CI.
+    """
+
+    @pytest.fixture
+    def tools(self, tmp_path):
+        pytest.importorskip("pandas")
+        from envs.finqa_env.server.tools import FinQATools
+
+        company = tmp_path / "input_companies" / "acme"
+        company.mkdir(parents=True)
+        (company / "revenue.json").write_text('[{"x": 1}]')
+        # A file the agent must never be able to reach, placed outside input_companies/.
+        (tmp_path / "secret.json").write_text('[{"password": "leaked-secret"}]')
+        return FinQATools(str(tmp_path))
+
+    def test_legit_access_still_works(self, tools):
+        assert "Error" not in tools.get_descriptions("acme")
+        assert "leaked" not in tools.sql_query(
+            "acme", "revenue", "SELECT x FROM revenue WHERE x = 1"
+        )
+
+    def test_get_descriptions_rejects_traversal(self, tools):
+        for evil in ["..", "../..", "../../../../etc"]:
+            result = tools.get_descriptions(evil)
+            assert "Error" in result
+            assert "secret" not in result
+
+    def test_sql_query_rejects_company_traversal(self, tools):
+        result = tools.sql_query(
+            "..", "secret", "SELECT password FROM secret WHERE 1 = 1"
+        )
+        assert "leaked-secret" not in result
+
+    def test_sql_query_rejects_table_traversal(self, tools):
+        result = tools.sql_query(
+            "acme", "../../secret", "SELECT password FROM x WHERE 1 = 1"
+        )
+        assert "leaked-secret" not in result
+
+    def test_get_table_info_rejects_traversal(self, tools):
+        assert "Error" in tools.get_table_info("../..", "whatever")
+
+
 @pytest.mark.skipif(_integration_skip, reason=_integration_reason)
 class TestEnvironment:
     """Test environment logic using MCP actions."""

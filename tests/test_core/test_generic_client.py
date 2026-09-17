@@ -24,6 +24,7 @@ from openenv.core.client_types import StepResult
 from openenv.core.env_client import _is_localhost_ws_url
 from openenv.core.generic_client import GenericAction, GenericEnvClient
 from openenv.core.sync_client import SyncEnvClient
+from websockets.protocol import State
 
 
 # ============================================================================
@@ -172,6 +173,83 @@ class TestGenericEnvClientInstantiation:
         child.close.assert_awaited_once_with()
         assert client._child_clients == []
         mock_provider.stop_container.assert_called_once_with()
+
+    @pytest.mark.asyncio
+    async def test_cancelled_child_close_still_closes_all_children_and_parent(self):
+        """Cancellation waits for every child before parent teardown."""
+
+        class FakeRuntimeProvider:
+            def __init__(self):
+                self.stopped = False
+
+            def stop(self):
+                self.stopped = True
+
+        first_close_started = asyncio.Event()
+        release_first_close = asyncio.Event()
+        second_close_completed = asyncio.Event()
+
+        class FirstChild:
+            def __init__(self):
+                self.closed = False
+
+            async def close(self):
+                first_close_started.set()
+                await release_first_close.wait()
+                self.closed = True
+
+        class SecondChild:
+            def __init__(self):
+                self.closed = False
+
+            async def close(self):
+                self.closed = True
+                second_close_completed.set()
+
+        class ParentSocket:
+            state = State.OPEN
+
+            async def send(self, _message):
+                pass
+
+            async def close(self):
+                self.state = State.CLOSED
+
+        provider = FakeRuntimeProvider()
+        client = GenericEnvClient(provider=provider)
+        client._base_url = "http://localhost:8000"
+        client._ws_url = "ws://localhost:8000/ws"
+        parent_ws = ParentSocket()
+        client._ws = parent_ws
+        client._ws_loop = asyncio.get_running_loop()
+        first_child = FirstChild()
+        second_child = SecondChild()
+        client._child_clients.extend([first_child, second_child])
+
+        close_call = asyncio.create_task(client._close_async())
+        await first_close_started.wait()
+        close_call.cancel()
+
+        await asyncio.wait_for(second_close_completed.wait(), timeout=1)
+        assert not close_call.done()
+        assert parent_ws.state != State.CLOSED
+        assert not provider.stopped
+
+        release_first_close.set()
+        close_results = await asyncio.wait_for(
+            asyncio.gather(close_call, return_exceptions=True), timeout=1
+        )
+
+        assert len(close_results) == 1
+        assert isinstance(close_results[0], asyncio.CancelledError)
+        assert first_child.closed
+        assert second_child.closed
+        assert client._child_clients == []
+        assert client._ws is None
+        assert parent_ws.state == State.CLOSED
+        assert provider.stopped
+        assert client._base_url is None
+        assert client._ws_url is None
 
     def test_session_client_filters_constructor_kwargs(self):
         """Child creation respects subclasses with narrower __init__ signatures."""
@@ -589,6 +667,69 @@ class TestSyncBootstrapConstructors:
                 provider=mock_provider,
             ).sync()
 
+        mock_provider.stop_container.assert_called_once_with()
+
+    _RESET_RESPONSE = (
+        '{"type": "response", "data": {"observation": {"ready": true}, '
+        '"reward": 0.0, "done": false}}'
+    )
+
+    def test_documented_sync_usage_with_block_and_reset(self, mock_provider):
+        """The Environment Builder docs' sync example works end-to-end (issue #1118).
+
+        `client = MyEnv.from_docker_image(...).sync()` followed by
+        `with client: client.reset()` must connect on the sync loop, return a
+        concrete StepResult (not a coroutine), and release the container on exit.
+        """
+        fake_connect, sockets = self._fake_ws_connect()
+
+        with patch("openenv.core.env_client.ws_connect", side_effect=fake_connect):
+            client = GenericEnvClient.from_docker_image(
+                image="my-env:latest",
+                provider=mock_provider,
+            ).sync()
+            sockets[0].recv.return_value = self._RESET_RESPONSE
+
+            with client:
+                result = client.reset()
+
+        if asyncio.iscoroutine(result):
+            result.close()
+            pytest.fail("client.reset() returned a coroutine in synchronous code")
+        assert isinstance(result, StepResult)
+        assert result.observation == {"ready": True}
+        assert result.done is False
+        # `with` on the eagerly connected sync handle must reuse its socket.
+        assert len(sockets) == 1
+        mock_provider.start_container.assert_called_once_with("my-env:latest")
+        mock_provider.stop_container.assert_called_once_with()
+
+    @pytest.mark.asyncio
+    async def test_documented_async_usage_async_with_and_reset(self, mock_provider):
+        """The Environment Builder docs' async example works end-to-end (issue #1118).
+
+        `client = await MyEnv.from_docker_image(...)` followed by
+        `async with client: await client.reset()` must reuse the connection
+        opened by the handle and release the container on exit.
+        """
+        fake_connect, sockets = self._fake_ws_connect()
+
+        with patch("openenv.core.env_client.ws_connect", side_effect=fake_connect):
+            client = await GenericEnvClient.from_docker_image(
+                image="my-env:latest",
+                provider=mock_provider,
+            )
+            assert isinstance(client, GenericEnvClient)
+            sockets[0].recv.return_value = self._RESET_RESPONSE
+
+            async with client:
+                result = await client.reset()
+
+        assert isinstance(result, StepResult)
+        assert result.observation == {"ready": True}
+        # `async with` on an already-connected client must not open a second socket.
+        assert len(sockets) == 1
+        mock_provider.start_container.assert_called_once_with("my-env:latest")
         mock_provider.stop_container.assert_called_once_with()
 
 
@@ -1342,6 +1483,442 @@ class TestForeignLoopReconnect:
         mock_connect.assert_called_once()
         assert client._ws is second_ws
         assert client._ws_loop is asyncio.get_running_loop()
+
+    @pytest.mark.asyncio
+    async def test_receive_does_not_reconnect_after_request_was_sent(self):
+        """A response must be read from the socket that carried its request."""
+
+        class SocketClosedAfterSend:
+            state = State.OPEN
+
+            async def send(self, _message):
+                self.state = State.CLOSED
+
+            async def recv(self):
+                raise ConnectionError("original socket closed after send")
+
+        client = GenericEnvClient(base_url="http://localhost:8000")
+        original_ws = SocketClosedAfterSend()
+        client._ws = original_ws
+        client._ws_loop = asyncio.get_running_loop()
+
+        replacement_ws = AsyncMock()
+        replacement_ws.state = State.OPEN
+        replacement_ws.recv.side_effect = AssertionError(
+            "must not receive a response on a replacement socket"
+        )
+
+        with patch(
+            "openenv.core.env_client.ws_connect", return_value=replacement_ws
+        ) as mock_connect:
+            with pytest.raises(
+                ConnectionError, match="original socket closed after send"
+            ):
+                await client._send_and_receive({"type": "state"})
+
+        mock_connect.assert_not_called()
+        assert client._ws is original_ws
+
+    @pytest.mark.asyncio
+    async def test_receive_timeout_drops_socket_so_next_call_reconnects(self):
+        """A response that arrives after we time out must not be read by the
+        *next* call.
+
+        Regression test for #1143: leaving the timed-out socket open let the
+        server's late response for the abandoned request sit in the buffer,
+        where the next `_receive()` silently read it as its own -- and every
+        response after that was shifted by one for the life of the connection.
+        """
+
+        class NeverResponds:
+            state = State.OPEN
+
+            async def send(self, _message):
+                pass
+
+            async def recv(self):
+                await asyncio.sleep(10)
+
+            async def close(self):
+                self.state = State.CLOSED
+
+        client = GenericEnvClient(
+            base_url="http://localhost:8000", message_timeout_s=0.05
+        )
+        original_ws = NeverResponds()
+        client._ws = original_ws
+        client._ws_loop = asyncio.get_running_loop()
+
+        with pytest.raises(asyncio.TimeoutError):
+            await client._send_and_receive({"type": "state"})
+
+        assert client._ws is None
+        # The socket drop no longer awaits close() inline (a slow close
+        # handshake would otherwise stall the caller's own deadline -- see
+        # test_receive_cancelled_by_outer_deadline_...); it's scheduled as
+        # a background task instead. Give the loop one tick to run it.
+        await asyncio.sleep(0)
+        assert original_ws.state == State.CLOSED
+
+        replacement_ws = AsyncMock()
+        replacement_ws.state = State.OPEN
+        replacement_ws.recv.return_value = '{"type": "state", "data": {}}'
+
+        async def fake_ws_connect(*args, **kwargs):
+            return replacement_ws
+
+        with patch(
+            "openenv.core.env_client.ws_connect", side_effect=fake_ws_connect
+        ) as mock_connect:
+            await client._send_and_receive({"type": "state"})
+
+        mock_connect.assert_called_once()
+        assert client._ws is replacement_ws
+
+    @pytest.mark.asyncio
+    async def test_receive_cancelled_by_outer_deadline_drops_socket_so_next_call_reconnects(
+        self,
+    ):
+        """An outer `asyncio.wait_for` around the whole call cancels
+        `_receive()` with `asyncio.CancelledError`, not the client's own
+        `asyncio.TimeoutError` -- a caller-imposed deadline (e.g. a step
+        call wrapped in its own timeout) hits this path even when
+        `message_timeout_s` itself never fires.
+
+        Regression for the gap in the #1143 fix: only `asyncio.TimeoutError`
+        was caught, so this path left the socket open and desynced exactly
+        like the original bug.
+        """
+
+        class NeverResponds:
+            state = State.OPEN
+
+            async def send(self, _message):
+                pass
+
+            async def recv(self):
+                await asyncio.sleep(10)
+
+            async def close(self):
+                self.state = State.CLOSED
+
+        client = GenericEnvClient(
+            base_url="http://localhost:8000", message_timeout_s=10
+        )
+        original_ws = NeverResponds()
+        client._ws = original_ws
+        client._ws_loop = asyncio.get_running_loop()
+
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(
+                client._send_and_receive({"type": "state"}), timeout=0.05
+            )
+
+        assert client._ws is None
+        # Background close task, same as above -- give the loop one tick.
+        await asyncio.sleep(0)
+        assert original_ws.state == State.CLOSED
+
+        replacement_ws = AsyncMock()
+        replacement_ws.state = State.OPEN
+        replacement_ws.recv.return_value = '{"type": "state", "data": {}}'
+
+        async def fake_ws_connect(*args, **kwargs):
+            return replacement_ws
+
+        with patch(
+            "openenv.core.env_client.ws_connect", side_effect=fake_ws_connect
+        ) as mock_connect:
+            await client._send_and_receive({"type": "state"})
+
+        mock_connect.assert_called_once()
+        assert client._ws is replacement_ws
+
+    @pytest.mark.asyncio
+    async def test_slow_close_handshake_does_not_stall_callers_deadline(self):
+        """A slow close handshake on the dropped socket must not eat into
+        the caller's own deadline.
+
+        Regression for the Bugbot finding on #1149: `_receive()` used to
+        `await ws.close()` inline before re-raising, so an outer
+        `asyncio.wait_for(..., timeout=50ms)` didn't actually return in
+        50ms if the server was slow to ack the close (websockets' default
+        `close_timeout` is 10s) -- the caller was blocked on a handshake it
+        never asked to wait on. The close is now fire-and-forget.
+        """
+
+        close_started = asyncio.Event()
+
+        class NeverRespondsSlowClose:
+            state = State.OPEN
+
+            async def send(self, _message):
+                pass
+
+            async def recv(self):
+                await asyncio.sleep(10)
+
+            async def close(self):
+                close_started.set()
+                await asyncio.sleep(2)  # simulate a stalled close handshake
+                self.state = State.CLOSED
+
+        client = GenericEnvClient(
+            base_url="http://localhost:8000", message_timeout_s=10
+        )
+        original_ws = NeverRespondsSlowClose()
+        client._ws = original_ws
+        client._ws_loop = asyncio.get_running_loop()
+
+        loop = asyncio.get_running_loop()
+        start = loop.time()
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(
+                client._send_and_receive({"type": "state"}), timeout=0.05
+            )
+        elapsed = loop.time() - start
+
+        # The 2s close handshake must not have been awaited inline: the
+        # caller's own 50ms deadline should be honored, not the socket's.
+        assert elapsed < 1.0, (
+            f"caller's 50ms deadline took {elapsed:.2f}s -- the close "
+            "handshake was awaited inline instead of backgrounded"
+        )
+        assert client._ws is None
+
+        # The close still actually happens, just not on the caller's time.
+        await close_started.wait()
+        await asyncio.sleep(2.1)
+        assert original_ws.state == State.CLOSED
+
+    @pytest.mark.asyncio
+    async def test_close_waits_for_pending_background_close(self):
+        """`close()` must not return until a backgrounded socket close (the
+        fire-and-forget cleanup in `_receive()`) has actually finished.
+
+        Regression for a second Bugbot finding on #1149:
+        `_pending_close_tasks` was never awaited anywhere, so
+        `SyncEnvClient.close()` could call `_stop_loop()` and tear down the
+        event loop while a background close was still mid-handshake,
+        abandoning it -- the server-side session could stay allocated.
+        """
+        close_completed = False
+
+        class SlowBackgroundClose:
+            state = State.OPEN
+
+            async def send(self, _message):
+                pass
+
+            async def recv(self):
+                await asyncio.sleep(10)
+
+            async def close(self):
+                nonlocal close_completed
+                await asyncio.sleep(0.05)
+                close_completed = True
+                self.state = State.CLOSED
+
+        client = GenericEnvClient(
+            base_url="http://localhost:8000", message_timeout_s=0.01
+        )
+        dropped_ws = SlowBackgroundClose()
+        client._ws = dropped_ws
+        client._ws_loop = asyncio.get_running_loop()
+
+        with pytest.raises(asyncio.TimeoutError):
+            await client._send_and_receive({"type": "state"})
+
+        assert client._pending_close_tasks  # background close was scheduled
+        assert not close_completed  # ...but hasn't run yet
+
+        await client._close_async()
+
+        assert close_completed, (
+            "close() returned before the backgrounded socket close finished"
+        )
+
+    @pytest.mark.asyncio
+    async def test_reconnect_waits_for_dropped_socket_to_release_capacity(self):
+        """A replacement connection must wait for the old session to close.
+
+        A timed-out socket is detached immediately and closed in the background.
+        Reconnecting before that handshake finishes races the server's session
+        accounting; with the default capacity of one, the retry is rejected.
+        """
+        close_started = asyncio.Event()
+        release_close = asyncio.Event()
+
+        class SlowClose:
+            state = State.OPEN
+
+            async def send(self, _message):
+                pass
+
+            async def recv(self):
+                await asyncio.sleep(10)
+
+            async def close(self):
+                close_started.set()
+                await release_close.wait()
+                self.state = State.CLOSED
+
+        client = GenericEnvClient(
+            base_url="http://localhost:8000", message_timeout_s=0.01
+        )
+        dropped_ws = SlowClose()
+        client._ws = dropped_ws
+        client._ws_loop = asyncio.get_running_loop()
+
+        with pytest.raises(asyncio.TimeoutError):
+            await client._send_and_receive({"type": "state"})
+        await close_started.wait()
+
+        replacement_ws = AsyncMock()
+        replacement_ws.state = State.OPEN
+        replacement_ws.recv.return_value = '{"type": "state", "data": {}}'
+
+        async def fake_ws_connect(*args, **kwargs):
+            return replacement_ws
+
+        with patch(
+            "openenv.core.env_client.ws_connect", side_effect=fake_ws_connect
+        ) as mock_connect:
+            reconnect = asyncio.create_task(client._connect_async())
+            await asyncio.sleep(0)
+            assert not reconnect.done()
+            mock_connect.assert_not_called()
+
+            release_close.set()
+            await asyncio.wait_for(reconnect, timeout=1)
+
+        mock_connect.assert_called_once()
+        assert dropped_ws.state == State.CLOSED
+        assert client._ws is replacement_ws
+        await client._close_async()
+
+    @pytest.mark.asyncio
+    async def test_cancelled_close_tracks_current_socket_until_handshake_finishes(
+        self,
+    ):
+        """Cancelling the current close must not abandon its server session."""
+        close_started = asyncio.Event()
+        release_close = asyncio.Event()
+
+        class SlowCurrentSocket:
+            state = State.OPEN
+
+            async def send(self, _message):
+                pass
+
+            async def close(self):
+                close_started.set()
+                await release_close.wait()
+                self.state = State.CLOSED
+
+        client = GenericEnvClient(base_url="http://localhost:8000")
+        current_ws = SlowCurrentSocket()
+        client._ws = current_ws
+        client._ws_loop = asyncio.get_running_loop()
+
+        close_call = asyncio.create_task(client._close_async())
+        await close_started.wait()
+        assert client._pending_close_tasks
+
+        close_call.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await close_call
+
+        assert client._ws is None
+        assert current_ws.state == State.OPEN
+        assert any(not task.cancelled() for task in client._pending_close_tasks)
+
+        replacement_ws = AsyncMock()
+        replacement_ws.state = State.OPEN
+
+        async def fake_ws_connect(*args, **kwargs):
+            return replacement_ws
+
+        with patch(
+            "openenv.core.env_client.ws_connect", side_effect=fake_ws_connect
+        ) as mock_connect:
+            reconnect = asyncio.create_task(client._connect_async())
+            await asyncio.sleep(0)
+            assert not reconnect.done()
+            mock_connect.assert_not_called()
+
+            release_close.set()
+            await asyncio.wait_for(reconnect, timeout=1)
+
+        assert current_ws.state == State.CLOSED
+        mock_connect.assert_called_once()
+        assert client._ws is replacement_ws
+        await client._close_async()
+
+    @pytest.mark.asyncio
+    async def test_cancelled_close_still_closes_current_and_pending_sockets(self):
+        """Cancellation while draining an old socket must not leak either one."""
+
+        class FakeRuntimeProvider:
+            def __init__(self):
+                self.stopped = False
+
+            def stop(self):
+                self.stopped = True
+
+        close_started = asyncio.Event()
+        release_close = asyncio.Event()
+
+        class PendingSocket:
+            state = State.OPEN
+
+            async def close(self):
+                close_started.set()
+                await release_close.wait()
+                self.state = State.CLOSED
+
+        class CurrentSocket:
+            state = State.OPEN
+
+            async def send(self, _message):
+                pass
+
+            async def close(self):
+                self.state = State.CLOSED
+
+        provider = FakeRuntimeProvider()
+        client = GenericEnvClient(provider=provider)
+        client._base_url = "http://localhost:8000"
+        client._ws_url = "ws://localhost:8000/ws"
+
+        dropped_ws = PendingSocket()
+        pending = asyncio.create_task(dropped_ws.close())
+        client._pending_close_tasks.add(pending)
+        pending.add_done_callback(client._pending_close_tasks.discard)
+        await close_started.wait()
+
+        current_ws = CurrentSocket()
+        client._ws = current_ws
+        client._ws_loop = asyncio.get_running_loop()
+
+        close_task = asyncio.create_task(client._close_async())
+        await asyncio.sleep(0)  # let close enter the shielded pending-close drain
+        assert not close_task.done()
+
+        close_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await close_task
+
+        assert provider.stopped
+        assert client._base_url is None
+        assert client._ws_url is None
+        assert client._ws is None
+        assert current_ws.state == State.CLOSED
+        assert not pending.cancelled()
+
+        release_close.set()
+        await pending
+        assert dropped_ws.state == State.CLOSED
 
 
 # ============================================================================

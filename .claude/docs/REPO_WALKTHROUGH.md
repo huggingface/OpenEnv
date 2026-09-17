@@ -36,6 +36,9 @@ src/
 │   │   ├── client_types.py       # Client-side type definitions
 │   │   ├── utils.py              # Shared utilities
 │   │   │
+│   │   ├── harness/              # Agent protocols and captured trace collection
+│   │   │   └── capture/              # Dialect adapters, session routing, exact tokens, SSE replay
+│   │   │
 │   │   ├── env_server/           # Server-side components
 │   │   │   ├── interfaces.py         # Environment abstract base class
 │   │   │   ├── http_server.py        # HTTPEnvServer (FastAPI + WebSocket)
@@ -58,12 +61,36 @@ src/
 │   │       ├── local_python_executor.py  # Python code execution
 │   │       └── git_server_client.py      # Git operations
 │   │
+│   ├── harbor/               # Harbor tasks, harness seams, provider qualification, live UI
+│   │
+│   ├── discovery/            # RFC 011 metadata-only repository catalogs
+│   │   ├── models.py             # Declaration profile and identity invariants
+│   │   ├── repository.py         # Bounded reads from one committed Git tree
+│   │   ├── producer.py           # Inventory, provenance and record generation
+│   │   ├── search.py             # Lexical selection, exact lookup and lifecycle
+│   │   ├── serialization.py      # Complete-snapshot loading and atomic writes
+│   │   └── schemas/              # Packaged versioned JSON schemas
+│   │
+│   ├── validation/           # RFC 008 environment validation contracts
+│   │   ├── types.py              # Shared validation enums and protocol types
+│   │   ├── manifest.py           # Normalized environment manifest models
+│   │   ├── signature.py          # Package signature detection
+│   │   ├── report.py             # Versioned validation report models
+│   │   ├── policy.py             # Severity-policy loading and application
+│   │   ├── runner.py             # Local validation orchestration
+│   │   ├── parsers/              # Manifest parser registry
+│   │   ├── providers/            # Validation provider contracts
+│   │   ├── graders/              # Grader registry and protocols
+│   │   ├── policies/             # Versioned severity policies
+│   │   └── schemas/              # Generated JSON schemas
+│   │
 │   └── cli/                  # Command-line interface
 │       ├── __main__.py           # Entry point (`python -m openenv.cli`)
 │       ├── commands/             # CLI subcommands
 │       │   ├── init.py               # `openenv init` - scaffold new env
 │       │   ├── serve.py              # `openenv serve` - run server locally
 │       │   ├── build.py              # `openenv build` - build Docker image
+│       │   ├── catalog.py            # `catalog` and `discover` - metadata only
 │       │   ├── push.py               # `openenv push` - deploy to HF Spaces
 │       │   └── validate.py           # `openenv validate` - check config
 │       └── templates/            # Scaffolding templates
@@ -89,6 +116,8 @@ envs/
 │       ├── echo_environment.py       # Environment implementation
 │       └── Dockerfile                # Container definition
 │
+├── harbor_env/              # Thin Harbor package and trainer session factory
+├── thinkingbox_env/           # Stateful MCP business-workflow benchmark adapter
 ├── coding_env/               # Python code execution environment
 ├── chat_env/                 # Conversational environment
 ├── textarena_env/            # Text-based games (TextArena)
@@ -115,6 +144,7 @@ tests/
 ├── envs/                     # Per-environment integration tests
 │   ├── test_echo_environment.py
 │   ├── test_coding_environment.py
+│   ├── test_thinkingbox_env.py  # Focused wire, fidelity, provenance, and evaluator suite
 │   └── ...
 │
 ├── test_cli/                 # CLI command tests
@@ -218,6 +248,7 @@ docs/
     ├── environments/         # Per-environment documentation
     │   ├── echo.md
     │   ├── coding.md
+    │   ├── thinkingbox.md    # Generated from envs/thinkingbox_env/README.md
     │   └── ...
     │
     ├── getting_started/      # Sphinx Gallery executable tutorials
@@ -235,6 +266,8 @@ docs/
     └── _static/              # Static assets (versions.json, etc.)
 ```
 
+ThinkingBox examples: `example_usage.py` is a public-client smoke test, while `eval_testlist.py` invokes the packaged evaluator.
+
 ## Key Files to Know
 
 | File | Purpose |
@@ -246,3 +279,9 @@ docs/
 | `envs/echo_env/` | Reference implementation - start here |
 | `rfcs/001-abstractions.md` | Core architectural decisions |
 | `.claude/docs/INVARIANTS.md` | Rules that must never be broken |
+
+## Harbor integration
+
+`src/openenv/core/harness/capture/` records inference calls independently of a trainer or tokenizer. `src/openenv/harbor/` runs Harbor tasks, reconciles their trajectories, and exposes the shared training contract through clients and the Gradio playground. `envs/harbor_env/` is the installable environment wrapper. `examples/harbor/nemo_shell_profile/` provides the explicitly qualified NeMo shell workflow.
+
+See `docs/source/guides/harbor-provider-qualification.md` for provider and adapter evidence, `rfcs/012-harbor-capture-providers.md` for explicit evaluation/training and session ownership, and `tests/envs/test_harbor*.py` / `test_capture*.py` for deterministic capture regressions.

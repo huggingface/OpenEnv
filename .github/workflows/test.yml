@@ -96,6 +96,40 @@ jobs:
         env:
           PYTHONPATH: src:envs
 
+  test-thinkingbox-env:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install ThinkingBox environment dependencies
+        working-directory: envs/thinkingbox_env
+        run: |
+          uv sync --python ${{ matrix.python-version }} \
+            --frozen --all-groups --all-extras
+
+      - name: Run ThinkingBox environment tests
+        run: |
+          uv run --python ${{ matrix.python-version }} \
+            --frozen --project envs/thinkingbox_env \
+            --all-groups --all-extras \
+            pytest tests/envs/test_thinkingbox_env.py -v --tb=short
+        env:
+          PYTHONPATH: src:envs
+
   check-env-docs:
     runs-on: ubuntu-latest
     steps:
