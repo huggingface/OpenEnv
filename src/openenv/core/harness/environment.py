@@ -176,7 +176,7 @@ class HarnessEnvironment(MCPEnvironment):
             await self._reset_rubric_async()
         self._episode_active = True
 
-        return Observation(
+        observation = Observation(
             done=False,
             reward=0.0,
             metadata={
@@ -184,6 +184,7 @@ class HarnessEnvironment(MCPEnvironment):
                 "injected_tools": [tool.name for tool in resolved],
             },
         )
+        return self._apply_transform(observation)
 
     def reset(
         self,
@@ -298,7 +299,7 @@ class HarnessEnvironment(MCPEnvironment):
         )
         if self.rubric is not None:
             observation.reward = await self._apply_rubric_async(action, observation)
-        return observation
+        return self._apply_transform(observation)
 
     async def _terminal_error_observation(
         self, message: str, error_type: str
@@ -315,7 +316,7 @@ class HarnessEnvironment(MCPEnvironment):
             data={"message": message, "recoverable": False},
         )
         self._trajectory.append(error_event)
-        return Observation(
+        observation = Observation(
             done=True,
             reward=0.0,
             metadata={
@@ -324,6 +325,7 @@ class HarnessEnvironment(MCPEnvironment):
                 "turn_events": events_to_metadata([error_event]),
             },
         )
+        return self._apply_transform(observation)
 
     async def _collect_injectable_tools(self) -> list[Tool]:
         """

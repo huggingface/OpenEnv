@@ -97,6 +97,10 @@ class HarnessProcess:
         if self.is_running():
             raise HarnessStartupError("harness process is already running")
 
+        # An exited process can still own open pipes and reader threads.
+        # Release them before replacing any of its lifecycle state.
+        await self.stop()
+
         try:
             self._proc = subprocess.Popen(
                 self.command,
@@ -169,6 +173,7 @@ class HarnessProcess:
         if proc is None:
             return
         await asyncio.to_thread(self._stop_blocking, proc)
+        self._proc = None
 
     def _stop_blocking(self, proc: subprocess.Popen) -> None:
         if proc.poll() is None:
