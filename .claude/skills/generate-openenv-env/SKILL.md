@@ -133,7 +133,7 @@ PYTHONPATH=src:envs uv run python -c "from envs.<name>_env.server.<name>_environ
 # Build and validate
 cd envs/<name>_env
 openenv build
-openenv validate --verbose
+openenv validate --level static --skip-build
 PYTHONPATH=src:envs uv run pytest envs/<name>_env -q
 ```
 

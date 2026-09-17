@@ -13,8 +13,10 @@ usage() {
 Usage: scripts/prepare_hf_deployment.sh [options]
 
 Environment selection:
-  --all                            Deploy all deployable envs under envs/ (default)
-  --env <name>                     Deploy a single env (repeatable)
+  --all                            Deploy all deployable envs under envs/ (default);
+                                   skips envs containing SKIP_HF_DEPLOYMENT
+  --env <name>                     Deploy a single env (repeatable); explicit
+                                   selection ignores SKIP_HF_DEPLOYMENT
 
 Deployment options:
   --base-sha <sha|tag>             openenv-base image ref suffix (default: latest)
@@ -310,7 +312,10 @@ resolve_env_dockerfile() {
 discover_all_envs() {
     local env_name=""
     while IFS= read -r env_name; do
-        if is_deployable_env "$env_name"; then
+        if [ -f "envs/$env_name/SKIP_HF_DEPLOYMENT" ]; then
+            SKIPPED_ENVS+=("$env_name")
+            warn "Skipping '$env_name' (SKIP_HF_DEPLOYMENT opts out of --all; use --env for explicit deployment)"
+        elif is_deployable_env "$env_name"; then
             SELECTED_ENVS+=("$env_name")
         else
             SKIPPED_ENVS+=("$env_name")
