@@ -178,6 +178,7 @@ class HTTPEnvServer:
         max_concurrent_envs: Optional[int] = None,
         concurrency_config: Optional[ConcurrencyConfig] = None,
         env_name: Optional[str] = None,
+        state_cls: Type[State] = State,
     ):
         """
         Initialize HTTP server wrapper.
@@ -198,6 +199,10 @@ class HTTPEnvServer:
                 `max_concurrent_envs`.
             env_name (`str`, *optional*):
                 Public environment name used by task/split endpoints.
+            state_cls (`Type[State]`, *optional*, defaults to `State`):
+                The `State` subclass this environment reports. Used for the `/state`
+                response model and the `state` entry of `/schema`, so that fields
+                declared by the subclass are published and serialized.
 
         Raises:
             `ValueError`: If both `max_concurrent_envs` and `concurrency_config` are provided.
@@ -241,6 +246,7 @@ class HTTPEnvServer:
 
         self.action_cls = action_cls
         self.observation_cls = observation_cls
+        self.state_cls = state_cls
         self.env_name = env_name or self._default_env_name()
 
         # Session management for WebSocket connections
@@ -1418,7 +1424,7 @@ version, author, and documentation links.
                 GetEndpointConfig(
                     path="/state",
                     handler=get_state_handler,
-                    response_model=State,
+                    response_model=self.state_cls,
                     tag="State Management",
                     summary="Get current environment state",
                     description="""
@@ -1477,7 +1483,7 @@ all schema information needed to interact with the environment.
             return SchemaResponse(
                 action=self.action_cls.model_json_schema(),
                 observation=self.observation_cls.model_json_schema(),
-                state=State.model_json_schema(),
+                state=self.state_cls.model_json_schema(),
             )
 
         # Register MCP endpoint for production mode (direct MCP access)
@@ -1774,6 +1780,7 @@ def create_app(
     custom_tab_primary: bool = False,
     show_default_tab: bool = True,
     title_override: Optional[str] = None,
+    state_cls: Type[State] = State,
 ) -> FastAPI:
     """
     Create a FastAPI application with or without web interface.
@@ -1812,6 +1819,9 @@ def create_app(
         title_override (`str`, *optional*):
             If set, used as the Gradio app title instead of the default
             `"OpenEnv Agentic Environment: {name}"`.
+        state_cls (`Type[State]`, *optional*, defaults to `State`):
+            The `State` subclass this environment reports, used for the `/state`
+            response model and the `state` entry of `/schema`.
 
     Returns:
         `FastAPI` application instance with or without web interface and README integration.
@@ -1835,6 +1845,7 @@ def create_app(
             env_name,
             max_concurrent_envs,
             concurrency_config,
+            state_cls=state_cls,
             gradio_builder=gradio_builder,
             custom_tab_name=custom_tab_name,
             custom_tab_primary=custom_tab_primary,
@@ -1850,6 +1861,7 @@ def create_app(
             max_concurrent_envs,
             concurrency_config,
             env_name=env_name,
+            state_cls=state_cls,
         )
 
 
@@ -1860,6 +1872,7 @@ def create_fastapi_app(
     max_concurrent_envs: Optional[int] = None,
     concurrency_config: Optional[ConcurrencyConfig] = None,
     env_name: Optional[str] = None,
+    state_cls: Type[State] = State,
 ) -> FastAPI:
     """
     Create a FastAPI application with comprehensive documentation.
@@ -1879,6 +1892,9 @@ def create_fastapi_app(
             `max_concurrent_envs`.
         env_name (`str`, *optional*):
             Optional environment name for task/split endpoints.
+        state_cls (`Type[State]`, *optional*, defaults to `State`):
+            The `State` subclass this environment reports, used for the `/state`
+            response model and the `state` entry of `/schema`.
 
     Returns:
         `FastAPI` application instance.
@@ -1957,6 +1973,7 @@ HTTP API for interacting with OpenEnv environments through a standardized interf
         max_concurrent_envs,
         concurrency_config=concurrency_config,
         env_name=env_name,
+        state_cls=state_cls,
     )
     server.register_routes(app)
     return app
