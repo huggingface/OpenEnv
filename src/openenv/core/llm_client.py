@@ -13,6 +13,9 @@ Examples:
     client = OpenAIClient("http://localhost", 8000, model="meta-llama/...")
     response = await client.complete("What is 2+2?")
 
+    # The endpoint may carry its own port and path prefix:
+    client = OpenAIClient("http://localhost:8000/v1", port=None, model="meta-llama/...")
+
     # Or use the factory for hosted APIs:
     client = create_llm_client("openai", model="gpt-4", api_key="sk-...")
     response = await client.complete_with_tools(messages, tools)
@@ -25,8 +28,53 @@ import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from openai import AsyncOpenAI
+
+_OPENAI_API_PREFIX = "/v1"
+
+
+def _join_endpoint_port(endpoint: str, port: int | None) -> str:
+    """Combine an endpoint URL with an optional port.
+
+    `port` is appended only when the URL does not name one; an explicit port
+    that differs from the one in the URL is rejected rather than silently
+    overridden. Path, query and fragment are preserved and a trailing slash on
+    the path is dropped. Malformed endpoints raise `ValueError`.
+    """
+    try:
+        if "://" not in endpoint:
+            raise ValueError("missing scheme, expected e.g. http://host:port")
+        parts = urlsplit(endpoint)
+        if parts.netloc.rsplit("@", 1)[-1].endswith(":"):
+            raise ValueError("empty port")
+        url_port = parts.port
+    except ValueError as exc:
+        raise ValueError(f"Invalid endpoint URL {endpoint!r}: {exc}") from exc
+
+    if url_port is None:
+        if port is not None:
+            parts = parts._replace(netloc=f"{parts.netloc}:{port}")
+    elif port is not None and port != url_port:
+        raise ValueError(
+            f"Endpoint URL {endpoint!r} already specifies port {url_port}, "
+            f"which conflicts with port={port}"
+        )
+    return urlunsplit(parts._replace(path=parts.path.rstrip("/")))
+
+
+def _openai_base_url(base_url: str) -> str:
+    """Append the OpenAI `/v1` prefix when `base_url` has no path.
+
+    A URL that already names a path (`/v1`, or a gateway prefix such as
+    `/openai/v1`) is used as-is, matching the OpenAI SDK convention that
+    `base_url` includes the API prefix.
+    """
+    parts = urlsplit(base_url)
+    if parts.path in ("", "/"):
+        return urlunsplit(parts._replace(path=_OPENAI_API_PREFIX))
+    return base_url
 
 
 @dataclass
@@ -70,12 +118,14 @@ class LLMClient(ABC):
 
     Args:
         endpoint (`str`):
-            The base URL of the LLM service (e.g. "http://localhost").
-        port (`int`):
-            The port the service listens on.
+            The base URL of the LLM service (e.g. "http://localhost"). May
+            include a port and a path (e.g. "http://localhost:8000/v1").
+        port (`int` or `None`):
+            The port the service listens on. Appended to `endpoint` when the
+            URL does not name one; must match the URL's port when both are given.
     """
 
-    def __init__(self, endpoint: str, port: int):
+    def __init__(self, endpoint: str, port: int | None):
         self.endpoint = endpoint
         self.port = port
 
@@ -122,8 +172,8 @@ class LLMClient(ABC):
 
     @property
     def base_url(self) -> str:
-        """Construct base URL from endpoint and port."""
-        return f"{self.endpoint}:{self.port}"
+        """Base URL of the service: `endpoint` plus `port` when the URL names none."""
+        return _join_endpoint_port(self.endpoint, self.port)
 
 
 class OpenAIClient(LLMClient):
@@ -134,9 +184,12 @@ class OpenAIClient(LLMClient):
 
     Args:
         endpoint (`str`):
-            The base URL (e.g. "http://localhost").
-        port (`int`):
-            The port number.
+            The base URL (e.g. "http://localhost"). May include a port and a
+            path (e.g. "http://localhost:8000/v1"). The `/v1` API prefix is
+            appended when the URL has no path; a URL with a path is used as-is.
+        port (`int` or `None`):
+            The port number, appended when `endpoint` does not name one; must
+            match the URL's port when both are given.
         model (`str`):
             Model name to pass to the API.
         api_key (`str`, *optional*):
@@ -155,7 +208,7 @@ class OpenAIClient(LLMClient):
     def __init__(
         self,
         endpoint: str,
-        port: int,
+        port: int | None,
         model: str,
         api_key: str | None = None,
         system_prompt: str | None = None,
@@ -174,7 +227,7 @@ class OpenAIClient(LLMClient):
         self._omit_temperature = use_max_completion_tokens
 
         self._client = AsyncOpenAI(
-            base_url=f"{self.base_url}/v1",
+            base_url=_openai_base_url(self.base_url),
             api_key=api_key if api_key is not None else "not-needed",
         )
 
@@ -246,9 +299,10 @@ class AnthropicClient(LLMClient):
 
     Args:
         endpoint (`str`):
-            The base URL (e.g. `https://api.anthropic.com`).
-        port (`int`):
-            The port number.
+            The base URL (e.g. `https://api.anthropic.com`). May include a port.
+        port (`int` or `None`):
+            The port number, appended when `endpoint` does not name one; must
+            match the URL's port when both are given.
         model (`str`):
             Model name (e.g. "claude-sonnet-4-20250514").
         api_key (`str`, *optional*):
@@ -264,7 +318,7 @@ class AnthropicClient(LLMClient):
     def __init__(
         self,
         endpoint: str,
-        port: int,
+        port: int | None,
         model: str,
         api_key: str | None = None,
         system_prompt: str | None = None,
