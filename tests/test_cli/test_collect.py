@@ -340,6 +340,19 @@ def test_llm_endpoint_url_forms_reach_openai_client(
             ["--llm-endpoint", "http://localhost:11434", "--llm-port", "8000"],
             "conflicts with port=8000",
         ),
+        (["--llm-endpoint", "ftp://localhost:8000"], "expected an http"),
+        (
+            ["--llm-endpoint", "http://localhost", "--llm-port", "99999"],
+            "out of range 1-65535",
+        ),
+        (
+            ["--llm-endpoint", "http://localhost:8000/v1?api-version=1"],
+            "query strings and fragments are not supported",
+        ),
+        (
+            ["--llm-endpoint", "http://user:s3cret@localhost:8000"],
+            "credentials in the URL are not supported",
+        ),
     ],
 )
 def test_bad_llm_endpoint_is_usage_error_before_output_is_written(
@@ -360,8 +373,37 @@ def test_bad_llm_endpoint_is_usage_error_before_output_is_written(
         ],
     )
 
+    # Typer renders usage errors in a wrapped box; flatten it before matching.
+    output = " ".join(result.output.replace("\u2502", " ").split())
     assert result.exit_code == 2, result.output
-    assert "--llm-endpoint" in result.output
-    assert expected_message in result.output
+    assert "--llm-endpoint" in output
+    assert expected_message in output
+    assert "s3cret" not in result.output
     mock_pipeline["serializer_cls"].return_value.write_metadata.assert_not_called()
     mock_pipeline["runner_instance"].run.assert_not_called()
+
+
+def test_resolved_llm_endpoint_is_printed(tmp_path: Path, mock_pipeline):
+    with (
+        patch("openenv.core.llm_client.AsyncOpenAI"),
+        patch("openenv.cli.commands.collect.console") as console,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "collect",
+                "openspiel:tic_tac_toe",
+                "--base-url",
+                "https://example.hf.space",
+                "--output-dir",
+                str(tmp_path),
+                "--model",
+                "Qwen/Qwen3-1.7B",
+                "--llm-endpoint",
+                "http://localhost",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    printed = [str(call.args[0]) for call in console.print.call_args_list]
+    assert "[cyan]LLM endpoint:[/cyan] http://localhost" in printed
