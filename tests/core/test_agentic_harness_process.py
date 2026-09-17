@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import time
 from pathlib import Path
@@ -109,6 +110,64 @@ class TestCrashDetection:
         await process.start(ready_check=ready)
         try:
             assert await process.read_line(timeout_s=0.1) is None
+        finally:
+            await process.stop()
+
+
+class TestEOF:
+    @pytest.mark.parametrize("timeout_s", [None, 10.0])
+    async def test_exit_preserves_buffered_lines_before_repeated_eof(self, timeout_s):
+        process = make_process("exit-with-output")
+        await process.start()
+        try:
+            deadline = time.monotonic() + 10.0
+            while process.is_running() and time.monotonic() < deadline:
+                await asyncio.sleep(0.02)
+            assert process.is_running() is False
+
+            for expected in ("first", "second", "last"):
+                assert (
+                    await asyncio.wait_for(process.read_line(timeout_s), timeout=2.0)
+                    == expected
+                )
+            for _ in range(2):
+                assert (
+                    await asyncio.wait_for(process.read_line(timeout_s), timeout=2.0)
+                    is None
+                )
+        finally:
+            await process.stop()
+
+    @pytest.mark.parametrize("timeout_s", [None, 10.0])
+    async def test_read_line_returns_none_when_stdout_closes(self, timeout_s):
+        process = make_process("close-stdout")
+        await process.start(ready_check=ready)
+        try:
+            await process.write_line("close")
+            for _ in range(2):
+                assert (
+                    await asyncio.wait_for(process.read_line(timeout_s), timeout=2.0)
+                    is None
+                )
+            assert process.is_running() is True
+        finally:
+            await process.stop()
+
+    async def test_stop_wakes_pending_read_and_restart_can_read_output(self):
+        process = make_process("echo")
+        await process.start(ready_check=ready)
+        try:
+            pending_read = asyncio.create_task(process.read_line())
+            await asyncio.sleep(0)
+            await process.stop()
+            assert await asyncio.wait_for(pending_read, timeout=2.0) is None
+            assert await asyncio.wait_for(process.read_line(), timeout=2.0) is None
+
+            await process.start(ready_check=ready)
+            await process.write_line("again")
+            assert (
+                await asyncio.wait_for(process.read_line(), timeout=2.0) == "echo:again"
+            )
         finally:
             await process.stop()
 

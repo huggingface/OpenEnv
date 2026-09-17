@@ -15,6 +15,8 @@ Modes:
   echo             - print ``ready``, then echo each stdin line.
   slow-start       - sleep past any startup timeout before printing ``ready``.
   exit-now         - print to stderr and exit with code 3.
+  exit-with-output - print multiple lines, including an unterminated final line.
+  close-stdout     - close stdout on request, then wait on stdin without exiting.
   crash-after-echo - ``ready``, echo one line, then exit with code 1.
   ignore-sigterm   - ignore SIGTERM, print ``ready``, then sleep.
   unicode-echo     - like echo, but the reply carries non-ASCII characters.
@@ -98,6 +100,19 @@ def mode_crash_after_echo() -> None:
     sys.exit(1)
 
 
+def mode_exit_with_output() -> None:
+    print("first")
+    print("second")
+    print("last", end="", flush=True)
+
+
+def mode_close_stdout() -> None:
+    print("ready", flush=True)
+    sys.stdin.readline()
+    os.close(sys.stdout.fileno())
+    sys.stdin.readline()
+
+
 def mode_ignore_sigterm() -> None:
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
     print("ready", flush=True)
@@ -110,6 +125,8 @@ MODES = {
     "unicode-echo": mode_unicode_echo,
     "slow-start": mode_slow_start,
     "exit-now": mode_exit_now,
+    "exit-with-output": mode_exit_with_output,
+    "close-stdout": mode_close_stdout,
     "crash-after-echo": mode_crash_after_echo,
     "ignore-sigterm": mode_ignore_sigterm,
 }
