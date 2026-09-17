@@ -5,7 +5,9 @@
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
+from openai import AsyncOpenAI
 from openenv.core.llm_client import (
     _clean_mcp_schema,
     _mcp_tools_to_anthropic,
@@ -67,13 +69,16 @@ class TestLLMClientABC:
             ("http://localhost:8000/", 8000, "http://localhost:8000"),
             ("http://proxy/litellm", 4000, "http://proxy:4000/litellm"),
             ("http://[::1]", 8000, "http://[::1]:8000"),
-            ("http://user:pw@host", 8000, "http://user:pw@host:8000"),
-            ("http://localhost:8000?x=1", None, "http://localhost:8000?x=1"),
+            (
+                "https://gw.example.com/openai/v1",
+                None,
+                "https://gw.example.com/openai/v1",
+            ),
             ("http://localhost", None, "http://localhost"),
         ],
     )
     def test_base_url_endpoint_forms(self, endpoint, port, expected):
-        """Port is appended only when the URL names none; path and query survive."""
+        """Port is appended only when the URL names none; a path survives."""
 
         class StubClient(LLMClient):
             async def complete(self, prompt: str, **kwargs) -> str:
@@ -88,10 +93,17 @@ class TestLLMClientABC:
             "http://localhost:",
             "localhost:8000",
             "http://[::1",
+            "ftp://localhost:8000",
+            "http:///v1",
+            "http://user:token@localhost:8000",
+            "http://localhost:8000/v1?api-version=1",
+            "http://localhost:8000#frag",
+            "http://localhost:0",
+            "http://localhost:99999",
         ],
     )
     def test_base_url_malformed_endpoint_raises(self, endpoint):
-        """Malformed endpoints fail with a clear error instead of a bad URL."""
+        """Invalid endpoints fail with a clear error instead of a bad URL."""
 
         class StubClient(LLMClient):
             async def complete(self, prompt: str, **kwargs) -> str:
@@ -99,6 +111,30 @@ class TestLLMClientABC:
 
         with pytest.raises(ValueError, match="Invalid endpoint URL"):
             StubClient(endpoint, 8000).base_url
+
+    @pytest.mark.parametrize("port", [0, -1, 65536, 99999])
+    def test_base_url_port_out_of_range_raises(self, port):
+        """The appended port is range-checked like a port inside the URL."""
+
+        class StubClient(LLMClient):
+            async def complete(self, prompt: str, **kwargs) -> str:
+                return "stub"
+
+        with pytest.raises(ValueError, match="out of range 1-65535"):
+            StubClient("http://localhost", port).base_url
+
+    def test_base_url_error_does_not_echo_credentials(self):
+        """A credential-bearing endpoint is rejected without leaking the secret."""
+
+        class StubClient(LLMClient):
+            async def complete(self, prompt: str, **kwargs) -> str:
+                return "stub"
+
+        with pytest.raises(ValueError, match="credentials") as excinfo:
+            StubClient("http://user:s3cret@localhost:8000/v1", None).base_url
+
+        assert "s3cret" not in str(excinfo.value)
+        assert "***@localhost:8000/v1" in str(excinfo.value)
 
     def test_base_url_conflicting_port_raises(self):
         """An explicit port that differs from the URL's port is rejected."""
@@ -195,18 +231,12 @@ class TestOpenAIClientConstruction:
             ("http://localhost:8000/", None, "http://localhost:8000/v1"),
             ("http://localhost:8000/v1", None, "http://localhost:8000/v1"),
             ("http://localhost:8000/v1/", None, "http://localhost:8000/v1"),
-            ("http://localhost:8000?x=1", None, "http://localhost:8000/v1?x=1"),
             ("http://localhost", 8001, "http://localhost:8001/v1"),
             ("http://proxy:4000/litellm", None, "http://proxy:4000/litellm"),
             (
                 "https://api.groq.com/openai/v1",
                 None,
                 "https://api.groq.com/openai/v1",
-            ),
-            (
-                "http://proxy:4000/v1?api-version=1",
-                None,
-                "http://proxy:4000/v1?api-version=1",
             ),
             (
                 "https://generativelanguage.googleapis.com/v1beta/openai",
@@ -234,6 +264,67 @@ class TestOpenAIClientConstruction:
         """A port argument that contradicts the URL's port is rejected."""
         with pytest.raises(ValueError, match="conflicts with port=8000"):
             OpenAIClient("http://localhost:11434", 8000, model="gpt-4")
+
+
+class TestOpenAIClientRequestUrl:
+    """The URL the SDK actually requests, not only what is handed to it."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("endpoint", "port", "expected"),
+        [
+            (
+                "http://localhost:8000",
+                None,
+                "http://localhost:8000/v1/chat/completions",
+            ),
+            (
+                "http://localhost:8000/v1",
+                None,
+                "http://localhost:8000/v1/chat/completions",
+            ),
+            ("http://localhost", 8001, "http://localhost:8001/v1/chat/completions"),
+            (
+                "https://gw.example.com/openai/v1",
+                None,
+                "https://gw.example.com/openai/v1/chat/completions",
+            ),
+        ],
+    )
+    async def test_chat_completion_request_url(self, endpoint, port, expected):
+        """complete() reaches <base>/chat/completions through the real SDK."""
+        requested: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requested.append(str(request.url))
+            return httpx.Response(
+                200,
+                json={
+                    "id": "cmpl-1",
+                    "object": "chat.completion",
+                    "created": 0,
+                    "model": "m",
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": {"role": "assistant", "content": "ok"},
+                            "finish_reason": "stop",
+                        }
+                    ],
+                },
+            )
+
+        def build_sdk_client(**kwargs):
+            transport = httpx.MockTransport(handler)
+            return AsyncOpenAI(
+                http_client=httpx.AsyncClient(transport=transport), **kwargs
+            )
+
+        with patch("openenv.core.llm_client.AsyncOpenAI", side_effect=build_sdk_client):
+            client = OpenAIClient(endpoint, port, model="m")
+
+        assert await client.complete("hi") == "ok"
+        assert requested == [expected]
 
 
 class TestOpenAIClientComplete:

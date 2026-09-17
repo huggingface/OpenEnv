@@ -164,6 +164,7 @@ def _build_llm_model_step(
             )
         except ValueError as exc:
             raise typer.BadParameter(str(exc), param_hint="--llm-endpoint") from exc
+        console.print(f"[cyan]LLM endpoint:[/cyan] {client.base_url}")
     else:
         client = create_llm_client(
             provider=provider,
@@ -294,7 +295,10 @@ def collect(
         int | None,
         typer.Option(
             "--llm-port",
-            help="Port appended to --llm-endpoint when the URL does not include one.",
+            help=(
+                "Port appended to --llm-endpoint when the URL does not include one. "
+                "No default: earlier releases assumed 8000."
+            ),
         ),
     ] = None,
     temperature: Annotated[
