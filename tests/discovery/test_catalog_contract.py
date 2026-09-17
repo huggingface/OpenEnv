@@ -15,6 +15,9 @@ from pydantic import ValidationError
 
 
 REVISION = "a" * 40
+UNSAFE_LINE_PATHS = [
+    f"envs/control-{chr(codepoint)}" for codepoint in [*range(0x20), *range(0x7F, 0xA0)]
+] + ["envs/line-\u2028separator", "envs/paragraph-\u2029separator"]
 
 
 @pytest.fixture
@@ -92,7 +95,13 @@ def test_tool_declaration_cannot_borrow_another_revision(card):
         "envs//echo",
         "envs/echo/",
         "envs/./echo",
-        "envs/\x00echo",
+        *UNSAFE_LINE_PATHS,
+        "envs/trailing\n",
+        ".\n",
+        "..\n",
+        "envs/\n",
+        "envs/.\n",
+        "envs/..\n",
     ],
 )
 def test_environment_locator_is_a_safe_repository_relative_path(
@@ -115,12 +124,8 @@ def test_environment_locator_is_a_safe_repository_relative_path(
         "envs/...",
         "envs/a..b",
         "envs/with spaces",
-        "envs/trailing\n",
-        ".\n",
-        "..\n",
-        "envs/\n",
-        "envs/.\n",
-        "envs/..\n",
+        "envs/café",
+        "envs/東京",
     ],
 )
 def test_schema_and_model_preserve_valid_relative_locators(card, path, card_schema):

@@ -53,7 +53,12 @@ def relative_path(value: str) -> str:
         return value
     if (
         not value
-        or "\x00" in value
+        or any(
+            ord(character) < 0x20
+            or 0x7F <= ord(character) <= 0x9F
+            or ord(character) in (0x2028, 0x2029)
+            for character in value
+        )
         or "\\" in value
         or PurePosixPath(value).is_absolute()
         or any(part in ("", ".", "..") for part in value.split("/"))
@@ -64,8 +69,12 @@ def relative_path(value: str) -> str:
 
 # Positive components exclude "." and ".." without lookaround, which some
 # JSON Schema regex engines do not support.
+_CONTROL_CHARACTER_PATTERN = r"[\x00-\x1f\x7f-\x9f\u2028\u2029]"
 _PATH_COMPONENT_PATTERN = (
-    r"(?:[^./\\\x00]|\.[^./\\\x00]|\.\.[^./\\\x00]|\.\.\.)[^/\\\x00]*"
+    r"(?:[^./\\\x00-\x1f\x7f-\x9f\u2028\u2029]"
+    r"|\.[^./\\\x00-\x1f\x7f-\x9f\u2028\u2029]"
+    r"|\.\.[^./\\\x00-\x1f\x7f-\x9f\u2028\u2029]"
+    r"|\.\.\.)[^/\\\x00-\x1f\x7f-\x9f\u2028\u2029]*"
 )
 RelativePath = Annotated[
     NonEmpty,
@@ -79,6 +88,7 @@ RelativePath = Annotated[
                         rf"(?:/{_PATH_COMPONENT_PATTERN})*)$"
                     ),
                 },
+                {"not": {"pattern": _CONTROL_CHARACTER_PATTERN}},
             ]
         }
     ),

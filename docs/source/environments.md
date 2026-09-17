@@ -320,5 +320,12 @@ The OpenEnv community has built a catalog of ready-to-run environments that cove
         <a href="https://huggingface.co/spaces/reasoning-core/reasoning-core-openenv" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">🤗 HF</a>
       </div>
     </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Harbor</div>
+      <p class="text-sm">Serve Harbor tasks across agent harnesses and sandboxes, with captured traces for evaluation and exact-token training.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/harbor" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
   </div>
 </div>
