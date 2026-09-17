@@ -71,6 +71,41 @@ class TestLifecycle:
 
 
 class TestStartupFailures:
+    @pytest.mark.parametrize("cancel", [False, True])
+    async def test_interrupted_readiness_cleans_up_process(self, cancel):
+        process = make_process("echo")
+        checking = asyncio.Event()
+        resources = []
+
+        def check(line):
+            resources.append((process._proc, list(process._reader_threads)))
+            checking.set()
+            if not cancel:
+                raise ValueError("readiness check failed")
+            return False
+
+        start_task = asyncio.create_task(process.start(ready_check=check))
+        try:
+            await asyncio.wait_for(checking.wait(), timeout=10.0)
+            proc, readers = resources[0]
+            if cancel:
+                start_task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await start_task
+            else:
+                with pytest.raises(ValueError, match="readiness check failed"):
+                    await start_task
+
+            assert proc.poll() is not None
+            assert all(s.closed for s in (proc.stdin, proc.stdout, proc.stderr))
+            assert all(not thread.is_alive() for thread in readers)
+            assert process._proc is None
+        finally:
+            if not start_task.done():
+                start_task.cancel()
+            await asyncio.gather(start_task, return_exceptions=True)
+            await process.stop()
+
     async def test_startup_timeout_kills_process(self):
         process = make_process("slow-start", startup_timeout_s=0.5)
         with pytest.raises(HarnessStartupError, match="did not become ready"):

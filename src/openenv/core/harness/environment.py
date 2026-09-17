@@ -136,55 +136,67 @@ class HarnessEnvironment(MCPEnvironment):
         # Unconditional: stop() is contractually idempotent, and a harness that
         # died on its own still holds reapable resources (pipes, reader threads,
         # an unwaited process) that is_alive() reports nothing about.
-        await self.adapter.stop()
-        await self._stop_bridge()
-
-        tools = await self._collect_injectable_tools()
-        resolved = resolve_tool_conflicts(tools, self.adapter.BUILTIN_TOOL_NAMES)
-
-        bridge_url: Optional[str] = None
-        if resolved:
-            # The bridge must serve the tools under the names we inject, so a
-            # tool renamed by conflict resolution stays callable.
-            renames = {
-                new.name: old.name
-                for new, old in zip(resolved, tools)
-                if new.name != old.name
-            }
-            served = await build_bridge_server(self._require_mcp_server(), renames)
-            self._bridge = HarnessMCPBridge(served)
-            bridge_url = await asyncio.to_thread(self._bridge.start)
-
+        bridge_start: Optional[asyncio.Task[str]] = None
         try:
+            await self.adapter.stop()
+            await self._stop_bridge()
+
+            tools = await self._collect_injectable_tools()
+            resolved = resolve_tool_conflicts(tools, self.adapter.BUILTIN_TOOL_NAMES)
+
+            bridge_url: Optional[str] = None
+            if resolved:
+                # The bridge must serve the tools under the names we inject, so a
+                # tool renamed by conflict resolution stays callable.
+                renames = {
+                    new.name: old.name
+                    for new, old in zip(resolved, tools)
+                    if new.name != old.name
+                }
+                served = await build_bridge_server(self._require_mcp_server(), renames)
+                self._bridge = HarnessMCPBridge(served)
+                bridge_start = asyncio.create_task(
+                    asyncio.to_thread(self._bridge.start)
+                )
+                bridge_url = await asyncio.shield(bridge_start)
+
             await self.adapter.inject_tools(resolved, bridge_url)
             await self.adapter.start(self.adapter.config.working_directory)
-        except Exception:
-            # Best effort: a partially started harness must not outlive reset().
+
+            self._state = State(
+                episode_id=episode_id or str(uuid4()),
+                step_count=0,
+            )
+            self._trajectory = []
+            if self.rubric is not None:
+                await self._reset_rubric_async()
+            self._episode_active = True
+
+            observation = Observation(
+                done=False,
+                reward=0.0,
+                metadata={
+                    "episode_id": self._state.episode_id,
+                    "injected_tools": [tool.name for tool in resolved],
+                },
+            )
+            return self._apply_transform(observation)
+        except BaseException:
+            self._episode_active = False
+            if bridge_start is not None:
+                # Cancelling to_thread does not stop its worker. Wait for
+                # startup to finish so it cannot race with bridge teardown.
+                try:
+                    await bridge_start
+                except Exception:
+                    pass
             try:
                 await self.adapter.stop()
             except Exception:
                 pass
-            await self._stop_bridge()
+            finally:
+                await self._stop_bridge()
             raise
-
-        self._state = State(
-            episode_id=episode_id or str(uuid4()),
-            step_count=0,
-        )
-        self._trajectory = []
-        if self.rubric is not None:
-            await self._reset_rubric_async()
-        self._episode_active = True
-
-        observation = Observation(
-            done=False,
-            reward=0.0,
-            metadata={
-                "episode_id": self._state.episode_id,
-                "injected_tools": [tool.name for tool in resolved],
-            },
-        )
-        return self._apply_transform(observation)
 
     def reset(
         self,

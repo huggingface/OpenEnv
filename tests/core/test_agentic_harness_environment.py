@@ -387,6 +387,38 @@ class TestTransforms:
 
 
 class TestCleanupAndErrorClassification:
+    @pytest.mark.parametrize("stage", ["inject_tools", "start", "rubric"])
+    async def test_cancelled_reset_cleans_up_resources(self, stage, monkeypatch):
+        env, adapter = make_env(rubric=SpyRubric())
+        entered = asyncio.Event()
+        target = env if stage == "rubric" else adapter
+        method = "_reset_rubric_async" if stage == "rubric" else stage
+        original = getattr(target, method)
+
+        async def stall(*args, **kwargs):
+            await original(*args, **kwargs)
+            entered.set()
+            await asyncio.Event().wait()
+
+        monkeypatch.setattr(target, method, stall)
+        reset_task = asyncio.create_task(env.reset_async())
+        try:
+            await asyncio.wait_for(entered.wait(), timeout=10.0)
+            reset_task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await reset_task
+
+            assert adapter.alive is False
+            assert adapter.calls[-1] == "stop"
+            assert FakeBridge.instances[0].stopped >= 1
+            with pytest.raises(HarnessNotRunningError):
+                await env.step_async(HarnessAction(message="go"))
+        finally:
+            if not reset_task.done():
+                reset_task.cancel()
+            await asyncio.gather(reset_task, return_exceptions=True)
+            env.close()
+
     async def test_reset_stops_adapter_even_when_not_alive(self):
         # A harness that died on its own reports is_alive() False while still
         # holding reapable resources; skipping stop() leaked them.
