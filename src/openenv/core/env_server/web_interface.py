@@ -434,6 +434,7 @@ def create_web_interface_app(
     custom_tab_primary: bool = False,
     show_default_tab: bool = True,
     title_override: Optional[str] = None,
+    state_cls: Type[State] = State,
     *,
     mode: Optional[Any] = None,
 ) -> FastAPI:
@@ -466,6 +467,8 @@ def create_web_interface_app(
             ``gradio_builder`` is provided.
         title_override: If set, used verbatim as the Gradio app/browser-tab
             title instead of the default ``"OpenEnv Agentic Environment: {name}"``.
+        state_cls: The State subclass this environment reports. Used for the /state
+            response model and the state entry of /schema. Defaults to State.
         mode: Server mode (``ServerMode`` or string). When ``None``, resolved
             from the ``OPENENV_MODE`` environment variable, defaulting to
             simulation.
@@ -483,6 +486,7 @@ def create_web_interface_app(
         max_concurrent_envs,
         concurrency_config,
         env_name=env_name,
+        state_cls=state_cls,
         mode=mode,
     )
 
