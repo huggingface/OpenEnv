@@ -67,7 +67,7 @@ class HarnessProcess:
         self.terminate_grace_s = terminate_grace_s
 
         self._proc: Optional[subprocess.Popen] = None
-        self._stdout_queue: queue.Queue = queue.Queue()
+        self._stdout_queue: queue.Queue[Optional[str]] = queue.Queue()
         self._stderr_tail: deque[str] = deque(maxlen=_STDERR_TAIL_LINES)
         self._reader_threads: list[threading.Thread] = []
 
@@ -121,10 +121,15 @@ class HarnessProcess:
                 f"failed to spawn harness process {self.command!r}: {exc}"
             ) from exc
 
-        self._stdout_queue = queue.Queue()
+        stdout_queue: queue.Queue[Optional[str]] = queue.Queue()
+        self._stdout_queue = stdout_queue
         self._stderr_tail = deque(maxlen=_STDERR_TAIL_LINES)
         self._reader_threads = [
-            self._spawn_reader(self._proc.stdout, self._on_stdout_line),
+            self._spawn_reader(
+                self._proc.stdout,
+                lambda line: stdout_queue.put(line.rstrip("\n")),
+                on_eof=lambda: stdout_queue.put(None),
+            ),
             self._spawn_reader(self._proc.stderr, self._stderr_tail.append),
         ]
 
@@ -236,26 +241,30 @@ class HarnessProcess:
             `str` line without its trailing newline, or `None` on EOF (the
             process exited or closed stdout) or timeout.
         """
+        stdout_queue = self._stdout_queue
 
         def _read() -> Optional[str]:
             try:
-                item = self._stdout_queue.get(timeout=timeout_s)
+                item = stdout_queue.get(timeout=timeout_s)
             except queue.Empty:
                 return None
+            if item is None:
+                # Leave EOF available for subsequent or concurrent readers.
+                stdout_queue.put(None)
             return item
 
         return await asyncio.to_thread(_read)
 
-    def _on_stdout_line(self, line: str) -> None:
-        self._stdout_queue.put(line.rstrip("\n"))
-
     def _spawn_reader(
-        self, stream: Optional[IO[str]], sink: Callable[[str], None]
+        self,
+        stream: Optional[IO[str]],
+        sink: Callable[[str], None],
+        on_eof: Optional[Callable[[], None]] = None,
     ) -> threading.Thread:
         def _pump() -> None:
-            if stream is None:
-                return
             try:
+                if stream is None:
+                    return
                 for line in stream:
                     sink(line)
             except (ValueError, OSError):
@@ -263,6 +272,9 @@ class HarnessProcess:
                 # cannot raise here: the stream is opened with
                 # errors="replace".
                 pass
+            finally:
+                if on_eof is not None:
+                    on_eof()
 
         thread = threading.Thread(target=_pump, daemon=True)
         thread.start()
