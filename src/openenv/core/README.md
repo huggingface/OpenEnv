@@ -4,7 +4,7 @@ An e2e framework for creating, deploying and using isolated execution environmen
 
 In addition to making it easier for researchers and RL framework writers, we also provide tools for environment creators making it easier for them to create richer environments and make them available over familiar protocols like HTTP and packaged using canonical technologies like docker. Environment creators can use the OpenEnv framework to create environments that are isolated, secure, and easy to deploy and use.
 
-OpenEnv is openly governed by a technical committee that includes Meta-PyTorch, Reflection, Unsloth, Modal, Prime Intellect, Nvidia, Mercor, Fleet AI, Microsoft, Hugging Face, and RadixArk. The committee coordinates project direction, major technical decisions, RFCs, and release planning through the public issue tracker, pull requests, and RFC process.
+OpenEnv is openly governed by a technical committee that includes Meta-PyTorch, Reflection, Unsloth, Modal, Prime Intellect, Nvidia, Mercor, Fleet AI, Microsoft, Hugging Face, RadixArk, and Nebius. The committee coordinates project direction, major technical decisions, RFCs, and release planning through the public issue tracker, pull requests, and RFC process.
 
 
 ## Overview
@@ -81,13 +81,16 @@ from openenv.core import EnvClient, StepResult
 from dataclasses import dataclass
 from typing import Any
 
+
 @dataclass
 class MyAction:
     text: str
 
+
 @dataclass
 class MyObservation:
     response: str
+
 
 class MyEnvClient(EnvClient[MyAction, MyObservation, Any]):
     def _step_payload(self, action: MyAction) -> dict:
@@ -98,11 +101,12 @@ class MyEnvClient(EnvClient[MyAction, MyObservation, Any]):
         return StepResult(
             observation=MyObservation(**obs_data),
             reward=payload.get("reward"),
-            done=payload.get("done", False)
+            done=payload.get("done", False),
         )
 
     def _parse_state(self, payload: dict) -> Any:
         return payload
+
 
 # Async usage (recommended)
 async def main():
@@ -110,6 +114,7 @@ async def main():
     async with client:
         result = await client.reset()
         step_result = await client.step(MyAction(text="hello"))
+
 
 asyncio.run(main())
 
@@ -125,9 +130,11 @@ with MyEnvClient(base_url="http://localhost:8000").sync() as client:
 from openenv.core.env_server import Environment, HTTPEnvServer, create_app
 from dataclasses import dataclass
 
+
 @dataclass
 class MyAction:
     text: str
+
 
 @dataclass
 class MyObservation:
@@ -135,16 +142,14 @@ class MyObservation:
     reward: float = 0.0
     done: bool = False
 
+
 class MyEnvironment(Environment):
     def reset(self) -> MyObservation:
         return MyObservation(response="Ready")
 
     def step(self, action: MyAction) -> MyObservation:
-        return MyObservation(
-            response=f"Echo: {action.text}",
-            reward=1.0,
-            done=False
-        )
+        return MyObservation(response=f"Echo: {action.text}", reward=1.0, done=False)
+
 
 # Create FastAPI app
 env = MyEnvironment()

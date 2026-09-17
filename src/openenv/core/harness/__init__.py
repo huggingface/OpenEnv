@@ -19,6 +19,7 @@ from .rollout import (  # noqa: F401  (_resolve_env_reward: private back-compat 
     HarnessAdapter,
     HarnessRolloutResult,
     HarnessRunLimits,
+    LoopOwningSession,
     MCPHarnessAdapter,
     Message,
     ModelStep,
@@ -31,6 +32,7 @@ from .rollout import (  # noqa: F401  (_resolve_env_reward: private back-compat 
     StepEnvSessionAdapter,
     ToolResult,
     ToolTraceEntry,
+    TraceEntry,
     VerifyResult,
 )
 
@@ -39,6 +41,7 @@ __all__ = [
     "HarnessAdapter",
     "HarnessRolloutResult",
     "HarnessRunLimits",
+    "LoopOwningSession",
     "MCPHarnessAdapter",
     "Message",
     "ModelStep",
@@ -51,6 +54,7 @@ __all__ = [
     "StepEnvSessionAdapter",
     "ToolResult",
     "ToolTraceEntry",
+    "TraceEntry",
     "VerifyResult",
     "build_harness_rollout_func",
 ]

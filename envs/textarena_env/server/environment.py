@@ -8,7 +8,10 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 import sys
+import urllib.request
 from typing import Any, Dict, Iterable, List, Optional
 from uuid import uuid4
 
@@ -51,8 +54,46 @@ def _ensure_nltk_data() -> None:
             "NLTK is required for TextArena environments. "
             "Install textarena_env dependencies (including nltk)."
         ) from exc
-    nltk.download("words", quiet=True)
-    nltk.download("averaged_perceptron_tagger_eng", quiet=True)
+    packages = ("words", "averaged_perceptron_tagger_eng")
+    opener = urllib.request._opener
+    explicit_proxy = opener is not None and any(
+        isinstance(handler, urllib.request.ProxyHandler)
+        and any(scheme != "no" for scheme in handler.proxies)
+        for handler in opener.handlers
+    )
+    if (
+        nltk.__version__ == "3.10.3"
+        and set(urllib.request.getproxies()) == {"no"}
+        and not explicit_proxy
+    ):
+        # NLTK #3748 mistakes NO_PROXY alone for a carrying proxy. Isolate the
+        # workaround so other server threads retain their proxy configuration.
+        # Real proxies still use NLTK's normal, security-enforcing download path.
+        download_env = os.environ.copy()
+        download_env.pop("NO_PROXY", None)
+        download_env.pop("no_proxy", None)
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "nltk.downloader",
+                "--quiet",
+                "--exit-on-error",
+                "--dir",
+                nltk.downloader.Downloader().default_download_dir(),
+                *packages,
+            ],
+            env=download_env,
+            check=True,
+            timeout=120,
+        )
+    else:
+        for package in packages:
+            nltk.download(package, quiet=True, raise_on_error=True)
+    # NLTK 3.10.3's CLI can exit zero after a failed download. Verify the
+    # resources in this process before caching successful initialization.
+    nltk.data.find("corpora/words")
+    nltk.data.find("taggers/averaged_perceptron_tagger_eng")
     _NLTK_DOWNLOADED = True
 
 

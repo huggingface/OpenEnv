@@ -15,7 +15,15 @@ import json
 import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Callable, Generic, Protocol, TypeVar
+from typing import (
+    Any,
+    Callable,
+    Generic,
+    Protocol,
+    runtime_checkable,
+    TypedDict,
+    TypeVar,
+)
 
 from ..client_types import StepResult
 from ..env_server.mcp_types import JsonRpcErrorCode, JsonRpcResponse, Tool
@@ -110,6 +118,96 @@ class ModelStep(Protocol):
         tools: list[Tool],
         sampling: dict[str, Any],
     ) -> ModelStepResult: ...
+
+
+class TraceEntry(TypedDict, total=False):
+    """One captured model call from a loop-owning rollout: the request, the reply, and the tokens.
+
+    Defined HERE, not in the trainer. A loop-owning harness (the agent runs its own tool loop and
+    we read back what it did) is an OpenEnv concern, and OpenEnv is what produces this record --
+    `core.harness.capture.contract.to_trace_entries` emits exactly these keys. TRL carried a local
+    copy with a `TODO(@openenv)` asking for this, which left the trainer owning the schema for a
+    shape it neither produces nor can validate; the two could drift and nothing would notice until
+    the token fields came back empty.
+
+    `completion_token_ids` and `per_token_logps` must be equal length when both are present: they
+    are the sampled ids and their generator logprobs, in order. `completion_tokens` is a fallback
+    for engines that return token STRINGS (`"token_id:{id}"`) rather than ids.
+
+    `prompt_token_ids` IS THE POINT OF THIS RECORD. It is the engine's own tokenization of
+    everything the model saw before it generated, and a consumer that has it MUST NOT re-derive the
+    prompt. This field did not exist until 2026-09; the docstring here used to say there was
+    "deliberately no prompt field" and that consumers should re-derive from `request`. That
+    instruction was wrong, and it was expensive:
+
+      * a local re-render with `apply_chat_template` matched the engine on 0 of 28 measured turns on
+        Qwen3.5-4B -- off by two tokens at the generation boundary, every turn;
+      * Qwen3.5-4B and -2B ship INVERTED `enable_thinking` defaults, so the same re-render matched
+        the engine for one and diverged for the other: 100% of turn transitions forked,
+        drift_tokens_mean 189 against 2.2, KL 0.067 against 0.016;
+      * training on those misaligned positions collapsed a run permanently at its FIRST weight
+        update, the model emitting `<|im_start|>bash` where `<function=bash>` belongs.
+
+    Both producers already held these ids and dropped them here: capture has `node.prompt_ids`,
+    harbor has `HarborTurn.prompt_token_ids`. `to_turn_records` kept them but had no HTTP endpoint,
+    so no remote consumer could reach it.
+
+    `loss_mask` marks which positions are trainable (1) versus context (0), covering the whole
+    sequence `prompt_token_ids + completion_token_ids`. Without it a consumer has to guess which
+    calls were real agent turns and which were framework bookkeeping -- a heuristic where the
+    producer has structural knowledge. It also carries the case where a turn's logprobs were
+    rejected on ingest: the tokens stay as context and the mask goes to 0, which a consumer cannot
+    infer and would otherwise train against a logprob of 0.0, i.e. p=1.0.
+
+    `reward` is a MIRROR of what `verify()` already returned, present so a persisted trace is
+    self-describing. `verify()` remains the source of truth. `None` means UNSCORED and must never be
+    coerced to 0.0: a rollout that failed to grade is excluded from the group baseline, not punished.
+
+    Only an ENVIRONMENT can set `reward`. A capture proxy sees model calls, not task outcomes, so
+    `openenv.core.harness.capture.to_trace_entries` omits the key entirely rather than guessing. This
+    is a `total=False` TypedDict and every key is optional for exactly that reason: read `reward` with
+    `.get()`, because indexing it raises on any entry a proxy produced.
+    """
+
+    request: dict[
+        str, Any
+    ]  # forwarded chat body: {"messages": [...], "tools": [...] | None}
+    response: dict[str, Any]  # upstream reply: {"choices": [{"message": {...}, ...}]}
+    prompt_token_ids: list[
+        int
+    ]  # the ENGINE's tokenization of everything before this turn
+    completion_token_ids: list[int]  # generated token ids for this turn
+    completion_tokens: list[str]  # fallback token strings when ids are absent
+    per_token_logps: list[float]  # generator logprobs, aligned with the ids above
+    loss_mask: list[int]  # 1 = train this position, over prompt + completion
+    reward: float | None  # mirror of verify(); None is UNSCORED, never 0.0
+    metadata: dict[str, Any]  # task id, difficulty tier, harness, sandbox, session id
+
+
+@runtime_checkable
+class LoopOwningSession(Protocol):
+    """What a session must offer BEYOND `ResourceSession` when the agent owns its own loop.
+
+    In the loop-owning path nothing calls `step()` per turn -- an external agent (opencode, codex,
+    claude-code, ...) drives itself to completion and the captured trace is read back afterwards.
+    So a factory used in that mode must return sessions that can be waited on and asked for their
+    trace. Neither method belongs on the base `ResourceSession`, which models the step-per-turn
+    contract.
+
+    `wait_for_completion` returns the agent's exit code. `fetch_proxy_trace` returns the captured
+    turns; where they come from is the session's business -- a file inside the sandbox, or an HTTP
+    call to a capture server that multiplexes many rollouts at once. That freedom is the point:
+    the consumer asks for `TraceEntry`s and does not learn how they were obtained.
+
+    `@runtime_checkable` so a factory can assert what it is about to return actually satisfies this
+    -- the alternative is discovering a missing `fetch_proxy_trace` several minutes into a paid
+    rollout. Note that only method PRESENCE is checked, never signatures, which is the right
+    strictness here: the two implementations legitimately differ in how they wait.
+    """
+
+    def wait_for_completion(self, timeout_s: float | None = ...) -> int: ...
+
+    def fetch_proxy_trace(self) -> list[TraceEntry]: ...
 
 
 class ResourceSession(ABC):
@@ -714,6 +812,7 @@ __all__ = [
     "HarnessAdapter",
     "HarnessRolloutResult",
     "HarnessRunLimits",
+    "LoopOwningSession",
     "MCPHarnessAdapter",
     "Message",
     "ModelStep",
@@ -726,6 +825,7 @@ __all__ = [
     "StepEnvSessionAdapter",
     "ToolResult",
     "ToolTraceEntry",
+    "TraceEntry",
     "VerifyResult",
     "build_harness_rollout_func",
 ]
