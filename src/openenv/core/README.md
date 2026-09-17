@@ -81,13 +81,16 @@ from openenv.core import EnvClient, StepResult
 from dataclasses import dataclass
 from typing import Any
 
+
 @dataclass
 class MyAction:
     text: str
 
+
 @dataclass
 class MyObservation:
     response: str
+
 
 class MyEnvClient(EnvClient[MyAction, MyObservation, Any]):
     def _step_payload(self, action: MyAction) -> dict:
@@ -98,11 +101,12 @@ class MyEnvClient(EnvClient[MyAction, MyObservation, Any]):
         return StepResult(
             observation=MyObservation(**obs_data),
             reward=payload.get("reward"),
-            done=payload.get("done", False)
+            done=payload.get("done", False),
         )
 
     def _parse_state(self, payload: dict) -> Any:
         return payload
+
 
 # Async usage (recommended)
 async def main():
@@ -110,6 +114,7 @@ async def main():
     async with client:
         result = await client.reset()
         step_result = await client.step(MyAction(text="hello"))
+
 
 asyncio.run(main())
 
@@ -125,9 +130,11 @@ with MyEnvClient(base_url="http://localhost:8000").sync() as client:
 from openenv.core.env_server import Environment, HTTPEnvServer, create_app
 from dataclasses import dataclass
 
+
 @dataclass
 class MyAction:
     text: str
+
 
 @dataclass
 class MyObservation:
@@ -135,16 +142,14 @@ class MyObservation:
     reward: float = 0.0
     done: bool = False
 
+
 class MyEnvironment(Environment):
     def reset(self) -> MyObservation:
         return MyObservation(response="Ready")
 
     def step(self, action: MyAction) -> MyObservation:
-        return MyObservation(
-            response=f"Echo: {action.text}",
-            reward=1.0,
-            done=False
-        )
+        return MyObservation(response=f"Echo: {action.text}", reward=1.0, done=False)
+
 
 # Create FastAPI app
 env = MyEnvironment()
