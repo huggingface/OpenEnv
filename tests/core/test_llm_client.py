@@ -59,6 +59,57 @@ class TestLLMClientABC:
         client = StubClient("https://api.example.com", 443)
         assert client.base_url == "https://api.example.com:443"
 
+    @pytest.mark.parametrize(
+        ("endpoint", "port", "expected"),
+        [
+            ("http://localhost:8000", None, "http://localhost:8000"),
+            ("http://localhost:8000", 8000, "http://localhost:8000"),
+            ("http://localhost:8000/", 8000, "http://localhost:8000"),
+            ("http://proxy/litellm", 4000, "http://proxy:4000/litellm"),
+            ("http://[::1]", 8000, "http://[::1]:8000"),
+            ("http://user:pw@host", 8000, "http://user:pw@host:8000"),
+            ("http://localhost:8000?x=1", None, "http://localhost:8000?x=1"),
+            ("http://localhost", None, "http://localhost"),
+        ],
+    )
+    def test_base_url_endpoint_forms(self, endpoint, port, expected):
+        """Port is appended only when the URL names none; path and query survive."""
+
+        class StubClient(LLMClient):
+            async def complete(self, prompt: str, **kwargs) -> str:
+                return "stub"
+
+        assert StubClient(endpoint, port).base_url == expected
+
+    @pytest.mark.parametrize(
+        "endpoint",
+        [
+            "http://localhost:8000:8000",
+            "http://localhost:",
+            "localhost:8000",
+            "http://[::1",
+        ],
+    )
+    def test_base_url_malformed_endpoint_raises(self, endpoint):
+        """Malformed endpoints fail with a clear error instead of a bad URL."""
+
+        class StubClient(LLMClient):
+            async def complete(self, prompt: str, **kwargs) -> str:
+                return "stub"
+
+        with pytest.raises(ValueError, match="Invalid endpoint URL"):
+            StubClient(endpoint, 8000).base_url
+
+    def test_base_url_conflicting_port_raises(self):
+        """An explicit port that differs from the URL's port is rejected."""
+
+        class StubClient(LLMClient):
+            async def complete(self, prompt: str, **kwargs) -> str:
+                return "stub"
+
+        with pytest.raises(ValueError, match="conflicts with port=8000"):
+            StubClient("http://localhost:11434", 8000).base_url
+
     @pytest.mark.asyncio
     async def test_complete_with_tools_not_implemented(self):
         """Default complete_with_tools raises NotImplementedError."""
@@ -135,6 +186,54 @@ class TestOpenAIClientConstruction:
         )
         assert client.temperature == 0.7
         assert client.max_tokens == 512
+
+    @pytest.mark.parametrize(
+        ("endpoint", "port", "expected"),
+        [
+            ("http://localhost:8000", None, "http://localhost:8000/v1"),
+            ("http://localhost:8000", 8000, "http://localhost:8000/v1"),
+            ("http://localhost:8000/", None, "http://localhost:8000/v1"),
+            ("http://localhost:8000/v1", None, "http://localhost:8000/v1"),
+            ("http://localhost:8000/v1/", None, "http://localhost:8000/v1"),
+            ("http://localhost:8000?x=1", None, "http://localhost:8000/v1?x=1"),
+            ("http://localhost", 8001, "http://localhost:8001/v1"),
+            ("http://proxy:4000/litellm", None, "http://proxy:4000/litellm"),
+            (
+                "https://api.groq.com/openai/v1",
+                None,
+                "https://api.groq.com/openai/v1",
+            ),
+            (
+                "http://proxy:4000/v1?api-version=1",
+                None,
+                "http://proxy:4000/v1?api-version=1",
+            ),
+            (
+                "https://generativelanguage.googleapis.com/v1beta/openai",
+                None,
+                "https://generativelanguage.googleapis.com/v1beta/openai",
+            ),
+        ],
+    )
+    def test_endpoint_url_forms(self, endpoint, port, expected):
+        """/v1 is appended only when the URL has no path; a path is used as-is."""
+        with patch("openenv.core.llm_client.AsyncOpenAI") as mock_openai_cls:
+            OpenAIClient(endpoint, port, model="gpt-4")
+
+        mock_openai_cls.assert_called_once_with(
+            base_url=expected,
+            api_key="not-needed",
+        )
+
+    def test_endpoint_with_malformed_port_raises(self):
+        """The double-port form fails before any client is created."""
+        with pytest.raises(ValueError, match="Invalid endpoint URL"):
+            OpenAIClient("http://localhost:8000:8000", 8000, model="gpt-4")
+
+    def test_endpoint_with_conflicting_port_raises(self):
+        """A port argument that contradicts the URL's port is rejected."""
+        with pytest.raises(ValueError, match="conflicts with port=8000"):
+            OpenAIClient("http://localhost:11434", 8000, model="gpt-4")
 
 
 class TestOpenAIClientComplete:
