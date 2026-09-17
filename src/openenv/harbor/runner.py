@@ -9,6 +9,7 @@ not, the problem is the serving layer and nothing below it.
 from __future__ import annotations
 
 import os
+import secrets
 from pathlib import Path
 
 from openenv.core.harness.capture import CaptureServer
@@ -42,6 +43,7 @@ async def run_batch(
     api_key: str | None = None,
     auth_header: str = "Authorization",
     provider: str = "openai",
+    admin_key: str | None = None,
 ) -> list[HarborRolloutResult]:
     """Run `task_indices` from `dataset` and print a per-rollout report.
 
@@ -58,6 +60,10 @@ async def run_batch(
             Harbor environment type.
         expose (`str`, *optional*, defaults to `"gradio"`):
             How the sandbox reaches the capture proxy: `gradio`, `cloudflare` or `direct`.
+        admin_key (`str`, *optional*):
+            Key the capture proxy's session-management routes require. Defaults to
+            `$OPENENV_CAPTURE_ADMIN_KEY`, else a random one minted for this batch. The proxy is
+            published on a public URL, so these routes are never left open.
 
     Returns:
         `list[HarborRolloutResult]`: One per index, in order.
@@ -94,6 +100,17 @@ async def run_batch(
     trials_dir = trials_dir or Path("/tmp/openenv-harbor-trials")
     trials_dir.mkdir(parents=True, exist_ok=True)
 
+    # The forwarder below puts the proxy on a public URL, and `_admin_ok` waves every caller through
+    # when no key is set — so an unset key here is an open control plane: anyone with the URL could
+    # list rollouts, read their tokens, delete them, or mint a session key the proxy then honours.
+    # Rollouts never go through those routes (they use the in-process registry), so the key is only
+    # for an operator, and a random one costs nothing. Same resolution as `HarborService`.
+    admin_key = (
+        admin_key
+        or os.environ.get("OPENENV_CAPTURE_ADMIN_KEY")
+        or secrets.token_urlsafe(32)
+    )
+
     capture = CaptureServer(
         llm_url=llm_url,
         model=model,
@@ -102,6 +119,7 @@ async def run_batch(
         auth_header=auth_header,
         provider=provider,
         capture_level=capture_level,
+        admin_key=admin_key,
     )
     capture.start()
     # The capture proxy is already listening on a bound port in a background thread, so an exception
@@ -116,6 +134,9 @@ async def run_batch(
         capture.stop()
         raise
     print(f"\ncapture  :{port} -> {public_url}  ({forwarder.name})")
+    print(
+        "         session routes are gated; set OPENENV_CAPTURE_ADMIN_KEY to call them yourself"
+    )
     print(f"trials   {trials_dir}\n")
 
     results: list[HarborRolloutResult] = []
