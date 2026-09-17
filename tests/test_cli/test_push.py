@@ -1039,10 +1039,11 @@ def test_push_count_deploys_multiple_spaces(tmp_path: Path) -> None:
         ]
 
         # Verify progress messages in output
-        assert "[1/3]" in result.output
-        assert "[2/3]" in result.output
-        assert "[3/3]" in result.output
-        assert "All 3 instances deployed" in result.output
+        clean_output = _strip_ansi(result.output)
+        assert "[1/3]" in clean_output
+        assert "[2/3]" in clean_output
+        assert "[3/3]" in clean_output
+        assert "All 3 instances deployed" in clean_output
 
 
 def test_push_count_one_is_default_behavior(tmp_path: Path) -> None:

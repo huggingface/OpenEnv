@@ -20,7 +20,7 @@ import warnings
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterable, Iterator
+from typing import Any, BinaryIO, Callable, Iterable, Iterator
 
 from ..env_server.mcp_types import Tool
 from ..llm_client import LLMClient
@@ -127,9 +127,10 @@ class RolloutSerializer:
 
     def write_episode(self, record: EpisodeRecord) -> None:
         self._output_dir.mkdir(parents=True, exist_ok=True)
-        line = json.dumps(record.to_dict(), default=str)
-        with self.results_path.open("a", encoding="utf-8") as handle:
-            handle.write(line + "\n")
+        line = (json.dumps(record.to_dict(), default=str) + "\n").encode("utf-8")
+        with self.results_path.open("a+b") as handle:
+            separator = self._append_separator(handle)
+            handle.write(separator + line)
 
     def write_metadata(self, metadata: dict[str, Any]) -> None:
         self._output_dir.mkdir(parents=True, exist_ok=True)
@@ -139,24 +140,66 @@ class RolloutSerializer:
         )
 
     def collected_episode_ids(self) -> set[str]:
-        """Return episode ids already persisted on disk. Used for resume."""
+        """Return episode ids already persisted on disk. Used for resume.
+
+        Raises:
+            `ValueError`: If a non-empty line is not a valid episode record.
+        """
         if not self.results_path.exists():
             return set()
 
         ids: set[str] = set()
-        with self.results_path.open("r", encoding="utf-8") as handle:
-            for raw in handle:
+        with self.results_path.open("rb") as handle:
+            for line_number, raw in enumerate(handle, start=1):
                 raw = raw.strip()
                 if not raw:
                     continue
-                try:
-                    payload = json.loads(raw)
-                except json.JSONDecodeError:
-                    continue
-                ep_id = payload.get("episode_id")
-                if isinstance(ep_id, str):
-                    ids.add(ep_id)
+                ids.add(self._episode_id_from_line(raw, line_number))
         return ids
+
+    def _append_separator(self, handle: BinaryIO) -> bytes:
+        """Return a newline when an existing complete final record lacks one."""
+        end = handle.seek(0, 2)
+        if not end:
+            return b""
+        handle.seek(-1, 2)
+        if handle.read(1) == b"\n":
+            return b""
+
+        chunks: list[bytes] = []
+        cursor = end
+        while cursor:
+            read_size = min(cursor, 8192)
+            cursor -= read_size
+            handle.seek(cursor)
+            chunk = handle.read(read_size)
+            newline = chunk.rfind(b"\n")
+            if newline >= 0:
+                chunks.append(chunk[newline + 1 :])
+                break
+            chunks.append(chunk)
+        final_line = b"".join(reversed(chunks))
+        if final_line.strip():
+            self._episode_id_from_line(final_line, "final line")
+        return b"\n"
+
+    def _episode_id_from_line(self, raw: bytes, line_number: int | str) -> str:
+        """Parse and validate one non-empty JSONL episode record."""
+        location = f"{self.results_path}:{line_number}"
+        try:
+            line = raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError(f"{location}: invalid UTF-8: {exc}") from exc
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{location}: invalid JSON: {exc.msg}") from exc
+        if not isinstance(payload, dict):
+            raise ValueError(f"{location}: expected an object")
+        episode_id = payload.get("episode_id")
+        if not isinstance(episode_id, str):
+            raise ValueError(f"{location}: expected a string episode_id")
+        return episode_id
 
 
 def _rollout_final_state(rollout: HarnessRolloutResult) -> dict[str, Any]:

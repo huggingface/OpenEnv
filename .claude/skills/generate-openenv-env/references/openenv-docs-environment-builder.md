@@ -276,7 +276,7 @@ From the environment directory:
 ```bash
 cd envs/my_env
 openenv build          # Builds Docker image (auto-detects context)
-openenv validate --verbose
+openenv validate --level static --skip-build
 ```
 
 `openenv build` understands both standalone environments and in-repo ones. Useful flags:
@@ -286,7 +286,12 @@ openenv validate --verbose
 - `--dockerfile` / `--context`: custom locations when experimenting
 - `--no-cache`: force fresh dependency installs
 
-`openenv validate` checks for required files, ensures the Dockerfile/server entrypoints function, and lists supported deployment modes. The command exits non-zero if issues are found so you can wire it into CI.
+`openenv validate` reads the `validation:` contract in `openenv.yaml`, checks
+the normalized manifest against the selected severity policy, and exits
+non-zero when a required check fails. The current walking skeleton runs the
+static manifest check; the report's `levels_run` field records exactly which
+levels executed. Use `openenv validate --url http://localhost:8000` separately
+to validate a running endpoint.
 
 You can also validate a running environment endpoint and get criteria-level JSON:
 
@@ -373,12 +378,12 @@ For an end-to-end example of using your environment, see the [Quick Start](quick
 ```python
 from envs.my_env import MyAction, MyEnv
 
-# Create environment from Docker image
-client = MyEnv.from_docker_image("my-env:latest")
-# Or, connect to the remote space on Hugging Face
-client = MyEnv.from_hub("my-org/my-env")
-# Or, connect to the local server
-client = MyEnv(base_url="http://localhost:8000")
+# Create environment from Docker image (starts a container)
+client = MyEnv.from_docker_image("my-env:latest").sync()
+# Or, run the image of a Hugging Face Space locally
+client = MyEnv.from_env("my-org/my-env").sync()
+# Or, connect to an already running server
+client = MyEnv(base_url="http://localhost:8000").sync()
 
 # Use context manager for automatic cleanup (recommended)
 with client:
@@ -398,12 +403,39 @@ with client:
 
 # Or manually manage the connection
 try:
-    client = MyEnv(base_url="http://localhost:8000")
+    client = MyEnv(base_url="http://localhost:8000").sync()
     result = client.reset()
     result = client.step(MyAction(command="test", parameters={}))
 finally:
     client.close()
 ```
+
+`from_docker_image()` and `from_env()` do not return a connected client. They
+return a lazy bootstrap handle, and nothing starts until you resolve it: chain
+`.sync()` for a synchronous client (as above), or `await` the handle from async
+code. Using the handle directly in a `with` block raises
+`TypeError: '_BootstrapResult' object does not support the context manager protocol`.
+
+The equivalent async usage is:
+
+```python
+import asyncio
+
+from envs.my_env import MyAction, MyEnv
+
+
+async def main():
+    client = await MyEnv.from_docker_image("my-env:latest")
+    async with client:
+        result = await client.reset()
+        result = await client.step(MyAction(command="test", parameters={}))
+        state = await client.state()
+
+
+asyncio.run(main())
+```
+
+See [Async vs Sync Usage](../guides/async-sync) for when to prefer each style.
 
 ## Troubleshooting
 

@@ -14,6 +14,7 @@ ROLLOUT_PUBLIC_NAMES = [
     "HarnessAdapter",
     "HarnessRolloutResult",
     "HarnessRunLimits",
+    "LoopOwningSession",
     "MCPHarnessAdapter",
     "Message",
     "ModelStep",
@@ -26,6 +27,7 @@ ROLLOUT_PUBLIC_NAMES = [
     "StepEnvSessionAdapter",
     "ToolResult",
     "ToolTraceEntry",
+    "TraceEntry",
     "VerifyResult",
     "build_harness_rollout_func",
 ]
