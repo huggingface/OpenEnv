@@ -145,7 +145,10 @@ def parse_args() -> argparse.Namespace:
         "--llm-port",
         type=int,
         default=None,
-        help="Port appended to --llm-endpoint when the URL does not include one.",
+        help=(
+            "Port appended to --llm-endpoint when the URL does not include one. "
+            "No default: earlier versions assumed 8000."
+        ),
     )
     parser.add_argument("--temperature", type=float, default=0.2)
     parser.add_argument("--max-tokens", type=int, default=200)

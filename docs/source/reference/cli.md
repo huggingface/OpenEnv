@@ -126,7 +126,11 @@ openenv collect reasoning_gym:chain_sum --base-url http://localhost:8001 \
 `--llm-endpoint` takes a full base URL. `/v1` is appended when the URL has no
 path, so `http://localhost:8000` and `http://localhost:8000/v1` are equivalent;
 a URL with a path (for example a gateway prefix) is used as-is. `--llm-port` is
-only needed when the URL does not include a port.
+only needed when the URL does not include a port; it has no default, so
+`--llm-endpoint http://localhost` means port 80 (earlier releases assumed 8000).
+The resolved endpoint is printed when the run starts. Only `http(s)` URLs are
+accepted, and credentials, query strings and fragments in the URL are rejected:
+pass the key through `OPENAI_API_KEY` instead.
 
 [[autodoc]] openenv.cli.commands.collect.collect
 

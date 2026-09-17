@@ -33,32 +33,57 @@ from urllib.parse import urlsplit, urlunsplit
 from openai import AsyncOpenAI
 
 _OPENAI_API_PREFIX = "/v1"
+_MIN_PORT, _MAX_PORT = 1, 65535
+
+
+def _redact_userinfo(endpoint: str) -> str:
+    """Drop `user:password@` from a URL so it is safe to echo in an error."""
+    scheme, sep, rest = endpoint.partition("://")
+    authority, slash, tail = rest.partition("/")
+    if not sep or "@" not in authority:
+        return endpoint
+    return f"{scheme}{sep}***@{authority.rsplit('@', 1)[-1]}{slash}{tail}"
 
 
 def _join_endpoint_port(endpoint: str, port: int | None) -> str:
-    """Combine an endpoint URL with an optional port.
+    """Validate an endpoint URL and combine it with an optional port.
 
-    `port` is appended only when the URL does not name one; an explicit port
-    that differs from the one in the URL is rejected rather than silently
-    overridden. Path, query and fragment are preserved and a trailing slash on
-    the path is dropped. Malformed endpoints raise `ValueError`.
+    Only `http`/`https` URLs with a host are accepted. Credentials, query
+    strings and fragments are rejected: the endpoint is logged and persisted in
+    rollout metadata, and the SDKs build request URLs by appending to the path,
+    which corrupts a query string. `port` is appended only when the URL does
+    not name one; an explicit port that differs from the one in the URL is
+    rejected rather than silently overridden. A trailing slash on the path is
+    dropped. Invalid endpoints raise `ValueError`.
     """
+    safe = _redact_userinfo(endpoint)
     try:
-        if "://" not in endpoint:
-            raise ValueError("missing scheme, expected e.g. http://host:port")
         parts = urlsplit(endpoint)
-        if parts.netloc.rsplit("@", 1)[-1].endswith(":"):
+        if parts.scheme not in ("http", "https"):
+            raise ValueError("expected an http:// or https:// URL")
+        if not parts.hostname:
+            raise ValueError("missing host")
+        if parts.username is not None or parts.password is not None:
+            raise ValueError("credentials in the URL are not supported, use api_key")
+        if parts.query or parts.fragment:
+            raise ValueError("query strings and fragments are not supported")
+        if parts.netloc.endswith(":"):
             raise ValueError("empty port")
         url_port = parts.port
+        for candidate in (url_port, port):
+            if candidate is not None and not _MIN_PORT <= candidate <= _MAX_PORT:
+                raise ValueError(
+                    f"port {candidate} is out of range {_MIN_PORT}-{_MAX_PORT}"
+                )
     except ValueError as exc:
-        raise ValueError(f"Invalid endpoint URL {endpoint!r}: {exc}") from exc
+        raise ValueError(f"Invalid endpoint URL {safe!r}: {exc}") from exc
 
     if url_port is None:
         if port is not None:
             parts = parts._replace(netloc=f"{parts.netloc}:{port}")
     elif port is not None and port != url_port:
         raise ValueError(
-            f"Endpoint URL {endpoint!r} already specifies port {url_port}, "
+            f"Endpoint URL {safe!r} already specifies port {url_port}, "
             f"which conflicts with port={port}"
         )
     return urlunsplit(parts._replace(path=parts.path.rstrip("/")))
@@ -118,8 +143,9 @@ class LLMClient(ABC):
 
     Args:
         endpoint (`str`):
-            The base URL of the LLM service (e.g. "http://localhost"). May
-            include a port and a path (e.g. "http://localhost:8000/v1").
+            The `http(s)` base URL of the LLM service (e.g. "http://localhost").
+            May include a port and a path (e.g. "http://localhost:8000/v1").
+            Credentials, query strings and fragments are rejected.
         port (`int` or `None`):
             The port the service listens on. Appended to `endpoint` when the
             URL does not name one; must match the URL's port when both are given.
