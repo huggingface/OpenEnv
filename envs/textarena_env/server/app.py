@@ -16,12 +16,16 @@ from openenv.core.env_server.http_server import create_app
 
 try:
     # When running as installed package
-    from textarena_env.models import TextArenaAction, TextArenaObservation
+    from textarena_env.models import (
+        TextArenaAction,
+        TextArenaObservation,
+        TextArenaState,
+    )
     from textarena_env.server.environment import TextArenaEnvironment
     from textarena_env.server.gradio_ui import build_textarena_gradio_app
 except ImportError:
     # When running uvicorn directly from textarena_env/
-    from models import TextArenaAction, TextArenaObservation
+    from models import TextArenaAction, TextArenaObservation, TextArenaState
 
     from .environment import TextArenaEnvironment
     from .gradio_ui import build_textarena_gradio_app
@@ -86,6 +90,7 @@ else:
         TextArenaObservation,
         env_name="textarena_env",
         max_concurrent_envs=max_concurrent,
+        state_cls=TextArenaState,
     )
 
 

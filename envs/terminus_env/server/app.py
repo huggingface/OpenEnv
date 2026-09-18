@@ -15,9 +15,11 @@ from openenv.core.env_server.http_server import create_app
 from openenv.core.env_server.mcp_types import CallToolAction, CallToolObservation
 
 try:
+    from ..models import TerminusState
     from .gradio_ui import terminus_ui_builder
     from .terminus_env_environment import TerminusEnvironment
 except ImportError:  # pragma: no cover
+    from models import TerminusState  # type: ignore
     from server.gradio_ui import terminus_ui_builder  # type: ignore
     from server.terminus_env_environment import TerminusEnvironment  # type: ignore
 
@@ -47,6 +49,7 @@ app = create_app(
     env_name="terminus_env",
     max_concurrent_envs=int(os.getenv("MAX_CONCURRENT_ENVS", "4")),
     gradio_builder=terminus_ui_builder,
+    state_cls=TerminusState,
 )
 
 
