@@ -61,6 +61,7 @@ try:
         CallToolObservation,
     )
 
+    from ..models import PiState
     from .gradio_ui import pi_gradio_builder
     from .pi_environment import PiEnvironment
 except ImportError:  # pragma: no cover
@@ -69,6 +70,7 @@ except ImportError:  # pragma: no cover
         CallToolAction,
         CallToolObservation,
     )
+    from models import PiState  # type: ignore
     from server.gradio_ui import pi_gradio_builder  # type: ignore
     from server.pi_environment import PiEnvironment  # type: ignore
 
@@ -104,6 +106,7 @@ app = create_app(
     env_name="pi_env",
     max_concurrent_envs=int(os.getenv("MAX_CONCURRENT_ENVS", "4")),
     gradio_builder=_custom_gradio_builder,
+    state_cls=PiState,
 )
 
 
