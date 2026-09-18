@@ -57,7 +57,7 @@ class PiEnv(MCPToolClient):
         self,
         *,
         # Endpoint — pass either the shorthand selector OR explicit fields.
-        endpoint: str = "",                # "vllm" | "openai" | "hf_router"
+        endpoint: str = "",  # "vllm" | "openai" | "hf_router"
         base_url: str = "",
         api_key: str = "",
         model: str = "",

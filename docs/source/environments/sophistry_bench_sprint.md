@@ -37,7 +37,9 @@ from sophistry_bench_sprint_env import SophistryBenchSprintEnv
 
 async def main():
     # Deployed Hugging Face Space (or .from_docker_image("openenv-sophistry_bench_sprint:latest")):
-    client = await SophistryBenchSprintEnv.from_env("openenv-community/sophistry_bench_sprint_env")
+    client = await SophistryBenchSprintEnv.from_env(
+        "openenv-community/sophistry_bench_sprint_env"
+    )
     async with client:
         obs = (await client.reset()).observation
         print(obs.prompt, obs.answer_to_defend)

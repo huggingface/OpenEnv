@@ -53,6 +53,7 @@ The client uses the MCP protocol and is async by default:
 import asyncio
 from envs.finqa_env import FinQAEnv, CallToolAction
 
+
 async def main():
     async with FinQAEnv(base_url="http://localhost:8000") as env:
         # Reset to get a question
@@ -71,18 +72,21 @@ async def main():
         print(f"Available tables: {result}")
 
         # Or use step() with CallToolAction for full observation access
-        step_result = await env.step(CallToolAction(
-            tool_name="sql_query",
-            arguments={
-                "company_name": "alphabet",
-                "table_name": "us_gaap_ScheduleOfIncomeBeforeIncomeTaxDomesticAndForeignTableTextBlock",
-                "query": "SELECT * FROM data WHERE year = '2022'"
-            }
-        ))
+        step_result = await env.step(
+            CallToolAction(
+                tool_name="sql_query",
+                arguments={
+                    "company_name": "alphabet",
+                    "table_name": "us_gaap_ScheduleOfIncomeBeforeIncomeTaxDomesticAndForeignTableTextBlock",
+                    "query": "SELECT * FROM data WHERE year = '2022'",
+                },
+            )
+        )
         print(f"Done: {step_result.done}, Reward: {step_result.reward}")
 
         # Submit answer
         result = await env.call_tool("submit_answer", answer="6.118")
+
 
 asyncio.run(main())
 ```

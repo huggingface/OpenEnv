@@ -126,8 +126,7 @@ def main(argv: list[str] | None = None) -> int:
         print("ERROR: E2B_API_KEY required.", file=sys.stderr)
         return 2
 
-    print(f"Building template '{args.name}' "
-          f"(proxy source: {_PROXY_SOURCE})")
+    print(f"Building template '{args.name}' (proxy source: {_PROXY_SOURCE})")
     print(f"Skip cache: {args.skip_cache}")
     print()
 

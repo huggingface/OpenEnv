@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
-import pytest
-
 # Import your client and models DIRECTLY
+import pytest
 from envs.grid_world_env.client import GridWorldEnv
 from envs.grid_world_env.models import GridWorldAction, MoveAction
 

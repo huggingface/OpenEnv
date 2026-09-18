@@ -80,10 +80,9 @@ class TestJuliaClientImport:
     def test_import_client(self):
         """Test that JuliaEnv client can be imported."""
         from julia_env import JuliaEnv
-
-        # Verify it's an EnvClient subclass
         from openenv.core.env_client import EnvClient
 
+        # Verify it's an EnvClient subclass
         assert issubclass(JuliaEnv, EnvClient)
 
 
@@ -107,10 +106,9 @@ class TestJuliaServerImport:
     def test_import_codeact_env(self):
         """Test that JuliaCodeActEnv can be imported."""
         from julia_env.server import JuliaCodeActEnv
-
-        # Verify it's an Environment subclass
         from openenv.core.env_server.interfaces import Environment
 
+        # Verify it's an Environment subclass
         assert issubclass(JuliaCodeActEnv, Environment)
 
     def test_import_transforms(self):

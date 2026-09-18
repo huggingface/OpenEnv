@@ -61,8 +61,8 @@ async def main():
         # The MCP tool returns JSON; deserialize via the typed model.
         raw = await env.call_tool(
             "run_rollout",
-            endpoint="openai",                          # vllm | openai | hf_router
-            api_key=os.environ["OPENAI_API_KEY"],       # or set as a Space secret
+            endpoint="openai",  # vllm | openai | hf_router
+            api_key=os.environ["OPENAI_API_KEY"],  # or set as a Space secret
             instruction=(
                 "Create binary_search.py exposing def binary_search(arr, target) -> int "
                 "that returns the index of target in arr, or -1 if absent. Use a "
@@ -75,7 +75,7 @@ async def main():
                 "import binary_search; "
                 "assert binary_search.binary_search([1,2,3], 2) == 1; print('OK')\"",
             ],
-            template="opencode-rl",                     # prebaked E2B template
+            template="opencode-rl",  # prebaked E2B template
             task_id="binary_search_v1",
         )
         result = RolloutResult.model_validate_json(_extract_text(raw))
@@ -121,7 +121,10 @@ For trainers that want to drive a sandbox directly without an HTTP boundary:
 ```python
 import os
 from opencode_env import (
-    OpenCodeConfig, OpenCodeSessionFactory, OpenCodeTask, E2BSandboxBackend,
+    OpenCodeConfig,
+    OpenCodeSessionFactory,
+    OpenCodeTask,
+    E2BSandboxBackend,
 )
 
 factory = OpenCodeSessionFactory(
@@ -132,11 +135,11 @@ factory = OpenCodeSessionFactory(
         model="gpt-4o-mini",
     ),
     sandbox_backend=E2BSandboxBackend(),
-    mode="transparent_proxy",                   # captures per-token logprobs
+    mode="transparent_proxy",  # captures per-token logprobs
 )
 session = factory.create(task=OpenCodeTask(instruction="..."))
 session.wait_for_completion()
-turns = session.fetch_proxy_trace()             # per-turn (tokens, logprobs)
+turns = session.fetch_proxy_trace()  # per-turn (tokens, logprobs)
 session.close()
 ```
 
@@ -149,7 +152,7 @@ instead, swap the backend (`huggingface_hub>=1.22` ships with the package):
 from opencode_env.sandbox import HFSandboxBackend
 
 factory = OpenCodeSessionFactory(
-    config=OpenCodeConfig(..., sandbox_home="/root"),   # HF sandbox execs as root
+    config=OpenCodeConfig(..., sandbox_home="/root"),  # HF sandbox execs as root
     sandbox_backend=HFSandboxBackend(image="python:3.12"),
     mode="transparent_proxy",
 )
@@ -160,7 +163,9 @@ rollouts use the pre-baked image (opencode + proxy deps already installed), buil
 `sandbox/hf_image/Dockerfile`:
 
 ```python
-sandbox_backend=HFSandboxBackend(image="ghcr.io/huggingface/openenv-opencode-sandbox:latest")
+sandbox_backend = HFSandboxBackend(
+    image="ghcr.io/huggingface/openenv-opencode-sandbox:latest"
+)
 ```
 
 Any backend satisfying the `SandboxBackend` / `SandboxHandle` / `BgJob` protocols in

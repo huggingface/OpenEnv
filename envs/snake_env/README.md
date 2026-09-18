@@ -128,19 +128,19 @@ Each observation includes:
 from envs.snake_env.server.snake_environment import SnakeEnvironment
 
 env = SnakeEnvironment(
-    height=20,           # Grid height (default: 20)
-    width=20,            # Grid width (default: 20)
-    snake_length=3,      # Initial snake length (default: 3)
-    vision_range=5,      # Partial observability (None for full grid)
-    observer='snake',    # 'snake' or 'human' mode
+    height=20,  # Grid height (default: 20)
+    width=20,  # Grid width (default: 20)
+    snake_length=3,  # Initial snake length (default: 3)
+    vision_range=5,  # Partial observability (None for full grid)
+    observer="snake",  # 'snake' or 'human' mode
     max_episode_steps=1000,  # Maximum steps per episode
-    reward_dict={        # Custom reward function
-        'fruit': 1.0,    # Reward for eating fruit
-        'kill': 0.0,     # Reward for kills (multi-agent)
-        'lose': -1.0,    # Penalty for death
-        'win': 0.0,      # Reward for winning (multi-agent)
-        'time': 0.0,     # Reward per timestep
-    }
+    reward_dict={  # Custom reward function
+        "fruit": 1.0,  # Reward for eating fruit
+        "kill": 0.0,  # Reward for kills (multi-agent)
+        "lose": -1.0,  # Penalty for death
+        "win": 0.0,  # Reward for winning (multi-agent)
+        "time": 0.0,  # Reward per timestep
+    },
 )
 ```
 
@@ -151,16 +151,16 @@ You can customize the reward function to encourage different behaviors:
 ```python
 # Encourage survival
 reward_dict = {
-    'fruit': 1.0,
-    'lose': -10.0,
-    'time': 0.01,  # Small reward for staying alive
+    "fruit": 1.0,
+    "lose": -10.0,
+    "time": 0.01,  # Small reward for staying alive
 }
 
 # Fast fruit collection
 reward_dict = {
-    'fruit': 10.0,
-    'lose': -1.0,
-    'time': -0.01,  # Penalty for taking too long
+    "fruit": 10.0,
+    "lose": -1.0,
+    "time": -0.01,  # Penalty for taking too long
 }
 ```
 
@@ -230,9 +230,11 @@ for episode in range(10):
         total_reward += result.reward
         done = result.done
 
-    print(f"Episode {episode}: Reward={total_reward}, "
-          f"Fruits={result.observation.episode_fruits}, "
-          f"Steps={result.observation.episode_steps}")
+    print(
+        f"Episode {episode}: Reward={total_reward}, "
+        f"Fruits={result.observation.episode_fruits}, "
+        f"Steps={result.observation.episode_steps}"
+    )
 
 env.close()
 ```

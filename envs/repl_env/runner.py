@@ -248,7 +248,9 @@ class LocalRLMRunner:
             idx = response.find("FINAL(")
             if idx != -1:
                 depth, start = 0, idx + len("FINAL")
-                for i, ch in enumerate(response[idx + len("FINAL"):], start=idx + len("FINAL")):
+                for i, ch in enumerate(
+                    response[idx + len("FINAL") :], start=idx + len("FINAL")
+                ):
                     if ch == "(":
                         depth += 1
                     elif ch == ")":

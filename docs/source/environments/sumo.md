@@ -145,13 +145,11 @@ from envs.sumo_rl_env import SumoRLEnv
 
 env = SumoRLEnv.from_docker_image(
     "sumo-rl-env:latest",
-    volumes={
-        "/path/to/your/nets": {"bind": "/nets", "mode": "ro"}
-    },
+    volumes={"/path/to/your/nets": {"bind": "/nets", "mode": "ro"}},
     environment={
         "SUMO_NET_FILE": "/nets/my-network.net.xml",
         "SUMO_ROUTE_FILE": "/nets/my-routes.rou.xml",
-    }
+    },
 )
 ```
 
@@ -229,10 +227,12 @@ for episode in range(10):
         # Print progress every 100 steps
         if steps % 100 == 0:
             state = env.state()
-            print(f"Step {steps}: "
-                  f"reward={result.reward:.2f}, "
-                  f"vehicles={state.total_vehicles}, "
-                  f"waiting={state.mean_waiting_time:.2f}")
+            print(
+                f"Step {steps}: "
+                f"reward={result.reward:.2f}, "
+                f"vehicles={state.total_vehicles}, "
+                f"waiting={state.mean_waiting_time:.2f}"
+            )
 
     print(f"Episode {episode}: total_reward={episode_reward:.2f}, steps={steps}")
 

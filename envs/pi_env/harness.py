@@ -252,7 +252,10 @@ class PiSessionFactory(ResourceSessionFactory):
                     backoff = self._create_backoff_s * (2**i)
                     _log.warning(
                         "factory.create attempt %d/%d failed (%r); retrying in %.1fs",
-                        i + 1, self._create_attempts, exc, backoff,
+                        i + 1,
+                        self._create_attempts,
+                        exc,
+                        backoff,
                     )
                     time.sleep(backoff)
         raise last_exc
@@ -265,25 +268,29 @@ class PiSessionFactory(ResourceSessionFactory):
         start_agent: bool = True,
     ) -> PiSession:
         import logging
+
         _log = logging.getLogger(__name__)
 
         pi_task = PiTask.coerce(task)
         # Budget must cover the cold bootstrap (Node + npm + proxy deps) plus the agent.
         sandbox_timeout = (
-            self._install_timeout_s + self._setup_timeout_s + int(self._config.agent_timeout_s) + 120
+            self._install_timeout_s
+            + self._setup_timeout_s
+            + int(self._config.agent_timeout_s)
+            + 120
         )
 
         _log.info(
             "factory.create: creating sandbox timeout=%ds mode=%s",
-            sandbox_timeout, self._mode,
+            sandbox_timeout,
+            self._mode,
         )
         sandbox = self._backend.create(
             timeout_s=sandbox_timeout,
             metadata={"episode_id": episode_id} if episode_id else None,
         )
-        sid = (
-            getattr(sandbox, "sandbox_id", None)
-            or getattr(getattr(sandbox, "raw", None), "sandbox_id", "?")
+        sid = getattr(sandbox, "sandbox_id", None) or getattr(
+            getattr(sandbox, "raw", None), "sandbox_id", "?"
         )
         _log.info("factory.create: sandbox=%s — bootstrapping…", sid)
         # Any failure past here (bootstrap/proxy/agent) must tear the sandbox down.
@@ -295,10 +302,11 @@ class PiSessionFactory(ResourceSessionFactory):
             if self._mode == "transparent_proxy":
                 _log.info(
                     "factory.create: starting interception proxy on :%d → %s",
-                    _PROXY_PORT, self._config.base_url,
+                    _PROXY_PORT,
+                    self._config.base_url,
                 )
-                proxy_bg_job, base_url_override, proxy_trace_path_str = self._start_proxy(
-                    sandbox
+                proxy_bg_job, base_url_override, proxy_trace_path_str = (
+                    self._start_proxy(sandbox)
                 )
                 _log.info("factory.create: proxy up at %s", base_url_override)
                 # Rewrite models.json so Pi points at the proxy instead of the
@@ -327,7 +335,9 @@ class PiSessionFactory(ResourceSessionFactory):
             try:
                 sandbox.kill()  # best-effort: don't let a cleanup failure mask the root cause
             except Exception:
-                _log.exception("factory.create: sandbox.kill() during cleanup also failed")
+                _log.exception(
+                    "factory.create: sandbox.kill() during cleanup also failed"
+                )
             raise
 
     # ------------------------------------------------------------------
@@ -486,7 +496,10 @@ class PiSessionFactory(ResourceSessionFactory):
         # deps but not the proxy source (it lives in opencode_env, outside the
         # pi image build context), so each skip triggers independently.
         deps_present = (
-            sandbox.exec("python -c 'import fastapi, uvicorn, httpx'", timeout=15).exit_code == 0
+            sandbox.exec(
+                "python -c 'import fastapi, uvicorn, httpx'", timeout=15
+            ).exit_code
+            == 0
         )
         if not deps_present:
             self._exec_with_retry(

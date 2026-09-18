@@ -252,7 +252,10 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
                     backoff = self._create_backoff_s * (2**i)
                     _log.warning(
                         "factory.create attempt %d/%d failed (%r); retrying in %.1fs",
-                        i + 1, self._create_attempts, exc, backoff,
+                        i + 1,
+                        self._create_attempts,
+                        exc,
+                        backoff,
                     )
                     time.sleep(backoff)
         raise last_exc
@@ -265,6 +268,7 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
         start_agent: bool = True,
     ) -> OpenCodeSession:
         import logging
+
         _log = logging.getLogger(__name__)
 
         oc_task = OpenCodeTask.coerce(task)
@@ -272,15 +276,15 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
 
         _log.info(
             "factory.create: creating sandbox timeout=%ds mode=%s",
-            sandbox_timeout, self._mode,
+            sandbox_timeout,
+            self._mode,
         )
         sandbox = self._backend.create(
             timeout_s=sandbox_timeout,
             metadata={"episode_id": episode_id} if episode_id else None,
         )
-        sid = (
-            getattr(sandbox, "sandbox_id", None)
-            or getattr(getattr(sandbox, "raw", None), "sandbox_id", "?")
+        sid = getattr(sandbox, "sandbox_id", None) or getattr(
+            getattr(sandbox, "raw", None), "sandbox_id", "?"
         )
         _log.info("factory.create: sandbox=%s — bootstrapping…", sid)
         # Any failure past here (bootstrap/proxy/agent) must tear the sandbox down.
@@ -293,7 +297,8 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
             if self._mode == "transparent_proxy":
                 _log.info(
                     "factory.create: starting interception proxy on :%d → %s",
-                    _PROXY_PORT, self._config.base_url,
+                    _PROXY_PORT,
+                    self._config.base_url,
                 )
                 proxy_bg_job, base_url_override, proxy_trace_path = self._start_proxy(
                     sandbox
@@ -333,7 +338,9 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
             try:
                 sandbox.kill()  # best-effort: don't let a cleanup failure mask the root cause
             except Exception:
-                _log.exception("factory.create: sandbox.kill() during cleanup also failed")
+                _log.exception(
+                    "factory.create: sandbox.kill() during cleanup also failed"
+                )
             raise
 
     # ------------------------------------------------------------------

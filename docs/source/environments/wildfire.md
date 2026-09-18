@@ -82,7 +82,9 @@ env = WildfireEnv(base_url="http://localhost:8000")
 # Reset environment
 result = env.reset()
 obs = result.observation
-print(f"Grid: {obs.width}x{obs.height}, Fires: {obs.burning_count}, Water: {obs.remaining_water}")
+print(
+    f"Grid: {obs.width}x{obs.height}, Fires: {obs.burning_count}, Water: {obs.remaining_water}"
+)
 
 # Take action (water a burning cell)
 result = env.step(WildfireAction(action="water", x=10, y=15))
@@ -239,19 +241,19 @@ Returned after every `reset()` or `step()`:
 ```python
 @dataclass
 class WildfireObservation(Observation):
-    grid: List[int]          # Flat array: [1,1,2,1,...] length = width × height
-    width: int               # Grid width (default: 32)
-    height: int              # Grid height (default: 32)
-    step: int                # Current step number (0 at reset)
-    wind_dir: str            # "N", "NE", "E", "SE", "S", "SW", "W", "NW", "CALM"
-    humidity: float          # [0.0, 1.0] - higher = less fire spread
-    burning_count: int       # Number of cells currently on fire
-    burned_count: int        # Total number of ash cells (cumulative)
-    remaining_water: int     # Water units left
-    remaining_breaks: int    # Firebreak materials left
-    reward_hint: float       # Shaping reward (for debugging)
-    done: bool               # Episode ended?
-    reward: float            # Step reward
+    grid: List[int]  # Flat array: [1,1,2,1,...] length = width × height
+    width: int  # Grid width (default: 32)
+    height: int  # Grid height (default: 32)
+    step: int  # Current step number (0 at reset)
+    wind_dir: str  # "N", "NE", "E", "SE", "S", "SW", "W", "NW", "CALM"
+    humidity: float  # [0.0, 1.0] - higher = less fire spread
+    burning_count: int  # Number of cells currently on fire
+    burned_count: int  # Total number of ash cells (cumulative)
+    remaining_water: int  # Water units left
+    remaining_breaks: int  # Firebreak materials left
+    reward_hint: float  # Shaping reward (for debugging)
+    done: bool  # Episode ended?
+    reward: float  # Step reward
 ```
 
 ### Example Observation
@@ -260,14 +262,14 @@ class WildfireObservation(Observation):
 result = env.reset()
 obs = result.observation
 
-print(f"Step: {obs.step}")                    # 0
-print(f"Grid size: {obs.width}x{obs.height}") # 32x32
-print(f"Grid cells: {len(obs.grid)}")         # 1024
-print(f"Active fires: {obs.burning_count}")   # 2
-print(f"Wind: {obs.wind_dir}")                # "NE"
-print(f"Humidity: {obs.humidity:.2f}")        # 0.24
-print(f"Water left: {obs.remaining_water}")   # 8
-print(f"Breaks left: {obs.remaining_breaks}") # 50
+print(f"Step: {obs.step}")  # 0
+print(f"Grid size: {obs.width}x{obs.height}")  # 32x32
+print(f"Grid cells: {len(obs.grid)}")  # 1024
+print(f"Active fires: {obs.burning_count}")  # 2
+print(f"Wind: {obs.wind_dir}")  # "NE"
+print(f"Humidity: {obs.humidity:.2f}")  # 0.24
+print(f"Water left: {obs.remaining_water}")  # 8
+print(f"Breaks left: {obs.remaining_breaks}")  # 50
 ```
 
 ---
@@ -383,11 +385,11 @@ env = WildfireEnvironment(
     width=64,
     height=64,
     humidity=0.3,
-    init_sources=3,          # Number of initial fires
+    init_sources=3,  # Number of initial fires
     max_steps=200,
     water_capacity=10,
     break_capacity=75,
-    seed=42
+    seed=42,
 )
 ```
 
@@ -545,7 +547,7 @@ env.close()
 ```python
 @dataclass
 class WildfireAction(Action):
-    action: str              # "water" | "break" | "wait"
+    action: str  # "water" | "break" | "wait"
     x: Optional[int] = None  # Target X coordinate (required for water/break)
     y: Optional[int] = None  # Target Y coordinate (required for water/break)
 ```
@@ -620,7 +622,9 @@ while not result.done:
     print(f"Step {obs.step}: Burning={obs.burning_count}, Reward={result.reward:.3f}")
 
 print(f"\nEpisode ended. Total reward: {total_reward:.2f}")
-print(f"Final stats: Burned={obs.burned_count}, Extinguished={env.state.total_extinguished}")
+print(
+    f"Final stats: Burned={obs.burned_count}, Extinguished={env.state.total_extinguished}"
+)
 env.close()
 ```
 
@@ -633,6 +637,7 @@ import numpy as np
 env = WildfireEnv(base_url="http://localhost:8000")
 result = env.reset()
 obs = result.observation
+
 
 def create_firebreak_barrier(obs, env):
     """Create firebreak ahead of fire front based on wind direction."""
@@ -668,6 +673,7 @@ def create_firebreak_barrier(obs, env):
 
     return WildfireAction(action="break", x=target_x, y=target_y)
 
+
 total_reward = 0
 while not result.done:
     action = create_firebreak_barrier(obs, env)
@@ -676,7 +682,9 @@ while not result.done:
     total_reward += result.reward or 0
 
     if obs.step % 10 == 0:
-        print(f"Step {obs.step}: Fires={obs.burning_count}, Water={obs.remaining_water}, Breaks={obs.remaining_breaks}")
+        print(
+            f"Step {obs.step}: Fires={obs.burning_count}, Water={obs.remaining_water}, Breaks={obs.remaining_breaks}"
+        )
 
 env.close()
 ```
@@ -694,13 +702,15 @@ result = env.reset()
 obs = result.observation
 
 # Setup colormap
-cmap = mcolors.ListedColormap([
-    "black",         # 0 = ash
-    "green",         # 1 = fuel
-    "red",           # 2 = burning
-    "saddlebrown",   # 3 = firebreak
-    "blue"           # 4 = water
-])
+cmap = mcolors.ListedColormap(
+    [
+        "black",  # 0 = ash
+        "green",  # 1 = fuel
+        "red",  # 2 = burning
+        "saddlebrown",  # 3 = firebreak
+        "blue",  # 4 = water
+    ]
+)
 norm = mcolors.BoundaryNorm([0, 1, 2, 3, 4, 5], cmap.N)
 
 fig, ax = plt.subplots(figsize=(8, 8))
@@ -713,7 +723,7 @@ for step in range(50):
     # Render grid
     grid_2d = np.array(obs.grid).reshape(obs.height, obs.width)
     ax.clear()
-    ax.imshow(grid_2d, cmap=cmap, norm=norm, interpolation='nearest')
+    ax.imshow(grid_2d, cmap=cmap, norm=norm, interpolation="nearest")
     ax.set_title(
         f"Step {obs.step} | Fires: {obs.burning_count} | Burned: {obs.burned_count}\n"
         f"Wind: {obs.wind_dir} | Humidity: {obs.humidity:.2f} | "
@@ -763,13 +773,13 @@ for episode in range(num_episodes):
             action = WildfireAction(
                 action="water",
                 x=random.randint(0, obs.width - 1),
-                y=random.randint(0, obs.height - 1)
+                y=random.randint(0, obs.height - 1),
             )
         elif random.random() < 0.3 and obs.remaining_breaks > 0:
             action = WildfireAction(
                 action="break",
                 x=random.randint(0, obs.width - 1),
-                y=random.randint(0, obs.height - 1)
+                y=random.randint(0, obs.height - 1),
             )
         else:
             action = WildfireAction(action="wait")

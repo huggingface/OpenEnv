@@ -22,13 +22,16 @@ import asyncio
 from agent_world_model_env import AWMEnv
 from openenv.core.env_server.mcp_types import CallToolAction, ListToolsAction
 
+
 async def main():
     async with AWMEnv(base_url="http://localhost:8899") as env:
         # Reset to a scenario with a specific task
         result = await env.reset(scenario="e_commerce_33", task_idx=0)
         print(f"Task: {result.observation.task}")
         print(f"Tools available: {result.observation.num_tools}")
-        print(f"Verifier support: {result.observation.has_verifier}")  # {sql: True, code: True}
+        print(
+            f"Verifier support: {result.observation.has_verifier}"
+        )  # {sql: True, code: True}
 
         # List available tools
         tools = await env.list_tools()
@@ -40,17 +43,22 @@ async def main():
         print(f"Result: {obs.tool_result}")
 
         # Run verification (can be called multiple times with different modes)
-        result = await env.step(CallToolAction(
-            tool_name="verify",
-            arguments={"verifier_mode": "code", "final_answer": "optional answer"}
-        ))
+        result = await env.step(
+            CallToolAction(
+                tool_name="verify",
+                arguments={"verifier_mode": "code", "final_answer": "optional answer"},
+            )
+        )
         print(f"Reward type: {result.observation.reward_type}")
         print(f"Reward: {result.reward}")
         print(f"Verify result: {result.observation.verify_result}")
 
         # End episode (destroys subprocess; set keep_session=True to preserve files)
-        result = await env.step(CallToolAction(tool_name="done", arguments={"keep_session": False}))
+        result = await env.step(
+            CallToolAction(tool_name="done", arguments={"keep_session": False})
+        )
         print(f"Episode done: {result.done}")
+
 
 asyncio.run(main())
 ```
@@ -107,7 +115,7 @@ You can customize rewards at reset:
 result = await env.reset(
     scenario="e_commerce_33",
     task_idx=0,
-    reward_config={"complete": 1.0, "incomplete": 0.0, "format_error": 0.0}
+    reward_config={"complete": 1.0, "incomplete": 0.0, "format_error": 0.0},
 )
 ```
 
@@ -132,10 +140,12 @@ AWM supports two verification modes, selected when calling the `verify` tool:
 ### Code Mode (Default, no LLM needed)
 
 ```python
-result = await env.step(CallToolAction(
-    tool_name="verify",
-    arguments={"verifier_mode": "code", "final_answer": "optional answer"}
-))
+result = await env.step(
+    CallToolAction(
+        tool_name="verify",
+        arguments={"verifier_mode": "code", "final_answer": "optional answer"},
+    )
+)
 ```
 
 Executes a Python verifier function that compares initial and final database states. Deterministic and does not require LLM.
@@ -148,10 +158,9 @@ This mode is recommended for judge performance. You need to set the LLM credenti
 # Set LLM credentials via environment variables
 # OPENENV_AWM_LLM_BASE_URL, OPENENV_AWM_LLM_API_KEY, OPENENV_AWM_LLM_MODEL
 
-result = await env.step(CallToolAction(
-    tool_name="verify",
-    arguments={"verifier_mode": "sql"}
-))
+result = await env.step(
+    CallToolAction(tool_name="verify", arguments={"verifier_mode": "sql"})
+)
 ```
 
 Runs SQL queries to extract state changes, then uses an LLM judge to determine success.
@@ -162,7 +171,9 @@ Runs SQL queries to extract state changes, then uses an LLM judge to determine s
 ```python
 async with AWMEnv(base_url="http://localhost:8899") as env:
     # List all 1,000 scenarios
-    result = await env.step(CallToolAction(tool_name="__list_scenarios__", arguments={}))
+    result = await env.step(
+        CallToolAction(tool_name="__list_scenarios__", arguments={})
+    )
 
     print(f"Total scenarios: {result.observation.total}")
     for scenario in result.observation.scenarios[:5]:

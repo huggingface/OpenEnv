@@ -24,6 +24,7 @@ Mathematical proof generation and evaluation environment for OpenEnv, ported fro
 import asyncio
 from qed_math_env import QEDMathEnv
 
+
 async def main():
     async with QEDMathEnv(base_url="http://localhost:8000") as env:
         # Reset to load a problem
@@ -34,6 +35,7 @@ async def main():
         # Submit a proof
         submission = await env.submit_proof(proof="By induction on n...")
         print(f"Score: {submission.score}/7, Reward: {submission.reward:.2f}")
+
 
 asyncio.run(main())
 ```
@@ -162,7 +164,13 @@ Environment variables:
 ```python
 QEDMathConfig(dataset_path="meta-math/MetaMathQA")
 # or with config
-QEDMathConfig(dataset_path={"hub_id": "meta-math/MetaMathQA", "split": "train", "config": "default"})
+QEDMathConfig(
+    dataset_path={
+        "hub_id": "meta-math/MetaMathQA",
+        "split": "train",
+        "config": "default",
+    }
+)
 ```
 
 ### Field Aliases

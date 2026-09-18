@@ -48,11 +48,11 @@ result = git_env.step(GitAction(action_type="clone_repo", repo_name="OpenEnv"))
 print(result.observation.output)  # Cloned to: /workspace/OpenEnv
 
 # Execute git commands
-result = git_env.step(GitAction(
-    action_type="execute_git_command",
-    command="status",
-    working_dir="OpenEnv"
-))
+result = git_env.step(
+    GitAction(
+        action_type="execute_git_command", command="status", working_dir="OpenEnv"
+    )
+)
 print(result.observation.output)
 
 # Cleanup
@@ -108,11 +108,11 @@ python3 examples/local_git_env.py
 ```python
 @dataclass
 class GitAction(Action):
-    action_type: str           # Operation type
-    repo_name: str            # Repository name (for clone/execute)
-    target_dir: Optional[str] # Target directory (for clone)
-    command: str              # Git command (for execute)
-    working_dir: str          # Working directory (for execute)
+    action_type: str  # Operation type
+    repo_name: str  # Repository name (for clone/execute)
+    target_dir: Optional[str]  # Target directory (for clone)
+    command: str  # Git command (for execute)
+    working_dir: str  # Working directory (for execute)
 ```
 
 **Supported action_type values:**
@@ -130,11 +130,7 @@ GitAction(action_type="list_repos")
 
 #### "execute_git_command" - Execute git command
 ```python
-GitAction(
-    action_type="execute_git_command",
-    command="status",
-    working_dir="OpenEnv"
-)
+GitAction(action_type="execute_git_command", command="status", working_dir="OpenEnv")
 ```
 
 ### Observation
@@ -144,11 +140,11 @@ GitAction(
 ```python
 @dataclass
 class GitObservation(Observation):
-    success: bool          # Whether operation succeeded
-    message: str           # Human-readable message
-    output: str            # Command output or detailed result
-    error: str             # Error message if failed
-    repos: list[dict]      # List of repositories (for list_repos)
+    success: bool  # Whether operation succeeded
+    message: str  # Human-readable message
+    output: str  # Command output or detailed result
+    error: str  # Error message if failed
+    repos: list[dict]  # List of repositories (for list_repos)
 ```
 
 ### State
@@ -158,10 +154,10 @@ class GitObservation(Observation):
 ```python
 @dataclass
 class GitState(State):
-    episode_id: str           # Unique episode identifier
-    step_count: int           # Number of steps taken
-    gitea_ready: bool         # Whether Gitea is accessible
-    workspace_path: str       # Path to workspace directory
+    episode_id: str  # Unique episode identifier
+    step_count: int  # Number of steps taken
+    gitea_ready: bool  # Whether Gitea is accessible
+    workspace_path: str  # Path to workspace directory
 ```
 
 ## Advanced: Task-Based Training

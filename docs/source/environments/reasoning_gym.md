@@ -15,11 +15,7 @@ try:
     env = ReasoningGymEnv.from_docker_image("reasoning_gym-env:latest")
 
     # Create a dataset with 10 leg_counting questions
-    result = env.reset(
-        dataset_name='leg_counting',
-        seed=42,
-        size=10
-    )
+    result = env.reset(dataset_name="leg_counting", seed=42, size=10)
     print(f"Question: {result.observation.question}")
     # Question: "How many legs does a cat have?"
 
@@ -32,7 +28,9 @@ try:
 
     # Access dataset metadata if available
     if result.observation.dataset_metadata:
-        print(f"Metadata: {result.observation.dataset_metadata}")  # Dataset-specific info
+        print(
+            f"Metadata: {result.observation.dataset_metadata}"
+        )  # Dataset-specific info
 
     # Get next question from same dataset
     result = env.reset()  # No params = reuse dataset
@@ -161,11 +159,7 @@ The reward equals the score returned by the dataset's scoring function:
 Use a single dataset with configuration:
 
 ```python
-result = env.reset(
-    dataset_name='leg_counting',
-    seed=42,
-    size=10
-)
+result = env.reset(dataset_name="leg_counting", seed=42, size=10)
 ```
 
 Available datasets from reasoning_gym library:
@@ -181,21 +175,21 @@ Mix multiple datasets with custom weights:
 
 ```python
 result = env.reset(
-    dataset_name='composite',
+    dataset_name="composite",
     dataset_specs=[
         {
             "name": "leg_counting",
             "weight": 3,  # 3x more likely
-            "config": {}
+            "config": {},
         },
         {
             "name": "reverse_sort",
             "weight": 1,
-            "config": {"min_length": 3, "max_length": 5}
-        }
+            "config": {"min_length": 3, "max_length": 5},
+        },
     ],
     seed=42,
-    size=20
+    size=20,
 )
 ```
 
@@ -205,7 +199,7 @@ The dataset persists across resets until configuration changes:
 
 ```python
 # Create dataset
-result = env.reset(dataset_name='leg_counting', seed=42, size=10)
+result = env.reset(dataset_name="leg_counting", seed=42, size=10)
 question1 = result.observation.question
 
 # Get next question from SAME dataset
@@ -213,7 +207,7 @@ result = env.reset()  # No params = reuse dataset
 question2 = result.observation.question
 
 # Create NEW dataset (different seed)
-result = env.reset(dataset_name='leg_counting', seed=99, size=10)
+result = env.reset(dataset_name="leg_counting", seed=99, size=10)
 question3 = result.observation.question  # From new dataset
 ```
 
@@ -250,11 +244,7 @@ from reasoning_gym_env import ReasoningGymAction, ReasoningGymEnv
 
 # Connect with context manager (auto-connects and closes)
 with ReasoningGymEnv(base_url="http://localhost:8000") as env:
-    result = env.reset(
-        dataset_name='leg_counting',
-        seed=42,
-        size=5
-    )
+    result = env.reset(dataset_name="leg_counting", seed=42, size=5)
     print(f"Question: {result.observation.question}")
 
     # Multiple steps with low latency
@@ -278,12 +268,13 @@ The server is configured to support multiple concurrent WebSocket connections:
 from reasoning_gym_env import ReasoningGymAction, ReasoningGymEnv
 from concurrent.futures import ThreadPoolExecutor
 
+
 def run_episode(client_id: int):
     with ReasoningGymEnv(base_url="http://localhost:8000") as env:
         result = env.reset(
-            dataset_name='leg_counting',
+            dataset_name="leg_counting",
             seed=42 + client_id,  # Different seed per client
-            size=10
+            size=10,
         )
         total_score = 0.0
         for i in range(10):
@@ -292,6 +283,7 @@ def run_episode(client_id: int):
             if result.done:
                 result = env.reset()  # Next question
         return client_id, total_score
+
 
 # Run 4 episodes concurrently
 with ThreadPoolExecutor(max_workers=4) as executor:
@@ -333,7 +325,7 @@ Then test with:
 from reasoning_gym_env import ReasoningGymEnv, ReasoningGymAction
 
 env = ReasoningGymEnv(base_url="http://localhost:8000")
-result = env.reset(dataset_name='leg_counting', seed=42, size=5)
+result = env.reset(dataset_name="leg_counting", seed=42, size=5)
 print(result.observation.question)
 ```
 

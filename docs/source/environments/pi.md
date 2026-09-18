@@ -43,14 +43,14 @@ factory = PiSessionFactory(
         base_url="https://api.openai.com/v1",
         api_key=os.environ["OPENAI_API_KEY"],
         model="gpt-4o-mini",
-        sandbox_home="/root",                   # HF sandbox execs as root
+        sandbox_home="/root",  # HF sandbox execs as root
     ),
     sandbox_backend=HFSandboxBackend(image="python:3.12"),
-    mode="transparent_proxy",                   # captures per-token logprobs
+    mode="transparent_proxy",  # captures per-token logprobs
 )
 session = factory.create(task=PiTask(instruction="..."))
 session.wait_for_completion()
-turns = session.fetch_proxy_trace()             # per-turn (tokens, logprobs)
+turns = session.fetch_proxy_trace()  # per-turn (tokens, logprobs)
 session.close()
 ```
 
@@ -71,7 +71,9 @@ pre-baked image (Node + Pi + proxy deps already installed), built by CI from
 `hf_image/Dockerfile`:
 
 ```python
-sandbox_backend=HFSandboxBackend(image="ghcr.io/huggingface/openenv-pi-sandbox:latest")
+sandbox_backend = HFSandboxBackend(
+    image="ghcr.io/huggingface/openenv-pi-sandbox:latest"
+)
 ```
 
 Any backend satisfying the `SandboxBackend` / `SandboxHandle` / `BgJob`
@@ -97,8 +99,8 @@ from pi_env import PiEnv
 with PiEnv(base_url="https://<user>-pi-env.hf.space") as env:
     env.reset()
     result = env.run_rollout(
-        endpoint="openai",                          # vllm | openai | hf_router
-        api_key=os.environ["OPENAI_API_KEY"],       # or set as a Space secret
+        endpoint="openai",  # vllm | openai | hf_router
+        api_key=os.environ["OPENAI_API_KEY"],  # or set as a Space secret
         instruction=(
             "Create binary_search.py exposing def binary_search(arr, target) -> int "
             "that returns the index of target in arr, or -1 if absent."

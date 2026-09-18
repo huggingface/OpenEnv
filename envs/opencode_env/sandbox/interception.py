@@ -130,9 +130,7 @@ def _build_app(cfg: ProxyConfig) -> FastAPI:
         try:
             body = json.loads(raw_body)
         except json.JSONDecodeError:
-            return JSONResponse(
-                status_code=400, content={"error": "invalid json body"}
-            )
+            return JSONResponse(status_code=400, content={"error": "invalid json body"})
 
         forwarded_body = _prepare_forwarded_body(body, cfg)
         headers = {
@@ -338,7 +336,7 @@ async def _proxy_streaming(
                 yield line + "\n"
                 if not line.startswith("data:"):
                     continue
-                data = line[len("data:"):].strip()
+                data = line[len("data:") :].strip()
                 if data == "[DONE]":
                     continue
                 try:
@@ -381,7 +379,11 @@ def _accumulate_stream_chunk(chunk: dict[str, Any], acc: dict[str, Any]) -> None
             tc_idx = tc.get("index", 0)
             bucket = acc["tool_calls_by_idx"].setdefault(
                 (idx, tc_idx),
-                {"id": None, "type": "function", "function": {"name": "", "arguments": ""}},
+                {
+                    "id": None,
+                    "type": "function",
+                    "function": {"name": "", "arguments": ""},
+                },
             )
             if tc.get("id"):
                 bucket["id"] = tc["id"]
@@ -487,8 +489,7 @@ def _strip_logprobs(response_json: dict[str, Any]) -> dict[str, Any]:
     choices = out.get("choices")
     if isinstance(choices, list):
         out["choices"] = [
-            {k: v for k, v in (ch or {}).items() if k != "logprobs"}
-            for ch in choices
+            {k: v for k, v in (ch or {}).items() if k != "logprobs"} for ch in choices
         ]
     return out
 
@@ -537,9 +538,7 @@ class InterceptionProxy:
             lifespan="on",
         )
         self._server = uvicorn.Server(config)
-        self._thread = threading.Thread(
-            target=self._run_server, daemon=True
-        )
+        self._thread = threading.Thread(target=self._run_server, daemon=True)
         self._thread.start()
         # Wait for the server to accept connections.
         deadline = time.time() + 10

@@ -198,9 +198,7 @@ class PiEnvironment(MCPEnvironment):
             reward=None,
             metadata={
                 "status": "ready",
-                "message": (
-                    "pi_env ready. Call run_rollout(...) with a task."
-                ),
+                "message": ("pi_env ready. Call run_rollout(...) with a task."),
             },
         )
 
@@ -364,7 +362,9 @@ class PiEnvironment(MCPEnvironment):
                     )
                     _emit(f"agent finished: exit_code={result.agent_exit_code}")
                     if result.agent_exit_code != 0:
-                        result.error = f"agent exited non-zero ({result.agent_exit_code})"
+                        result.error = (
+                            f"agent exited non-zero ({result.agent_exit_code})"
+                        )
                         _emit(f"agent FAILED: exit_code={result.agent_exit_code}")
                 except TimeoutError as exc:
                     result.error = f"agent timeout: {exc}"
@@ -403,8 +403,12 @@ class PiEnvironment(MCPEnvironment):
             result.error = f"{type(exc).__name__}: {exc}"
             _emit(f"ERROR: {result.error}")
             if session is not None:
-                result.proxy_log_tail = self._safe_read(session.sandbox, PROXY_LOG)[-2000:]
-                result.agent_log_tail = self._safe_read(session.sandbox, AGENT_LOG)[-2000:]
+                result.proxy_log_tail = self._safe_read(session.sandbox, PROXY_LOG)[
+                    -2000:
+                ]
+                result.agent_log_tail = self._safe_read(session.sandbox, AGENT_LOG)[
+                    -2000:
+                ]
         finally:
             if session is not None:
                 try:
@@ -426,7 +430,9 @@ class PiEnvironment(MCPEnvironment):
 
     # ── Helpers ────────────────────────────────────────────────────────────
 
-    def _exec_command(self, sandbox: Any, cmd: str, timeout: int = VERIFY_TIMEOUT_S) -> Any:
+    def _exec_command(
+        self, sandbox: Any, cmd: str, timeout: int = VERIFY_TIMEOUT_S
+    ) -> Any:
         t = time.time()
         try:
             r = sandbox.exec(cmd, timeout=timeout)
@@ -454,9 +460,7 @@ class PiEnvironment(MCPEnvironment):
         except ValueError:
             return None
 
-    def _collect_files(
-        self, sandbox: Any
-    ) -> tuple[dict[str, str], list[str]]:
+    def _collect_files(self, sandbox: Any) -> tuple[dict[str, str], list[str]]:
         listing = sandbox.exec(
             f"find {WORKDIR} -maxdepth 2 -type f -size -64k 2>/dev/null | head -32",
             timeout=10,
@@ -495,7 +499,8 @@ class PiEnvironment(MCPEnvironment):
                     completion_tokens=list(rec.get("completion_tokens") or []),
                     completion_token_ids=list(rec.get("completion_token_ids") or []),
                     per_token_logps=[
-                        float(x) for x in (rec.get("per_token_logps") or [])
+                        float(x)
+                        for x in (rec.get("per_token_logps") or [])
                         if x is not None
                     ],
                     latency_s=float(rec.get("latency_s") or 0.0),

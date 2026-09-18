@@ -41,9 +41,9 @@ its messages, and per turn the text, tool calls and finish reason.
 Against vLLM or SGLang you also get the training contract, per model call:
 
 ```python
-turn.prompt_token_ids       # the engine's own tokenisation of everything before this turn
-turn.completion_token_ids   # what it sampled
-turn.per_token_logps        # the behaviour-policy logprob of each sampled token
+turn.prompt_token_ids  # the engine's own tokenisation of everything before this turn
+turn.completion_token_ids  # what it sampled
+turn.per_token_logps  # the behaviour-policy logprob of each sampled token
 ```
 
 Which of the two you got is on the result as `rollout_type` (`"train"` or `"eval"`) and
@@ -255,7 +255,9 @@ from harbor_env import HarborEnv
 
 with HarborEnv(base_url="http://localhost:8000") as env:
     split = env.splits()[0]["name"]
-    result = env.run_rollout(split=split, task_index=0, harness="opencode", sandbox="e2b")
+    result = env.run_rollout(
+        split=split, task_index=0, harness="opencode", sandbox="e2b"
+    )
 
     print(result.reward, result.n_turns)
     for turn in result.turns:

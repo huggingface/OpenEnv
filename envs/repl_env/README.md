@@ -99,8 +99,10 @@ Custom rubrics can be injected at construction:
 ```python
 from repl_env import LocalREPLEnv, CustomMetricRubric, REPLRubric
 
+
 def my_metric(expected, predicted):
     return 1.0 if expected.strip() == predicted.strip() else 0.0
+
 
 env = LocalREPLEnv(rubric=REPLRubric(outcome=CustomMetricRubric(my_metric)))
 ```
@@ -173,6 +175,7 @@ from repl_env import LocalRLMRunner, RLM_SYSTEM_PROMPT
 
 client = InferenceClient(model="Qwen/Qwen3.5-9B", timeout=300)
 
+
 def chat_fn(messages, model=None):
     response = client.chat.completions.create(
         model=model or "Qwen/Qwen3.5-9B",
@@ -182,6 +185,7 @@ def chat_fn(messages, model=None):
         extra_body={"chat_template_kwargs": {"enable_thinking": False}},
     )
     return response.choices[0].message.content
+
 
 runner = LocalRLMRunner(chat_fn, max_iterations=30, max_depth=2)
 result = runner.run("The answer is 42", "What number is mentioned?")
@@ -196,6 +200,7 @@ from repl_env import LocalRLMRunner
 
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
 
+
 def chat_fn(messages, model=None):
     response = client.chat.completions.create(
         model=model or "Qwen/Qwen3.5-9B",
@@ -204,6 +209,7 @@ def chat_fn(messages, model=None):
         temperature=0.6,
     )
     return response.choices[0].message.content
+
 
 runner = LocalRLMRunner(chat_fn, max_iterations=30, max_depth=2)
 result = runner.run(context, task)
@@ -224,21 +230,29 @@ from repl_env.recursive_backends import BackendLimits, LocalChildRLMBackend
 # Outer loop: large local model via vLLM
 vllm = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
 
+
 def outer_chat(messages, model=None):
     r = vllm.chat.completions.create(
-        model="Qwen/Qwen3-32B", messages=messages, max_tokens=2048,
+        model="Qwen/Qwen3-32B",
+        messages=messages,
+        max_tokens=2048,
     )
     return r.choices[0].message.content
+
 
 # Inner calls (llm_query/rlm_query): smaller HF-hosted model
 hf = InferenceClient(model="Qwen/Qwen3.5-9B")
 
+
 def inner_chat(messages, model=None):
     r = hf.chat.completions.create(
-        model=model or "Qwen/Qwen3.5-9B", messages=messages, max_tokens=2048,
+        model=model or "Qwen/Qwen3.5-9B",
+        messages=messages,
+        max_tokens=2048,
         extra_body={"chat_template_kwargs": {"enable_thinking": False}},
     )
     return r.choices[0].message.content
+
 
 def my_backend_factory(llm_chat_fn, **kwargs):
     return LocalChildRLMBackend(
@@ -251,9 +265,10 @@ def my_backend_factory(llm_chat_fn, **kwargs):
         limits=BackendLimits(max_depth=2),
     )
 
+
 runner = LocalRLMRunner(
-    outer_chat,                        # outer loop: large model
-    backend_factory=my_backend_factory, # inner calls: small model
+    outer_chat,  # outer loop: large model
+    backend_factory=my_backend_factory,  # inner calls: small model
     max_iterations=30,
     max_depth=2,
 )

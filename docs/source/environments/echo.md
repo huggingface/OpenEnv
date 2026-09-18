@@ -11,6 +11,7 @@ The simplest way to use the Echo environment is through the `EchoEnv` class. The
 import asyncio
 from echo_env import CallToolAction, EchoEnv
 
+
 async def main():
     # Create environment from Docker image
     client = await EchoEnv.from_docker_image("echo-env:latest")
@@ -31,6 +32,7 @@ async def main():
             print(f"Sent: '{msg}'")
             print(f"  → Echoed: '{result.observation.result}'")
             print(f"  → Reward: {result.reward}")
+
 
 asyncio.run(main())
 ```

@@ -9,6 +9,7 @@ A classic Connect Four board game environment for training agents on turn-based 
 import asyncio
 from connect4_env import Connect4Action, Connect4Env
 
+
 async def main():
     async with Connect4Env(base_url="http://localhost:8000") as client:
         obs = await client.reset()
@@ -18,6 +19,7 @@ async def main():
         # Drop a piece in column 3
         result = await client.step(Connect4Action(column=3))
         print(f"Reward: {result.reward}, Done: {result.done}")
+
 
 asyncio.run(main())
 ```

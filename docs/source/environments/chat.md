@@ -30,7 +30,7 @@ tokenizer = AutoTokenizer.from_pretrained("gpt2")
 env = ChatEnvironment(
     tokenizer=tokenizer,
     system_prompt="You are a helpful assistant.",
-    system_role="system"
+    system_role="system",
 )
 
 # Reset the environment
@@ -110,7 +110,7 @@ Observations contain both the message history and flattened tokens:
 @dataclass
 class ChatObservation(Observation):
     messages: list[Message]  # List of {"role": str, "content": str}
-    tokens: torch.Tensor     # Flattened tensor of all conversation tokens
+    tokens: torch.Tensor  # Flattened tensor of all conversation tokens
     # Inherited: done, reward, metadata
 ```
 
@@ -172,19 +172,18 @@ You can add transforms to compute rewards or modify observations:
 ```python
 from openenv.core.env_server import Transform, Observation
 
+
 class LengthRewardTransform(Transform):
     """Reward based on response length."""
 
     def __call__(self, observation: Observation) -> Observation:
-        if hasattr(observation, 'messages') and observation.messages:
+        if hasattr(observation, "messages") and observation.messages:
             last_message = observation.messages[-1]
-            observation.reward = len(last_message['content']) * 0.1
+            observation.reward = len(last_message["content"]) * 0.1
         return observation
 
-env = ChatEnvironment(
-    tokenizer=tokenizer,
-    transform=LengthRewardTransform()
-)
+
+env = ChatEnvironment(tokenizer=tokenizer, transform=LengthRewardTransform())
 ```
 
 ### Direct Token Usage

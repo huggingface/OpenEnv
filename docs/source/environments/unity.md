@@ -321,7 +321,7 @@ client = UnityEnv.from_docker_image(
         "UNITY_NO_GRAPHICS": "0",
         "UNITY_WIDTH": "1280",
         "UNITY_HEIGHT": "720",
-    }
+    },
 )
 
 try:
@@ -432,6 +432,7 @@ if result.observation.visual_observations:
     for img_b64 in result.observation.visual_observations:
         # Decode and use the image
         import base64
+
         img_bytes = base64.b64decode(img_b64)
 ```
 
@@ -445,13 +446,13 @@ When using `UnityEnv.from_direct()` to run with an embedded server:
 from envs.unity_env.client import UnityEnv
 
 client = UnityEnv.from_direct(
-    env_id="PushBlock",      # Unity environment to load
-    no_graphics=False,       # False = show graphics window
-    width=1280,              # Window width in pixels
-    height=720,              # Window height in pixels
-    time_scale=1.0,          # Simulation speed (20.0 for fast training)
-    quality_level=5,         # Graphics quality 0-5
-    port=8765,               # Port for embedded server
+    env_id="PushBlock",  # Unity environment to load
+    no_graphics=False,  # False = show graphics window
+    width=1280,  # Window width in pixels
+    height=720,  # Window height in pixels
+    time_scale=1.0,  # Simulation speed (20.0 for fast training)
+    quality_level=5,  # Graphics quality 0-5
+    port=8765,  # Port for embedded server
 )
 ```
 

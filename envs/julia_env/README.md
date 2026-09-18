@@ -42,7 +42,7 @@ try:
         using Test
         @test multiply(3, 4) == 12
         @test multiply(5, 6) == 30
-        """
+        """,
     )
 
     result = julia_env.step(action)
@@ -132,10 +132,7 @@ julia_env = JuliaEnv(base_url="http://localhost:8000")
 
 # Use as normal
 result = julia_env.reset()
-result = julia_env.step(JuliaAction(
-    core_code="println(2 + 2)",
-    test_code=""
-))
+result = julia_env.step(JuliaAction(core_code="println(2 + 2)", test_code=""))
 ```
 
 Note: When connecting to an existing server, `julia_env.close()` will NOT stop the server.
@@ -191,7 +188,7 @@ try:
         @test fibonacci(1) == 1
         @test fibonacci(5) == 5
         @test fibonacci(10) == 55
-        """
+        """,
     )
 
     result = julia_env.step(action)

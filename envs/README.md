@@ -22,21 +22,27 @@ Create your action, observation, and state models using Python dataclasses:
 from dataclasses import dataclass
 from openenv.core.env_server import Action, Observation, State
 
+
 @dataclass
 class MyAction(Action):
     """Your custom action."""
+
     command: str
     parameters: dict
+
 
 @dataclass
 class MyObservation(Observation):
     """Your custom observation."""
+
     result: str
     success: bool
+
 
 @dataclass
 class MyState(State):
     """Custom state fields."""
+
     custom_field: int = 0
 ```
 
@@ -49,6 +55,7 @@ Implement the three core methods: `reset()`, `step()`, and `state`:
 import uuid
 from openenv.core.env_server import Environment
 from ..models import MyAction, MyObservation, MyState
+
 
 class MyEnvironment(Environment):
     def __init__(self):
@@ -192,6 +199,7 @@ Create a client that extends `EnvClient`:
 from openenv.core import EnvClient, StepResult
 from .models import MyAction, MyObservation, MyState
 
+
 class MyEnv(EnvClient[MyAction, MyObservation, MyState]):
     def _step_payload(self, action: MyAction) -> dict:
         return {"command": action.command, "parameters": action.parameters}
@@ -334,6 +342,7 @@ Test your environment before containerization:
 from envs.my_env.server.my_environment import MyEnvironment
 from envs.my_env.models import MyAction
 
+
 def test_environment():
     env = MyEnvironment()
 
@@ -358,10 +367,12 @@ Apply transformations to observations:
 ```python
 from openenv.core.env_server import Transform
 
+
 class MyTransform(Transform):
     def __call__(self, observation: Observation) -> Observation:
         # Transform observation
         return modified_observation
+
 
 # Use in environment
 env = MyEnvironment(transform=MyTransform())

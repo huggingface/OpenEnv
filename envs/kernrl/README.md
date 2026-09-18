@@ -37,7 +37,8 @@ obs = env.reset(problem_id="L1_23_Softmax")
 print(obs.problem_description)
 
 # Submit a kernel
-action = KernelAction(code='''
+action = KernelAction(
+    code="""
 import torch
 import triton
 import triton.language as tl
@@ -66,7 +67,8 @@ class Model(torch.nn.Module):
         BLOCK_SIZE = triton.next_power_of_2(n_cols)
         softmax_kernel[(n_rows,)](x, output, n_cols, BLOCK_SIZE=BLOCK_SIZE)
         return output
-''')
+"""
+)
 
 result = env.step(action)
 print(f"Speedup: {result.observation.speedup}x")

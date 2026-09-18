@@ -347,23 +347,17 @@ result = client.reset()
 print(f"Starting URL: {result.observation.url}")
 
 # Navigate to calendar app
-result = client.step(OpenAppAction(
-    action_type="goto",
-    url="http://localhost:5001/calendar"
-))
+result = client.step(
+    OpenAppAction(action_type="goto", url="http://localhost:5001/calendar")
+)
 
 # Click on a button (example bid)
-result = client.step(OpenAppAction(
-    action_type="click",
-    bid="add-event-btn"
-))
+result = client.step(OpenAppAction(action_type="click", bid="add-event-btn"))
 
 # Fill in a form field
-result = client.step(OpenAppAction(
-    action_type="fill",
-    bid="event-title-input",
-    text="Team Meeting"
-))
+result = client.step(
+    OpenAppAction(action_type="fill", bid="event-title-input", text="Team Meeting")
+)
 
 print(f"Reward: {result.reward}")
 print(f"Done: {result.done}")
@@ -418,11 +412,11 @@ Each observation includes:
 from envs.openapp_env.server.openapp_environment import OpenAppEnvironment
 
 env = OpenAppEnvironment(
-    web_app_port=5001,                   # Port for OpenApps server
-    headless=True,                       # Run browser in headless mode
-    task_name="add_meeting",             # Optional task name
-    apps_config={},                      # App-specific configuration
-    max_steps=50,                        # Maximum steps per episode
+    web_app_port=5001,  # Port for OpenApps server
+    headless=True,  # Run browser in headless mode
+    task_name="add_meeting",  # Optional task name
+    apps_config={},  # App-specific configuration
+    max_steps=50,  # Maximum steps per episode
 )
 ```
 
@@ -472,6 +466,7 @@ The server will start at `http://localhost:8000`
 from openapp_env.server.openapp_environment import OpenAppEnvironment
 from openapp_env.models import OpenAppAction
 
+
 def test_environment():
     env = OpenAppEnvironment()
 
@@ -486,6 +481,7 @@ def test_environment():
 
     # Cleanup
     env.close()
+
 
 test_environment()
 ```

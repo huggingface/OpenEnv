@@ -62,7 +62,7 @@ from carla_env.server.carla_agents.navigation.behavior_agent import BehaviorAgen
 # Initialize with behavior
 agent = BehaviorAgent(
     vehicle,
-    behavior='normal'  # 'cautious', 'normal', or 'aggressive'
+    behavior="normal",  # 'cautious', 'normal', or 'aggressive'
 )
 
 # Set destination and target speed
@@ -99,25 +99,21 @@ Agents are integrated via navigation actions:
 Example:
 ```python
 # Initialize agent
-env.step(CarlaAction(
-    action_type="init_navigation_agent",
-    navigation_behavior="normal"
-))
+env.step(CarlaAction(action_type="init_navigation_agent", navigation_behavior="normal"))
 
 # Set destination
-env.step(CarlaAction(
-    action_type="set_destination",
-    destination_x=100.0,
-    destination_y=50.0,
-    destination_z=0.0
-))
+env.step(
+    CarlaAction(
+        action_type="set_destination",
+        destination_x=100.0,
+        destination_y=50.0,
+        destination_z=0.0,
+    )
+)
 
 # Follow route
 for _ in range(100):
-    result = env.step(CarlaAction(
-        action_type="follow_route",
-        route_steps=1
-    ))
+    result = env.step(CarlaAction(action_type="follow_route", route_steps=1))
     if result.done:
         break
 ```
@@ -150,8 +146,8 @@ from carla_env.server.carla_agents.navigation.controller import VehiclePIDContro
 # Create controller
 controller = VehiclePIDController(
     vehicle,
-    args_lateral={'K_P': 1.0, 'K_I': 0.0, 'K_D': 0.0},
-    args_longitudinal={'K_P': 1.0, 'K_I': 0.0, 'K_D': 0.0}
+    args_lateral={"K_P": 1.0, "K_I": 0.0, "K_D": 0.0},
+    args_longitudinal={"K_P": 1.0, "K_I": 0.0, "K_D": 0.0},
 )
 
 # Run control
@@ -187,7 +183,9 @@ remaining = len(planner.waypoints_queue)
 Plans routes on CARLA road network:
 
 ```python
-from carla_env.server.carla_agents.navigation.global_route_planner import GlobalRoutePlanner
+from carla_env.server.carla_agents.navigation.global_route_planner import (
+    GlobalRoutePlanner,
+)
 
 planner = GlobalRoutePlanner(world.get_map(), sampling_resolution=2.0)
 

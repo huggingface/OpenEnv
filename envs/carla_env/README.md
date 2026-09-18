@@ -130,8 +130,8 @@ Rewards: progress toward goal + arrival bonus (+10) + collision penalty (-5) + t
 ### Basic
 
 ```python
-CarlaAction(action_type="observe")              # Get observation without acting
-CarlaAction(action_type="emergency_stop")        # Maximum braking
+CarlaAction(action_type="observe")  # Get observation without acting
+CarlaAction(action_type="emergency_stop")  # Maximum braking
 CarlaAction(action_type="lane_change", lane_direction="left")  # Lane change
 CarlaAction(action_type="control", throttle=0.5, steer=0.0, brake=0.0)  # Manual
 ```
@@ -160,10 +160,14 @@ CarlaAction(action_type="capture_image")
 
 Resolution and JPEG quality configurable at reset:
 ```python
-result = await env.reset(scenario_config={
-    "camera_width": 1280, "camera_height": 720,
-    "camera_fov": 110, "jpeg_quality": 90,
-})
+result = await env.reset(
+    scenario_config={
+        "camera_width": 1280,
+        "camera_height": 720,
+        "camera_fov": 110,
+        "jpeg_quality": 90,
+    }
+)
 ```
 
 ## Examples
@@ -249,7 +253,9 @@ async with CarlaEnv(base_url="http://localhost:8000") as env:
     result = await env.reset(scenario_name="free_roam")
     while not result.observation.done:
         result = await env.step(CarlaAction(action_type="observe"))
-        print(f"Raw: {result.observation.reward}, Rubric: {result.observation.rubric_reward}")
+        print(
+            f"Raw: {result.observation.reward}, Rubric: {result.observation.rubric_reward}"
+        )
 ```
 
 For RL training, use `rubric_reward` — it provides temporally-discounted credit assignment for trolley scenarios and direct per-step signal for navigation.

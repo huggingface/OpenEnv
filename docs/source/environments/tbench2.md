@@ -132,7 +132,11 @@ TB2_MODE=docker python -m tbench2_env.server.app
 Example (Python):
 ```python
 # Start a long-running process
-env.step(Tbench2Action(action_type="exec", command="python -i", block=False, session_id="sess1"))
+env.step(
+    Tbench2Action(
+        action_type="exec", command="python -i", block=False, session_id="sess1"
+    )
+)
 
 # Send input to it
 env.step(Tbench2Action(action_type="write", session_id="sess1", command="print(2+2)\n"))

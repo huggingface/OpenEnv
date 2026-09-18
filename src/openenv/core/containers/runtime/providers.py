@@ -234,17 +234,22 @@ class LocalDockerProvider(ContainerProvider):
         import subprocess
 
         try:
+            remove_command = ["docker", "rm", self._container_id]
             # Stop container
-            subprocess.run(
-                ["docker", "stop", self._container_id],
-                capture_output=True,
-                check=True,
-                timeout=10,
-            )
+            try:
+                subprocess.run(
+                    ["docker", "stop", self._container_id],
+                    capture_output=True,
+                    check=True,
+                    timeout=10,
+                )
+            except subprocess.TimeoutExpired:
+                # The CLI can time out before Docker finishes its stop grace period.
+                remove_command.insert(2, "--force")
 
             # Remove container
             subprocess.run(
-                ["docker", "rm", self._container_id],
+                remove_command,
                 capture_output=True,
                 check=True,
                 timeout=10,

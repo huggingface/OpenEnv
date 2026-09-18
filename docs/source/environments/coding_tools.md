@@ -31,7 +31,9 @@ with CodingToolsEnv(base_url="http://localhost:8000").sync() as env:
         setup=["mkdir -p /home/user/work"],
         verify=["test -f /home/user/work/answer.txt"],
     )
-    print(env.call_tool("write", file_path="/home/user/work/answer.txt", content="done\n"))
+    print(
+        env.call_tool("write", file_path="/home/user/work/answer.txt", content="done\n")
+    )
     print(env.call_tool("submit_solution"))
 ```
 

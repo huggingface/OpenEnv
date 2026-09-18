@@ -11,6 +11,7 @@ The simplest way to use the Coding environment is through the `CodingEnv` class.
 import asyncio
 from coding_env import CodeAction, CodingEnv
 
+
 async def main():
     # Create environment from Docker image
     client = await CodingEnv.from_docker_image("coding-env:latest")
@@ -24,7 +25,7 @@ async def main():
         code_samples = [
             "print('Hello, World!')",
             "x = 5 + 3\nprint(f'Result: {x}')",
-            "import math\nprint(math.pi)"
+            "import math\nprint(math.pi)",
         ]
 
         for code in code_samples:
@@ -32,6 +33,7 @@ async def main():
             print(f"Code: {code}")
             print(f"  → stdout: {result.observation.stdout.strip()}")
             print(f"  → exit_code: {result.observation.exit_code}")
+
 
 asyncio.run(main())
 ```

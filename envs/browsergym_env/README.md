@@ -51,7 +51,7 @@ env = BrowserGymEnv.from_docker_image(
     environment={
         "BROWSERGYM_BENCHMARK": "miniwob",
         "BROWSERGYM_TASK_NAME": "click-test",  # or "click-button", "click-dialog", etc.
-    }
+    },
 )
 
 # Train your agent!
@@ -89,7 +89,9 @@ from openenv.core.harness import (
 )
 
 session_factory = BrowserGymSessionFactory(
-    client_factory=lambda: BrowserGymEnv(base_url="https://openenv-browsergym-env.hf.space"),
+    client_factory=lambda: BrowserGymEnv(
+        base_url="https://openenv-browsergym-env.hf.space"
+    ),
 )
 
 rollout_func = build_harness_rollout_func(
@@ -227,19 +229,23 @@ WebArena tasks are organized by website and difficulty. Tasks are numbered 0-811
 
 ```python
 # Task 0 (usually easy)
-env = BrowserGymEnv(environment={
-    "BROWSERGYM_BENCHMARK": "webarena",
-    "BROWSERGYM_TASK_NAME": "0",
-    "SHOPPING": "http://your-server:7770",
-    # ... other URLs
-})
+env = BrowserGymEnv(
+    environment={
+        "BROWSERGYM_BENCHMARK": "webarena",
+        "BROWSERGYM_TASK_NAME": "0",
+        "SHOPPING": "http://your-server:7770",
+        # ... other URLs
+    }
+)
 
 # Task 156 (GitLab merge request)
-env = BrowserGymEnv(environment={
-    "BROWSERGYM_BENCHMARK": "webarena",
-    "BROWSERGYM_TASK_NAME": "156",
-    # ... URLs
-})
+env = BrowserGymEnv(
+    environment={
+        "BROWSERGYM_BENCHMARK": "webarena",
+        "BROWSERGYM_TASK_NAME": "156",
+        # ... URLs
+    }
+)
 ```
 
 **Note:** WebArena tasks require the full backend infrastructure. See [WebArena setup guide](https://github.com/web-arena-x/webarena/tree/main/environment_docker).
@@ -288,7 +294,7 @@ env = BrowserGymEnv.from_docker_image(
         "MAP": "http://your-server:3000",
         "WIKIPEDIA": "http://your-server:8888/wikipedia_en_all_maxi_2022-05/A/User:The_other_Kiwix_guy/Landing",
         "HOMEPAGE": "http://your-server:4399",
-    }
+    },
 )
 
 # Evaluate your trained agent
@@ -385,13 +391,13 @@ result = env.step(action)
 obs = result.observation
 
 # Text observations
-print(obs.text)          # Primary text representation (AXTree or DOM)
-print(obs.axtree_txt)    # Accessibility tree
-print(obs.pruned_html)   # Pruned HTML (interactive elements only)
+print(obs.text)  # Primary text representation (AXTree or DOM)
+print(obs.axtree_txt)  # Accessibility tree
+print(obs.pruned_html)  # Pruned HTML (interactive elements only)
 
 # Page metadata
-print(obs.url)           # Current URL
-print(obs.goal)          # Task goal/instruction
+print(obs.url)  # Current URL
+print(obs.goal)  # Task goal/instruction
 
 # Visual (if enabled)
 if obs.screenshot is not None:
@@ -402,12 +408,12 @@ if obs.last_action_error:
     print(f"Action failed: {obs.error}")
 
 # Episode status
-print(obs.done)          # True if episode ended
-print(obs.reward)        # Reward for the step
+print(obs.done)  # True if episode ended
+print(obs.reward)  # Reward for the step
 
 # Access full BrowserGym data (includes timestamps, etc.)
 print(obs.metadata["browsergym_obs"])  # Full observation dict from BrowserGym
-print(obs.metadata["browsergym_info"]) # Full info dict (timestamps, page state, etc.)
+print(obs.metadata["browsergym_info"])  # Full info dict (timestamps, page state, etc.)
 ```
 
 #### Advanced: Accessing Raw BrowserGym Data
@@ -440,13 +446,13 @@ The environment state tracks progress:
 ```python
 state = env.state()
 
-print(f"Benchmark: {state.benchmark}")     # 'miniwob', 'webarena', etc.
-print(f"Task: {state.task_name}")          # Task name/ID
-print(f"Episode: {state.episode_id}")      # Unique episode ID
-print(f"Steps: {state.step_count}")        # Number of steps taken
-print(f"Total Reward: {state.cum_reward}") # Cumulative reward
-print(f"Goal: {state.goal}")               # Task instruction
-print(f"URL: {state.current_url}")         # Current page URL
+print(f"Benchmark: {state.benchmark}")  # 'miniwob', 'webarena', etc.
+print(f"Task: {state.task_name}")  # Task name/ID
+print(f"Episode: {state.episode_id}")  # Unique episode ID
+print(f"Steps: {state.step_count}")  # Number of steps taken
+print(f"Total Reward: {state.cum_reward}")  # Cumulative reward
+print(f"Goal: {state.goal}")  # Task instruction
+print(f"URL: {state.current_url}")  # Current page URL
 ```
 
 ## Configuration
@@ -520,7 +526,7 @@ train_env = BrowserGymEnv.from_docker_image(
     environment={
         "BROWSERGYM_BENCHMARK": "miniwob",
         "BROWSERGYM_TASK_NAME": "click-button",
-    }
+    },
 )
 
 # Train your agent (RL, imitation learning, etc.)
@@ -534,7 +540,7 @@ eval_env = BrowserGymEnv.from_docker_image(
         "BROWSERGYM_BENCHMARK": "webarena",
         "BROWSERGYM_TASK_NAME": "0",
         # ... WebArena URLs
-    }
+    },
 )
 
 # Test performance

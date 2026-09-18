@@ -96,7 +96,12 @@ def build_models_json(config: PiConfig) -> str:
                         "input": ["text"],
                         "contextWindow": config.context_window,
                         "maxTokens": config.max_tokens,
-                        "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+                        "cost": {
+                            "input": 0,
+                            "output": 0,
+                            "cacheRead": 0,
+                            "cacheWrite": 0,
+                        },
                     }
                 ],
             }
@@ -115,8 +120,8 @@ def build_install_cmd(config: PiConfig) -> str:
         "set -e && "
         f"mkdir -p {home}/.pi/agent {home}/logs/agent {home}/logs/verifier {home}/task {home}/workdir && "
         # Bootstrap Node 22 when the image ships none new enough (pi needs >=22.19).
-        'if ! command -v node >/dev/null 2>&1 || '
-        '! node -e "const v=process.versions.node.split(\'.\').map(Number); '
+        "if ! command -v node >/dev/null 2>&1 || "
+        "! node -e \"const v=process.versions.node.split('.').map(Number); "
         'process.exit(v[0]>22||(v[0]===22&&v[1]>=19)?0:1)"; then '
         "A=$(uname -m); case $A in x86_64) A=x64;; aarch64|arm64) A=arm64;; esac && "
         f"curl -fsSL https://nodejs.org/dist/v{_NODE_VERSION}/node-v{_NODE_VERSION}-linux-$A.tar.xz "

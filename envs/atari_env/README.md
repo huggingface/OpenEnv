@@ -64,6 +64,7 @@ The client is **async by default**:
 import asyncio
 from atari_env import AtariEnv, AtariAction
 
+
 async def main():
     # Start local server manually: python -m atari_env.server.app
     async with AtariEnv(base_url="http://localhost:8000") as env:
@@ -78,6 +79,7 @@ async def main():
             print(f"Reward: {result.reward}, Done: {result.done}")
             if result.done:
                 break
+
 
 asyncio.run(main())
 ```
@@ -136,6 +138,7 @@ import asyncio
 import numpy as np
 from atari_env import AtariEnv, AtariAction
 
+
 async def main():
     # Automatically starts container
     client = await AtariEnv.from_docker_image("atari-env:latest")
@@ -145,8 +148,11 @@ async def main():
         result = await client.step(AtariAction(action_id=2))  # UP
 
         # Reshape screen for visualization
-        screen = np.array(result.observation.screen).reshape(result.observation.screen_shape)
+        screen = np.array(result.observation.screen).reshape(
+            result.observation.screen_shape
+        )
         print(f"Screen shape: {screen.shape}")  # (210, 160, 3) for RGB
+
 
 asyncio.run(main())
 ```
@@ -247,10 +253,10 @@ docker run -p 8000:8000 \
 ```python
 @dataclass
 class AtariAction(Action):
-    action_id: int                  # Action index to execute
-    game_name: str = "pong"         # Game name
-    obs_type: str = "rgb"           # Observation type
-    full_action_space: bool = False # Full or minimal action space
+    action_id: int  # Action index to execute
+    game_name: str = "pong"  # Game name
+    obs_type: str = "rgb"  # Observation type
+    full_action_space: bool = False  # Full or minimal action space
 ```
 
 ### AtariObservation
@@ -258,14 +264,14 @@ class AtariAction(Action):
 ```python
 @dataclass
 class AtariObservation(Observation):
-    screen: List[int]               # Flattened screen pixels
-    screen_shape: List[int]         # Original screen shape
-    legal_actions: List[int]        # Legal action indices
-    lives: int                      # Lives remaining
-    episode_frame_number: int       # Frame # in episode
-    frame_number: int               # Total frame #
-    done: bool                      # Episode finished
-    reward: Optional[float]         # Reward from last action
+    screen: List[int]  # Flattened screen pixels
+    screen_shape: List[int]  # Original screen shape
+    legal_actions: List[int]  # Legal action indices
+    lives: int  # Lives remaining
+    episode_frame_number: int  # Frame # in episode
+    frame_number: int  # Total frame #
+    done: bool  # Episode finished
+    reward: Optional[float]  # Reward from last action
 ```
 
 ### AtariState
@@ -273,15 +279,15 @@ class AtariObservation(Observation):
 ```python
 @dataclass
 class AtariState(State):
-    episode_id: str                      # Unique episode ID
-    step_count: int                      # Number of steps
-    game_name: str                       # Game name
-    obs_type: str                        # Observation type
-    full_action_space: bool              # Action space type
-    mode: Optional[int]                  # Game mode
-    difficulty: Optional[int]            # Game difficulty
-    repeat_action_probability: float     # Sticky action prob
-    frameskip: int                       # Frameskip setting
+    episode_id: str  # Unique episode ID
+    step_count: int  # Number of steps
+    game_name: str  # Game name
+    obs_type: str  # Observation type
+    full_action_space: bool  # Action space type
+    mode: Optional[int]  # Game mode
+    difficulty: Optional[int]  # Game difficulty
+    repeat_action_probability: float  # Sticky action prob
+    frameskip: int  # Frameskip setting
 ```
 
 ## Example Script
@@ -293,6 +299,7 @@ class AtariState(State):
 import asyncio
 import numpy as np
 from atari_env import AtariEnv, AtariAction
+
 
 async def train():
     # Start environment
@@ -324,6 +331,7 @@ async def train():
                 # ...
 
             print(f"Episode {episode}: reward={episode_reward:.2f}, steps={steps}")
+
 
 asyncio.run(train())
 ```

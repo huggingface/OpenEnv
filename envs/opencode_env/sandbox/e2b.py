@@ -46,9 +46,7 @@ class E2BBgJob:
     def wait(self, timeout: float | None = None) -> int:
         self._thread.join(timeout)
         if self._thread.is_alive():
-            raise TimeoutError(
-                f"Background command did not exit within {timeout}s"
-            )
+            raise TimeoutError(f"Background command did not exit within {timeout}s")
         if self._error is not None:
             # E2B raises CommandExitException on non-zero; treat as exit code.
             code = getattr(self._error, "exit_code", None)

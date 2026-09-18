@@ -92,14 +92,16 @@ for step in range(100):
     state = result.observation.state
 
     # Your RL policy here (example: random actions)
-    num_stocks = config['stock_dim']
+    num_stocks = config["stock_dim"]
     actions = np.random.uniform(-1, 1, size=num_stocks).tolist()
 
     # Execute action
     result = client.step(FinRLAction(actions=actions))
 
-    print(f"Step {step}: Portfolio=${result.observation.portfolio_value:,.2f}, "
-          f"Reward={result.reward:.2f}")
+    print(
+        f"Step {step}: Portfolio=${result.observation.portfolio_value:,.2f}, "
+        f"Reward={result.reward:.2f}"
+    )
 
     if result.done:
         print("Episode finished!")
@@ -220,8 +222,8 @@ Get environment configuration.
 
 ```python
 config = client.get_config()
-print(config['stock_dim'])
-print(config['initial_amount'])
+print(config["stock_dim"])
+print(config["initial_amount"])
 ```
 
 ## Data Format
@@ -265,20 +267,17 @@ from stable_baselines3 import PPO
 from envs.finrl_env import FinRLEnv, FinRLAction
 import numpy as np
 
+
 # Create custom wrapper for SB3
 class SB3FinRLWrapper:
     def __init__(self, base_url):
         self.env = FinRLEnv(base_url=base_url)
         config = self.env.get_config()
         self.action_space = spaces.Box(
-            low=-1, high=1,
-            shape=(config['action_space'],),
-            dtype=np.float32
+            low=-1, high=1, shape=(config["action_space"],), dtype=np.float32
         )
         self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf,
-            shape=(config['state_space'],),
-            dtype=np.float32
+            low=-np.inf, high=np.inf, shape=(config["state_space"],), dtype=np.float32
         )
 
     def reset(self):
@@ -291,8 +290,9 @@ class SB3FinRLWrapper:
             np.array(result.observation.state, dtype=np.float32),
             result.reward or 0.0,
             result.done,
-            result.observation.metadata
+            result.observation.metadata,
         )
+
 
 # Train
 env = SB3FinRLWrapper("http://localhost:8000")
@@ -327,7 +327,8 @@ python -c "from envs.finrl_env import FinRLEnv"
 Verify your data file has all required columns:
 ```python
 import pandas as pd
-df = pd.read_csv('your_data.csv')
+
+df = pd.read_csv("your_data.csv")
 print(df.columns.tolist())
 ```
 
