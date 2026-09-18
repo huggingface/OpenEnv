@@ -113,6 +113,8 @@ if "gradio_builder" in _sig.parameters:
         create_app_kwargs["title_override"] = (
             "OpenEnv REPL — Recursive Language Model playground"
         )
+    if "state_cls" in _sig.parameters:
+        create_app_kwargs["state_cls"] = REPLState
     app = create_app(
         create_repl_environment,
         REPLAction,
@@ -130,7 +132,6 @@ else:
         REPLObservation,
         env_name="repl_env",
         max_concurrent_envs=MAX_CONCURRENT_ENVS,
-        state_cls=REPLState,
     )
 
 

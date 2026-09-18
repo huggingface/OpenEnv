@@ -71,13 +71,20 @@ def create_textarena_environment():
 _logger = logging.getLogger(__name__)
 _sig = inspect.signature(create_app)
 if "gradio_builder" in _sig.parameters:
+    # Each kwarg is guarded by inspect.signature so older openenv
+    # releases that predate the param still boot this env.
+    create_app_kwargs: dict = {
+        "env_name": "textarena_env",
+        "max_concurrent_envs": max_concurrent,
+        "gradio_builder": build_textarena_gradio_app,
+    }
+    if "state_cls" in _sig.parameters:
+        create_app_kwargs["state_cls"] = TextArenaState
     app = create_app(
         create_textarena_environment,
         TextArenaAction,
         TextArenaObservation,
-        env_name="textarena_env",
-        max_concurrent_envs=max_concurrent,
-        gradio_builder=build_textarena_gradio_app,
+        **create_app_kwargs,
     )
 else:
     _logger.warning(
@@ -90,7 +97,6 @@ else:
         TextArenaObservation,
         env_name="textarena_env",
         max_concurrent_envs=max_concurrent,
-        state_cls=TextArenaState,
     )
 
 
