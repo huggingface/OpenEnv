@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -13,6 +14,8 @@ from openenv.cli.commands.collect import _extract_legal_actions
 from typer.testing import CliRunner
 
 runner = CliRunner()
+
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 @pytest.fixture
@@ -373,8 +376,10 @@ def test_bad_llm_endpoint_is_usage_error_before_output_is_written(
         ],
     )
 
-    # Typer renders usage errors in a wrapped box; flatten it before matching.
-    output = " ".join(result.output.replace("\u2502", " ").split())
+    # Typer renders usage errors in a wrapped box, coloured when GITHUB_ACTIONS
+    # or FORCE_COLOR is set; strip the colour codes and flatten before matching.
+    plain = _ANSI_ESCAPE.sub("", result.output)
+    output = " ".join(plain.replace("\u2502", " ").split())
     assert result.exit_code == 2, result.output
     assert "--llm-endpoint" in output
     assert expected_message in output
