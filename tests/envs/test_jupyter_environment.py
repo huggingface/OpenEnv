@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
+from types import SimpleNamespace
+
 import pytest
 from jupyter_env.models import JupyterState
-from jupyter_env.server.e2b_sandbox import CellResult
+from jupyter_env.server.e2b_sandbox import CellResult, E2BSandbox
 from jupyter_env.server.jupyter_environment import JupyterEnvironment
 from openenv.core.env_server.mcp_types import CallToolAction, ListToolsAction
 
@@ -293,3 +297,38 @@ def test_reward_file_that_cannot_be_removed_is_ignored():
 
     assert state.last_reward == 0.5
     assert "could not be removed" in state.reward_override_ignored
+
+
+class _LocalKernel:
+    """Runs E2B cell code in-process; an exception becomes execution.error."""
+
+    def run_code(self, code: str):
+        stdout, stderr = io.StringIO(), io.StringIO()
+        error = None
+        try:
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                exec(code, {})
+        except BaseException as exc:  # SystemExit is reported, not raised, by E2B
+            error = SimpleNamespace(
+                name=type(exc).__name__, value=str(exc), traceback=""
+            )
+        return SimpleNamespace(
+            error=error,
+            logs=SimpleNamespace(
+                stdout=[stdout.getvalue()] if stdout.getvalue() else [],
+                stderr=[stderr.getvalue()] if stderr.getvalue() else [],
+            ),
+            results=[],
+            execution_count=1,
+        )
+
+
+@pytest.mark.parametrize(
+    ("command", "success"),
+    [("true", True), ("exit 3", False), ("test -e /nonexistent/reward.txt", False)],
+)
+def test_run_shell_reports_the_exit_code(command, success):
+    sandbox = E2BSandbox.__new__(E2BSandbox)
+    sandbox._sbx = _LocalKernel()
+
+    assert sandbox.run_shell(command).success is success
