@@ -60,6 +60,10 @@ from .opencode_runtime import (
 from .sandbox.base import BgJob, SandboxBackend, SandboxHandle
 from .task import OpenCodeTask
 
+# The upstream installer resolves "latest" via api.github.com and prints this
+# to stdout (with an empty stderr) when the lookup fails, e.g. on rate limit.
+_INSTALL_VERSION_FETCH_ERROR = "Failed to fetch version information"
+
 
 # Mode B proxy port. In-sandbox paths derive from config.sandbox_home (opencode_runtime).
 _PROXY_PORT = 7000
@@ -377,12 +381,15 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
         attempts: int = 3,
         backoff_s: float = 3.0,
         label: str = "cmd",
+        fatal_markers: tuple[str, ...] = (),
     ):
         """Run ``sandbox.exec`` with exponential backoff on transient failure.
 
         Transient = ``exit_code != 0`` AND empty stderr (SIGKILL / network
-        blip signature) OR an exception during exec. Final failure is raised
-        as ``RuntimeError`` carrying the last exit code + stderr.
+        blip signature) OR an exception during exec. A failure whose stdout
+        contains one of ``fatal_markers`` is deterministic and not retried,
+        even if stderr is empty. Final failure is raised as ``RuntimeError``
+        carrying the last exit code + stderr.
         """
         import time
 
@@ -398,6 +405,8 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
                 last_stderr = r.stderr or ""
                 last_exit = r.exit_code
                 if last_stderr.strip():
+                    break
+                if any(marker in last_stdout for marker in fatal_markers):
                     break
             except Exception as exc:  # noqa: BLE001
                 last_stderr = f"{type(exc).__name__}: {exc}"
@@ -437,14 +446,24 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
         # Stage 2: install opencode (skipped if a prebaked template already
         # has it). curl|bash is flaky — retry with backoff.
         if not self._opencode_already_installed(sandbox):
-            self._exec_with_retry(
-                sandbox,
-                build_install_cmd(self._config),
-                timeout=self._install_timeout_s,
-                attempts=3,
-                backoff_s=3.0,
-                label="opencode install",
-            )
+            try:
+                self._exec_with_retry(
+                    sandbox,
+                    build_install_cmd(self._config),
+                    timeout=self._install_timeout_s,
+                    attempts=3,
+                    backoff_s=3.0,
+                    label="opencode install",
+                    fatal_markers=(_INSTALL_VERSION_FETCH_ERROR,),
+                )
+            except RuntimeError as exc:
+                if _INSTALL_VERSION_FETCH_ERROR in str(exc):
+                    raise RuntimeError(
+                        "opencode install could not resolve 'latest' from the "
+                        "GitHub API (rate limited?). Pin opencode_version to a "
+                        "release tag to install without touching the API."
+                    ) from exc
+                raise
 
         sandbox.write_text(
             opencode_config_path(self._config),
