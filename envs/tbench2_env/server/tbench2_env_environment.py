@@ -153,6 +153,11 @@ def _workdir_is_server_tree(workdir: str) -> bool:
         return True  # unresolvable path: fail toward the task-dir fallback
 
 
+# Verifier budget when task.toml declares no [verifier].timeout_sec. Shared by
+# reset() (which reports it) and evaluation (which enforces it).
+_DEFAULT_VERIFIER_TIMEOUT_S = 900.0
+
+
 def _read_timeout(task_dir: Path, fallback: float) -> float:
     task_toml = task_dir / "task.toml"
     if not task_toml.exists():
@@ -374,7 +379,12 @@ class Tbench2Environment(Environment[Tbench2Action, Tbench2Observation, Tbench2S
             task_path=str(task_dir),
             session_id=None,
             action_type="reset",
-            info={},
+            info={
+                "verifier_timeout_sec": _read_timeout(
+                    task_dir, fallback=_DEFAULT_VERIFIER_TIMEOUT_S
+                ),
+                "command_timeout_s": self.command_timeout_s,
+            },
             reward=0.0,
             done=False,
         )
@@ -585,7 +595,9 @@ class Tbench2Environment(Environment[Tbench2Action, Tbench2Observation, Tbench2S
 
         # The task's own verifier budget (task.toml [verifier].timeout_sec) —
         # heavy tests legitimately run minutes (circuit-fibsqrt declares 3600s).
-        verifier_timeout_s = _read_timeout(self._task_dir, fallback=900.0)
+        verifier_timeout_s = _read_timeout(
+            self._task_dir, fallback=_DEFAULT_VERIFIER_TIMEOUT_S
+        )
 
         with self._CANONICAL_EVAL_LOCK:
             try:
@@ -799,7 +811,12 @@ class Tbench2DockerEnvironment(
             task_path=str(task_dir),
             session_id=None,
             action_type="reset",
-            info={"docker_image": self._task_image},
+            info={
+                "docker_image": self._task_image,
+                "verifier_timeout_sec": _read_timeout(
+                    task_dir, fallback=_DEFAULT_VERIFIER_TIMEOUT_S
+                ),
+            },
             reward=0.0,
             done=False,
         )
@@ -1029,7 +1046,9 @@ class Tbench2DockerEnvironment(
 
         # The task's own verifier budget (task.toml [verifier].timeout_sec) —
         # heavy tests legitimately run minutes (circuit-fibsqrt declares 3600s).
-        verifier_timeout_s = _read_timeout(self._task_dir, fallback=900.0)
+        verifier_timeout_s = _read_timeout(
+            self._task_dir, fallback=_DEFAULT_VERIFIER_TIMEOUT_S
+        )
         workdir = self._workdir or "/task"
 
         wipe_ec, wipe_out = self._exec_in_container(

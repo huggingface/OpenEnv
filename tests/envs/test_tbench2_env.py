@@ -62,6 +62,49 @@ def test_tbench2_reset_uses_default_task_id(monkeypatch, tmp_path: Path):
     assert "terminal task" in observation.instruction
 
 
+def test_tbench2_reset_reports_execution_budgets(monkeypatch, tmp_path: Path):
+    """reset() surfaces the budgets that bound a single env op, so clients can
+    derive per-message deadlines from the server instead of guessing."""
+    task_dir = tmp_path / "budget-task"
+    task_dir.mkdir()
+    (task_dir / "instruction.md").write_text("do it\n")
+    (task_dir / "task.toml").write_text("[verifier]\ntimeout_sec = 3600\n")
+
+    monkeypatch.setattr(
+        tbench2_env_environment,
+        "_require_terminal_toolkit",
+        lambda: _FakeTerminalToolkit,
+    )
+    env = Tbench2Environment(
+        tasks_dir=str(tmp_path),
+        output_dir=str(tmp_path / "runs"),
+        command_timeout_s=42.0,
+        default_task_id="budget-task",
+    )
+
+    observation = env.reset()
+
+    assert observation.info["verifier_timeout_sec"] == 3600.0
+    assert observation.info["command_timeout_s"] == 42.0
+
+
+def test_tbench2_reset_budget_falls_back_without_task_toml(monkeypatch, tmp_path: Path):
+    """A task with no [verifier] budget reports the same fallback that
+    evaluate enforces, not a missing key."""
+    task_dir = tmp_path / "plain-task"
+    task_dir.mkdir()
+    (task_dir / "instruction.md").write_text("do it\n")
+
+    env = _make_env(monkeypatch, tmp_path, "plain-task")
+
+    observation = env.reset()
+
+    assert (
+        observation.info["verifier_timeout_sec"]
+        == tbench2_env_environment._DEFAULT_VERIFIER_TIMEOUT_S
+    )
+
+
 def _make_env(monkeypatch, tmp_path: Path, task_id: str) -> Tbench2Environment:
     monkeypatch.setattr(
         tbench2_env_environment,
@@ -621,6 +664,46 @@ def test_docker_failed_reset_closes_previous_container(tmp_path: Path):
     assert env._task_dir is None
     assert env._instruction == ""
     assert env._workdir == ""
+
+
+def _docker_reset_info(monkeypatch, tmp_path: Path, task_toml: str) -> dict:
+    task = tmp_path / "docker-task"
+    task.mkdir()
+    (task / "task.toml").write_text(task_toml)
+    (task / "instruction.md").write_text("do it\n")
+    monkeypatch.setattr(
+        Tbench2DockerEnvironment, "_start_container", lambda self, *args: None
+    )
+    env = Tbench2DockerEnvironment(
+        tasks_dir=str(tmp_path), output_dir=str(tmp_path / "runs")
+    )
+    return env.reset(task_id="docker-task").info
+
+
+def test_docker_reset_reports_verifier_budget(monkeypatch, tmp_path: Path):
+    """Docker mode enforces the task's verifier budget in-shell, so reset()
+    reports it alongside the image. It must not advertise command_timeout_s:
+    exec_run has no server-side timeout, so that value is never enforced."""
+    info = _docker_reset_info(
+        monkeypatch,
+        tmp_path,
+        '[environment]\ndocker_image = "tb2/demo:1"\n\n[verifier]\ntimeout_sec = 1800\n',
+    )
+
+    assert info == {"docker_image": "tb2/demo:1", "verifier_timeout_sec": 1800.0}
+
+
+def test_docker_reset_budget_falls_back_without_verifier_section(
+    monkeypatch, tmp_path: Path
+):
+    info = _docker_reset_info(
+        monkeypatch, tmp_path, '[environment]\ndocker_image = "tb2/demo:1"\n'
+    )
+
+    assert (
+        info["verifier_timeout_sec"]
+        == tbench2_env_environment._DEFAULT_VERIFIER_TIMEOUT_S
+    )
 
 
 class _FakeImage:
