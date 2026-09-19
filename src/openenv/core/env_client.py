@@ -359,6 +359,8 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         self._websocket_ping_interval_s = websocket_ping_interval_s
         self._websocket_ping_timeout_s = websocket_ping_timeout_s
         self._provider = provider
+        self._provider_stopped = False
+        self._provider_cleanup_pending = False
         self._start_provider_on_connect = base_url is None
         self._child_clients: list[EnvClient[Any, Any, Any]] = []
         self._ws: Optional[ClientConnection] = None
@@ -391,6 +393,10 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         self._ws_url = f"{ws_url}/ws"
 
     def _start_provider_if_needed(self) -> None:
+        # A missing URL does not mean the previous resource was released.
+        # Retry its cleanup before start can overwrite the provider's handle.
+        if self._provider_cleanup_pending:
+            self._stop_provider()
         if self._ws_url is not None:
             return
         if self._provider is None:
@@ -405,9 +411,11 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
                     f"{required}. Start the provider manually and pass base_url, "
                     "or configure a provider with a constructor-owned image/source."
                 )
+            self._provider_stopped = False
             base_url = self._provider.start_container()
             self._provider.wait_for_ready(base_url)
         elif hasattr(self._provider, "start"):
+            self._provider_stopped = False
             base_url = self._provider.start()
             self._provider.wait_for_ready()
         else:
@@ -415,31 +423,38 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         self._set_base_url(base_url)
 
     def _create_session_client(self) -> "EnvClient[Any, Any, Any]":
-        self._start_provider_if_needed()
-        if self._base_url is None:
-            raise RuntimeError("EnvClient has no base URL.")
+        # Match _start_provider_if_needed's startup condition. A provider with
+        # an existing URL may already be serving the parent or other children.
+        starts_provider_here = self._provider is not None and self._ws_url is None
+        try:
+            self._start_provider_if_needed()
+            if self._base_url is None:
+                raise RuntimeError("EnvClient has no base URL.")
 
-        signature = inspect.signature(type(self))
-        accepts_kwargs = any(
-            parameter.kind == inspect.Parameter.VAR_KEYWORD
-            for parameter in signature.parameters.values()
-        )
-        candidate_kwargs = {
-            "base_url": self._base_url,
-            "connect_timeout_s": self._connect_timeout,
-            "message_timeout_s": self._message_timeout,
-            "max_message_size_mb": self._max_message_size / (1024 * 1024),
-            "websocket_ping_interval_s": self._websocket_ping_interval_s,
-            "websocket_ping_timeout_s": self._websocket_ping_timeout_s,
-            "mode": self._mode,
-        }
-        constructor_kwargs = {}
-        for name, value in candidate_kwargs.items():
-            if accepts_kwargs or name in signature.parameters:
-                constructor_kwargs[name] = value
+            signature = inspect.signature(type(self))
+            accepts_kwargs = any(
+                parameter.kind == inspect.Parameter.VAR_KEYWORD
+                for parameter in signature.parameters.values()
+            )
+            candidate_kwargs = {
+                "base_url": self._base_url,
+                "connect_timeout_s": self._connect_timeout,
+                "message_timeout_s": self._message_timeout,
+                "max_message_size_mb": self._max_message_size / (1024 * 1024),
+                "websocket_ping_interval_s": self._websocket_ping_interval_s,
+                "websocket_ping_timeout_s": self._websocket_ping_timeout_s,
+                "mode": self._mode,
+            }
+            constructor_kwargs = {}
+            for name, value in candidate_kwargs.items():
+                if accepts_kwargs or name in signature.parameters:
+                    constructor_kwargs[name] = value
 
-        client = type(self)(**constructor_kwargs)
-        return client
+            return type(self)(**constructor_kwargs)
+        except Exception:
+            if starts_provider_here and not self._provider_cleanup_pending:
+                self._stop_provider_best_effort()
+            raise
 
     async def new_session(self) -> "EnvClient[Any, Any, Any]":
         """
@@ -557,7 +572,11 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         try:
             self._start_provider_if_needed()
         except Exception:
-            await self.close()
+            # A failed cleanup retry must propagate without attempting stop
+            # again. For a new startup failure, preserve its original error.
+            if not self._provider_cleanup_pending:
+                with suppress(Exception):
+                    await self.close()
             raise
 
         assert self._ws_url is not None
@@ -1059,20 +1078,34 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
                     if deferred_cancellation is None:
                         deferred_cancellation = exc
         finally:
-            try:
-                if self._provider is not None:
-                    # Handle both ContainerProvider and RuntimeProvider
-                    if hasattr(self._provider, "stop_container"):
-                        self._provider.stop_container()
-                    elif hasattr(self._provider, "stop"):
-                        self._provider.stop()
-            finally:
-                if self._start_provider_on_connect:
-                    self._base_url = None
-                    self._ws_url = None
+            self._stop_provider()
 
         if deferred_cancellation is not None:
             raise deferred_cancellation
+
+    def _stop_provider(self) -> None:
+        """Stop the provider once, retaining it for retries and later startup."""
+        try:
+            provider = self._provider
+            if provider is None or self._provider_stopped:
+                return
+
+            if hasattr(provider, "stop_container"):
+                stop = provider.stop_container
+            elif hasattr(provider, "stop"):
+                stop = provider.stop
+            else:
+                return
+
+            self._provider_cleanup_pending = True
+            stop()
+            # Only a successful stop discharges our cleanup responsibility.
+            self._provider_cleanup_pending = False
+            self._provider_stopped = True
+        finally:
+            if self._start_provider_on_connect:
+                self._base_url = None
+                self._ws_url = None
 
     def _stop_provider_best_effort(self) -> None:
         """Stop the underlying provider directly, ignoring any errors.
@@ -1082,14 +1115,8 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         after the provider started but before the connection is established, so
         routing cleanup through the (possibly broken) sync loop is not an option.
         """
-        provider = self._provider
-        if provider is None:
-            return
         with suppress(Exception):
-            if hasattr(provider, "stop_container"):
-                provider.stop_container()
-            elif hasattr(provider, "stop"):
-                provider.stop()
+            self._stop_provider()
 
     async def __aenter__(self) -> "EnvClient":
         """Enter async context manager, ensuring connection is established."""
