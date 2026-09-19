@@ -105,6 +105,35 @@ openenv skills add --dest /path/to/my-agent/skills/
 
 [[autodoc]] openenv.cli.commands.skills.skills_preview
 
+## `openenv collect`
+
+Collect rollouts from a running environment with a teacher model and write
+them as an SFT-ready `results.jsonl`. The teacher can be a hosted provider
+(`--provider openai|anthropic`) or any self-hosted OpenAI-compatible server
+such as vLLM, TGI or Ollama via `--llm-endpoint`.
+
+```bash
+# Scripted teacher, no API key needed
+openenv collect openspiel:tic_tac_toe --base-url http://localhost:8001 \
+    --output-dir ./rollouts -n 10 --provider scripted
+
+# Self-hosted model (vLLM serving on port 8000)
+openenv collect reasoning_gym:chain_sum --base-url http://localhost:8001 \
+    --output-dir ./rollouts -n 50 \
+    --llm-endpoint http://localhost:8000 --model Qwen/Qwen3-1.7B
+```
+
+`--llm-endpoint` takes a full base URL. `/v1` is appended when the URL has no
+path, so `http://localhost:8000` and `http://localhost:8000/v1` are equivalent;
+a URL with a path (for example a gateway prefix) is used as-is. `--llm-port` is
+only needed when the URL does not include a port; it has no default, so
+`--llm-endpoint http://localhost` means port 80 (earlier releases assumed 8000).
+The resolved endpoint is printed when the run starts. Only `http(s)` URLs are
+accepted, and credentials, query strings and fragments in the URL are rejected:
+pass the key through `OPENAI_API_KEY` instead.
+
+[[autodoc]] openenv.cli.commands.collect.collect
+
 # API Reference
 
 ## Entry point
