@@ -118,10 +118,16 @@ def validate(
             help="Skip the image build; build-dependent checks are SKIPped with a reason",
         ),
     ] = False,
+    local: Annotated[
+        bool,
+        typer.Option("--local", help="Use Docker-local runtime validation explicitly"),
+    ] = False,
     policy_version: Annotated[
-        str,
-        typer.Option("--policy", help="Severity policy version to apply"),
-    ] = "v1",
+        str | None,
+        typer.Option(
+            "--policy", help="Severity policy version (static: v1; runtime: v2)"
+        ),
+    ] = None,
     json_output: Annotated[
         bool,
         typer.Option("--json", help="Print the validation report as JSON"),
@@ -188,6 +194,9 @@ def validate(
         runtime_target = target
 
     if runtime_target is not None:
+        if local:
+            typer.echo("Error: --local cannot be combined with a running URL", err=True)
+            raise typer.Exit(EXIT_FAIL)
         try:
             report = validate_running_environment(runtime_target, timeout_s=timeout)
         except ValueError as exc:
@@ -221,11 +230,16 @@ def validate(
         raise typer.Exit(EXIT_UNSUPPORTED)
 
     try:
+        if output is not None and not output.parent.is_dir():
+            raise OSError("report output directory does not exist")
         validation_report = run_validation(
             package_root,
             max_level=_LEVELS[level],
             skip_build=skip_build,
-            policy=load_policy(policy_version),
+            policy=load_policy(policy_version) if policy_version else None,
+            artifacts_dir=(
+                output.parent / (output.stem + ".artifacts") if output else None
+            ),
         )
         report_json = write_report(validation_report, output)
     except (SignatureError, UnsupportedPackageError) as exc:
