@@ -82,7 +82,7 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync --all-extras
-          uv pip install pytest pytest-asyncio numpy nltk smolagents python-chess moonfish
+          uv pip install pytest pytest-asyncio numpy nltk smolagents python-chess moonfish textarena==0.7.4
 
       - name: Run tests
         run: |
