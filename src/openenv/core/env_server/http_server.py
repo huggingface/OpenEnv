@@ -955,7 +955,12 @@ class HTTPEnvServer:
                         return JsonRpcResponse.success(
                             result={
                                 "tools": [
-                                    tool.model_dump() for tool in observation.tools
+                                    {
+                                        "name": tool.name,
+                                        "description": tool.description or "",
+                                        "inputSchema": tool.input_schema,
+                                    }
+                                    for tool in observation.tools
                                 ]
                             },
                             request_id=request_id,
@@ -969,7 +974,11 @@ class HTTPEnvServer:
                                 return JsonRpcResponse.success(
                                     result={
                                         "tools": [
-                                            tool.model_dump()
+                                            {
+                                                "name": tool.name,
+                                                "description": tool.description or "",
+                                                "inputSchema": tool.input_schema,
+                                            }
                                             for tool in observation.tools
                                         ]
                                     },

@@ -128,6 +128,18 @@ class TestProductionModeAwareMCP:
         assert "search_live" in tool_names
         assert "search_mock" not in tool_names
 
+        # Verify MCP standard wire format: inputSchema must be present and input_schema absent
+        for tool in tools:
+            assert "name" in tool
+            assert "description" in tool
+            assert "inputSchema" in tool, (
+                f"Tool {tool['name']} missing standard inputSchema"
+            )
+            assert "input_schema" not in tool, (
+                f"Tool {tool['name']} must not expose internal input_schema"
+            )
+            assert isinstance(tool["inputSchema"], dict)
+
     def test_production_mode_calls_production_and_shared_tools(self, prod_server_app):
         """Production tools/call should successfully execute production and shared tools."""
         client = TestClient(prod_server_app)
@@ -236,6 +248,18 @@ class TestProductionModeAwareMCP:
             assert "search_live" in tool_names
             assert "search_mock" not in tool_names
 
+            # Verify MCP standard wire format over WebSocket
+            for tool in tools:
+                assert "name" in tool
+                assert "description" in tool
+                assert "inputSchema" in tool, (
+                    f"Tool {tool['name']} missing inputSchema over WS"
+                )
+                assert "input_schema" not in tool, (
+                    f"Tool {tool['name']} must not expose internal input_schema over WS"
+                )
+                assert isinstance(tool["inputSchema"], dict)
+
             # tools/call over WebSocket
             ws.send_text(
                 json.dumps(
@@ -313,3 +337,15 @@ class TestSimulationModeAwareMCP:
         assert "shared_tool" in tool_names
         assert "search_mock" in tool_names
         assert "search_live" not in tool_names
+
+        # Verify MCP standard wire format in simulation mode
+        for tool in tools:
+            assert "name" in tool
+            assert "description" in tool
+            assert "inputSchema" in tool, (
+                f"Tool {tool['name']} missing inputSchema in sim mode"
+            )
+            assert "input_schema" not in tool, (
+                f"Tool {tool['name']} must not expose internal input_schema in sim mode"
+            )
+            assert isinstance(tool["inputSchema"], dict)
