@@ -545,10 +545,27 @@ class MCPEnvironment(Environment):
                     ),
                 )
             try:
+                sig = inspect.signature(func)
+                sig.bind(**action.arguments)
+            except TypeError as e:
+                return CallToolObservation(
+                    tool_name=tool_name,
+                    result=None,
+                    error=ToolError(
+                        error_type=ToolErrorType.INVALID_ARGS,
+                        message=str(e),
+                    ),
+                )
+
+            try:
                 if inspect.iscoroutinefunction(func):
-                    result = await func(**action.arguments)
+                    result = await asyncio.wait_for(
+                        func(**action.arguments), timeout=timeout
+                    )
                 else:
-                    result = func(**action.arguments)
+                    result = await asyncio.wait_for(
+                        asyncio.to_thread(func, **action.arguments), timeout=timeout
+                    )
                 return CallToolObservation(
                     tool_name=tool_name,
                     result=CallToolResult(
@@ -557,6 +574,15 @@ class MCPEnvironment(Environment):
                         meta=None,
                         data=result,
                         is_error=False,
+                    ),
+                )
+            except asyncio.TimeoutError:
+                return CallToolObservation(
+                    tool_name=tool_name,
+                    result=None,
+                    error=ToolError(
+                        error_type=ToolErrorType.TIMEOUT,
+                        message=f"Tool '{tool_name}' timed out after {timeout} seconds",
                     ),
                 )
             except Exception as e:

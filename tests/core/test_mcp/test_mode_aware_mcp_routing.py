@@ -13,6 +13,7 @@ Verifies that:
 """
 
 import json
+import time
 
 import httpx
 import pytest
@@ -20,8 +21,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastmcp import FastMCP
 from openenv.core.env_server.http_server import HTTPEnvServer
+from openenv.core.env_server.interfaces import Environment
 from openenv.core.env_server.mcp_environment import MCPEnvironment
-from openenv.core.env_server.mcp_types import CallToolAction, CallToolObservation
+from openenv.core.env_server.mcp_types import (
+    CallToolAction,
+    CallToolObservation,
+    ToolErrorType,
+)
 from openenv.core.env_server.types import Action, Observation, State
 from openenv.core.mcp_client import MCPToolClient
 
@@ -44,6 +50,12 @@ class ModeAwareTestEnvironment(MCPEnvironment):
         def search_live(query: str) -> str:
             """Production-only tool searching live API."""
             return f"LIVE: {query}"
+
+        @self.tool(mode="production")
+        def slow_tool(delay: float = 0.15) -> str:
+            """Slow synchronous production tool."""
+            time.sleep(delay)
+            return "done"
 
         @self.tool(mode="simulation")
         def search_mock(query: str) -> str:
@@ -212,6 +224,45 @@ class TestProductionModeAwareMCP:
         assert "error" in res_sim
         assert "not available in production mode" in res_sim["error"]["message"]
 
+    def test_production_mode_tool_missing_arguments_returns_invalid_params(
+        self, prod_server_app
+    ):
+        """Calling a mode-aware tool with missing required arguments returns -32602 (INVALID_PARAMS)."""
+        client = TestClient(prod_server_app)
+        create_resp = client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "method": "openenv/session/create", "id": 1},
+        )
+        session_id = create_resp.json()["result"]["session_id"]
+
+        call_resp = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "tools/call",
+                "params": {
+                    "name": "search_live",
+                    "arguments": {},
+                    "session_id": session_id,
+                },
+                "id": 2,
+            },
+        )
+        assert call_resp.status_code == 200
+        assert call_resp.json()["error"]["code"] == -32602
+
+    def test_mode_aware_tool_timeout_respects_timeout_s(self):
+        """Calling a mode-aware tool with timeout_s enforces the timeout."""
+        env = ModeAwareTestEnvironment()
+        env.set_mode("production")
+
+        obs = env.step(
+            CallToolAction(tool_name="slow_tool", arguments={"delay": 0.15}),
+            timeout_s=0.01,
+        )
+        assert obs.error is not None
+        assert obs.error.error_type == ToolErrorType.TIMEOUT
+
     def test_websocket_mcp_message_mode_aware_parity(self, prod_server_app):
         """WebSocket /ws with type='mcp' should handle mode-aware tools identically to HTTP /mcp."""
         client = TestClient(prod_server_app)
@@ -349,3 +400,44 @@ class TestSimulationModeAwareMCP:
                 f"Tool {tool['name']} must not expose internal input_schema in sim mode"
             )
             assert isinstance(tool["inputSchema"], dict)
+
+
+class TestServerModeNonMCPEnvironment:
+    """Tests verifying server mode does not mutate unrelated private attributes on non-MCP environments."""
+
+    def test_non_mcp_environment_private_mode_attribute_is_not_overwritten(self):
+        """HTTPEnvServer configured with a mode must not overwrite private _mode on non-MCP envs."""
+
+        class NonMCPDomainEnvironment(Environment):
+            SUPPORTS_CONCURRENT_SESSIONS = True
+
+            def __init__(self):
+                self._mode = "custom_domain_mode"
+                self._state = State(episode_id="ep1", step_count=0)
+
+            def reset(self, **kwargs) -> Observation:
+                return Observation(done=False, reward=None)
+
+            def step(self, action: Action, **kwargs) -> Observation:
+                return Observation(done=False, reward=None)
+
+            @property
+            def state(self) -> State:
+                return self._state
+
+        app = FastAPI()
+        server = HTTPEnvServer(
+            env=NonMCPDomainEnvironment,
+            action_cls=Action,
+            observation_cls=Observation,
+        )
+        server.register_routes(app, mode="production")
+        client = TestClient(app)
+
+        resp = client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "method": "openenv/session/create", "id": 1},
+        )
+        assert resp.status_code == 200
+        session_id = resp.json()["result"]["session_id"]
+        assert server._sessions[session_id]._mode == "custom_domain_mode"

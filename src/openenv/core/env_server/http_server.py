@@ -402,8 +402,6 @@ class HTTPEnvServer:
             env = await loop.run_in_executor(executor, self._env_factory)
             if hasattr(env, "set_mode"):
                 env.set_mode(self._server_mode.value)
-            elif hasattr(env, "_mode"):
-                setattr(env, "_mode", self._server_mode.value)
         except Exception as e:
             async with self._session_lock:
                 if executor is not self._shared_session_executor:
@@ -915,8 +913,6 @@ class HTTPEnvServer:
                 _env = self._env_factory()
                 if hasattr(_env, "set_mode"):
                     _env.set_mode(self._server_mode.value)
-                elif hasattr(_env, "_mode"):
-                    setattr(_env, "_mode", self._server_mode.value)
                 should_close = True
             try:
                 mcp_client = getattr(_env, "mcp_client", None)
