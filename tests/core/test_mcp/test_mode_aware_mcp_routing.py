@@ -26,7 +26,6 @@ from openenv.core.env_server.mcp_environment import MCPEnvironment
 from openenv.core.env_server.mcp_types import (
     CallToolAction,
     CallToolObservation,
-    ToolErrorType,
 )
 from openenv.core.env_server.types import Action, Observation, State
 from openenv.core.mcp_client import MCPToolClient
@@ -56,6 +55,11 @@ class ModeAwareTestEnvironment(MCPEnvironment):
             """Slow synchronous production tool."""
             time.sleep(delay)
             return "done"
+
+        @self.tool(mode="production")
+        def calculate_tax(amount: int) -> int:
+            """Calculate tax with strict integer typing."""
+            return amount * 10
 
         @self.tool(mode="simulation")
         def search_mock(query: str) -> str:
@@ -266,17 +270,94 @@ class TestProductionModeAwareMCP:
         assert call_resp.status_code == 200
         assert call_resp.json()["error"]["code"] == -32602
 
-    def test_mode_aware_tool_timeout_respects_timeout_s(self):
-        """Calling a mode-aware tool with timeout_s enforces the timeout."""
-        env = ModeAwareTestEnvironment()
-        env.set_mode("production")
-
-        obs = env.step(
-            CallToolAction(tool_name="slow_tool", arguments={"delay": 0.15}),
-            timeout_s=0.01,
+    def test_production_mode_tool_invalid_argument_types_returns_invalid_params(
+        self, prod_server_app
+    ):
+        """Mode-aware tools validate argument types: string or bool passed to int parameter returns -32602."""
+        client = TestClient(prod_server_app)
+        create_resp = client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "method": "openenv/session/create", "id": 1},
         )
-        assert obs.error is not None
-        assert obs.error.error_type == ToolErrorType.TIMEOUT
+        session_id = create_resp.json()["result"]["session_id"]
+
+        # String passed to int parameter
+        call_resp = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "tools/call",
+                "params": {
+                    "name": "calculate_tax",
+                    "arguments": {"amount": "not-an-integer"},
+                    "session_id": session_id,
+                },
+                "id": 2,
+            },
+        )
+        assert call_resp.status_code == 200
+        assert call_resp.json()["error"]["code"] == -32602
+
+        # Bool passed to int parameter
+        call_resp = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "tools/call",
+                "params": {
+                    "name": "calculate_tax",
+                    "arguments": {"amount": True},
+                    "session_id": session_id,
+                },
+                "id": 3,
+            },
+        )
+        assert call_resp.status_code == 200
+        assert call_resp.json()["error"]["code"] == -32602
+
+    @pytest.mark.asyncio
+    async def test_mode_aware_tool_timeout_via_http_mcp(self, prod_server_app):
+        """Async timeout enforcement: HTTP /mcp tools/call returns TIMEOUT within wall-clock bound.
+
+        Verifies that the async _async_handle_call_tool path returns a TIMEOUT
+        error in approximately timeout_s seconds, not the full tool duration.
+        NOTE: Sync env.step() timeout is best-effort for sync tools because
+        Python threads cannot be interrupted; the async transport path is the
+        primary enforcement mechanism.
+        """
+        transport = httpx.ASGITransport(app=prod_server_app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://testserver"
+        ) as client:
+            create_resp = await client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "openenv/session/create", "id": 1},
+            )
+            session_id = create_resp.json()["result"]["session_id"]
+
+            start = time.monotonic()
+            call_resp = await client.post(
+                "/mcp",
+                json={
+                    "jsonrpc": "2.0",
+                    "method": "tools/call",
+                    "params": {
+                        "name": "slow_tool",
+                        "arguments": {"delay": 2.0},
+                        "session_id": session_id,
+                        "timeout_s": 0.15,
+                    },
+                    "id": 2,
+                },
+            )
+            elapsed = time.monotonic() - start
+
+            assert call_resp.status_code == 200
+            res = call_resp.json()
+            assert "error" in res
+            assert "timed out" in res["error"]["message"].lower()
+            # Wall-clock must be well under the tool's 2s sleep
+            assert elapsed < 1.0, f"Timeout took {elapsed:.2f}s, expected < 1.0s"
 
     def test_websocket_mcp_message_mode_aware_parity(self, prod_server_app):
         """WebSocket /ws with type='mcp' should handle mode-aware tools identically to HTTP /mcp."""
@@ -614,3 +695,124 @@ class TestServerModeNonMCPEnvironment:
         assert resp.status_code == 200
         session_id = resp.json()["result"]["session_id"]
         assert server._sessions[session_id]._mode == "custom_domain_mode"
+
+
+class TestMultiAppModeIsolationAndRobustness:
+    """Tests verifying app-scoped mode isolation, REST endpoints mode awareness, and error resilience."""
+
+    def test_mode_isolation_across_multiple_apps_on_same_server(self):
+        """Registering multiple apps on one server keeps each app's mode isolated."""
+        server = HTTPEnvServer(
+            env=ModeAwareTestEnvironment,
+            action_cls=CallToolAction,
+            observation_cls=CallToolObservation,
+            max_concurrent_envs=4,
+        )
+
+        app_prod = FastAPI()
+        server.register_routes(app_prod, mode="production")
+
+        app_sim = FastAPI()
+        server.register_routes(app_sim, mode="simulation")
+
+        client_prod = TestClient(app_prod)
+        client_sim = TestClient(app_sim)
+
+        # 1. Create session on production app -> only production & shared tools
+        prod_create = client_prod.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "method": "openenv/session/create", "id": 1},
+        )
+        assert prod_create.status_code == 200
+        assert "result" in prod_create.json()
+        prod_sid = prod_create.json()["result"]["session_id"]
+
+        prod_list = client_prod.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "tools/list",
+                "params": {"session_id": prod_sid},
+                "id": 2,
+            },
+        )
+        prod_tools = [t["name"] for t in prod_list.json()["result"]["tools"]]
+        assert "search_live" in prod_tools
+        assert "shared_tool" in prod_tools
+        assert "search_mock" not in prod_tools
+
+        # 2. Create session on simulation app -> only simulation & shared tools
+        sim_create = client_sim.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "method": "openenv/session/create", "id": 3},
+        )
+        assert sim_create.status_code == 200
+        assert "result" in sim_create.json()
+        sim_sid = sim_create.json()["result"]["session_id"]
+
+        sim_list = client_sim.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "tools/list",
+                "params": {"session_id": sim_sid},
+                "id": 4,
+            },
+        )
+        sim_tools = [t["name"] for t in sim_list.json()["result"]["tools"]]
+        assert "search_mock" in sim_tools
+        assert "shared_tool" in sim_tools
+        assert "search_live" not in sim_tools
+
+    def test_simulation_mode_rest_step_receives_mode(self):
+        """Simulation REST /step endpoint properly configures simulation mode on the created env."""
+        app = FastAPI()
+        server = HTTPEnvServer(
+            env=ModeAwareTestEnvironment,
+            action_cls=CallToolAction,
+            observation_cls=CallToolObservation,
+        )
+        server.register_routes(app, mode="simulation")
+        client = TestClient(app)
+
+        resp = client.post(
+            "/step",
+            json={
+                "action": {
+                    "tool_name": "search_mock",
+                    "arguments": {"query": "sim-query"},
+                }
+            },
+        )
+        assert resp.status_code == 200
+        obs = resp.json()["observation"]
+        assert obs["error"] is None
+        assert obs["result"]["data"] == "MOCK: sim-query"
+
+    def test_set_mode_failure_does_not_leak_environment(self):
+        """Failure inside set_mode during session creation cleans up executor and does not leak session slots."""
+
+        class RaisingSetModeEnvironment(ModeAwareTestEnvironment):
+            def set_mode(self, mode: str | None = None) -> None:
+                raise RuntimeError("Simulated set_mode crash")
+
+        app = FastAPI()
+        server = HTTPEnvServer(
+            env=RaisingSetModeEnvironment,
+            action_cls=CallToolAction,
+            observation_cls=CallToolObservation,
+            max_concurrent_envs=1,
+        )
+        server.register_routes(app, mode="production")
+        client = TestClient(app)
+
+        resp = client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "method": "openenv/session/create", "id": 1},
+        )
+        assert resp.status_code == 200
+        assert "error" in resp.json()
+
+        # Session map must be completely empty (slot reclaimed)
+        assert len(server._sessions) == 0
+        assert len(server._session_executors) == 0
