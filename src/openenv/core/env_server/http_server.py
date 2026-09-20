@@ -56,6 +56,7 @@ from .mcp_types import (
     ListToolsAction,
     ListToolsObservation,
     McpMethod,
+    ToolErrorType,
     WSMCPMessage,
     WSMCPResponse,
 )
@@ -274,6 +275,7 @@ class HTTPEnvServer:
             self._concurrency_config.session_timeout
         )
         self._reaper_task: Optional[asyncio.Task[None]] = None
+        self._server_mode: ServerMode = ServerMode.SIMULATION
 
     def _default_env_name(self) -> str:
         factory = self._env_factory
@@ -398,6 +400,10 @@ class HTTPEnvServer:
             # Create environment in the executor thread (outside lock)
             loop = asyncio.get_event_loop()
             env = await loop.run_in_executor(executor, self._env_factory)
+            if hasattr(env, "set_mode"):
+                env.set_mode(self._server_mode.value)
+            elif hasattr(env, "_mode"):
+                setattr(env, "_mode", self._server_mode.value)
         except Exception as e:
             async with self._session_lock:
                 if executor is not self._shared_session_executor:
@@ -657,7 +663,6 @@ class HTTPEnvServer:
         Raises:
             `ValueError`: If `mode` is not a valid `ServerMode` or string equivalent.
         """
-        # Convert string to ServerMode enum for backwards compatibility
         if isinstance(mode, str):
             try:
                 mode = ServerMode(mode.lower())
@@ -666,6 +671,8 @@ class HTTPEnvServer:
                 raise ValueError(
                     f"Invalid mode: '{mode}'. Must be one of: {valid_modes}"
                 )
+
+        self._server_mode = mode
 
         # Wire up idle-session reaper lifecycle via app events
         server_ref = self
@@ -906,6 +913,10 @@ class HTTPEnvServer:
                 managed_session_id = requested_session_id
             else:
                 _env = self._env_factory()
+                if hasattr(_env, "set_mode"):
+                    _env.set_mode(self._server_mode.value)
+                elif hasattr(_env, "_mode"):
+                    setattr(_env, "_mode", self._server_mode.value)
                 should_close = True
             try:
                 mcp_client = getattr(_env, "mcp_client", None)
@@ -930,6 +941,26 @@ class HTTPEnvServer:
                 }
 
                 if method == McpMethod.TOOLS_LIST:
+                    if hasattr(_env, "_async_handle_list_tools"):
+                        observation = await _env._async_handle_list_tools()
+                        if (
+                            observation.metadata.get("error_type")
+                            == "list_tools_failed"
+                        ):
+                            return JsonRpcResponse.error_response(
+                                JsonRpcErrorCode.INTERNAL_ERROR,
+                                observation.metadata.get("error", "list_tools failed"),
+                                request_id=request_id,
+                            )
+                        return JsonRpcResponse.success(
+                            result={
+                                "tools": [
+                                    tool.model_dump() for tool in observation.tools
+                                ]
+                            },
+                            request_id=request_id,
+                        )
+
                     # Check if environment is MCP-enabled
                     if mcp_client is None and mcp_server is None:
                         if supports_mcp_style_actions:
@@ -1006,6 +1037,36 @@ class HTTPEnvServer:
                         return JsonRpcResponse.error_response(
                             JsonRpcErrorCode.INVALID_PARAMS,
                             "Missing 'name' in params",
+                            request_id=request_id,
+                        )
+
+                    if hasattr(_env, "_async_handle_call_tool"):
+                        observation = await _env._async_handle_call_tool(
+                            CallToolAction(
+                                tool_name=tool_name,
+                                arguments=arguments,
+                            )
+                        )
+                        if observation.error is not None:
+                            error_code = (
+                                JsonRpcErrorCode.INVALID_PARAMS
+                                if observation.error.error_type
+                                in (
+                                    ToolErrorType.TOOL_NOT_FOUND,
+                                    ToolErrorType.INVALID_ARGS,
+                                )
+                                else JsonRpcErrorCode.INTERNAL_ERROR
+                            )
+                            return JsonRpcResponse.error_response(
+                                error_code,
+                                observation.error.message,
+                                request_id=request_id,
+                            )
+                        serializable_result = _make_json_serializable(
+                            observation.result
+                        )
+                        return JsonRpcResponse.success(
+                            result=serializable_result,
                             request_id=request_id,
                         )
 
