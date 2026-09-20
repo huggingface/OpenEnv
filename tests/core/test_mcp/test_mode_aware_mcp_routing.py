@@ -62,6 +62,21 @@ class ModeAwareTestEnvironment(MCPEnvironment):
             """Simulation-only tool querying local database."""
             return f"MOCK: {query}"
 
+        @self.tool(mode="production")
+        def structured_prod_tool(tag: str) -> dict:
+            """Production tool returning structured data."""
+            return {"status": "ok", "tag": tag, "items": [1, 2]}
+
+        @mcp.tool
+        def override_me() -> str:
+            """Base FastMCP tool."""
+            return "FASTMCP_BASE"
+
+        @self.tool(mode="production")
+        def override_me() -> str:  # noqa: F811
+            """Overridden in production mode."""
+            return "PRODUCTION_OVERRIDE"
+
         self._state = State(episode_id="test-ep", step_count=0)
 
     def reset(self, **kwargs) -> Observation:
@@ -354,6 +369,164 @@ class TestProductionModeAwareMCP:
             assert result == "LIVE: hotels"
         finally:
             await client.close()
+
+    def test_direct_websocket_mcp_mode_aware_parity(self):
+        """Direct JSON-RPC over WebSocket endpoint /mcp establishes its session over WS and executes production tools."""
+        # Use dedicated server app with explicit capacity (max_concurrent_envs=2) to isolate from HTTP sessions
+        app = FastAPI()
+        server = HTTPEnvServer(
+            env=ModeAwareTestEnvironment,
+            action_cls=CallToolAction,
+            observation_cls=CallToolObservation,
+            max_concurrent_envs=2,
+        )
+        server.register_routes(app, mode="production")
+        client = TestClient(app)
+
+        with client.websocket_connect("/mcp") as ws:
+            # 1. tools/list over direct /mcp WebSocket
+            ws.send_text(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "tools/list",
+                        "id": 101,
+                    }
+                )
+            )
+            resp_list = json.loads(ws.receive_text())
+            assert resp_list.get("id") == 101
+            assert "result" in resp_list
+            tools = resp_list["result"]["tools"]
+            tool_names = [t["name"] for t in tools]
+            assert "shared_tool" in tool_names
+            assert "search_live" in tool_names
+            assert "search_mock" not in tool_names
+
+            # 2. tools/call over direct /mcp WebSocket
+            ws.send_text(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "tools/call",
+                        "params": {
+                            "name": "search_live",
+                            "arguments": {"query": "direct-ws"},
+                        },
+                        "id": 102,
+                    }
+                )
+            )
+            resp_call = json.loads(ws.receive_text())
+            assert resp_call.get("id") == 102
+            assert "result" in resp_call
+            assert resp_call["result"]["data"] == "LIVE: direct-ws"
+
+    def test_direct_websocket_mcp_capacity_freed(self, prod_server_app):
+        """Direct /mcp WebSocket connects cleanly when capacity is explicitly freed from prior HTTP session."""
+        client = TestClient(prod_server_app)
+
+        # 1. Create an HTTP session occupying the default single capacity slot
+        create_resp = client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "method": "openenv/session/create", "id": 1},
+        )
+        assert create_resp.status_code == 200
+        session_id = create_resp.json()["result"]["session_id"]
+
+        # 2. Explicitly close the HTTP session to free capacity
+        close_resp = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "openenv/session/close",
+                "params": {"session_id": session_id},
+                "id": 2,
+            },
+        )
+        assert close_resp.status_code == 200
+        assert close_resp.json()["result"]["closed"] is True
+
+        # 3. Direct WebSocket connects successfully and executes mode-aware tools
+        with client.websocket_connect("/mcp") as ws:
+            ws.send_text(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "tools/list",
+                        "id": 103,
+                    }
+                )
+            )
+            resp_list = json.loads(ws.receive_text())
+            assert resp_list.get("id") == 103
+            assert "result" in resp_list
+            tool_names = [t["name"] for t in resp_list["result"]["tools"]]
+            assert "search_live" in tool_names
+
+    def test_mode_aware_tool_shadows_fastmcp_shared_tool(self, prod_server_app):
+        """Mode-aware tool overrides an underlying FastMCP tool of the same name without duplication."""
+        client = TestClient(prod_server_app)
+        create_resp = client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "method": "openenv/session/create", "id": 1},
+        )
+        session_id = create_resp.json()["result"]["session_id"]
+
+        # tools/list should list override_me exactly once
+        resp_list = client.post(
+            f"/mcp?session_id={session_id}",
+            json={"jsonrpc": "2.0", "method": "tools/list", "id": 2},
+        )
+        tools = resp_list.json()["result"]["tools"]
+        matches = [t for t in tools if t["name"] == "override_me"]
+        assert len(matches) == 1
+
+        # tools/call should execute the production override, not the FastMCP base
+        resp_call = client.post(
+            f"/mcp?session_id={session_id}",
+            json={
+                "jsonrpc": "2.0",
+                "method": "tools/call",
+                "params": {"name": "override_me", "arguments": {}},
+                "id": 3,
+            },
+        )
+        res = resp_call.json()
+        assert res["result"]["data"] == "PRODUCTION_OVERRIDE"
+
+    def test_production_mode_tool_structured_return(self, prod_server_app):
+        """Mode-aware tool returning structured dict is properly serialized over JSON-RPC."""
+        client = TestClient(prod_server_app)
+        create_resp = client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "method": "openenv/session/create", "id": 1},
+        )
+        session_id = create_resp.json()["result"]["session_id"]
+
+        resp_call = client.post(
+            f"/mcp?session_id={session_id}",
+            json={
+                "jsonrpc": "2.0",
+                "method": "tools/call",
+                "params": {
+                    "name": "structured_prod_tool",
+                    "arguments": {"tag": "prod-v1"},
+                },
+                "id": 4,
+            },
+        )
+        res = resp_call.json()["result"]
+        assert res["structured_content"]["result"] == {
+            "status": "ok",
+            "tag": "prod-v1",
+            "items": [1, 2],
+        }
+        assert res["data"] == {
+            "status": "ok",
+            "tag": "prod-v1",
+            "items": [1, 2],
+        }
 
 
 class TestSimulationModeAwareMCP:
