@@ -1502,6 +1502,8 @@ The response includes:
         def get_state_handler() -> State:
             _env = self._env_factory()
             try:
+                if hasattr(_env, "set_mode"):
+                    _env.set_mode(app_mode.value)
                 return _env.state
             finally:
                 _env.close()
@@ -1509,6 +1511,8 @@ The response includes:
         def get_metadata_handler() -> EnvironmentMetadata:
             _env = self._env_factory()
             try:
+                if hasattr(_env, "set_mode"):
+                    _env.set_mode(app_mode.value)
                 return _env.get_metadata()
             finally:
                 _env.close()
@@ -1682,7 +1686,9 @@ all schema information needed to interact with the environment.
                         attached_session = True
                     self._update_session_activity(session_id)
                 else:
-                    session_id, session_env = await self._create_session()
+                    session_id, session_env = await self._create_session(
+                        mode=app_mode
+                    )
                     owns_session = True
 
                 if session_env is None:

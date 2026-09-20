@@ -816,3 +816,91 @@ class TestMultiAppModeIsolationAndRobustness:
         # Session map must be completely empty (slot reclaimed)
         assert len(server._sessions) == 0
         assert len(server._session_executors) == 0
+
+    def test_dual_app_websocket_session_mode_isolation(self):
+        """Registering multiple apps on the same server isolates WebSocket /ws session modes."""
+        server = HTTPEnvServer(
+            env=ModeAwareTestEnvironment,
+            action_cls=CallToolAction,
+            observation_cls=CallToolObservation,
+            max_concurrent_envs=4,
+        )
+        app_prod = FastAPI()
+        server.register_routes(app_prod, mode="production")
+        app_sim = FastAPI()
+        server.register_routes(app_sim, mode="simulation")
+
+        client_prod = TestClient(app_prod)
+        client_sim = TestClient(app_sim)
+
+        # 1. Connect to production /ws
+        with client_prod.websocket_connect("/ws") as ws_prod:
+            ws_prod.send_text(
+                json.dumps(
+                    {
+                        "type": "mcp",
+                        "data": {
+                            "jsonrpc": "2.0",
+                            "method": "tools/list",
+                            "id": 1,
+                        },
+                    }
+                )
+            )
+            raw = ws_prod.receive_text()
+            data = json.loads(raw)["data"]["result"]
+            prod_tools = [t["name"] for t in data["tools"]]
+            assert "search_live" in prod_tools
+            assert "shared_tool" in prod_tools
+            assert "search_mock" not in prod_tools
+
+        # 2. Connect to simulation /ws
+        with client_sim.websocket_connect("/ws") as ws_sim:
+            ws_sim.send_text(
+                json.dumps(
+                    {
+                        "type": "mcp",
+                        "data": {
+                            "jsonrpc": "2.0",
+                            "method": "tools/list",
+                            "id": 2,
+                        },
+                    }
+                )
+            )
+            raw = ws_sim.receive_text()
+            data = json.loads(raw)["data"]["result"]
+            sim_tools = [t["name"] for t in data["tools"]]
+            assert "search_mock" in sim_tools
+            assert "shared_tool" in sim_tools
+            assert "search_live" not in sim_tools
+
+    def test_state_and_metadata_propagate_mode(self):
+        """GET /state and GET /metadata propagate app_mode to env.set_mode."""
+        recorded_modes = []
+
+        class ModeRecordingEnv(ModeAwareTestEnvironment):
+            def set_mode(self, mode: str | None = None) -> None:
+                recorded_modes.append(mode)
+                super().set_mode(mode)
+
+        server = HTTPEnvServer(
+            env=ModeRecordingEnv,
+            action_cls=CallToolAction,
+            observation_cls=CallToolObservation,
+        )
+        app = FastAPI()
+        server.register_routes(app, mode="simulation")
+        client = TestClient(app)
+
+        # /metadata endpoint
+        resp_meta = client.get("/metadata")
+        assert resp_meta.status_code == 200
+        assert "simulation" in recorded_modes
+
+        # /state endpoint
+        recorded_modes.clear()
+        resp_state = client.get("/state")
+        assert resp_state.status_code == 200
+        assert "simulation" in recorded_modes
+
