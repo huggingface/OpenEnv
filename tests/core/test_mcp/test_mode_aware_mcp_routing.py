@@ -370,9 +370,18 @@ class TestProductionModeAwareMCP:
         finally:
             await client.close()
 
-    def test_direct_websocket_mcp_mode_aware_parity(self, prod_server_app):
-        """Direct JSON-RPC over WebSocket endpoint /mcp should expose and execute production tools."""
-        client = TestClient(prod_server_app)
+    def test_direct_websocket_mcp_mode_aware_parity(self):
+        """Direct JSON-RPC over WebSocket endpoint /mcp establishes its session over WS and executes production tools."""
+        # Use dedicated server app with explicit capacity (max_concurrent_envs=2) to isolate from HTTP sessions
+        app = FastAPI()
+        server = HTTPEnvServer(
+            env=ModeAwareTestEnvironment,
+            action_cls=CallToolAction,
+            observation_cls=CallToolObservation,
+            max_concurrent_envs=2,
+        )
+        server.register_routes(app, mode="production")
+        client = TestClient(app)
 
         with client.websocket_connect("/mcp") as ws:
             # 1. tools/list over direct /mcp WebSocket
@@ -412,6 +421,48 @@ class TestProductionModeAwareMCP:
             assert resp_call.get("id") == 102
             assert "result" in resp_call
             assert resp_call["result"]["data"] == "LIVE: direct-ws"
+
+    def test_direct_websocket_mcp_capacity_freed(self, prod_server_app):
+        """Direct /mcp WebSocket connects cleanly when capacity is explicitly freed from prior HTTP session."""
+        client = TestClient(prod_server_app)
+
+        # 1. Create an HTTP session occupying the default single capacity slot
+        create_resp = client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "method": "openenv/session/create", "id": 1},
+        )
+        assert create_resp.status_code == 200
+        session_id = create_resp.json()["result"]["session_id"]
+
+        # 2. Explicitly close the HTTP session to free capacity
+        close_resp = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "openenv/session/close",
+                "params": {"session_id": session_id},
+                "id": 2,
+            },
+        )
+        assert close_resp.status_code == 200
+        assert close_resp.json()["result"]["closed"] is True
+
+        # 3. Direct WebSocket connects successfully and executes mode-aware tools
+        with client.websocket_connect("/mcp") as ws:
+            ws.send_text(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "tools/list",
+                        "id": 103,
+                    }
+                )
+            )
+            resp_list = json.loads(ws.receive_text())
+            assert resp_list.get("id") == 103
+            assert "result" in resp_list
+            tool_names = [t["name"] for t in resp_list["result"]["tools"]]
+            assert "search_live" in tool_names
 
     def test_mode_aware_tool_shadows_fastmcp_shared_tool(self, prod_server_app):
         """Mode-aware tool overrides an underlying FastMCP tool of the same name without duplication."""
