@@ -424,12 +424,12 @@ class HTTPEnvServer:
             if target_mode is not None and hasattr(env, "set_mode"):
                 env.set_mode(target_mode)
         except Exception:
+            await self._cleanup_session_resources(env, executor)
             async with self._session_lock:
                 if executor is not self._shared_session_executor:
                     executor.shutdown(wait=False)
                 self._session_executors.pop(session_id, None)
                 self._sessions.pop(session_id, None)
-            await self._cleanup_session_resources(env, executor)
             raise
 
         # Hold the MCP session open for the lifetime of this session,
