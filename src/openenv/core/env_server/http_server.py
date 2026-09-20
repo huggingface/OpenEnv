@@ -366,7 +366,9 @@ class HTTPEnvServer:
 
         return valid_kwargs
 
-    async def _create_session(self) -> tuple[str, Environment]:
+    async def _create_session(
+        self, mode: Optional[ServerMode | str] = None
+    ) -> tuple[str, Environment]:
         """
         Create a new WebSocket session with its own environment instance.
 
@@ -400,8 +402,6 @@ class HTTPEnvServer:
             # Create environment in the executor thread (outside lock)
             loop = asyncio.get_event_loop()
             env = await loop.run_in_executor(executor, self._env_factory)
-            if hasattr(env, "set_mode"):
-                env.set_mode(self._server_mode.value)
         except Exception as e:
             async with self._session_lock:
                 if executor is not self._shared_session_executor:
@@ -412,6 +412,25 @@ class HTTPEnvServer:
                 self._env_factory, "__name__", str(self._env_factory)
             )
             raise EnvironmentFactoryError(factory_name) from e
+
+        # Post-factory mode setting: wrap in try/except to clean up resources on failure
+        target_mode = mode if mode is not None else getattr(self, "_server_mode", None)
+        if isinstance(target_mode, ServerMode):
+            target_mode = target_mode.value
+        elif isinstance(target_mode, str):
+            target_mode = target_mode.lower()
+
+        try:
+            if target_mode is not None and hasattr(env, "set_mode"):
+                env.set_mode(target_mode)
+        except Exception:
+            await self._cleanup_session_resources(env, executor)
+            async with self._session_lock:
+                if executor is not self._shared_session_executor:
+                    executor.shutdown(wait=False)
+                self._session_executors.pop(session_id, None)
+                self._sessions.pop(session_id, None)
+            raise
 
         # Hold the MCP session open for the lifetime of this session,
         # matching the WebSocket path's AsyncExitStack pattern.  This
@@ -671,6 +690,7 @@ class HTTPEnvServer:
                 )
 
         self._server_mode = mode
+        app_mode = mode
 
         # Wire up idle-session reaper lifecycle via app events
         server_ref = self
@@ -696,6 +716,8 @@ class HTTPEnvServer:
             _env = self._env_factory()
 
             try:
+                if hasattr(_env, "set_mode"):
+                    _env.set_mode(app_mode.value)
                 kwargs = request.model_dump(exclude_unset=True)
 
                 is_async = overrides_method(_env.reset_async, Environment.reset_async)
@@ -731,6 +753,8 @@ class HTTPEnvServer:
             _env = self._env_factory()
 
             try:
+                if hasattr(_env, "set_mode"):
+                    _env.set_mode(app_mode.value)
                 kwargs = request.model_dump(exclude_unset=True, exclude={"action"})
 
                 is_async = overrides_method(_env.step_async, Environment.step_async)
@@ -786,7 +810,9 @@ class HTTPEnvServer:
                         request_id=request_id,
                     )
                 try:
-                    created_session_id, _ = await self._create_session()
+                    created_session_id, _ = await self._create_session(
+                        mode=app_mode
+                    )
                 except SessionCapacityError as e:
                     return JsonRpcResponse.error_response(
                         JsonRpcErrorCode.SERVER_ERROR,
@@ -803,6 +829,12 @@ class HTTPEnvServer:
                         str(e),
                         request_id=request_id,
                         data={"factory_name": e.factory_name},
+                    )
+                except Exception as e:
+                    return JsonRpcResponse.error_response(
+                        JsonRpcErrorCode.SERVER_ERROR,
+                        str(e),
+                        request_id=request_id,
                     )
                 return JsonRpcResponse.success(
                     result={"session_id": created_session_id},
@@ -911,9 +943,13 @@ class HTTPEnvServer:
                 managed_session_id = requested_session_id
             else:
                 _env = self._env_factory()
-                if hasattr(_env, "set_mode"):
-                    _env.set_mode(self._server_mode.value)
                 should_close = True
+                try:
+                    if hasattr(_env, "set_mode"):
+                        _env.set_mode(app_mode.value)
+                except Exception:
+                    _env.close()
+                    raise
             try:
                 mcp_client = getattr(_env, "mcp_client", None)
                 mcp_server = getattr(_env, "mcp_server", None)
@@ -948,17 +984,20 @@ class HTTPEnvServer:
                                 observation.metadata.get("error", "list_tools failed"),
                                 request_id=request_id,
                             )
+                        raw_tools = observation.metadata.get("raw_tools")
+                        if raw_tools is not None:
+                            tool_list = raw_tools
+                        else:
+                            tool_list = [
+                                {
+                                    "name": tool.name,
+                                    "description": tool.description or "",
+                                    "inputSchema": tool.input_schema,
+                                }
+                                for tool in observation.tools
+                            ]
                         return JsonRpcResponse.success(
-                            result={
-                                "tools": [
-                                    {
-                                        "name": tool.name,
-                                        "description": tool.description or "",
-                                        "inputSchema": tool.input_schema,
-                                    }
-                                    for tool in observation.tools
-                                ]
-                            },
+                            result={"tools": tool_list},
                             request_id=request_id,
                         )
 
@@ -1037,6 +1076,9 @@ class HTTPEnvServer:
                 elif method == McpMethod.TOOLS_CALL:
                     tool_name = params.get("name")
                     arguments = params.get("arguments", {})
+                    timeout_s = params.get("timeout_s")
+                    if timeout_s is None:
+                        timeout_s = params.get("timeout")
 
                     if not tool_name:
                         return JsonRpcResponse.error_response(
@@ -1045,12 +1087,23 @@ class HTTPEnvServer:
                             request_id=request_id,
                         )
 
-                    if hasattr(_env, "_async_handle_call_tool"):
+                    mode_tools = getattr(_env, "_mode_tools", {})
+                    if hasattr(_env, "_async_handle_call_tool") and (
+                        tool_name in mode_tools
+                        or (mcp_client is None and mcp_server is None)
+                    ):
+                        call_kwargs = {}
+                        if timeout_s is not None:
+                            try:
+                                call_kwargs["timeout_s"] = float(timeout_s)
+                            except (TypeError, ValueError):
+                                pass
                         observation = await _env._async_handle_call_tool(
                             CallToolAction(
                                 tool_name=tool_name,
                                 arguments=arguments,
-                            )
+                            ),
+                            **call_kwargs,
                         )
                         if observation.error is not None:
                             error_code = (
@@ -1251,7 +1304,7 @@ class HTTPEnvServer:
             )
             return {"tasks": _make_json_serializable(tasks)}
 
-        # Register MCP WebSocket endpoint (available in both production and simulation modes)
+        # Register direct /mcp WebSocket endpoint (available in both production and simulation modes)
         @app.websocket("/mcp")
         async def mcp_websocket_endpoint(websocket: WebSocket):
             """
@@ -1268,7 +1321,9 @@ class HTTPEnvServer:
 
             try:
                 # Create session with dedicated environment
-                session_id, session_env = await self._create_session()
+                session_id, session_env = await self._create_session(
+                    mode=app_mode
+                )
                 if session_env is None:
                     raise RuntimeError(
                         "Session environment not initialized for MCP websocket"
@@ -1447,6 +1502,8 @@ The response includes:
         def get_state_handler() -> State:
             _env = self._env_factory()
             try:
+                if hasattr(_env, "set_mode"):
+                    _env.set_mode(app_mode.value)
                 return _env.state
             finally:
                 _env.close()
@@ -1454,6 +1511,8 @@ The response includes:
         def get_metadata_handler() -> EnvironmentMetadata:
             _env = self._env_factory()
             try:
+                if hasattr(_env, "set_mode"):
+                    _env.set_mode(app_mode.value)
                 return _env.get_metadata()
             finally:
                 _env.close()
@@ -1627,7 +1686,9 @@ all schema information needed to interact with the environment.
                         attached_session = True
                     self._update_session_activity(session_id)
                 else:
-                    session_id, session_env = await self._create_session()
+                    session_id, session_env = await self._create_session(
+                        mode=app_mode
+                    )
                     owns_session = True
 
                 if session_env is None:

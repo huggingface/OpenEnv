@@ -505,14 +505,42 @@ class MCPEnvironment(Environment):
             current_mode = getattr(self, "_mode", None)
             tools_result = await self._async_list_tools()
             tools = []
+            raw_tools = []
             for tool in tools_result:
                 if tool.name not in self._mode_tool_schemas:
                     tools.append(_tool_from_server_tool(tool))
+                    if hasattr(tool, "model_dump"):
+                        raw_tools.append(
+                            tool.model_dump(by_alias=True, exclude_none=True)
+                        )
+                    elif isinstance(tool, dict):
+                        raw_tools.append(dict(tool))
+                    else:
+                        raw_tools.append(
+                            {
+                                "name": tool.name,
+                                "description": tool.description or "",
+                                "inputSchema": getattr(
+                                    tool,
+                                    "inputSchema",
+                                    getattr(tool, "input_schema", {}),
+                                ),
+                            }
+                        )
             for mode_schemas in self._mode_tool_schemas.values():
                 schema = _schema_for_mode(mode_schemas, current_mode)
                 if schema is not None:
                     tools.append(_tool_from_mode_schema(schema))
-            return ListToolsObservation(tools=tools)
+                    raw_tools.append(
+                        {
+                            "name": schema["name"],
+                            "description": schema["description"],
+                            "inputSchema": schema["input_schema"],
+                        }
+                    )
+            return ListToolsObservation(
+                tools=tools, metadata={"raw_tools": raw_tools}
+            )
         except Exception as e:
             return ListToolsObservation(
                 tools=[],
@@ -525,7 +553,6 @@ class MCPEnvironment(Environment):
         timeout_s: Optional[float] = None,
     ) -> CallToolObservation:
         """Async version of _handle_call_tool — avoids run_async_safely."""
-        timeout = timeout_s if timeout_s is not None else MCP_TOOL_CALL_TIMEOUT
         tool_name = action.tool_name
         current_mode = getattr(self, "_mode", None)
 
@@ -546,7 +573,8 @@ class MCPEnvironment(Environment):
                 )
             try:
                 sig = inspect.signature(func)
-                sig.bind(**action.arguments)
+                bound = sig.bind(**action.arguments)
+                bound.apply_defaults()
             except TypeError as e:
                 return CallToolObservation(
                     tool_name=tool_name,
@@ -557,15 +585,108 @@ class MCPEnvironment(Environment):
                     ),
                 )
 
+            type_errors = []
+            validated_args = {}
+            for param_name, value in bound.arguments.items():
+                param = sig.parameters.get(param_name)
+                if (
+                    param is not None
+                    and param.annotation != inspect.Parameter.empty
+                ):
+                    expected_type = param.annotation
+                    if expected_type in (int, "int") and (
+                        not isinstance(value, int) or isinstance(value, bool)
+                    ):
+                        type_errors.append(
+                            f"Argument '{param_name}' must be an integer, got {type(value).__name__}"
+                        )
+                        continue
+                    if expected_type in (float, "float") and (
+                        not isinstance(value, (int, float))
+                        or isinstance(value, bool)
+                    ):
+                        type_errors.append(
+                            f"Argument '{param_name}' must be a float, got {type(value).__name__}"
+                        )
+                        continue
+                    if expected_type in (str, "str") and not isinstance(
+                        value, str
+                    ):
+                        type_errors.append(
+                            f"Argument '{param_name}' must be a string, got {type(value).__name__}"
+                        )
+                        continue
+                    if expected_type in (bool, "bool") and not isinstance(
+                        value, bool
+                    ):
+                        type_errors.append(
+                            f"Argument '{param_name}' must be a boolean, got {type(value).__name__}"
+                        )
+                        continue
+                    if expected_type in (dict, "dict") and not isinstance(
+                        value, dict
+                    ):
+                        type_errors.append(
+                            f"Argument '{param_name}' must be a dict, got {type(value).__name__}"
+                        )
+                        continue
+                    if expected_type in (list, "list") and not isinstance(
+                        value, list
+                    ):
+                        type_errors.append(
+                            f"Argument '{param_name}' must be a list, got {type(value).__name__}"
+                        )
+                        continue
+                    try:
+                        from pydantic import TypeAdapter
+
+                        validated_val = TypeAdapter(
+                            expected_type
+                        ).validate_python(value)
+                        validated_args[param_name] = validated_val
+                        continue
+                    except Exception as val_err:
+                        type_errors.append(
+                            f"Invalid value for '{param_name}': {val_err}"
+                        )
+                        continue
+                validated_args[param_name] = value
+
+            if type_errors:
+                return CallToolObservation(
+                    tool_name=tool_name,
+                    result=None,
+                    error=ToolError(
+                        error_type=ToolErrorType.INVALID_ARGS,
+                        message="; ".join(type_errors),
+                    ),
+                )
+
             try:
                 if inspect.iscoroutinefunction(func):
-                    result = await asyncio.wait_for(
-                        func(**action.arguments), timeout=timeout
-                    )
+                    if timeout_s is not None:
+                        result = await asyncio.wait_for(
+                            func(**validated_args), timeout=timeout_s
+                        )
+                    else:
+                        result = await func(**validated_args)
                 else:
-                    result = await asyncio.wait_for(
-                        asyncio.to_thread(func, **action.arguments), timeout=timeout
-                    )
+                    # NOTE: For synchronous tools, asyncio.wait_for + to_thread
+                    # returns TimeoutError to the *awaiter* promptly, but the
+                    # underlying thread cannot be interrupted in CPython.
+                    # Async callers (HTTP /mcp, _async_handle_call_tool) return
+                    # in ~timeout seconds. Sync callers going through
+                    # run_async_safely will still block until the thread finishes.
+                    # This is a fundamental Python threading limitation.
+                    if timeout_s is not None:
+                        result = await asyncio.wait_for(
+                            asyncio.to_thread(func, **validated_args),
+                            timeout=timeout_s,
+                        )
+                    else:
+                        result = await asyncio.to_thread(
+                            func, **validated_args
+                        )
                 return CallToolObservation(
                     tool_name=tool_name,
                     result=CallToolResult(
@@ -582,7 +703,7 @@ class MCPEnvironment(Environment):
                     result=None,
                     error=ToolError(
                         error_type=ToolErrorType.TIMEOUT,
-                        message=f"Tool '{tool_name}' timed out after {timeout} seconds",
+                        message=f"Tool '{tool_name}' timed out after {timeout_s} seconds",
                     ),
                 )
             except Exception as e:
@@ -596,18 +717,25 @@ class MCPEnvironment(Environment):
                 )
 
         try:
-            result = await asyncio.wait_for(
-                self._async_call_tool(action.tool_name, action.arguments),
-                timeout=timeout,
+            if timeout_s is not None:
+                result = await asyncio.wait_for(
+                    self._async_call_tool(action.tool_name, action.arguments),
+                    timeout=timeout_s,
+                )
+            else:
+                result = await self._async_call_tool(
+                    action.tool_name, action.arguments
+                )
+            return CallToolObservation(
+                tool_name=action.tool_name, result=result
             )
-            return CallToolObservation(tool_name=action.tool_name, result=result)
         except asyncio.TimeoutError:
             return CallToolObservation(
                 tool_name=action.tool_name,
                 result=None,
                 error=ToolError(
                     error_type=ToolErrorType.TIMEOUT,
-                    message=f"Tool '{action.tool_name}' timed out after {timeout} seconds",
+                    message=f"Tool '{action.tool_name}' timed out after {timeout_s} seconds",
                 ),
             )
         except Exception as e:
