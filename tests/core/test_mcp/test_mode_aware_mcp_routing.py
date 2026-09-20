@@ -62,6 +62,21 @@ class ModeAwareTestEnvironment(MCPEnvironment):
             """Simulation-only tool querying local database."""
             return f"MOCK: {query}"
 
+        @self.tool(mode="production")
+        def structured_prod_tool(tag: str) -> dict:
+            """Production tool returning structured data."""
+            return {"status": "ok", "tag": tag, "items": [1, 2]}
+
+        @mcp.tool
+        def override_me() -> str:
+            """Base FastMCP tool."""
+            return "FASTMCP_BASE"
+
+        @self.tool(mode="production")
+        def override_me() -> str:  # noqa: F811
+            """Overridden in production mode."""
+            return "PRODUCTION_OVERRIDE"
+
         self._state = State(episode_id="test-ep", step_count=0)
 
     def reset(self, **kwargs) -> Observation:
@@ -354,6 +369,113 @@ class TestProductionModeAwareMCP:
             assert result == "LIVE: hotels"
         finally:
             await client.close()
+
+    def test_direct_websocket_mcp_mode_aware_parity(self, prod_server_app):
+        """Direct JSON-RPC over WebSocket endpoint /mcp should expose and execute production tools."""
+        client = TestClient(prod_server_app)
+
+        with client.websocket_connect("/mcp") as ws:
+            # 1. tools/list over direct /mcp WebSocket
+            ws.send_text(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "tools/list",
+                        "id": 101,
+                    }
+                )
+            )
+            resp_list = json.loads(ws.receive_text())
+            assert resp_list.get("id") == 101
+            assert "result" in resp_list
+            tools = resp_list["result"]["tools"]
+            tool_names = [t["name"] for t in tools]
+            assert "shared_tool" in tool_names
+            assert "search_live" in tool_names
+            assert "search_mock" not in tool_names
+
+            # 2. tools/call over direct /mcp WebSocket
+            ws.send_text(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "tools/call",
+                        "params": {
+                            "name": "search_live",
+                            "arguments": {"query": "direct-ws"},
+                        },
+                        "id": 102,
+                    }
+                )
+            )
+            resp_call = json.loads(ws.receive_text())
+            assert resp_call.get("id") == 102
+            assert "result" in resp_call
+            assert resp_call["result"]["data"] == "LIVE: direct-ws"
+
+    def test_mode_aware_tool_shadows_fastmcp_shared_tool(self, prod_server_app):
+        """Mode-aware tool overrides an underlying FastMCP tool of the same name without duplication."""
+        client = TestClient(prod_server_app)
+        create_resp = client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "method": "openenv/session/create", "id": 1},
+        )
+        session_id = create_resp.json()["result"]["session_id"]
+
+        # tools/list should list override_me exactly once
+        resp_list = client.post(
+            f"/mcp?session_id={session_id}",
+            json={"jsonrpc": "2.0", "method": "tools/list", "id": 2},
+        )
+        tools = resp_list.json()["result"]["tools"]
+        matches = [t for t in tools if t["name"] == "override_me"]
+        assert len(matches) == 1
+
+        # tools/call should execute the production override, not the FastMCP base
+        resp_call = client.post(
+            f"/mcp?session_id={session_id}",
+            json={
+                "jsonrpc": "2.0",
+                "method": "tools/call",
+                "params": {"name": "override_me", "arguments": {}},
+                "id": 3,
+            },
+        )
+        res = resp_call.json()
+        assert res["result"]["data"] == "PRODUCTION_OVERRIDE"
+
+    def test_production_mode_tool_structured_return(self, prod_server_app):
+        """Mode-aware tool returning structured dict is properly serialized over JSON-RPC."""
+        client = TestClient(prod_server_app)
+        create_resp = client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "method": "openenv/session/create", "id": 1},
+        )
+        session_id = create_resp.json()["result"]["session_id"]
+
+        resp_call = client.post(
+            f"/mcp?session_id={session_id}",
+            json={
+                "jsonrpc": "2.0",
+                "method": "tools/call",
+                "params": {
+                    "name": "structured_prod_tool",
+                    "arguments": {"tag": "prod-v1"},
+                },
+                "id": 4,
+            },
+        )
+        res = resp_call.json()["result"]
+        assert res["structured_content"]["result"] == {
+            "status": "ok",
+            "tag": "prod-v1",
+            "items": [1, 2],
+        }
+        assert res["data"] == {
+            "status": "ok",
+            "tag": "prod-v1",
+            "items": [1, 2],
+        }
 
 
 class TestSimulationModeAwareMCP:
