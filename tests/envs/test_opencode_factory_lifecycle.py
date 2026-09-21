@@ -176,6 +176,58 @@ def test_bootstrap_install_rate_limit_raises_actionable_error(monkeypatch):
     assert len([c for c in sandbox.exec_calls if c != "echo ok"]) == 1
 
 
+@pytest.mark.parametrize(
+    ("failure", "sandbox_attempts", "install_attempts", "error_match"),
+    [
+        pytest.param(
+            ExecResult(
+                exit_code=1, stdout="Failed to fetch version information", stderr=""
+            ),
+            1,
+            1,
+            "Pin opencode_version",
+            id="fatal-version-lookup",
+        ),
+        pytest.param(
+            ExecResult(exit_code=137, stdout="", stderr=""),
+            3,
+            3,
+            "opencode install failed",
+            id="transient-install-failure",
+        ),
+    ],
+)
+def test_create_retries_only_transient_install_failures(
+    monkeypatch, failure, sandbox_attempts, install_attempts, error_match
+):
+    sandboxes = []
+
+    class Backend:
+        def create(self, **kwargs):
+            sandbox = _ExecScriptedSandbox(failure)
+            sandboxes.append(sandbox)
+            return sandbox
+
+    factory = OpenCodeSessionFactory(
+        config=OpenCodeConfig(base_url="http://localhost:8000/v1"),
+        sandbox_backend=Backend(),
+        create_attempts=3,
+        create_backoff_s=0,
+    )
+    monkeypatch.setattr(factory, "_opencode_already_installed", lambda s: False)
+    monkeypatch.setattr("time.sleep", lambda delay: None)
+
+    with pytest.raises(RuntimeError, match=error_match):
+        factory.create("write a function")
+
+    assert len(sandboxes) == sandbox_attempts
+    for sandbox in sandboxes:
+        assert sandbox.killed is True
+        assert (
+            len([c for c in sandbox.exec_calls if c != "echo ok"]) == install_attempts
+        )
+
+
 class TestBuildInstallCmdVersionPin:
     """The pin must reach the installer, which reads args/VERSION in the bash
     side of the ``curl | bash`` pipe — an env prefix on curl never gets there."""

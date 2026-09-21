@@ -75,6 +75,10 @@ _PROXY_SOURCE_PATH = Path(__file__).parent / "sandbox" / "interception.py"
 Verifier = Callable[[SandboxHandle, OpenCodeTask], VerifyResult]
 
 
+class _NonRetryableBootstrapError(RuntimeError):
+    """Bootstrap failure that provisioning another sandbox cannot fix."""
+
+
 class OpenCodeSession(ResourceSession):
     """One live OpenCode rollout inside a sandbox.
 
@@ -250,6 +254,8 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
                 return self._create_once(
                     task, seed=seed, episode_id=episode_id, start_agent=start_agent
                 )
+            except _NonRetryableBootstrapError:
+                raise
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc
                 if i + 1 < self._create_attempts:
@@ -458,7 +464,7 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
                 )
             except RuntimeError as exc:
                 if _INSTALL_VERSION_FETCH_ERROR in str(exc):
-                    raise RuntimeError(
+                    raise _NonRetryableBootstrapError(
                         "opencode install could not resolve 'latest' from the "
                         "GitHub API (rate limited?). Pin opencode_version to a "
                         "release tag to install without touching the API."
