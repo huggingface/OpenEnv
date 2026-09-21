@@ -263,13 +263,19 @@ def test_build_uses_filtered_snapshot_and_returns_immutable_image(
         (tmp_path / name / "private").write_text("not copied")
     (tmp_path / ".env").write_text("HF_TOKEN=private")
     (tmp_path / "key.pem").write_text("private")
+    for name in ("secret", "secrets", "credentials"):
+        (tmp_path / name).write_text("private")
+    (tmp_path / "secret.py").write_text("VALUE = 'source'\n")
+    (tmp_path / "credentials.py").write_text("VALUE = 'source'\n")
 
     def build(argv, timeout_s):
         assert timeout_s <= 600
         context = Path(argv[-1])
         assert set(path.name for path in context.iterdir()) == {
             "Dockerfile",
+            "credentials.py",
             "data.txt",
+            "secret.py",
         }
         assert context != tmp_path
         Path(argv[argv.index("--iidfile") + 1]).write_text(IMAGE)
