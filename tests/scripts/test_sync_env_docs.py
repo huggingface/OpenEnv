@@ -121,9 +121,7 @@ def test_run_fix_handles_malformed_url_without_truncating_stub(repo):
     sync_env_docs.run_fix([], [], [("example_env", "example")])
 
     assert stub.read_text() == (
-        "<!-- openenv-source: example_env -->\n"
-        "# Example\n\n"
-        "[bad](http://[)\n"
+        "<!-- openenv-source: example_env -->\n# Example\n\n[bad](http://[)\n"
     )
 
 
