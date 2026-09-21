@@ -13,6 +13,14 @@ MAX_MESSAGE_BYTES = 1024 * 1024
 MAX_TRACE_BYTES = 8 * 1024 * 1024
 
 
+class RuntimeCollectionInterrupted(KeyboardInterrupt):
+    """Cancellation carrying the completed, immutable episode prefix."""
+
+    def __init__(self, evidence: RuntimeEvidence):
+        super().__init__("runtime collection interrupted")
+        self.evidence = evidence
+
+
 def collect_runtime_evidence(
     base_url: str,
     plan: RuntimePlan,
@@ -78,7 +86,12 @@ def collect_runtime_evidence(
             schema = json.loads(payload)
             if not isinstance(schema, dict) or "observation" not in schema:
                 raise ValueError("missing observation schema")
-            schema_json = json.dumps(schema["observation"], allow_nan=False)
+            schema_json = json.dumps(
+                schema["observation"],
+                allow_nan=False,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
 
         endpoint = urlsplit(base_url)
         ws_url = urlunsplit(
@@ -148,6 +161,15 @@ def collect_runtime_evidence(
         return RuntimeEvidence(
             exchanges=tuple(exchanges), observation_schema_json=schema_json
         )
+    except KeyboardInterrupt:
+        raise RuntimeCollectionInterrupted(
+            RuntimeEvidence(
+                exchanges=tuple(exchanges),
+                observation_schema_json=schema_json,
+                failure_phase=phase,
+                failure_reason=f"{phase} failed (KeyboardInterrupt)",
+            )
+        ) from None
     except Exception as exc:
         # Exception text may include submitted payloads or URL credentials.
         return RuntimeEvidence(

@@ -1,15 +1,18 @@
 """Regression checks for the shared acceptance harness."""
 
+import hashlib
 import importlib.util
 import json
 import subprocess
 import sys
 from pathlib import Path
+from xml.etree import ElementTree
 
 import pytest
 
 
 ROOT = Path(__file__).parents[2]
+ACCEPTANCE = ROOT / "tests/validation_runtime/acceptance.json"
 
 
 def module(name):
@@ -31,12 +34,28 @@ def test_linux_wheelhouse_markers_ignore_host_platform(tmp_path):
     assert requirements.read_text() == "jeepney==0.9.0 \\\n    --hash=sha256:aaa\n"
 
 
-def evidence(tmp_path, skipped=0):
+def evidence(tmp_path, skipped=0, suite="fast", cases=None, inventory=None):
     reproduction = module("reproduce")
-    (tmp_path / "run-manifest.json").write_text(json.dumps({"success": True}))
-    (tmp_path / "junit.xml").write_text(
-        f'<testsuites><testsuite tests="1" skipped="{skipped}"/></testsuites>'
+    inventory = ACCEPTANCE.read_bytes() if inventory is None else inventory
+    (tmp_path / "acceptance.json").write_bytes(inventory)
+    (tmp_path / "run-manifest.json").write_text(
+        json.dumps(
+            {
+                "success": True,
+                "suite": suite,
+                "acceptance_inventory_sha256": hashlib.sha256(inventory).hexdigest(),
+            }
+        )
     )
+    cases = ["tests.example::test_pass"] if cases is None else cases
+    document = ElementTree.Element("testsuites")
+    test_suite = ElementTree.SubElement(
+        document, "testsuite", tests=str(len(cases)), skipped=str(skipped)
+    )
+    for case in cases:
+        classname, name = case.split("::", 1)
+        ElementTree.SubElement(test_suite, "testcase", classname=classname, name=name)
+    ElementTree.ElementTree(document).write(tmp_path / "junit.xml")
     entries = reproduction.hashes(tmp_path)
     (tmp_path / "SHA256SUMS").write_text(
         "".join(f"{value}  {name}\n" for name, value in entries.items())
@@ -59,6 +78,36 @@ def test_artifact_verification_rejects_missing_or_added_evidence(tmp_path):
 def test_required_acceptance_cannot_silently_skip(tmp_path):
     evidence(tmp_path, skipped=1)
     with pytest.raises(ValueError, match="skips"):
+        module("verify_artifacts").verify(tmp_path)
+
+
+@pytest.mark.parametrize("suite", ["protocol", "docker"])
+def test_required_acceptance_rejects_deselected_cases_despite_passing_tests(
+    tmp_path, suite
+):
+    required = json.loads(ACCEPTANCE.read_text())["suites"][suite]
+    evidence(tmp_path, suite=suite, cases=required[:-1])
+    with pytest.raises(ValueError, match="Missing required acceptance cases"):
+        module("verify_artifacts").verify(tmp_path)
+
+
+@pytest.mark.parametrize("suite", ["protocol", "docker"])
+def test_all_required_acceptance_cases_establish_completion(tmp_path, suite):
+    required = json.loads(ACCEPTANCE.read_text())["suites"][suite]
+    evidence(tmp_path, suite=suite, cases=required)
+    assert module("verify_artifacts").verify(tmp_path) == len(required)
+
+
+def test_reduced_inventory_cannot_redefine_required_acceptance(tmp_path):
+    changed = json.loads(ACCEPTANCE.read_text())
+    changed["suites"]["docker"] = changed["suites"]["docker"][:1]
+    evidence(
+        tmp_path,
+        suite="docker",
+        cases=changed["suites"]["docker"],
+        inventory=json.dumps(changed).encode(),
+    )
+    with pytest.raises(ValueError, match="committed acceptance inventory"):
         module("verify_artifacts").verify(tmp_path)
 
 

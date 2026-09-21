@@ -4,8 +4,10 @@ import hashlib
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
+import time
 from importlib.resources import files
 from pathlib import Path
 
@@ -66,7 +68,23 @@ def cli_context(tmp_path):
     return context
 
 
-def _container_ids():
+def _case_label(context):
+    return hashlib.sha256(str(context).encode()).hexdigest()[:20]
+
+
+def _mark_context(context):
+    # An image label is inherited by every container, including failed starts.
+    # This scopes external cleanup verification to this exact test invocation.
+    dockerfile = context / "Dockerfile"
+    content = dockerfile.read_bytes()
+    dockerfile.unlink()
+    dockerfile.write_bytes(
+        content
+        + f"\nLABEL org.openenv.validation.test={_case_label(context)}\n".encode()
+    )
+
+
+def _container_ids(context):
     checked = subprocess.run(
         [
             "docker",
@@ -75,7 +93,7 @@ def _container_ids():
             "--all",
             "--quiet",
             "--filter",
-            "label=org.openenv.validation.run",
+            f"label=org.openenv.validation.test={_case_label(context)}",
         ],
         capture_output=True,
         text=True,
@@ -83,6 +101,36 @@ def _container_ids():
         check=True,
     )
     return set(checked.stdout.split())
+
+
+def _wait_for_blocked_step(process, context, work):
+    deadline = time.monotonic() + 120
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            pytest.fail("CLI exited before the deliberate blocked step")
+        for container_id in _container_ids(context):
+            logs = subprocess.run(
+                ["docker", "logs", "--tail", "30", container_id],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if "OPENENV_VALIDATION_STEP_BLOCKED" in logs.stdout:
+                (work / "blocked-handshake.json").write_text(
+                    json.dumps(
+                        {
+                            "container_id": container_id,
+                            "marker": "OPENENV_VALIDATION_STEP_BLOCKED",
+                            "milestone": "second_step_received",
+                        }
+                    )
+                    + "\n"
+                )
+                return time.monotonic()
+        # Poll an observable protocol milestone rather than guessing when the
+        # CLI has reached its collector after an arbitrarily long image build.
+        time.sleep(0.05)
+    pytest.fail("Subject never reached its deliberately blocked second step")
 
 
 def _verify_bundle(bundle, report):
@@ -111,10 +159,19 @@ def _verify_bundle(bundle, report):
     return {name: json.loads((bundle / name).read_text()) for name in recorded}
 
 
-def _invoke_cli(context, tmp_path, case, *, skip_build=False):
+def _invoke_cli(
+    context,
+    tmp_path,
+    case,
+    *,
+    skip_build=False,
+    wait_for_blocked=False,
+    interrupt=False,
+):
     artifact_root = Path(os.environ.get("OPENENV_VALIDATION_ARTIFACTS", tmp_path))
     work = artifact_root / "cli" / case
     work.mkdir(parents=True, exist_ok=True)
+    _mark_context(context)
     report_path = work / "report.json"
     environment = os.environ.copy()
     environment.pop("PYTHONPATH", None)
@@ -147,24 +204,66 @@ def _invoke_cli(context, tmp_path, case, *, skip_build=False):
     ]
     if skip_build:
         command.append("--skip-build")
-    before = _container_ids()
+    process = None
     try:
-        result = subprocess.run(
+        with (
+            (work / "stdout.json").open("w") as stdout,
+            (work / "stderr.log").open("w") as stderr,
+        ):
+            process = subprocess.Popen(
+                command,
+                cwd=work,
+                env=environment,
+                stdout=stdout,
+                stderr=stderr,
+                start_new_session=True,
+            )
+            blocked_at = None
+            if wait_for_blocked:
+                blocked_at = _wait_for_blocked_step(process, context, work)
+            if interrupt:
+                assert blocked_at is not None, "Signal requires a protocol handshake"
+                process.send_signal(signal.SIGINT)
+            process.wait(timeout=15 if blocked_at else 180)
+            if blocked_at is not None:
+                elapsed = time.monotonic() - blocked_at
+                (work / "termination.json").write_text(
+                    json.dumps(
+                        {"seconds_after_blocked_step": elapsed, "signal": interrupt}
+                    )
+                    + "\n"
+                )
+                assert elapsed < 15, "CLI did not terminate within its time budget"
+        result = subprocess.CompletedProcess(
             command,
-            cwd=work,
-            env=environment,
-            capture_output=True,
-            text=True,
-            timeout=180,
+            process.returncode,
+            (work / "stdout.json").read_text(),
+            (work / "stderr.log").read_text(),
         )
     finally:
-        remaining = _container_ids() - before
+        if process is not None and process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait(timeout=10)
+        remaining = _container_ids(context)
         (work / "cleanup-external.json").write_text(
-            json.dumps({"remaining_container_ids": sorted(remaining)}) + "\n"
+            json.dumps(
+                {
+                    "test_label": _case_label(context),
+                    "remaining_container_ids": sorted(remaining),
+                }
+            )
+            + "\n"
         )
+        if remaining:
+            # Retain the failed assertion and evidence, but do not leave a failed
+            # acceptance test consuming resources or touching other test runs.
+            subprocess.run(
+                ["docker", "rm", "--force", "--volumes", *sorted(remaining)],
+                capture_output=True,
+                timeout=15,
+                check=True,
+            )
         assert not remaining, "CLI validation leaked a container"
-    (work / "stdout.json").write_text(result.stdout)
-    (work / "stderr.log").write_text(result.stderr)
     assert report_path.is_file(), result.stderr
     report = json.loads(report_path.read_text())
     assert json.loads(result.stdout) == report
@@ -192,6 +291,7 @@ def _invoke_cli(context, tmp_path, case, *, skip_build=False):
         ("good", None),
         ("bad_reward", "runtime.reward_well_formed"),
         ("bad_observation", "runtime.observation_schema"),
+        ("missing_done", "runtime.observation_schema"),
         ("bad_state", "runtime.state_contract"),
     ],
 )
@@ -227,6 +327,61 @@ def test_cli_runtime_contract_findings(cli_context, tmp_path, mode, failed_check
         )
         assert all(checks[key]["status"] == "pass" for key in IMPLEMENTED)
         assert set(artifacts["coverage.json"]["incomplete"]) == PENDING
+
+
+def _assert_partial_episode(artifacts, expected_failure):
+    trace = artifacts["collector-trace.json"]
+    assert [row["operation"] for row in trace] == ["reset", "state", "step", "state"]
+    assert trace[0]["response_json"]["data"]["observation"]["counter"] == 0
+    assert trace[2]["response_json"]["data"]["observation"]["counter"] == 1
+    assert trace[3]["response_json"]["data"]["step_count"] == 1
+    evidence = artifacts["collector-evidence.json"]
+    assert evidence["complete"] is False
+    assert evidence["failure_phase"] == "step"
+    assert expected_failure in evidence["failure_reason"]
+    assert artifacts["cleanup.json"] == {"required": True, "completed": True}
+
+
+def test_cli_hung_step_times_out_with_partial_evidence(cli_context, tmp_path):
+    with (cli_context / "Dockerfile").open("a") as stream:
+        stream.write("\nENV VALIDATION_FAULT=hung_step\n")
+    manifest = cli_context / "openenv.yaml"
+    content = manifest.read_text()
+    assert content.count("episode_timeout_s: 30.0") == 1
+    content = content.replace("episode_timeout_s: 30.0", "episode_timeout_s: 3.0")
+    # The context hardlinks immutable inputs; changing one must not alter the
+    # shared source used by subsequent test cases.
+    manifest.unlink()
+    manifest.write_text(content)
+    result, report, checks, artifacts = _invoke_cli(
+        cli_context, tmp_path, "hung_step", wait_for_blocked=True
+    )
+    assert result.returncode == 1
+    assert report["verdict"] == "fail"
+    assert report["manifest"]["resources"]["episode_timeout_s"] == 3.0
+    assert checks["runtime.startup"]["status"] == "pass"
+    assert all(
+        checks[key]["status"] == "fail" for key in IMPLEMENTED - {"runtime.startup"}
+    )
+    _assert_partial_episode(artifacts, "TimeoutError")
+
+
+def test_cli_sigint_retains_partial_evidence_and_cleans_up(cli_context, tmp_path):
+    with (cli_context / "Dockerfile").open("a") as stream:
+        stream.write("\nENV VALIDATION_FAULT=hung_step\n")
+    result, report, checks, artifacts = _invoke_cli(
+        cli_context, tmp_path, "sigint", wait_for_blocked=True, interrupt=True
+    )
+    # Recorded check errors fail closed through the existing policy (exit 1).
+    # Exit 3 is reserved for an internal error that cannot produce this report.
+    assert result.returncode == 1
+    assert report["verdict"] == "fail"
+    assert checks["runtime.startup"]["status"] == "error"
+    assert "interrupt" in " ".join(checks["runtime.startup"]["evidence"]).lower()
+    assert all(
+        checks[key]["status"] == "skip" for key in IMPLEMENTED - {"runtime.startup"}
+    )
+    _assert_partial_episode(artifacts, "KeyboardInterrupt")
 
 
 def test_cli_startup_failure_is_a_finding_and_leaves_no_container(
