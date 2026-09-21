@@ -236,6 +236,28 @@ def test_exec_timeout_destroys_subject_to_stop_descendants(commands, monkeypatch
         subject.exec(["true"], 1)
 
 
+def test_exec_timeout_is_preserved_when_cleanup_verification_fails(
+    commands, monkeypatch
+):
+    subject = docker.DockerValidationProvider().start(launch_spec())
+    original = docker._command
+    timeout = ProviderError("Docker operation exceeded its deadline")
+
+    def fail_exec_and_verification(argv, *args):
+        if argv[1] == "exec":
+            raise timeout
+        if argv[1:4] == ["inspect", "--format", "{{.Id}}"]:
+            return 1, "", "Docker daemon unavailable"
+        return original(argv, *args)
+
+    monkeypatch.setattr(docker, "_command", fail_exec_and_verification)
+    with pytest.raises(ProviderError, match="independently verified") as error:
+        subject.exec(["sleep", "20"], 0.1)
+    assert error.value.__cause__ is timeout
+    assert commands[-1][1:4] == ["rm", "--force", "--volumes"]
+    assert not subject._stopped
+
+
 def test_exec_preserves_argv_and_redacts_credentials(commands, monkeypatch):
     subject = docker.DockerValidationProvider().start(
         launch_spec(env_vars={"API_KEY": "private-value"})

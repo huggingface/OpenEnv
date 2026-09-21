@@ -84,6 +84,7 @@ def run(argv, *, cwd=ROOT, timeout=600, log=None, env=None):
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
+            # The process group already exited before cleanup could signal it.
             pass
         process.wait()
         raise
@@ -94,6 +95,7 @@ def run(argv, *, cwd=ROOT, timeout=600, log=None, env=None):
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
+                # Descendants may exit while the output reader is finishing.
                 pass
             reader.join(timeout=5)
         output = bytes(tail).decode("utf-8", "replace")
@@ -160,6 +162,65 @@ def select_linux_requirements(path, arch):
         requirement.marker = None
         selected.append(str(requirement) + " \\\n" + "\n".join(block[1:]))
     path.write_text("\n".join(selected) + "\n")
+
+
+def download_linux_wheels(
+    requirements, wheelhouse, base_image, docker_platform, *, log
+):
+    # Linux compatibility depends on the target image's libc, not the host or
+    # a fixed shortlist of manylinux versions. The image digest pins this pip.
+    # Pull separately so cold-cache progress cannot contaminate the JSON probe.
+    run(
+        ["docker", "pull", "--platform", docker_platform, base_image],
+        timeout=300,
+        log=log.parent / "base-image-pull.log",
+    )
+    platforms = json.loads(
+        run(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "--pull=never",
+                "--network=none",
+                "--read-only",
+                "--cap-drop=ALL",
+                "--security-opt=no-new-privileges",
+                "--user=65532:65532",
+                "--platform",
+                docker_platform,
+                base_image,
+                "python",
+                "-c",
+                "import json; from pip._vendor.packaging.tags import platform_tags; "
+                "print(json.dumps(list(platform_tags())))",
+            ],
+            timeout=120,
+        )
+    )
+    run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "download",
+            "--no-deps",
+            "--require-hashes",
+            "--only-binary=:all:",
+            "--python-version",
+            "3.12",
+            "--implementation",
+            "cp",
+            *[arg for tag in platforms for arg in ("--platform", tag)],
+            "-r",
+            requirements,
+            "--dest",
+            wheelhouse,
+        ],
+        timeout=900,
+        log=log,
+    )
+    return platforms
 
 
 def stage_image(work, output, pins, manifest):
@@ -234,31 +295,11 @@ def stage_image(work, output, pins, manifest):
         raise RuntimeError(f"Unsupported Docker architecture: {architecture}")
     manifest["docker_platform"] = "linux/amd64" if arch == "x86_64" else "linux/arm64"
     select_linux_requirements(requirements, arch)
-    run(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "download",
-            "--no-deps",
-            "--require-hashes",
-            "--only-binary=:all:",
-            "--python-version",
-            "3.12",
-            "--implementation",
-            "cp",
-            "--platform",
-            f"manylinux_2_28_{arch}",
-            "--platform",
-            f"manylinux2014_{arch}",
-            "--platform",
-            f"linux_{arch}",
-            "-r",
-            requirements,
-            "--dest",
-            wheelhouse,
-        ],
-        timeout=900,
+    manifest["wheel_platform_tags"] = download_linux_wheels(
+        requirements,
+        wheelhouse,
+        pins["base_image"],
+        manifest["docker_platform"],
         log=output / "logs/dependency-acquisition.log",
     )
     shutil.copyfile(wheel, wheelhouse / wheel.name)

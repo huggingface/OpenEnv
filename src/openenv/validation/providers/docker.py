@@ -65,7 +65,9 @@ def _safe_text(value: str, secrets: tuple[str, ...] = ()) -> str:
     )
 
 
-def _command(argv: list[str], timeout_s: float, max_bytes: int = _MAX_OUTPUT):
+def _command(
+    argv: list[str], timeout_s: float, max_bytes: int = _MAX_OUTPUT
+) -> tuple[int, str, str]:
     """Drain both pipes while retaining bounded tails; kill the client process group."""
     if not math.isfinite(timeout_s) or timeout_s <= 0:
         raise ProviderError("Operation deadline elapsed")
@@ -102,6 +104,7 @@ def _command(argv: list[str], timeout_s: float, max_bytes: int = _MAX_OUTPUT):
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
+            # The process group can exit between wait() and killpg().
             pass
         process.wait()
         raise ProviderError("Docker operation exceeded its deadline") from None
@@ -109,13 +112,18 @@ def _command(argv: list[str], timeout_s: float, max_bytes: int = _MAX_OUTPUT):
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
+            # The process group can exit before this cleanup signal.
             pass
         process.wait()
         raise
     finally:
         for thread in threads:
             thread.join(timeout=1)
-    return process.returncode, *(bytes(b).decode("utf-8", "replace") for b in buffers)
+    return (
+        process.returncode,
+        buffers[0].decode("utf-8", "replace"),
+        buffers[1].decode("utf-8", "replace"),
+    )
 
 
 def _contained(root: Path, relative: str) -> Path:
@@ -338,6 +346,7 @@ class DockerValidationProvider:
                         if response.status == 200:
                             return subject
                 except (OSError, urllib.error.URLError):
+                    # Connection failures are expected while the server starts.
                     pass
                 time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
             raise StartupError(
@@ -445,9 +454,12 @@ class DockerRunningSubject:
             code, stdout, stderr = _command(
                 ["docker", "exec", "--", self.name, *argv], timeout_s
             )
-        except ProviderError:
+        except ProviderError as exc:
             # Killing a docker exec client alone does not kill in-container children.
-            self.stop()
+            try:
+                self.stop()
+            except ProviderError as cleanup:
+                raise cleanup from exc
             raise
         return ExecResult(
             code,
