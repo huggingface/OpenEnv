@@ -5,6 +5,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -32,6 +33,70 @@ def test_linux_wheelhouse_markers_ignore_host_platform(tmp_path):
     )
     module("reproduce").select_linux_requirements(requirements, "aarch64")
     assert requirements.read_text() == "jeepney==0.9.0 \\\n    --hash=sha256:aaa\n"
+
+
+@pytest.mark.parametrize("arch", ["x86_64", "aarch64"])
+@pytest.mark.parametrize("minor", [31, 34, 39, 40])
+def test_wheel_download_uses_target_image_compatibility(
+    tmp_path, monkeypatch, arch, minor
+):
+    # The pinned runtime lab supplies pip and fails if any test is skipped.
+    pytest.importorskip(
+        "pip", reason="Wheel resolution requires the pinned runtime lab"
+    )
+    reproduction = module("reproduce")
+    available = tmp_path / "available"
+    available.mkdir()
+    wheel = available / f"native_probe-1.0-cp312-cp312-manylinux_2_{minor}_{arch}.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr(
+            "native_probe-1.0.dist-info/METADATA",
+            "Metadata-Version: 2.1\nName: native-probe\nVersion: 1.0\n",
+        )
+        archive.writestr(
+            "native_probe-1.0.dist-info/WHEEL",
+            "Wheel-Version: 1.0\nRoot-Is-Purelib: false\n"
+            f"Tag: cp312-cp312-manylinux_2_{minor}_{arch}\n",
+        )
+        archive.writestr("native_probe-1.0.dist-info/RECORD", "")
+    requirements = tmp_path / "requirements.txt"
+    requirements.write_text(
+        f"native-probe==1.0 --hash=sha256:{reproduction.digest(wheel)}\n"
+    )
+    # Only Docker is faked: real pip must resolve the hash-pinned native wheel
+    # offline, including intermediate tags and a tag newer than the old list.
+    target_tags = [f"manylinux_2_{version}_{arch}" for version in range(39, 16, -1)]
+    target_tags += [f"manylinux2014_{arch}", f"linux_{arch}"]
+    docker_platform = "linux/amd64" if arch == "x86_64" else "linux/arm64"
+    base_image = "python:3.12-slim@sha256:target"
+    run = reproduction.run
+
+    def fake_docker(argv, **kwargs):
+        if argv[0] == "docker":
+            assert argv[argv.index("--platform") + 1] == docker_platform
+            assert base_image in argv
+            if argv[1] == "pull":
+                return "Pulling layers...\nStatus: Downloaded newer image"
+            assert "--pull=never" in argv
+            assert "--network=none" in argv
+            return json.dumps(target_tags)
+        return run(argv, **kwargs)
+
+    monkeypatch.setattr(reproduction, "run", fake_docker)
+    monkeypatch.setenv("PIP_NO_INDEX", "1")
+    monkeypatch.setenv("PIP_FIND_LINKS", str(available))
+    monkeypatch.setenv("PIP_DISABLE_PIP_VERSION_CHECK", "1")
+    wheelhouse = tmp_path / "wheelhouse"
+    arguments = (requirements, wheelhouse, base_image, docker_platform)
+    if minor == 40:
+        with pytest.raises(RuntimeError, match="No matching distribution"):
+            reproduction.download_linux_wheels(
+                *arguments, log=tmp_path / "download.log"
+            )
+        assert not list(wheelhouse.glob("*.whl"))
+    else:
+        reproduction.download_linux_wheels(*arguments, log=tmp_path / "download.log")
+        assert (wheelhouse / wheel.name).read_bytes() == wheel.read_bytes()
 
 
 def evidence(tmp_path, skipped=0, suite="fast", cases=None, inventory=None):

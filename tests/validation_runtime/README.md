@@ -20,7 +20,8 @@ is imported by the validator.
 The Docker suite snapshots the current source, builds its exact OpenEnv wheel,
 and installs that wheel into this dedicated non-editable test environment. It
 downloads only binary dependencies selected from the committed lock for the
-Docker platform, verifies their hashes, and installs them in the fixture image
+Docker platform using compatibility tags queried from the pinned base image,
+records those tags, verifies dependency hashes, and installs them in the fixture image
 with networking disabled. A cold cache is supported. The tests run outside the
 checkout with `PYTHONPATH` removed, exercising installed package data and the
 production OpenEnv `/ws` endpoint. Each launch uses a fresh subject.
