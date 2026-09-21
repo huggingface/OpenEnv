@@ -2,8 +2,9 @@ import json
 from pathlib import Path
 
 import pytest
-from openenv.validation.manifest import NormalizedManifest
-from openenv.validation.report import ValidationReport
+from openenv.validation.manifest import NormalizedManifest, NormalizedManifestV2
+from openenv.validation.report import ValidationReport, ValidationReportV2
+from openenv.validation.runtime.contracts import RuntimePlan
 
 SCHEMAS_DIR = (
     Path(__file__).parent.parent.parent / "src" / "openenv" / "validation" / "schemas"
@@ -12,6 +13,9 @@ SCHEMAS_DIR = (
 EXPORTS = {
     "manifest.schema.json": NormalizedManifest,
     "report.schema.json": ValidationReport,
+    "manifest-v2.schema.json": NormalizedManifestV2,
+    "report-v2.schema.json": ValidationReportV2,
+    "runtime-plan.schema.json": RuntimePlan,
 }
 
 
