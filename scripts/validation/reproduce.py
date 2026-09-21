@@ -27,6 +27,21 @@ def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def command_digest(argv, *, cwd=ROOT, timeout=600):
+    with tempfile.TemporaryFile() as output:
+        subprocess.run(
+            [str(arg) for arg in argv],
+            cwd=cwd,
+            stdin=subprocess.DEVNULL,
+            stdout=output,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+            check=True,
+        )
+        output.seek(0)
+        return hashlib.file_digest(output, "sha256").hexdigest()
+
+
 def hashes(root):
     return {
         str(path.relative_to(root)): digest(path)
@@ -303,9 +318,7 @@ def main():
         "argv": sys.argv,
         "head_sha": run(["git", "rev-parse", "HEAD"]),
         "dirty": bool(run(["git", "status", "--porcelain"])),
-        "diff_sha256": hashlib.sha256(
-            run(["git", "diff", "HEAD", "--binary"]).encode()
-        ).hexdigest(),
+        "diff_sha256": command_digest(["git", "diff", "HEAD", "--binary"]),
         "toolchain": pins,
         "python": platform.python_version(),
         "uv": uv_version,

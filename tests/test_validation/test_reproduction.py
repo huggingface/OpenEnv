@@ -1,5 +1,6 @@
 """Regression checks for the shared acceptance harness."""
 
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -79,6 +80,22 @@ def test_command_drains_large_output_without_unbounded_retention(tmp_path):
     )
     assert len(result) == reproduction.MAX_LOG_BYTES
     assert log.stat().st_size == reproduction.MAX_LOG_BYTES
+
+
+def test_command_digest_hashes_complete_unsanitized_bytes():
+    reproduction = module("reproduce")
+    payload = b" leading\n" + b"x" * 1_100_000 + b" ghp_abcdefgh\n"
+    observed = reproduction.command_digest(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; sys.stdout.buffer.write("
+                "b' leading\\n' + b'x' * 1_100_000 + b' ghp_abcdefgh\\n')"
+            ),
+        ]
+    )
+    assert observed == hashlib.sha256(payload).hexdigest()
 
 
 def test_command_timeout_retains_partial_log(tmp_path):
