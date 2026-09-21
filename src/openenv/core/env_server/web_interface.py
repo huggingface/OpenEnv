@@ -434,6 +434,7 @@ def create_web_interface_app(
     custom_tab_primary: bool = False,
     show_default_tab: bool = True,
     title_override: Optional[str] = None,
+    state_cls: Type[State] = State,
 ) -> FastAPI:
     """
     Create a FastAPI application with web interface for the given environment.
@@ -464,6 +465,8 @@ def create_web_interface_app(
             ``gradio_builder`` is provided.
         title_override: If set, used verbatim as the Gradio app/browser-tab
             title instead of the default ``"OpenEnv Agentic Environment: {name}"``.
+        state_cls: The State subclass this environment reports. Used for the /state
+            response model and the state entry of /schema. Defaults to State.
 
     Returns:
         FastAPI application instance with web interface
@@ -478,6 +481,7 @@ def create_web_interface_app(
         max_concurrent_envs,
         concurrency_config,
         env_name=env_name,
+        state_cls=state_cls,
     )
 
     # Load environment metadata
