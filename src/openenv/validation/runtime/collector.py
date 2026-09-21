@@ -1,6 +1,8 @@
 """Bounded raw protocol collection in one OpenEnv orchestration session."""
 
 import json
+import socket
+import threading
 import time
 from urllib.parse import urlsplit, urlunsplit
 
@@ -11,6 +13,49 @@ from .contracts import RuntimeEvidence, RuntimePlan, WireExchange
 
 MAX_MESSAGE_BYTES = 1024 * 1024
 MAX_TRACE_BYTES = 8 * 1024 * 1024
+
+
+def _abort_transport(connection):
+    # The send thread may hold websockets' protocol lock. Shut down the raw
+    # transport directly so sendall and its concurrent receiver can both exit.
+    try:
+        connection.socket.shutdown(socket.SHUT_RDWR)
+    except OSError:
+        pass  # The peer or another cleanup path may already have closed it.
+    try:
+        connection.socket.close()
+    except OSError:
+        pass  # A concurrent close must not replace the original operation error.
+
+
+def _bounded_call(connection, operation, timeout_s):
+    if timeout_s <= 0:
+        raise TimeoutError("episode deadline exceeded")
+    expired = threading.Event()
+    deadline = time.monotonic() + timeout_s
+
+    def abort():
+        expired.set()
+        _abort_transport(connection)
+
+    watchdog = threading.Timer(timeout_s, abort)
+    watchdog.daemon = True
+    watchdog.start()
+    try:
+        operation()
+    except KeyboardInterrupt:
+        _abort_transport(connection)
+        raise
+    except Exception:
+        if expired.is_set():
+            raise TimeoutError("transport deadline exceeded") from None
+        raise
+    finally:
+        watchdog.cancel()
+        watchdog.join()
+    if expired.is_set() or time.monotonic() >= deadline:
+        _abort_transport(connection)
+        raise TimeoutError("transport deadline exceeded")
 
 
 class RuntimeCollectionInterrupted(KeyboardInterrupt):
@@ -104,7 +149,7 @@ def collect_runtime_evidence(
             )
         )
         phase = "connect"
-        with connect(
+        connection = connect(
             ws_url,
             proxy=None,
             open_timeout=remaining(),
@@ -112,7 +157,9 @@ def collect_runtime_evidence(
             max_size=MAX_MESSAGE_BYTES,
             max_queue=1,
             compression=None,
-        ) as socket:
+        )
+        complete = False
+        try:
 
             def exchange(operation: str, data: dict | None = None) -> dict:
                 nonlocal phase, trace_bytes
@@ -121,9 +168,10 @@ def collect_runtime_evidence(
                 if data is not None:
                     request["data"] = data
                 request_json = json.dumps(request, allow_nan=False)
-                remaining()
-                socket.send(request_json)
-                raw = socket.recv(timeout=remaining())
+                _bounded_call(
+                    connection, lambda: connection.send(request_json), remaining()
+                )
+                raw = connection.recv(timeout=remaining())
                 if not isinstance(raw, str):
                     raise ValueError("binary response is not the JSON protocol")
                 trace_bytes += len(raw.encode("utf-8")) + len(
@@ -157,7 +205,23 @@ def collect_runtime_evidence(
                     break
                 observation = exchange("step", action)
                 exchange("state")
-            socket.send(json.dumps({"type": "close"}))
+            complete = True
+        finally:
+            # Teardown is best effort and cannot replace an in-episode failure
+            # or invalidate an otherwise completely measured episode.
+            if complete:
+                try:
+                    _bounded_call(
+                        connection,
+                        lambda: connection.send(json.dumps({"type": "close"})),
+                        min(remaining(), 1.0),
+                    )
+                except Exception:
+                    pass  # A server may close immediately after its final response.
+            try:
+                _bounded_call(connection, connection.close, 1.0)
+            except Exception:
+                _abort_transport(connection)
         return RuntimeEvidence(
             exchanges=tuple(exchanges), observation_schema_json=schema_json
         )

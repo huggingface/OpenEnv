@@ -132,9 +132,12 @@ class ObservationSchemaGrader(_RuntimeGrader):
             ):
                 problems.append(f"exchange {index}: malformed observation envelope")
                 continue
-            observation = dict(data["observation"])
-            observation.update(reward=data["reward"], done=data["done"])
-            observations.append({"index": index, "observation": observation})
+            # Preserve the bounded wire representation across the subprocess
+            # boundary: normalizing numbers such as 1e9 can inflate a valid
+            # episode beyond the worker's input limit.
+            observations.append(
+                {"index": index, "response_json": exchange.response_json}
+            )
         if count == 0:
             problems.append("no observations were measured")
         # A subject-supplied regex or recursive schema can exhaust CPU. Keep all
@@ -144,7 +147,10 @@ class ObservationSchemaGrader(_RuntimeGrader):
             checked = subprocess.run(
                 [sys.executable, "-I", str(worker)],
                 input=json.dumps(
-                    {"schema": schema, "observations": observations},
+                    {
+                        "schema_json": evidence.observation_schema_json,
+                        "observations": observations,
+                    },
                     ensure_ascii=False,
                     separators=(",", ":"),
                 ),
