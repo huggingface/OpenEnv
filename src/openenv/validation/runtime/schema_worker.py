@@ -17,7 +17,8 @@ def main():
             resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024,) * 2)
     except (ImportError, ValueError, OSError):
         pass  # The parent always enforces the independent wall-clock deadline.
-    payload = json.loads(sys.stdin.read(10 * 1024 * 1024))
+    # Parent-side trace limits bound this input before JSON escaping expands it.
+    payload = json.loads(sys.stdin.read())
     problems = []
     try:
         schema = payload["schema"]

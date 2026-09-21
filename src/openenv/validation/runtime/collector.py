@@ -45,12 +45,26 @@ def collect_runtime_evidence(
     schema_json = None
     phase = "schema"
     trace_bytes = 0
+    completed = False
 
     def remaining() -> float:
         value = min(request_timeout_s, deadline - time.monotonic())
         if value <= 0:
             raise TimeoutError("episode deadline exceeded")
         return value
+
+    def send(socket, message: str) -> None:
+        timeout = remaining()
+        transport = socket.socket
+        previous_timeout = transport.gettimeout()
+        transport.settimeout(timeout)
+        try:
+            socket.send(message)
+        finally:
+            try:
+                transport.settimeout(previous_timeout)
+            except OSError:
+                pass
 
     try:
         with httpx.Client(trust_env=False, follow_redirects=False) as client:
@@ -108,8 +122,7 @@ def collect_runtime_evidence(
                 if data is not None:
                     request["data"] = data
                 request_json = json.dumps(request, allow_nan=False)
-                remaining()
-                socket.send(request_json)
+                send(socket, request_json)
                 raw = socket.recv(timeout=remaining())
                 if not isinstance(raw, str):
                     raise ValueError("binary response is not the JSON protocol")
@@ -144,11 +157,16 @@ def collect_runtime_evidence(
                     break
                 observation = exchange("step", action)
                 exchange("state")
-            socket.send(json.dumps({"type": "close"}))
+            completed = True
+            send(socket, json.dumps({"type": "close"}))
         return RuntimeEvidence(
             exchanges=tuple(exchanges), observation_schema_json=schema_json
         )
     except Exception as exc:
+        if completed:
+            return RuntimeEvidence(
+                exchanges=tuple(exchanges), observation_schema_json=schema_json
+            )
         # Exception text may include submitted payloads or URL credentials.
         return RuntimeEvidence(
             exchanges=tuple(exchanges),

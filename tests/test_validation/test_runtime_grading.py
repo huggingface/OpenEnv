@@ -265,6 +265,26 @@ def test_schema_worker_deadline_becomes_a_validation_finding(tmp_path, monkeypat
     assert result.evidence == ["observation schema evaluation exceeded its time budget"]
 
 
+def test_schema_worker_reads_large_escaped_observation_batch(tmp_path, monkeypatch):
+    rows = good_rows()
+    payload = json.loads(rows[2].response_json)
+    payload["data"]["observation"]["text"] = "界" * 1_750_000
+    rows[2] = replace(
+        rows[2],
+        response_json=json.dumps(payload, ensure_ascii=False),
+    )
+    run = subprocess.run
+
+    def require_large_input(command, **kwargs):
+        assert len(kwargs["input"].encode()) > 10 * 1024 * 1024
+        return run(command, **kwargs)
+
+    monkeypatch.setattr(basic.subprocess, "run", require_large_input)
+    result = ObservationSchemaGrader().run(subject_with(tmp_path, rows))
+
+    assert result.status is CheckStatus.PASS
+
+
 def test_pathological_regex_runs_in_killable_worker(tmp_path, monkeypatch):
     run = subprocess.run
 
