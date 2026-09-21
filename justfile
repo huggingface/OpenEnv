@@ -18,6 +18,6 @@ test:
         --ignore=tests/envs/test_websearch_environment.py \
         -m "not integration and not network and not docker"
 
-# Run a single test file or pattern, e.g. `just test-one tests/core/test_agentic_harness_types.py`
+# Run a single test file or pattern, e.g. `just test-one tests/core/test_state_schema_subclass.py`
 test-one target:
     uv run pytest {{target}} -v --tb=short
