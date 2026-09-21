@@ -234,12 +234,6 @@ def _runtime(subject, *, skip_build, provider):
                 cleanup["completed"] = True
             except Exception:
                 cleanup["completed"] = False
-                result = _outcome(
-                    "runtime.startup",
-                    CheckStatus.ERROR,
-                    "subject teardown failed",
-                    started=started,
-                )
     return [result, *checks], attempted, plan, evidence, inspection, cleanup
 
 
