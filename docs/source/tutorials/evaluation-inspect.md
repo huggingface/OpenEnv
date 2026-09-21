@@ -1,4 +1,4 @@
-# Evaluating agents with Inspect AI
+# Evaluating with Environments
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/huggingface/OpenEnv/blob/main/examples/evaluation_inspect.ipynb)
 

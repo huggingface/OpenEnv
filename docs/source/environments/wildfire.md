@@ -7,7 +7,7 @@ Agents must contain spreading fires using **water**, **firebreaks**, and **timin
 [![Docker](https://img.shields.io/badge/docker-ready-blue)](https://hub.docker.com/)
 [![Python](https://img.shields.io/badge/python-3.10+-green)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/backend-fastapi-teal)](https://fastapi.tiangolo.com/)
-[![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
+[![License](https://img.shields.io/badge/license-BSD--3--Clause-lightgrey)](https://github.com/huggingface/OpenEnv/blob/main/LICENSE)
 
 ---
 

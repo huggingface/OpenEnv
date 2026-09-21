@@ -1,6 +1,6 @@
 # CLI
 
-The `openenv` CLI provides a set of commands for building, validating, and pushing environments to Hugging Face Spaces or a custom Docker registry. For an end-to-end tutorial on building environments with OpenEnv, see the [building an environment](../getting_started/environment-builder.md) guide.
+The `openenv` CLI provides a set of commands for building, validating, and pushing environments to Hugging Face Spaces or a custom Docker registry. For an end-to-end tutorial on building environments with OpenEnv, see the [building an environment](../getting_started/environment-builder) guide.
 
 ## `openenv init`
 
@@ -27,12 +27,7 @@ openenv import path/to/source --name my_env --output-dir ./envs
 openenv import path/to/source --name my_env --output-dir ./envs --env-class MyEnv
 ```
 
-```{eval-rst}
-.. automodule:: openenv.cli.commands.import_env
-   :members:
-   :undoc-members:
-   :show-inheritance:
-```
+[[autodoc]] openenv.cli.commands.import_env.import_env
 
 ## `openenv build`
 

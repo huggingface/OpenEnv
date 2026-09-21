@@ -200,9 +200,10 @@ app = create_app(create_my_environment, MyAction, MyObservation, env_name="my_en
 # client.py
 from openenv.core.env_client import EnvClient
 from openenv.core.client_types import StepResult
-from .models import MyAction, MyObservation, MyState
+from openenv.core.env_server.types import State
+from .models import MyAction, MyObservation
 
-class MyEnv(EnvClient[MyAction, MyObservation, MyState]):
+class MyEnv(EnvClient[MyAction, MyObservation, State]):
     def _step_payload(self, action: MyAction) -> dict:
         return {"command": action.command, "parameters": action.parameters}
 
