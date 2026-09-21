@@ -155,8 +155,9 @@ policy) inside the provider. Because the contract is provider-neutral, any hoste
 runtime can implement it without changing the client/server protocol.
 
 Providers shipped today: `LocalDockerProvider`, `DockerSwarmProvider`,
-`UVProvider`, `DaytonaProvider`, and `ACASandboxProvider` (Azure Container Apps
-Sandboxes). A `KubernetesProvider` is planned.
+`UVProvider`, `DaytonaProvider`, `ACASandboxProvider` (Azure Container Apps
+Sandboxes), `ModalProvider`, and `NovitaSandboxProvider`. A `KubernetesProvider`
+is planned.
 
 See the [Runtime Providers guide](guides/runtime-providers.md) for the full list,
 install extras, and how to select a provider, and the
