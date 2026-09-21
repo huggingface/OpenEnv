@@ -24,6 +24,7 @@ import argparse
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
@@ -122,7 +123,10 @@ def _rewrite_relative_links(text, env_dir):
         kind = next(k for k in ("image", "link", "attribute") if match.group(k))
         original = match.group(f"{kind}_url")
         url = original.strip("<>")
-        parsed = urlsplit(url)
+        try:
+            parsed = urlsplit(url)
+        except ValueError:
+            return match.group(0)
         if parsed.scheme or parsed.netloc or not parsed.path or url.startswith("/"):
             return match.group(0)
         target = (source_dir / unquote(parsed.path)).resolve()
@@ -147,6 +151,7 @@ def _rewrite_relative_links(text, env_dir):
 
     lines = []
     fence = None
+    list_content_indents = []
     for line in text.splitlines(keepends=True):
         marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
         if fence:
@@ -161,10 +166,39 @@ def _rewrite_relative_links(text, env_dir):
         elif marker:
             fence = marker[1]
             lines.append(line)
-        elif line.startswith(("    ", "\t")):
-            lines.append(line)
         else:
-            lines.append(pattern.sub(rewrite, line))
+            indentation = re.match(r"^[ \t]*", line)[0]
+            indent_width = len(indentation.expandtabs(4))
+            list_marker = re.match(
+                r"^(?P<indent>[ \t]*)(?:[-+*]|\d{1,9}[.)])(?P<spacing>[ \t]+)",
+                line,
+            )
+
+            if list_marker:
+                while list_content_indents and indent_width < list_content_indents[-1]:
+                    list_content_indents.pop()
+                content_indent = len(list_marker.group(0).expandtabs(4))
+                if (
+                    not list_content_indents
+                    or content_indent != list_content_indents[-1]
+                ):
+                    list_content_indents.append(content_indent)
+                lines.append(pattern.sub(rewrite, line))
+            elif not line.strip():
+                lines.append(line)
+            else:
+                while list_content_indents and indent_width < list_content_indents[-1]:
+                    list_content_indents.pop()
+                is_list_continuation = (
+                    list_content_indents
+                    and indent_width < list_content_indents[-1] + 4
+                )
+                if line.startswith(("    ", "\t")) and not is_list_continuation:
+                    lines.append(line)
+                else:
+                    if not indentation:
+                        list_content_indents.clear()
+                    lines.append(pattern.sub(rewrite, line))
     return "".join(lines)
 
 
@@ -329,13 +363,29 @@ def run_fix(missing, orphaned, stale, dry_run=False):
     def label(action):
         return f"[dry-run] Would {action}" if dry_run else action
 
+    def write_stub(stub_path, env_dir):
+        content = generate_stub(env_dir)
+        temporary_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                dir=os.path.dirname(stub_path),
+                prefix=f".{os.path.basename(stub_path)}.",
+                delete=False,
+            ) as temporary:
+                temporary_path = temporary.name
+                temporary.write(content)
+            os.replace(temporary_path, stub_path)
+        finally:
+            if temporary_path and os.path.exists(temporary_path):
+                os.remove(temporary_path)
+
     for env_dir, slug in missing:
         stub_path = os.path.join(DOCS_ENVS_DIR, f"{slug}.md")
         if dry_run:
             print(f"  {label('create')} {os.path.relpath(stub_path, ROOT)}")
         else:
-            with open(stub_path, "w") as f:
-                f.write(generate_stub(env_dir))
+            write_stub(stub_path, env_dir)
             print(f"  ✅ Created {os.path.relpath(stub_path, ROOT)}")
 
     for env_dir, slug in stale:
@@ -343,8 +393,7 @@ def run_fix(missing, orphaned, stale, dry_run=False):
         if dry_run:
             print(f"  {label('refresh')} {os.path.relpath(stub_path, ROOT)}")
         else:
-            with open(stub_path, "w") as f:
-                f.write(generate_stub(env_dir))
+            write_stub(stub_path, env_dir)
             print(f"  🔄 Refreshed {os.path.relpath(stub_path, ROOT)}")
 
     for env_dir, slug in orphaned:

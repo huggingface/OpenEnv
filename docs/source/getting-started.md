@@ -32,7 +32,10 @@ running Space. Echo exposes its actions as MCP tools.
 ```python
 from openenv import AutoEnv
 
-env = AutoEnv.from_env("openenv/echo-env")
+env = AutoEnv.from_env(
+    "openenv/echo_env",
+    base_url="https://openenv-echo-env.hf.space",
+)
 
 with env.sync() as client:
     result = client.reset()

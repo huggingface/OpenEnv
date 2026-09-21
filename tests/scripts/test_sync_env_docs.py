@@ -2,6 +2,7 @@
 
 import importlib.util
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -23,8 +24,14 @@ def repo(tmp_path, monkeypatch):
     (root / "LICENSE").touch()
     (root / "examples").mkdir()
     (root / "examples" / "with spaces.py").touch()
+    (root / "docs" / "source" / "environments").mkdir(parents=True)
     monkeypatch.setattr(sync_env_docs, "ROOT", str(root))
     monkeypatch.setattr(sync_env_docs, "ENVS_DIR", str(root / "envs"))
+    monkeypatch.setattr(
+        sync_env_docs,
+        "DOCS_ENVS_DIR",
+        str(root / "docs" / "source" / "environments"),
+    )
     return root
 
 
@@ -79,6 +86,21 @@ def test_leaves_code_anchors_external_missing_and_outside_paths_unchanged(repo):
     assert sync_env_docs._rewrite_relative_links(source, "example_env") == source
 
 
+def test_rewrites_links_in_deeply_indented_list_items(repo):
+    source = """    - Client files:
+      [client](client.py)
+
+    [client](client.py)
+"""
+    github = "https://github.com/huggingface/OpenEnv"
+    assert sync_env_docs._rewrite_relative_links(source, "example_env") == (
+        "    - Client files:\n"
+        f"      [client]({github}/blob/main/envs/example_env/client.py)\n"
+        "\n"
+        "    [client](client.py)\n"
+    )
+
+
 def test_generate_stub_keeps_inline_code_labels_and_strips_frontmatter(repo):
     readme = repo / "envs" / "example_env" / "README.md"
     readme.write_text(
@@ -88,3 +110,33 @@ def test_generate_stub_keeps_inline_code_labels_and_strips_frontmatter(repo):
         "<!-- openenv-source: example_env -->\n# Example\n\n"
         "[`client.py`](https://github.com/huggingface/OpenEnv/blob/main/envs/example_env/client.py)\n"
     )
+
+
+def test_run_fix_handles_malformed_url_without_truncating_stub(repo):
+    readme = repo / "envs" / "example_env" / "README.md"
+    readme.write_text("# Example\n\n[bad](http://[)\n")
+    stub = repo / "docs" / "source" / "environments" / "example.md"
+    stub.write_text("previous content\n")
+
+    sync_env_docs.run_fix([], [], [("example_env", "example")])
+
+    assert stub.read_text() == (
+        "<!-- openenv-source: example_env -->\n"
+        "# Example\n\n"
+        "[bad](http://[)\n"
+    )
+
+
+def test_run_fix_preserves_stub_when_generation_fails(repo, monkeypatch):
+    stub = repo / "docs" / "source" / "environments" / "example.md"
+    stub.write_text("previous content\n")
+    monkeypatch.setattr(
+        sync_env_docs,
+        "generate_stub",
+        Mock(side_effect=ValueError("invalid README")),
+    )
+
+    with pytest.raises(ValueError, match="invalid README"):
+        sync_env_docs.run_fix([], [], [("example_env", "example")])
+
+    assert stub.read_text() == "previous content\n"
