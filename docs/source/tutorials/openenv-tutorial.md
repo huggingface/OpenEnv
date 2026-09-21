@@ -291,7 +291,7 @@ try:
 except ImportError:
     IN_COLAB = False
 
-if IN_COLAB:
+if IN_COLAB and Path.cwd().name != "OpenEnv":
     if not Path("OpenEnv").exists():
         subprocess.check_call(["git", "clone", "https://github.com/huggingface/OpenEnv.git"])
     os.chdir("OpenEnv")
