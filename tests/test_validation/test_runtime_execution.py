@@ -11,6 +11,7 @@ from openenv.validation.providers import ProviderError, StartupError
 from openenv.validation.report import CheckResult
 from openenv.validation.runner import run_validation, source_digest
 from openenv.validation.runtime.artifacts import write_runtime_bundle
+from openenv.validation.runtime.contracts import RuntimeEvidence
 from openenv.validation.runtime.scheduler import execute_graders, order_graders
 from openenv.validation.types import CheckStatus, Level, ProviderCapability
 from support.runtime import evidence, exchange, FakeRuntimeProvider
@@ -237,6 +238,71 @@ def test_collector_crash_or_cancel_always_tears_down(package, monkeypatch, failu
     report = run_validation(package, max_level=Level.RUNTIME, provider=provider)
     assert provider.subject.stopped
     assert report.verdict.value == "fail"
+    assert "must-not-appear" not in report.model_dump_json()
+
+
+@pytest.mark.parametrize("failure", [StartupError, ProviderError])
+def test_teardown_failure_preserves_primary_provider_error(
+    package, monkeypatch, failure
+):
+    provider = FakeRuntimeProvider()
+
+    def failed_inspect():
+        raise failure("subject inspection failed")
+
+    def failed_stop():
+        raise RuntimeError("token=must-not-appear")
+
+    monkeypatch.setattr(provider.subject, "inspect", failed_inspect)
+    monkeypatch.setattr(provider.subject, "stop", failed_stop)
+    report = run_validation(package, max_level=Level.RUNTIME, provider=provider)
+    result = next(r for r in report.results if r.check_id == "runtime.startup")
+    assert result.status is CheckStatus.ERROR
+    assert result.evidence == ["subject inspection failed", "subject teardown failed"]
+    assert report.verdict.value == "fail"
+    assert "must-not-appear" not in report.model_dump_json()
+
+
+@pytest.mark.parametrize("collection_failed", [False, True])
+def test_teardown_failure_preserves_collection_outcome(
+    package, monkeypatch, tmp_path, collection_failed
+):
+    provider = FakeRuntimeProvider()
+    collected = (
+        RuntimeEvidence(failure_phase="schema", failure_reason="schema request failed")
+        if collection_failed
+        else measured_episode()
+    )
+
+    def failed_stop():
+        raise RuntimeError("token=must-not-appear")
+
+    monkeypatch.setattr(provider.subject, "stop", failed_stop)
+    monkeypatch.setattr(
+        "openenv.validation.runner.collect_runtime_evidence", lambda *a, **k: collected
+    )
+    bundle = tmp_path / "bundle"
+    report = run_validation(
+        package, max_level=Level.RUNTIME, provider=provider, artifacts_dir=bundle
+    )
+    result = next(r for r in report.results if r.check_id == "runtime.startup")
+    assert result.status is CheckStatus.ERROR
+    assert result.evidence == [
+        "schema request failed"
+        if collection_failed
+        else "subject built and reached its control endpoint",
+        "subject teardown failed",
+    ]
+    if not collection_failed:
+        assert result.measured == {
+            "provider": provider.name,
+            "image_ref": "sha256:" + "a" * 64,
+        }
+    assert report.verdict.value == "fail"
+    assert json.loads((bundle / "cleanup.json").read_text()) == {
+        "required": True,
+        "completed": False,
+    }
     assert "must-not-appear" not in report.model_dump_json()
 
 
