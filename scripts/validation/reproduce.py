@@ -151,20 +151,25 @@ def stage_image(work, output, pins, manifest):
     source = work / "source"
     manifest["wheel_source_hashes"] = snapshot_source(source)
     wheel_dir = output / "wheel"
-    run(
-        [
-            "uv",
-            "build",
-            "--wheel",
-            "--no-build-isolation",
-            "--python",
-            sys.executable,
-            "--out-dir",
-            wheel_dir,
-            source,
-        ],
-        log=output / "logs/wheel-build.log",
-    )
+    try:
+        run(
+            [
+                "uv",
+                "build",
+                "--wheel",
+                "--no-build-isolation",
+                "--python",
+                sys.executable,
+                "--out-dir",
+                wheel_dir,
+                source,
+            ],
+            log=output / "logs/wheel-build.log",
+        )
+    finally:
+        # uv's output-directory marker is not evidence and artifact upload omits
+        # hidden files. Remove it before checksumming, including failed builds.
+        (wheel_dir / ".gitignore").unlink(missing_ok=True)
     wheels = list(wheel_dir.glob("*.whl"))
     if len(wheels) != 1:
         raise RuntimeError("Expected one exact-source OpenEnv wheel")
