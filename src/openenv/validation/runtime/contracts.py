@@ -7,7 +7,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+    ValidationError,
+)
 
 from ..manifest import ExecutionDeclaration, NetworkPolicy, ResourceDeclaration
 
@@ -113,7 +120,7 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result = {}
     for key, value in pairs:
         if key in result:
-            raise ValueError(f"duplicate runtime JSON key: {key}")
+            raise ValueError("duplicate runtime JSON key")
         result[key] = value
     return result
 
@@ -147,7 +154,35 @@ def load_runtime_plan(root: Path, execution: ExecutionDeclaration) -> RuntimePla
         raw = json.loads(payload, object_pairs_hook=_unique_object)
         _check_json(raw)
         return RuntimePlan.model_validate(raw)
-    except (OSError, ValueError, RecursionError) as exc:
+    except ValidationError as exc:
+        fields = RuntimePlan.model_fields.keys() | RuntimeReset.model_fields.keys()
+        errors = []
+        for error in exc.errors(
+            include_input=False, include_context=False, include_url=False
+        )[:5]:
+            location = ".".join(
+                str(part) if isinstance(part, int) or part in fields else "<field>"
+                for part in error["loc"]
+            )
+            # These messages come from the fixed schema and validators; raw inputs,
+            # exception context and subject-controlled field names are omitted.
+            errors.append(f"{location or '<root>'}: {error['type']} ({error['msg']})")
+        if exc.error_count() > 5:
+            errors.append(f"... ({exc.error_count()} errors total)")
+        raise RuntimePlanError(
+            "runtime plan schema validation failed: " + "; ".join(errors)
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise RuntimePlanError(
+            f"invalid runtime plan JSON at line {exc.lineno}, column {exc.colno}: {exc.msg}"
+        ) from exc
+    except UnicodeError as exc:
+        raise RuntimePlanError("runtime plan contains invalid text encoding") from exc
+    except OSError as exc:
+        raise RuntimePlanError(
+            f"runtime plan could not be read ({type(exc).__name__})"
+        ) from exc
+    except (ValueError, RecursionError) as exc:
         raise RuntimePlanError(f"invalid runtime plan: {exc}") from exc
 
 

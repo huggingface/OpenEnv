@@ -126,6 +126,7 @@ class ObservationSchemaGrader(_RuntimeGrader):
             data = response["data"]
             if (
                 response.get("type") != "observation"
+                or not isinstance(data, dict)
                 or not isinstance(data.get("observation"), dict)
                 or type(data.get("done")) is not bool
                 or "reward" not in data
@@ -191,6 +192,9 @@ class StateContractGrader(_RuntimeGrader):
                 states += 1
                 response = json.loads(exchange.response_json)
                 data = response["data"]
+                if not isinstance(data, dict):
+                    problems.append(f"exchange {index}: malformed state envelope")
+                    continue
                 if (
                     response.get("type") != "state"
                     or data.get("episode_id") != episode_id

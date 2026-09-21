@@ -231,6 +231,28 @@ def test_invalid_raw_envelope_is_rejected_before_defaults(tmp_path, field, value
     assert "exchange 2: malformed observation envelope" in result.evidence
 
 
+@pytest.mark.parametrize("data", [None, [], "private-payload", 42, 0.5, False])
+@pytest.mark.parametrize(
+    "grader,index,envelope",
+    [
+        (ObservationSchemaGrader, 0, "observation"),
+        (ObservationSchemaGrader, 2, "observation"),
+        (StateContractGrader, 1, "state"),
+        (StateContractGrader, 3, "state"),
+    ],
+)
+def test_non_object_data_is_a_finding_not_a_validator_crash(
+    tmp_path, grader, index, envelope, data
+):
+    rows = mutate_response(
+        good_rows(), index, lambda response: response.update(data=data)
+    )
+    result = grader().run(subject_with(tmp_path, rows))
+    assert result.status is CheckStatus.FAIL
+    assert f"exchange {index}: malformed {envelope} envelope" in result.evidence
+    assert "private-payload" not in result.model_dump_json()
+
+
 def test_missing_done_is_not_filled_by_a_model_default(tmp_path):
     rows = mutate_response(
         good_rows(), 2, lambda response: response["data"].pop("done")

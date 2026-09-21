@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 from openenv.validation.policy import load_policy, PolicyError
-from openenv.validation.providers import StartupError
+from openenv.validation.providers import ProviderError, StartupError
 from openenv.validation.report import CheckResult
 from openenv.validation.runner import run_validation, source_digest
 from openenv.validation.runtime.artifacts import write_runtime_bundle
@@ -172,6 +172,9 @@ def test_invalid_plan_is_visible_failure(package):
     provider = FakeRuntimeProvider()
     report = run_validation(package, max_level=Level.RUNTIME, provider=provider)
     assert report.verdict.value == "fail"
+    result = next(r for r in report.results if r.check_id == "runtime.startup")
+    assert "runtime plan schema validation failed" in result.evidence[0]
+    assert "missing" in result.evidence[0]
     assert not provider.builds
 
 
@@ -185,7 +188,42 @@ def test_startup_failure_does_not_masquerade_as_skips(package):
     report = run_validation(package, max_level=Level.RUNTIME, provider=provider)
     result = next(r for r in report.results if r.check_id == "runtime.startup")
     assert result.status is CheckStatus.FAIL
+    assert result.evidence == ["subject build failed"]
     assert report.verdict.value == "fail"
+
+
+def test_provider_failure_diagnostics_are_visible_and_bounded(package):
+    provider = FakeRuntimeProvider()
+
+    def failed_build(*args):
+        raise ProviderError("provider deadline elapsed: " + "x" * 5000)
+
+    provider.build = failed_build
+    report = run_validation(package, max_level=Level.RUNTIME, provider=provider)
+    result = next(r for r in report.results if r.check_id == "runtime.startup")
+    assert result.status is CheckStatus.ERROR
+    assert result.evidence[0].startswith("provider deadline elapsed: ")
+    assert len(result.evidence[0]) == 4096
+
+
+def test_source_change_withdraws_dependent_runtime_results(package, monkeypatch):
+    provider = FakeRuntimeProvider()
+
+    def collect(*args, **kwargs):
+        (package / "changed.txt").write_text("changed during collection")
+        return measured_episode()
+
+    monkeypatch.setattr("openenv.validation.runner.collect_runtime_evidence", collect)
+    report = run_validation(package, max_level=Level.RUNTIME, provider=provider)
+    results = {result.check_id: result for result in report.results}
+    assert results["runtime.startup"].status is CheckStatus.ERROR
+    for name in ("reward_well_formed", "observation_schema", "state_contract"):
+        result = results[f"runtime.{name}"]
+        assert result.status is CheckStatus.SKIP
+        assert "runtime.startup" in result.evidence[0]
+        assert "source changed" in result.evidence[0]
+    assert report.verdict.value == "fail"
+    assert provider.subject.stopped
 
 
 @pytest.mark.parametrize("failure", [RuntimeError, KeyboardInterrupt])

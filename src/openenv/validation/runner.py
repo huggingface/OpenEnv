@@ -185,27 +185,27 @@ def _runtime(subject, *, skip_build, provider):
             "runtime.startup", CheckStatus.SKIP, str(exc), started=started
         )
         checks = []
-    except RuntimePlanError:
+    except RuntimePlanError as exc:
         result = _outcome(
             "runtime.startup",
             CheckStatus.FAIL,
-            "runtime plan is missing, unsafe or invalid",
+            str(exc)[:4096],
             started=started,
         )
         checks = []
-    except StartupError:
+    except StartupError as exc:
         result = _outcome(
             "runtime.startup",
             CheckStatus.FAIL,
-            "subject failed build or readiness; inspect the Docker fixture/build inputs",
+            str(exc)[:4096],
             started=started,
         )
         checks = []
-    except ProviderError:
+    except ProviderError as exc:
         result = _outcome(
             "runtime.startup",
             CheckStatus.ERROR,
-            "provider could not complete a bounded operation",
+            str(exc)[:4096],
             started=started,
         )
         checks = []
@@ -353,7 +353,22 @@ def run_validation(
                     reason = "unmet dependency: runtime.startup"
                 results.append(_outcome(entry.check_id, CheckStatus.SKIP, reason))
         if source_digest(target) != digest_before:
-            results = [r for r in results if r.check_id != "runtime.startup"]
+            results = [
+                _outcome(
+                    r.check_id,
+                    CheckStatus.SKIP,
+                    "unmet dependency: runtime.startup (package source changed)",
+                )
+                if r.check_id
+                in {
+                    "runtime.reward_well_formed",
+                    "runtime.observation_schema",
+                    "runtime.state_contract",
+                }
+                else r
+                for r in results
+                if r.check_id != "runtime.startup"
+            ]
             results.append(
                 _outcome(
                     "runtime.startup",
