@@ -154,7 +154,7 @@ def validate(
     applies the severity policy, and emits a report.
 
     Exit codes: 0 pass/warn · 1 fail · 2 unrecognized/unsupported package · 3
-    internal error.
+    internal or policy error.
 
     Examples:
 
