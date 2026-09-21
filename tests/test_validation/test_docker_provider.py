@@ -275,8 +275,9 @@ def test_exec_preserves_argv_and_redacts_credentials(commands, monkeypatch):
     assert "bad-secret" not in result.stderr
 
 
+@pytest.mark.parametrize("uppercase_secret_names", [False, True])
 def test_build_uses_filtered_snapshot_and_returns_immutable_image(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, uppercase_secret_names
 ):
     (tmp_path / "Dockerfile").write_text("FROM scratch\n")
     (tmp_path / "data.txt").write_text("source")
@@ -285,7 +286,18 @@ def test_build_uses_filtered_snapshot_and_returns_immutable_image(
         (tmp_path / name / "private").write_text("not copied")
     (tmp_path / ".env").write_text("HF_TOKEN=private")
     (tmp_path / "key.pem").write_text("private")
-    for name in ("secret", "secrets", "credentials"):
+    for name in (
+        "secret",
+        "secrets",
+        "credentials",
+        "credentials.json",
+        "secrets.json",
+        "secrets.toml",
+        "secrets.yaml",
+        "secrets.yml",
+    ):
+        if uppercase_secret_names:
+            name = name.upper()
         (tmp_path / name).write_text("private")
     (tmp_path / "secret.py").write_text("VALUE = 'source'\n")
     (tmp_path / "credentials.py").write_text("VALUE = 'source'\n")

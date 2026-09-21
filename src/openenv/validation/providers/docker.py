@@ -45,7 +45,8 @@ _EXCLUDED = {
 }
 _SECRET_NAME = re.compile(
     r"^(?:\.env(?:\..*)?|id_(?:rsa|ed25519|ecdsa)(?:\..*)?|"
-    r"credentials|secrets?)$|\.(?:pem|key)$",
+    r"credentials(?:\.json)?|secrets?|secrets\.(?:json|toml|ya?ml))$|"
+    r"\.(?:pem|key)$",
     re.I,
 )
 _TOKEN = re.compile(
