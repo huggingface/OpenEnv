@@ -38,6 +38,10 @@ def test_linux_wheelhouse_markers_ignore_host_platform(tmp_path):
 def test_wheel_download_uses_target_image_compatibility(
     tmp_path, monkeypatch, arch, minor
 ):
+    # The pinned runtime lab supplies pip and fails if any test is skipped.
+    pytest.importorskip(
+        "pip", reason="Wheel resolution requires the pinned runtime lab"
+    )
     reproduction = module("reproduce")
     available = tmp_path / "available"
     available.mkdir()
