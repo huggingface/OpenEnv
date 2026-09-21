@@ -24,7 +24,7 @@ From the repo root:
 doc-builder preview openenv docs/source
 ```
 
-Then open the URL printed in the terminal (usually `http://localhost:5173/openenv/main/en/index`).
+Then open the URL printed in the terminal and navigate to `/index` (usually `http://localhost:5173/index`).
 
 ## Adding an Environment to the Docs
 
