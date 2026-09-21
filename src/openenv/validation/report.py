@@ -84,9 +84,7 @@ class ValidationReportV2(ValidationReport):
     manifest: NormalizedManifestV2 | NormalizedManifest | None
 
 
-def write_report(
-    report: ValidationReport | ValidationReportV2, path: Path | None = None
-) -> str:
+def write_report(report: ValidationReport, path: Path | None = None) -> str:
     """
     Serialize a validation report to schema-versioned JSON.
 
