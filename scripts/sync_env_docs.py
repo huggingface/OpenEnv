@@ -189,9 +189,10 @@ def _rewrite_relative_links(text, env_dir):
             else:
                 while list_content_indents and indent_width < list_content_indents[-1]:
                     list_content_indents.pop()
-                is_list_continuation = bool(
-                    list_content_indents
-                ) and indent_width < list_content_indents[-1] + 4
+                is_list_continuation = (
+                    bool(list_content_indents)
+                    and indent_width < list_content_indents[-1] + 4
+                )
                 if line.startswith(("    ", "\t")) and not is_list_continuation:
                     lines.append(line)
                 else:
