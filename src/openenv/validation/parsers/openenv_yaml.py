@@ -5,7 +5,7 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
-from ..manifest import ManifestError, NormalizedManifest
+from ..manifest import ManifestError, NormalizedManifest, NormalizedManifestV2
 from ..types import SignatureKind
 
 VALIDATION_BLOCK_REMEDIATION = (
@@ -41,7 +41,7 @@ class OpenEnvYamlParser:
 
     signature = SignatureKind.OPENENV_SERVED
 
-    def parse(self, package_root: Path) -> NormalizedManifest:
+    def parse(self, package_root: Path) -> NormalizedManifest | NormalizedManifestV2:
         """
         Parse a served-environment package.
 
@@ -69,8 +69,9 @@ class OpenEnvYamlParser:
         if not isinstance(validation, dict):
             raise ManifestError(["`validation:` must be a mapping"])
 
+        has_execution = "execution" in validation
         data: dict = {
-            "manifest_schema_version": "1",
+            "manifest_schema_version": "2" if has_execution else "1",
             "signature": SignatureKind.OPENENV_SERVED,
             "version": raw.get("version"),
             "judge": validation.get("judge"),
@@ -87,8 +88,12 @@ class OpenEnvYamlParser:
             if value is not None:
                 data[key] = value
 
+        if has_execution:
+            data["execution"] = validation["execution"]
+
         try:
-            return NormalizedManifest.model_validate(data)
+            model = NormalizedManifestV2 if has_execution else NormalizedManifest
+            return model.model_validate(data)
         except ValidationError as exc:
             raise ManifestError(
                 _format_validation_error(exc),
