@@ -11,8 +11,12 @@
     title: Deploying an Env
   - local: guides/auto-discovery
     title: Auto-Discovery
+  - local: guides/catalog-discovery
+    title: Catalog Discovery
   - local: guides/rl-integration
     title: RL Training
+  - local: guides/harbor-provider-qualification
+    title: Harbor Provider Qualification
   - local: guides/rewards
     title: Rewards
   - local: guides/concepts
@@ -75,6 +79,8 @@
     title: Terminus
   - local: environments/coding_tools
     title: Coding Tools
+  - local: environments/harbor
+    title: Harbor
   - local: environments/chat
     title: Chat
   - local: environments/atari
@@ -127,6 +133,8 @@
     title: Reasoning Gym
   - local: environments/tbench2
     title: TBench2
+  - local: environments/thinkingbox
+    title: ThinkingBox
   - local: environments/unity
     title: Unity
   - local: environments/wildfire

@@ -87,8 +87,8 @@ class __ENV_CLASS_NAME__Environment(Environment):
         message = action.message
         length = len(message)
 
-        # Simple reward: longer messages get higher rewards
-        reward = length * 0.1
+        # Simple bounded reward: longer messages get higher rewards up to 1.0
+        reward = min(length * 0.1, 1.0)
 
         return __ENV_CLASS_NAME__Observation(
             echoed_message=message,

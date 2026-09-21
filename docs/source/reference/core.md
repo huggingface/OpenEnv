@@ -253,3 +253,5 @@ For dataset-backed environments that publish enumerable tasks and splits, see th
 [[autodoc]] openenv.core.containers.runtime.aca_provider.ACASandboxProvider
 
 [[autodoc]] openenv.core.containers.runtime.modal_provider.ModalProvider
+
+[[autodoc]] openenv.core.containers.runtime.novita_provider.NovitaSandboxProvider
