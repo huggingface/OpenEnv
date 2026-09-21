@@ -201,15 +201,36 @@ def _canonical_eval_cmd(workdir: str, timeout_s: float | None = None) -> str:
     )
 
 
-def _parse_canonical_reward(output: str) -> float:
+def _parse_canonical_reward(output: str) -> float | None:
+    """The verdict test.sh's verifier wrote to reward.txt, echoed on the
+    marker line. None when no verdict can be recovered — no marker line, an
+    empty value (reward.txt absent: test.sh crashed or was killed before its
+    verifier wrote one), or a non-numeric value. A missing verdict is a
+    scoring failure, not a task failure: callers raise so ``evaluate``
+    reports an error (observation.error set, reward None) instead of a 0.0
+    indistinguishable from tests genuinely failing — RL consumers must be
+    able to drop such episodes rather than train on a false negative.
+    """
     for line in output.splitlines()[::-1]:
         if _REWARD_MARKER in line:
             raw = line.split(_REWARD_MARKER, 1)[1].strip()
+            if not raw:
+                return None
             try:
-                return float(raw) if raw else 0.0
+                return float(raw)
             except ValueError:
-                return 0.0
-    return 0.0
+                return None
+    return None
+
+
+def _require_canonical_verdict(reward: float | None, output: str) -> float:
+    """Raise when the canonical harness produced no verdict (see above)."""
+    if reward is None:
+        raise RuntimeError(
+            "canonical harness produced no verdict (reward.txt missing after "
+            f"tests/test.sh ran); test.sh log tail: {output[-800:]!r}"
+        )
+    return reward
 
 
 def _fallback_eval_cmd(workdir: str) -> str:
@@ -624,7 +645,7 @@ class Tbench2Environment(Environment[Tbench2Action, Tbench2Observation, Tbench2S
             timeout=timeout_s,
         )
 
-        reward = _parse_canonical_reward(output)
+        reward = _require_canonical_verdict(_parse_canonical_reward(output), output)
         info = {"tests_passed": reward == 1.0, "harness": "tests/test.sh"}
         return output, reward, info
 
@@ -1028,7 +1049,9 @@ class Tbench2DockerEnvironment(
                 _, output = self._exec_in_container(
                     _canonical_eval_cmd(workdir, timeout_s=verifier_timeout_s)
                 )
-                reward = _parse_canonical_reward(output)
+                reward = _require_canonical_verdict(
+                    _parse_canonical_reward(output), output
+                )
                 info = {"tests_passed": reward == 1.0, "harness": "tests/test.sh"}
             else:
                 _, output = self._exec_in_container(_fallback_eval_cmd(workdir))

@@ -242,6 +242,27 @@ def test_evaluate_canonical_from_withheld_copy(tmp_path: Path, staged_paths):
     assert not stage_logs.exists()
 
 
+def test_evaluate_missing_verdict_raises_not_zero(tmp_path: Path, staged_paths):
+    """test.sh ran but wrote no reward.txt (crash / kill before the verifier
+    wrote one): scoring must error out — reward None on the observation — not
+    return a 0.0 indistinguishable from tests genuinely failing. The staged
+    assets are still wiped."""
+    stage_tests, stage_logs = staged_paths
+    task = _make_task_dir(tmp_path)
+    env = Tbench2Environment(withhold_tests=True)
+    env._task_dir = task
+    env._workdir = str(tmp_path)
+    # Marker line present but empty: reward.txt was never written.
+    env._terminal_toolkit = _RecordingToolkit(output="__TB2_REWARD__:")
+    env._withhold_verifier_assets(task)
+
+    with pytest.raises(RuntimeError, match="produced no verdict"):
+        env._evaluate_task()
+
+    assert not stage_tests.exists()
+    assert not stage_logs.exists()
+
+
 def test_evaluate_without_tests_scores_zero(tmp_path: Path, staged_paths):
     task = tmp_path / "empty-task"
     task.mkdir()
@@ -379,6 +400,22 @@ def test_docker_copy_excludes_verifier_assets(tmp_path: Path):
     assert "environment/Dockerfile" in names
     assert not any(n.startswith(("solution", "tests")) for n in names)
     assert len(names) == len(set(names))  # recursive=False: no duplicates
+
+
+def test_evaluate_docker_missing_verdict_raises_not_zero(tmp_path: Path):
+    """Docker-mode twin of the local missing-verdict case: an empty reward
+    marker errors out (with cleanup) instead of scoring 0.0."""
+    task = _make_task_dir(tmp_path)
+    env = Tbench2DockerEnvironment()
+    container = _FakeContainer(exec_output=b"__TB2_REWARD__:\n")
+    env._container = container
+    env._task_dir = task
+
+    with pytest.raises(RuntimeError, match="produced no verdict"):
+        env._evaluate_docker()
+
+    assert container.events[-1][0] == "exec"
+    assert "rm -rf /tests /logs/verifier" in container.events[-1][1]
 
 
 def test_evaluate_docker_stages_tests_at_verify(tmp_path: Path):

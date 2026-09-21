@@ -25,7 +25,7 @@
 
 
 """
-COPIED FROM https://raw.githubusercontent.com/huggingface/trl/refs/heads/main/examples/scripts/openenv/wordle.py
+COPIED FROM https://raw.githubusercontent.com/huggingface/trl/refs/heads/main/examples/grpo_wordle/grpo_wordle.py
 
 Simple script to run GRPO training with OpenEnv's Wordle environment and vLLM.
 
@@ -37,7 +37,7 @@ uv pip install git+https://huggingface.co/spaces/burtenshaw/wordle
 
 # Option 1: HF Spaces + Colocated vLLM (1 GPU required)
 ```sh
-python examples/scripts/openenv/wordle.py --vllm-mode colocate
+python examples/grpo_wordle/grpo_wordle.py --vllm-mode colocate
 ```
 
 # Option 2: HF Spaces + Separate vLLM server (2 GPUs required)
@@ -49,7 +49,7 @@ CUDA_VISIBLE_DEVICES=0 trl vllm-serve --model Qwen/Qwen3-1.7B --host 0.0.0.0 --p
 
 # Run training (Terminal 2)
 ```sh
-CUDA_VISIBLE_DEVICES=1 python examples/scripts/openenv/wordle.py --vllm-mode server --vllm-server-url http://localhost:8000
+CUDA_VISIBLE_DEVICES=1 python examples/grpo_wordle/grpo_wordle.py --vllm-mode server --vllm-server-url http://localhost:8000
 ```
 
 # Option 3: Local + Colocated vLLM (1 GPU required)
@@ -62,7 +62,7 @@ docker run -d -p 8001:8001 registry.hf.space/burtenshaw-wordle:latest
 ```
 
 ```sh
-python examples/scripts/openenv/wordle.py --vllm-mode colocate
+python examples/grpo_wordle/grpo_wordle.py --vllm-mode colocate
 ```
 """
 

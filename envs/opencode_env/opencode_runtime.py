@@ -124,6 +124,7 @@ def build_run_cmd(config: OpenCodeConfig) -> str:
 
     format_flag = "--format json" if config.run_format == "json" else ""
     return (
+        "set -o pipefail && "
         'export PATH="$HOME/.opencode/bin:$PATH" && '
         f"cd {workdir_path(config)} && "
         f'opencode run {format_flag} "$(cat {instruction_path(config)})" '

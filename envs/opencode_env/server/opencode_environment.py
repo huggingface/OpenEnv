@@ -333,21 +333,15 @@ class OpenCodeEnvironment(MCPEnvironment):
                 f"creating E2B sandbox (template={template or 'default'}) — "
                 "this is the slow phase (~5–60s cold, ~5s with template)"
             )
-            session = factory.create(task=opencode_task)
+            session = factory.create(task=opencode_task, start_agent=False)
             result.sandbox_id = session.sandbox.sandbox_id
             _emit(
-                f"sandbox ready: {result.sandbox_id} — agent started "
+                f"sandbox ready: {result.sandbox_id} "
                 f"({'proxy on :7000, logprobs capturing' if mode == 'transparent_proxy' else 'direct LLM, no logprobs'})"
             )
 
-            # Run setup commands one at a time, *before* the agent starts.
-            # The factory has already started the agent in start_agent()
-            # during create(); to keep the order "setup → agent → verify"
-            # we'd need to restructure. As a pragmatic compromise we run
-            # setup IMMEDIATELY after create(), which races with the agent
-            # for ~1-2s but is fine for typical pip/git/download work
-            # because opencode itself takes >=20s to make its first model
-            # call.
+            # Run setup one command at a time, before the agent starts. create()
+            # was called with start_agent=False, so the agent has not launched yet.
             for i, cmd in enumerate(setup, 1):
                 _emit(f"setup [{i}/{len(setup)}]: {cmd[:80]}")
                 cr = self._exec_command(session.sandbox, cmd, timeout=SETUP_TIMEOUT_S)
@@ -359,8 +353,9 @@ class OpenCodeEnvironment(MCPEnvironment):
                     _emit(f"setup FAILED at [{i}]: exit={cr.exit_code}")
                     break
 
-            # Block until the agent is done (or setup already failed).
+            # Setup is done and clean, so launch the agent now (deferred from create()).
             if result.error is None:
+                session.start_agent()
                 _emit(
                     f"agent running — opencode CLI in sandbox "
                     f"(timeout {int(agent_timeout_s)}s)"
@@ -370,6 +365,9 @@ class OpenCodeEnvironment(MCPEnvironment):
                         timeout_s=agent_timeout_s
                     )
                     _emit(f"agent finished: exit_code={result.agent_exit_code}")
+                    if result.agent_exit_code != 0:
+                        result.error = f"agent exited non-zero ({result.agent_exit_code})"
+                        _emit(f"agent FAILED: exit_code={result.agent_exit_code}")
                 except TimeoutError as exc:
                     result.error = f"agent timeout: {exc}"
                     _emit(f"agent TIMEOUT: {exc}")

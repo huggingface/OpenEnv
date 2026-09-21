@@ -18,9 +18,9 @@ Already familiar with OpenEnv? Here's the 8-step process at a glance:
 | 3 | Edit `server/my_environment.py` | Implement `reset()` and `step()` methods |
 | 4 | Edit `client.py` | Implement `_step_payload()`, `_parse_result()`, `_parse_state()` |
 | 5 | `uv run --project . server` | Start local dev server for testing |
-| 6 | `openenv validate` | Validate environment structure |
+| 6 | `openenv validate --level static --skip-build` | Validate the declared manifest contract |
 | 7 | `openenv push` | Deploy to Hugging Face Hub |
-| 8 | Share the URL! | Others use via `MyEnv.from_hub("you/my-env")` |
+| 8 | Share it! | Others use via `MyEnv.from_env("you/my-env").sync()` |
 
 ### CLI Quick Reference
 
@@ -30,7 +30,7 @@ Already familiar with OpenEnv? Here's the 8-step process at a glance:
 | `openenv import SOURCE --name NAME --output-dir DIR` | Wrap a supported third-party environment source tree |
 | `uv run --project . server` | Start local dev server |
 | `openenv build` | Build Docker image |
-| `openenv validate --verbose` | Validate environment structure |
+| `openenv validate --level static --skip-build` | Validate the declared manifest contract |
 | `openenv push` | Deploy to Hugging Face Hub |
 | `openenv push --repo-id NAME` | Deploy to specific repo |
 | `openenv push --private` | Deploy as private environment |
@@ -317,7 +317,7 @@ From the environment directory:
 ```bash
 cd envs/my_env
 openenv build          # Builds Docker image (auto-detects context)
-openenv validate --verbose
+openenv validate --level static --skip-build
 ```
 
 `openenv build` understands both standalone environments and in-repo ones. Useful flags:
@@ -327,7 +327,12 @@ openenv validate --verbose
 - `--dockerfile` / `--context`: custom locations when experimenting
 - `--no-cache`: force fresh dependency installs
 
-`openenv validate` checks for required files, ensures the Dockerfile/server entrypoints function, and lists supported deployment modes. The command exits non-zero if issues are found so you can wire it into CI.
+`openenv validate` reads the `validation:` contract in `openenv.yaml`, checks
+the normalized manifest against the selected severity policy, and exits
+non-zero when a required check fails. The current walking skeleton runs the
+static manifest check; the report's `levels_run` field records exactly which
+levels executed. Use `openenv validate --url http://localhost:8000` separately
+to validate a running endpoint.
 
 ### 8. Push & Share with `openenv push`
 
@@ -405,12 +410,12 @@ Here is a simple example of using your environment:
 ```python
 from envs.my_env import MyAction, MyEnv
 
-# Create environment from Docker image
-client = MyEnv.from_docker_image("my-env:latest")
-# Or, connect to the remote space on Hugging Face
-client = MyEnv.from_hub("my-org/my-env")
-# Or, connect to the local server
-client = MyEnv(base_url="http://localhost:8000")
+# Create environment from Docker image (starts a container)
+client = MyEnv.from_docker_image("my-env:latest").sync()
+# Or, run the image of a Hugging Face Space locally
+client = MyEnv.from_env("my-org/my-env").sync()
+# Or, connect to an already running server
+client = MyEnv(base_url="http://localhost:8000").sync()
 
 # Use context manager for automatic cleanup (recommended)
 with client:
@@ -430,12 +435,39 @@ with client:
 
 # Or manually manage the connection
 try:
-    client = MyEnv(base_url="http://localhost:8000")
+    client = MyEnv(base_url="http://localhost:8000").sync()
     result = client.reset()
     result = client.step(MyAction(command="test", parameters={}))
 finally:
     client.close()
 ```
+
+`from_docker_image()` and `from_env()` do not return a connected client. They
+return a lazy bootstrap handle, and nothing starts until you resolve it: chain
+`.sync()` for a synchronous client (as above), or `await` the handle from async
+code. Using the handle directly in a `with` block raises
+`TypeError: '_BootstrapResult' object does not support the context manager protocol`.
+
+The equivalent async usage is:
+
+```python
+import asyncio
+
+from envs.my_env import MyAction, MyEnv
+
+
+async def main():
+    client = await MyEnv.from_docker_image("my-env:latest")
+    async with client:
+        result = await client.reset()
+        result = await client.step(MyAction(command="test", parameters={}))
+        state = await client.state()
+
+
+asyncio.run(main())
+```
+
+See [Async vs Sync Usage](../guides/async-sync) for when to prefer each style.
 
 ## Nice work! You've now built and used your own OpenEnv environment.
 

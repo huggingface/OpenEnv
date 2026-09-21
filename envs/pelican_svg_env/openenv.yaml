@@ -2,7 +2,7 @@ spec_version: 1
 name: pelican_svg_env
 type: space
 runtime: fastapi
-app: server.app:app
+app: pelican_svg_env.server.app:app
 port: 8000
 
 description: >

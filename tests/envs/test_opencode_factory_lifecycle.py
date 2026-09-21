@@ -80,7 +80,7 @@ def test_create_retries_then_succeeds(monkeypatch):
     calls = {"n": 0}
     session = object()
 
-    def _flaky(task, seed=None, episode_id=None):
+    def _flaky(task, seed=None, episode_id=None, start_agent=True):
         calls["n"] += 1
         if calls["n"] < 3:
             raise RuntimeError("transient create failure")
@@ -97,7 +97,7 @@ def test_create_raises_after_exhausting_attempts(monkeypatch):
     factory = _factory(sandbox, create_attempts=3, create_backoff_s=0)
     calls = {"n": 0}
 
-    def _always_fails(task, seed=None, episode_id=None):
+    def _always_fails(task, seed=None, episode_id=None, start_agent=True):
         calls["n"] += 1
         raise RuntimeError("persistent create failure")
 
