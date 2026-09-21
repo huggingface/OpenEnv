@@ -63,4 +63,4 @@ python client.py --scenario scenario_config.json
 Output will be saved to `response_output/` folder with execution details, tool calls, and verification results.
 
 **Notebook Evaluation:**
-For interactive evaluation and testing, use the: [`Jupyter notebook`](client_notebooks/OpenEnv_and_mcp_Single_Gym_Client_Meta_Turing.ipynb)
+For interactive evaluation and testing, use the: [`Jupyter notebook`](https://github.com/huggingface/OpenEnv/blob/main/envs/calendar_env/client_notebooks/OpenEnv_and_mcp_Single_Gym_Client_Meta_Turing.ipynb)
