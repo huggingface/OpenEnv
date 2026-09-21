@@ -185,27 +185,27 @@ def _runtime(subject, *, skip_build, provider):
             "runtime.startup", CheckStatus.SKIP, str(exc), started=started
         )
         checks = []
-    except RuntimePlanError:
+    except RuntimePlanError as exc:
         result = _outcome(
             "runtime.startup",
             CheckStatus.FAIL,
-            "runtime plan is missing, unsafe or invalid",
+            str(exc),
             started=started,
         )
         checks = []
-    except StartupError:
+    except StartupError as exc:
         result = _outcome(
             "runtime.startup",
             CheckStatus.FAIL,
-            "subject failed build or readiness; inspect the Docker fixture/build inputs",
+            str(exc),
             started=started,
         )
         checks = []
-    except ProviderError:
+    except ProviderError as exc:
         result = _outcome(
             "runtime.startup",
             CheckStatus.ERROR,
-            "provider could not complete a bounded operation",
+            str(exc),
             started=started,
         )
         checks = []

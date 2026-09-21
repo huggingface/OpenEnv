@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 from openenv.validation.policy import load_policy, PolicyError
-from openenv.validation.providers import StartupError
+from openenv.validation.providers import ProviderError, StartupError
 from openenv.validation.report import CheckResult
 from openenv.validation.runner import run_validation, source_digest
 from openenv.validation.runtime.artifacts import write_runtime_bundle
@@ -172,6 +172,8 @@ def test_invalid_plan_is_visible_failure(package):
     provider = FakeRuntimeProvider()
     report = run_validation(package, max_level=Level.RUNTIME, provider=provider)
     assert report.verdict.value == "fail"
+    result = next(r for r in report.results if r.check_id == "runtime.startup")
+    assert "invalid runtime plan" in result.evidence[0]
     assert not provider.builds
 
 
@@ -185,7 +187,21 @@ def test_startup_failure_does_not_masquerade_as_skips(package):
     report = run_validation(package, max_level=Level.RUNTIME, provider=provider)
     result = next(r for r in report.results if r.check_id == "runtime.startup")
     assert result.status is CheckStatus.FAIL
+    assert result.evidence == ["subject build failed"]
     assert report.verdict.value == "fail"
+
+
+def test_provider_failure_diagnostics_are_visible(package):
+    provider = FakeRuntimeProvider()
+
+    def failed_build(*args):
+        raise ProviderError("provider deadline elapsed")
+
+    provider.build = failed_build
+    report = run_validation(package, max_level=Level.RUNTIME, provider=provider)
+    result = next(r for r in report.results if r.check_id == "runtime.startup")
+    assert result.status is CheckStatus.ERROR
+    assert result.evidence == ["provider deadline elapsed"]
 
 
 @pytest.mark.parametrize("failure", [RuntimeError, KeyboardInterrupt])
