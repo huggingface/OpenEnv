@@ -177,7 +177,7 @@ docker run \
 
 Then in your training code, environments automatically reset to the configured state.
 
-See [`examples/local_git_env.py`](../../../examples/local_git_env.py) for complete working example.
+See [`examples/local_git_env.py`](../../examples/local_git_env.py) for complete working example.
 
 ## Project Structure
 

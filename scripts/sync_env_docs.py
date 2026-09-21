@@ -24,6 +24,8 @@ import argparse
 import os
 import re
 import sys
+from pathlib import Path
+from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENVS_DIR = os.path.join(ROOT, "envs")
@@ -31,6 +33,7 @@ DOCS_ENVS_DIR = os.path.join(ROOT, "docs", "source", "environments")
 TOCTREE_PATH = os.path.join(ROOT, "docs", "source", "_toctree.yml")
 CATALOG_PATH = os.path.join(ROOT, "docs", "source", "environments.md")
 GITHUB_RAW_BASE = "https://raw.githubusercontent.com/huggingface/OpenEnv/main"
+GITHUB_BASE = "https://github.com/huggingface/OpenEnv"
 
 SKIP_DIRS = {"README.md"}
 
@@ -102,6 +105,69 @@ def _strip_frontmatter(text):
     return text
 
 
+def _rewrite_relative_links(text, env_dir):
+    """Keep README links working after moving their content into the docs site."""
+    root = Path(ROOT).resolve()
+    source_dir = Path(ENVS_DIR) / env_dir
+    pattern = re.compile(
+        r"(?P<code>`+).*?(?P=code)"
+        r"|(?P<image>!\[[^\]\n]*\]\()(?P<image_url>[^)\s]+)"
+        r"|(?P<link>\]\()(?P<link_url><[^>\n]+>|[^)\s]+)"
+        r"|(?P<attribute>(?:href|src)=[\"'])(?P<attribute_url>[^\"'\n]+)"
+    )
+
+    def rewrite(match):
+        if match.group("code"):
+            return match.group(0)
+        kind = next(k for k in ("image", "link", "attribute") if match.group(k))
+        original = match.group(f"{kind}_url")
+        url = original.strip("<>")
+        parsed = urlsplit(url)
+        if parsed.scheme or parsed.netloc or not parsed.path or url.startswith("/"):
+            return match.group(0)
+        target = (source_dir / unquote(parsed.path)).resolve()
+        try:
+            relative = target.relative_to(root)
+        except ValueError:
+            return match.group(0)
+        if not target.exists():
+            return match.group(0)
+        is_image = kind == "image" or match.group(kind).startswith("src=")
+        if is_image:
+            base = GITHUB_RAW_BASE
+        else:
+            base = f"{GITHUB_BASE}/{'tree' if target.is_dir() else 'blob'}/main"
+        destination = f"{base}/{quote(relative.as_posix())}"
+        destination = urlunsplit(
+            (*urlsplit(destination)[:3], parsed.query, parsed.fragment)
+        )
+        if original.startswith("<"):
+            destination = f"<{destination}>"
+        return match.group(kind) + destination
+
+    lines = []
+    fence = None
+    for line in text.splitlines(keepends=True):
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if fence:
+            if (
+                marker
+                and marker[1][0] == fence[0]
+                and len(marker[1]) >= len(fence)
+                and not marker[2].strip()
+            ):
+                fence = None
+            lines.append(line)
+        elif marker:
+            fence = marker[1]
+            lines.append(line)
+        elif line.startswith(("    ", "\t")):
+            lines.append(line)
+        else:
+            lines.append(pattern.sub(rewrite, line))
+    return "".join(lines)
+
+
 def generate_stub(env_dir):
     """Return the doc stub content for an environment.
 
@@ -113,10 +179,7 @@ def generate_stub(env_dir):
     with open(readme_path) as f:
         content = f.read()
     content = _strip_frontmatter(content)
-    # Rewrite relative assets/ paths to absolute GitHub raw URLs so images
-    # render correctly when the README is inlined into the doc-builder site.
-    base_url = f"{GITHUB_RAW_BASE}/envs/{env_dir}"
-    content = re.sub(r'(src=["\'])assets/', rf'\1{base_url}/assets/', content)
+    content = _rewrite_relative_links(content, env_dir)
     return f"<!-- openenv-source: {env_dir} -->\n{content}"
 
 
@@ -299,9 +362,15 @@ def main():
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--check", action="store_true", help="Check sync status (CI mode)")
-    group.add_argument("--fix", action="store_true", help="Fix missing, stale, and orphaned stubs")
-    group.add_argument("--dry-run", action="store_true", help="Preview --fix without writing")
+    group.add_argument(
+        "--check", action="store_true", help="Check sync status (CI mode)"
+    )
+    group.add_argument(
+        "--fix", action="store_true", help="Fix missing, stale, and orphaned stubs"
+    )
+    group.add_argument(
+        "--dry-run", action="store_true", help="Preview --fix without writing"
+    )
     args = parser.parse_args()
 
     env_dirs = get_env_dirs()
@@ -338,7 +407,9 @@ def main():
     manual_toctree = sorted(set(unlisted_toctree) | {slug for _, slug in missing})
     manual_catalog = sorted(set(unlisted_catalog) | {slug for _, slug in missing})
     if manual_toctree:
-        print("\n⚠️  Add these to docs/source/_toctree.yml manually (- local: environments/<slug>):")
+        print(
+            "\n⚠️  Add these to docs/source/_toctree.yml manually (- local: environments/<slug>):"
+        )
         for slug in manual_toctree:
             print(f"  {slug}")
     if manual_catalog:

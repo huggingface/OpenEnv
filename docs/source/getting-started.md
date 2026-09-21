@@ -25,26 +25,30 @@ A few integrations ship as optional extras. Install them with
 
 ## Try an Environment
 
-Use `AutoEnv` and `AutoAction` when you want OpenEnv to find the matching client
-and action classes for an installed or discoverable environment.
+Use `AutoEnv` to load the Echo client from its Hugging Face Space. It asks for
+confirmation before installing the environment package, then connects to the
+running Space. Echo exposes its actions as MCP tools.
 
 ```python
-from openenv import AutoAction, AutoEnv
+from openenv import AutoEnv
 
-env = AutoEnv.from_env("echo")
-EchoAction = AutoAction.from_env("echo")
+env = AutoEnv.from_env("openenv/echo-env")
 
 with env.sync() as client:
     result = client.reset()
-    print(result.observation.echoed_message)  # "Echo environment ready!"
+    print(result.observation.metadata["message"])  # "Echo environment ready!"
 
-    result = client.step(EchoAction(message="Hello, OpenEnv!"))
-    print(result.observation.echoed_message)  # "Hello, OpenEnv!"
+    message = client.call_tool("echo_message", message="Hello, OpenEnv!")
+    print(message)  # "Hello, OpenEnv!"
 ```
 
-`AutoEnv.from_env()` accepts the common name forms:
+For installed environment packages, `AutoEnv.from_env()` also accepts the common
+name forms below. Without a `base_url`, these start a local Docker container and
+require Docker and the environment image:
 
 ```python
+from openenv import AutoEnv
+
 AutoEnv.from_env("echo")
 AutoEnv.from_env("echo-env")
 AutoEnv.from_env("echo_env")

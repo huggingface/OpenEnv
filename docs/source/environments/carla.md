@@ -152,11 +152,11 @@ result = await env.reset(scenario_config={
 
 ## Examples
 
-The [`examples/carla_env/`](../../examples/carla_env/) directory contains inference scripts. All connect to `http://localhost:8000` by default — pass `--base-url https://sergiopaniego-carla-env.hf.space` for the live Space.
+The [`examples/carla_env/`](https://github.com/huggingface/OpenEnv/tree/main/examples/carla_env) directory contains inference scripts. All connect to `http://localhost:8000` by default — pass `--base-url https://sergiopaniego-carla-env.hf.space` for the live Space.
 
 ### Trolley Problems
 
-**[trolley_problems.py](../../examples/carla_env/trolley_problems.py)** — LLM evaluation across all trolley scenarios.
+**[trolley_problems.py](https://github.com/huggingface/OpenEnv/blob/main/examples/carla_env/trolley_problems.py)** — LLM evaluation across all trolley scenarios.
 
 ```bash
 uv run python trolley_problems.py --model qwen3-235b --scenario classic-3v1
@@ -168,7 +168,7 @@ Available keys: `equal-1v1`, `saves-3v0`, `deadzone-3v1`, `classic-3v1`, `classi
 
 ### Maze Navigation
 
-**[maze_navigation.py](../../examples/carla_env/maze_navigation.py)** — LLM navigation with rolling action history.
+**[maze_navigation.py](https://github.com/huggingface/OpenEnv/blob/main/examples/carla_env/maze_navigation.py)** — LLM navigation with rolling action history.
 
 ```bash
 uv run python maze_navigation.py --model qwen3-235b --scenario maze-1
@@ -177,7 +177,7 @@ uv run python maze_navigation.py --model gpt-5.2 --scenario maze-1 --save-images
 
 ### Free-Roam Navigation
 
-**[free_roam_navigation.py](../../examples/carla_env/free_roam_navigation.py)** — LLM navigation in open traffic.
+**[free_roam_navigation.py](https://github.com/huggingface/OpenEnv/blob/main/examples/carla_env/free_roam_navigation.py)** — LLM navigation in open traffic.
 
 ```bash
 uv run python free_roam_navigation.py --model qwen3-235b
@@ -186,7 +186,7 @@ uv run python free_roam_navigation.py --model qwen3-235b --scenario free-roam-tr
 
 ### Autopilot Baseline (No LLM)
 
-**[autopilot_navigation.py](../../examples/carla_env/autopilot_navigation.py)** — CARLA's built-in navigation agent.
+**[autopilot_navigation.py](https://github.com/huggingface/OpenEnv/blob/main/examples/carla_env/autopilot_navigation.py)** — CARLA's built-in navigation agent.
 
 ```bash
 uv run python autopilot_navigation.py --scenario maze-1
@@ -195,7 +195,7 @@ uv run python autopilot_navigation.py --scenario free-roam-default --behavior ca
 
 ### Rubric Reward Demo (No LLM)
 
-**[rubric_autopilot_example.py](../../examples/carla_env/rubric_autopilot_example.py)** — Raw vs rubric rewards side-by-side.
+**[rubric_autopilot_example.py](https://github.com/huggingface/OpenEnv/blob/main/examples/carla_env/rubric_autopilot_example.py)** — Raw vs rubric rewards side-by-side.
 
 ```bash
 uv run python rubric_autopilot_example.py --scenario free-roam-default
@@ -222,7 +222,7 @@ Hugging Face models use [Inference Providers](https://huggingface.co/docs/infere
 
 ## Rubrics for RL Training
 
-The environment includes rubrics following the [OpenEnv rubric system](../../rfcs/004-rubrics.md). Rubrics are automatically selected based on the scenario type and populate `obs.rubric_reward` alongside the raw `obs.reward` on each step.
+The environment includes rubrics following the [OpenEnv rubric system](https://github.com/huggingface/OpenEnv/blob/main/rfcs/004-rubrics.md). Rubrics are automatically selected based on the scenario type and populate `obs.rubric_reward` alongside the raw `obs.reward` on each step.
 
 **CarlaTrolleyRubric** — For trolley/action-bias scenarios. Returns 0.0 on intermediate steps, then the terminal reward at episode end. Supports temporal discounting (`gamma`) for credit assignment.
 
