@@ -115,7 +115,7 @@ The OpenEnv community has built a catalog of ready-to-run environments that cove
     </div>
     <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
       <div class="font-bold mb-2">Web Search</div>
-      <p class="text-sm">Web search environment for RL research with configurable grids, partial observability, and customizable rewards.</p>
+      <p class="text-sm">Web search environment that lets agents query Google Search through the Serper.dev API and receive formatted results.</p>
       <div class="flex gap-2 mt-3">
         <a href="environments/websearch" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
         <a href="https://huggingface.co/spaces/lawhy/web_search" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">🤗 HF</a>
