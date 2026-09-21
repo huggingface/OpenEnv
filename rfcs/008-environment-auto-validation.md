@@ -459,6 +459,163 @@ Stacked PRs, each vertically testable:
   The PostTrain `task.md` parser and the LLM-judged grader path (variance-mode determinism, rubric
   deepening) are fully specified with contracts and fixtures in PR2 and implemented separately.
 
+## Level 2 execution amendment
+
+This amendment specifies the missing execution contracts for the Docker-local
+runtime implementation. It preserves the existing parser → normalized manifest →
+grader → policy → report architecture. The first delivery wave consists of three
+stacked slices: versioned contracts/shared assets; reproducible Docker supervision;
+and a runnable CLI with startup, reward, observation and state checks. Later slices
+add the remaining runtime checks. A partial implementation must expose the missing
+requested checks as named SKIPs, never imply full Level 2 coverage from a PASS on
+the implemented subset. Existing WARN exit semantics remain unchanged.
+
+### Versioned declarations and public probe inputs
+
+`validation.execution` opts a package into normalized manifest schema **2**:
+
+```yaml
+validation:
+  execution:
+    kind: openenv_ws
+    probe_path: validation/runtime.json
+    dockerfile: Dockerfile
+    context: .
+    agent_boundary: api
+```
+
+The other manifest sections remain authoritative for capabilities, resources,
+network policy, reward bounds and grader applicability. The initial execution
+binding is `openenv_ws` with API-only agent access. Process/filesystem agent
+identities require a later explicit declaration; privileged provider exec is not
+evidence of agent access. Paths are package-relative and portable. Readers reject
+parent traversal, absolute paths and resolved symlink escapes.
+
+Packages without `validation.execution` continue to produce the unchanged schema-1
+manifest and static report. `NormalizedManifestV2` and `ValidationReportV2` have
+separate committed JSON schemas. Report 2 accepts manifest 1, manifest 2, or null
+after a parse failure so a runtime request can report missing prerequisites without
+dropping diagnostics. No field is silently added to schema 1.
+
+The public sidecar is data, not imported Python or a second capability manifest:
+
+```json
+{
+  "plan_schema_version": "1",
+  "reset": {"episode_id": "validation-probe", "seed": 42, "options": {}},
+  "actions": [{"increment": 1}, {"increment": 1}]
+}
+```
+
+The trusted loader bounds the file at 65,536 bytes, JSON nesting at 32 levels,
+node count at 10,000 and actions at 1–100. It rejects duplicate keys, non-finite
+numbers, non-JSON objects and reset options overriding `seed` or `episode_id`.
+The seed is an explicit unsigned 32-bit integer. Missing or invalid probe inputs
+are reported as an unmet prerequisite or an input failure; they never deselect
+graders. The plan's content digest belongs in the reproduction bundle. Neither
+privileged oracle inputs nor host callbacks may be substituted for public actions.
+
+One collector owns reset, ordered actions until termination, and state reads on
+**one** WebSocket session. It records immutable raw request/response strings before
+client defaults or Pydantic coercion can hide malformed responses. Graders consume
+that evidence and cannot mutate the measured episode. The advertised observation
+schema is recorded alongside the transcript; reconstruct observation plus the
+separate reward/done envelope before validating it. Reset reward may be null; every
+step reward must be a finite JSON number, excluding booleans, within the declared
+range. State must retain the requested episode identity, reset its step count to
+zero and advance it coherently for successful steps.
+
+### Startup, policy and provider supervision
+
+Policy **v2** retains every v1 entry and bound and adds `runtime.startup` at level 2,
+local lane, failure severity. Runtime defaults to v2 and rejects an explicitly
+incompatible policy before executing a subject. Static v1 remains supported.
+Build, start or readiness failure caused by the subject yields startup FAIL with
+the failed phase; a validator/provider defect yields ERROR. A missing prerequisite
+or unsupported enforcement capability yields a named SKIP. One successful build
+does not establish `static.reproducible_build`.
+
+The validation-specific `LaunchSpec` names an immutable image ID/digest, requested
+resources and network policy, an explicit run identity, startup deadline and
+explicit environment variables. It inherits no host environment or credentials.
+The provider owns build, readiness, bounded exec/logs, inspected settings and
+idempotent cleanup on success, failure, timeout and cancellation. Cleanup evidence
+must establish that no run-owned subject remains. Core provider ABCs are unchanged.
+
+Launches use no privilege, host namespaces, host-directory mounts, Docker socket
+or forwarded credentials. They drop Linux capabilities, enable no-new-privileges,
+use a read-only image and explicitly bounded writable roots, and expose only a
+loopback control port. CPU is an allocation ceiling; memory includes an explicit
+swap setting. `disk_mb` means aggregate writable subject storage, excluding image
+layers. The initial provider splits this allowance between bounded writable `/tmp`
+and `/dev/shm`; another writable root requires its own accounted budget. Episode
+deadlines are externally enforced and
+cover descendants; PID, log and build limits are additional supervisor budgets.
+Unsupported enforcement is disclosed and must never trigger a weaker retry.
+
+The initial provider may support only `public` networking and CPU subjects.
+`no-network`, `allowlist` and GPU requests must then be refused before launch with
+their missing capability named. Public networking permits egress; it does not
+establish a host/private-address deny policy. A later no-network provider uses a
+trusted helper sharing only the subject network namespace, with separate image and
+filesystem, no external interface, Docker socket or outbound-proxy API. Merely
+publishing a port on a no-network container is insufficient for control access.
+
+Allowlist semantics are **destination-address enforcement**: exact DNS hostnames,
+`*.example.com` subdomain patterns (not the bare apex), and IPv4/IPv6 CIDRs resolve
+through a controlled resolver; matching DNS requests add their recorded addresses
+to the run-owned allow set. Direct addresses are allowed only if included in a CIDR
+or the recorded set. Entries allow all ports/protocols at those destinations; they
+do not authenticate TLS/HTTP host identity and therefore disclose shared-IP
+limitations. Alternate DNS, unmatched addresses and unsupported address families
+must fail closed. This requires a separate reviewed enforcement implementation;
+parsing these declarations does not claim they are enforced.
+
+### Later runtime evidence contracts
+
+Seed acceptance and empirical determinism are separate findings. A reset that
+silently drops its seed does not establish seed control, while a deterministic
+environment may legitimately behave identically under different seeds. Replay
+comparison includes observation, reward, done, tool output and state; only
+policy-owned volatile metadata can be excluded. Authors cannot exclude fields.
+For `llm_judged`, the bounded variance path uses 20 completed identical-input fresh
+replays and population reward variance in reward-squared units, compared to the
+declared bound. The total run budget bounds all samples; fewer than 20 is incomplete.
+This procedure is a runtime check, not a statistical confidence claim.
+
+Session telemetry for seed handling, named rubric/configuration, child attribution
+and subject-emitted record references is orchestrator-only. A future protocol
+slice must authorize access with an opt-in, random per-run/per-session capability
+attached to the **same** replay connection, reject unauthorized/cross-session
+reads and never expose telemetry as agent MCP tools. A second WebSocket creates
+another environment and cannot supply evidence for the measured instance.
+A validator transcript alone cannot pass subject-emitted trajectory recording.
+These authorization requirements do not add new public wire messages in this slice.
+
+Applicability predicates must distinguish empty declared sets from absent
+capabilities. Missing subject features, missing provider support and checks whose
+implementation has not shipped are distinct outcomes. Independent graders must
+not step a shared environment; invasive containment and resource probes use
+disposable subjects. Episode-isolation checks require same-server reset evidence,
+not just a new container, and oracle access checks use the declared agent boundary.
+
+### Shared reproducibility and review assets
+
+`tests/fixtures/validation/runtime/cases.json` is the versioned acceptance catalog.
+Every runtime policy ID has positive/negative expectations, applicability, required
+provider features and its implementation slice. Future cases are labelled planned;
+they do not count as measured coverage. A small shared served subject supplies
+deterministic public actions and test-only faults. Preserve the existing static
+fixtures and run their schema-1 round trips alongside schema-2 tests.
+
+The Docker/reference lane and local reproduction command use the same locked test
+project, digest-pinned base, exact-revision wheel and case catalog. An evidence
+bundle records wheel/source/plan/image identities, platform details, reports,
+transcripts and cleanup findings. CI separately asserts inventory and expected
+findings: a WARN exit 0 does not prove completeness. Product publish gating and
+operator certification remain outside this feature; the test workflow only proves
+the implementation's own acceptance cases.
+
 ## Explicitly out of scope
 
 No hub/runner/queue/coordinator; no submission or auth APIs; no statistical-level implementations
