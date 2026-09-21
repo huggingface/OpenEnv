@@ -81,6 +81,8 @@ def test_leaves_code_anchors_external_missing_and_outside_paths_unchanged(repo):
 - Example:
     ```markdown
     [client](client.py)
+    <a href="client.py">client</a>
+    <img src="image.png">
     ```
 ![plot [v2]](image.png)
 [anchor](#usage)
