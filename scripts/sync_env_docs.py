@@ -117,10 +117,34 @@ def _rewrite_relative_links(text, env_dir):
         r"|(?P<attribute>(?:href|src)=[\"'])(?P<attribute_url>[^\"'\n]+)"
     )
 
+    def is_nested_image_destination(match):
+        """Return whether a generic link match belongs to an unsupported image."""
+        prefix = match.string[: match.start()]
+        image_start = prefix.rfind("![")
+        if image_start < 0:
+            return False
+
+        depth = 1
+        escaped = False
+        for character in prefix[image_start + 2 :]:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == "[":
+                depth += 1
+            elif character == "]":
+                depth -= 1
+                if depth == 0:
+                    return False
+        return depth == 1
+
     def rewrite(match):
         if match.group("code"):
             return match.group(0)
         kind = next(k for k in ("image", "link", "attribute") if match.group(k))
+        if kind == "link" and is_nested_image_destination(match):
+            return match.group(0)
         original = match.group(f"{kind}_url")
         url = original.strip("<>")
         try:
@@ -129,7 +153,10 @@ def _rewrite_relative_links(text, env_dir):
             return match.group(0)
         if parsed.scheme or parsed.netloc or not parsed.path or url.startswith("/"):
             return match.group(0)
-        target = (source_dir / unquote(parsed.path)).resolve()
+        try:
+            target = (source_dir / unquote(parsed.path)).resolve()
+        except (OSError, ValueError):
+            return match.group(0)
         try:
             relative = target.relative_to(root)
         except ValueError:
@@ -153,18 +180,22 @@ def _rewrite_relative_links(text, env_dir):
     fence = None
     list_content_indents = []
     for line in text.splitlines(keepends=True):
-        marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        marker = re.match(
+            r"^(?:[ ]{0,3}>[ \t]?)*[ ]{0,3}"
+            r"(?P<fence>`{3,}|~{3,})(?P<rest>.*)$",
+            line,
+        )
         if fence:
             if (
                 marker
-                and marker[1][0] == fence[0]
-                and len(marker[1]) >= len(fence)
-                and not marker[2].strip()
+                and marker.group("fence")[0] == fence[0]
+                and len(marker.group("fence")) >= len(fence)
+                and not marker.group("rest").strip()
             ):
                 fence = None
             lines.append(line)
         elif marker:
-            fence = marker[1]
+            fence = marker.group("fence")
             lines.append(line)
         else:
             indentation = re.match(r"^[ \t]*", line)[0]

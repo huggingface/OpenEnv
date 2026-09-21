@@ -171,8 +171,8 @@ Available keys: `equal-1v1`, `saves-3v0`, `deadzone-3v1`, `classic-3v1`, `classi
 **[maze_navigation.py](https://github.com/huggingface/OpenEnv/blob/main/examples/carla_env/maze_navigation.py)** — LLM navigation with rolling action history.
 
 ```bash
-uv run python maze_navigation.py --model qwen3-235b --scenario maze-1
-uv run python maze_navigation.py --model gpt-5.2 --scenario maze-1 --save-images
+uv run python maze_navigation.py --model qwen3-235b
+uv run python maze_navigation.py --model gpt-5.2 --save-images
 ```
 
 ### Free-Roam Navigation

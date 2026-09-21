@@ -32,7 +32,7 @@ The Git Environment connects to a **shared external Gitea service** for optimal 
 from envs.git_env import GitAction, GitEnv
 
 # Create environment from Docker image
-git_env = GitEnv.from_docker_image("git-env:latest")
+git_env = GitEnv.from_docker_image("git-env:latest").sync()
 
 # Reset environment
 result = git_env.reset()
@@ -178,7 +178,8 @@ docker run \
 
 Then in your training code, environments automatically reset to the configured state.
 
-See [`examples/local_git_env.py`](https://github.com/huggingface/OpenEnv/blob/main/examples/local_git_env.py) for complete working example.
+See [`examples/local_git_env.py`](https://github.com/huggingface/OpenEnv/blob/main/examples/local_git_env.py) for a complete
+synchronous example that resolves the Docker bootstrap handle with `.sync()`.
 
 ## Project Structure
 
