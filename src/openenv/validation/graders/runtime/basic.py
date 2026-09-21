@@ -58,7 +58,14 @@ class _RuntimeGrader:
             problems.append(evidence.failure_reason)
         try:
             problems.extend(self.check(subject, evidence))
-        except (ValueError, TypeError, KeyError, RecursionError, OverflowError):
+        except (
+            ValueError,
+            TypeError,
+            KeyError,
+            AttributeError,
+            RecursionError,
+            OverflowError,
+        ):
             problems.append("malformed runtime evidence")
         return CheckResult(
             check_id=self.check_id,
