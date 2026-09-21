@@ -78,6 +78,10 @@ def test_leaves_code_anchors_external_missing_and_outside_paths_unchanged(repo):
 > ```markdown
 > [client](client.py)
 > ```
+- Example:
+    ```markdown
+    [client](client.py)
+    ```
 ![plot [v2]](image.png)
 [anchor](#usage)
 [external](https://example.com/client.py)

@@ -181,10 +181,18 @@ def _rewrite_relative_links(text, env_dir):
     list_content_indents = []
     for line in text.splitlines(keepends=True):
         marker = re.match(
-            r"^(?:[ ]{0,3}>[ \t]?)*[ ]{0,3}"
+            r"^(?:[ ]{0,3}>[ \t]?)*(?P<indent>[ \t]*)"
             r"(?P<fence>`{3,}|~{3,})(?P<rest>.*)$",
             line,
         )
+        if marker:
+            fence_indent = len(marker.group("indent").expandtabs(4))
+            in_list = any(
+                content_indent <= fence_indent <= content_indent + 3
+                for content_indent in list_content_indents
+            )
+            if fence_indent > 3 and not in_list:
+                marker = None
         if fence:
             if (
                 marker
