@@ -22,7 +22,7 @@ from .policy import apply_policy, load_policy, PolicyError, SeverityPolicy
 from .providers import ProviderError, StartupError, UnsupportedCapability
 from .report import CheckResult, ValidationReport, ValidationReportV2
 from .runtime.artifacts import write_runtime_bundle
-from .runtime.collector import collect_runtime_evidence
+from .runtime.collector import collect_runtime_evidence, RuntimeCollectionInterrupted
 from .runtime.contracts import LaunchSpec, load_runtime_plan, RuntimePlanError
 from .runtime.scheduler import execute_graders
 from .signature import detect_signature
@@ -209,7 +209,9 @@ def _runtime(subject, *, skip_build, provider):
             started=started,
         )
         checks = []
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as exc:
+        if isinstance(exc, RuntimeCollectionInterrupted):
+            evidence = exc.evidence
         result = _outcome(
             "runtime.startup",
             CheckStatus.ERROR,
