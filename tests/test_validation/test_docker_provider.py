@@ -284,9 +284,11 @@ def test_build_uses_filtered_snapshot_and_returns_immutable_image(
     for name in (".git", ".venv", "outputs"):
         (tmp_path / name).mkdir()
         (tmp_path / name / "private").write_text("not copied")
-    (tmp_path / ".env").write_text("HF_TOKEN=private")
-    (tmp_path / "key.pem").write_text("private")
     for name in (
+        ".env",
+        ".env.local",
+        ".env.example",
+        ".netrc",
         "secret",
         "secrets",
         "credentials",
@@ -295,21 +297,48 @@ def test_build_uses_filtered_snapshot_and_returns_immutable_image(
         "secrets.toml",
         "secrets.yaml",
         "secrets.yml",
+        "api_secret.json",
+        "service_secrets.yaml",
+        "_secret.json",
+        "_secrets.yaml",
+        "id_rsa",
+        "id_rsa.pub",
+        "id_rsa_backup",
+        "id_ed25519",
+        "id_ed25519.pub",
+        "id_ed25519_backup",
+        "id_ecdsa",
+        "id_ecdsa.pub",
+        "key.pem",
+        "key.key",
+        "certificate.p12",
+        "certificate.pfx",
     ):
         if uppercase_secret_names:
             name = name.upper()
         (tmp_path / name).write_text("private")
-    (tmp_path / "secret.py").write_text("VALUE = 'source'\n")
-    (tmp_path / "credentials.py").write_text("VALUE = 'source'\n")
+    for name in (
+        "secret.py",
+        "secrets.py",
+        "credentials.py",
+        "secret_utils.py",
+        "credentials_helper.py",
+        "api_secretary.py",
+    ):
+        (tmp_path / name).write_text("VALUE = 'source'\n")
 
     def build(argv, timeout_s):
         assert timeout_s <= 600
         context = Path(argv[-1])
         assert set(path.name for path in context.iterdir()) == {
             "Dockerfile",
+            "api_secretary.py",
             "credentials.py",
+            "credentials_helper.py",
             "data.txt",
             "secret.py",
+            "secret_utils.py",
+            "secrets.py",
         }
         assert context != tmp_path
         Path(argv[argv.index("--iidfile") + 1]).write_text(IMAGE)

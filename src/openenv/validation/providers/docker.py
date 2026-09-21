@@ -44,10 +44,11 @@ _EXCLUDED = {
     ".validation",
 }
 _SECRET_NAME = re.compile(
-    r"^(?:\.env(?:\..*)?|id_(?:rsa|ed25519|ecdsa)(?:\..*)?|"
+    r"^(?:\.env(?:\..*)?|\.netrc|.*_secrets?\..*|"
+    r"id_(?:rsa|ed25519).*|id_ecdsa(?:\..*)?|"
     r"credentials(?:\.json)?|secrets?|secrets\.(?:json|toml|ya?ml))$|"
-    r"\.(?:pem|key)$",
-    re.I,
+    r"\.(?:pem|key|p12|pfx)$",
+    re.I | re.S,
 )
 _TOKEN = re.compile(
     r"(?:hf_[A-Za-z0-9]{8,}|(?:sk|ghp|github_pat)[-_][A-Za-z0-9_-]{8,}|"
@@ -139,7 +140,7 @@ def _contained(root: Path, relative: str) -> Path:
 
 
 def _snapshot(root: Path, destination: Path, max_bytes: int, deadline: float) -> None:
-    """Copy source bytes, never host links, caches, credential files or run outputs."""
+    """Copy source bytes, excluding links, caches, known credential names and outputs."""
     total = 0
     files = 0
 
