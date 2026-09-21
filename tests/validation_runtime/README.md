@@ -27,9 +27,26 @@ checkout with `PYTHONPATH` removed, exercising installed package data and the
 production OpenEnv `/ws` endpoint. Each launch uses a fresh subject.
 
 The image supports controlled `VALIDATION_FAULT` modes: `good`, `bad_reward`,
-`bad_observation`, `missing_done`, `bad_state`, and `startup_failure`. All fault
+`bad_observation`, `missing_done`, `bad_state`, `hung_step`, and `startup_failure`. All fault
 switches and wire corruption remain inside test assets. They share one fixture
 and one public runtime plan, so a defect changes one property at a time.
+
+The Docker suite contains 13 required cases: three provider lifecycle tests,
+nine CLI fault/control cases, and one real `echo_env` canary. The hung-step case
+checks the episode deadline; the interruption case sends SIGINT only after a
+container log confirms the second step has begun. Both must retain the completed
+reset/state/step/state prefix and remove their own containers. Each CLI case uses
+a unique image label for independent cleanup verification.
+
+The Echo canary copies the actual `envs/echo_env` sources unchanged and records
+their hashes. A test overlay adds only the execution declaration, replay plan and
+pinned offline image recipe. It runs `echo_message` and `echo_with_length` in one
+session and verifies episode identity and state counts 0, 1, 2. Echo currently
+returns null step rewards and a reset observation that lacks the advertised
+`tool_name` field: the canary therefore expects explicit reward/schema **FAIL**
+findings and CLI exit 1. Its passing test means those compatibility findings were
+observed correctly; it does not mean Echo passed runtime validation. Inspect
+`cli/echo_canary/compatibility-findings.json` for the actual results.
 
 Evidence is written to `outputs/validation-runtime/<run-id>/`, including source,
 fixture, lock and wheel hashes; the retained wheelhouse; platform and toolchain
@@ -43,7 +60,11 @@ python scripts/validation/verify_artifacts.py outputs/validation-runtime/<run-id
 ```
 
 `--require-complete` requires every selected acceptance test to execute without a
-skip. This checks the implemented slice's inventory, not completion of all RFC
+skip. Protocol and Docker runs must also execute every named case in the committed
+`acceptance.json`; a nonempty filtered run cannot count as complete. The harness
+clears inherited `PYTEST_ADDOPTS` and copies the inventory and its digest into the
+bundle. Verify a bundle using its recorded source revision, since later revisions
+can add required cases. This checks the implemented slice's inventory, not completion of all RFC
 008 checks. A successful image build is not evidence for reproducible-build,
 containment or resource-validation graders. Those checks land in later slices.
 
