@@ -157,7 +157,7 @@ def _runtime(subject, *, skip_build, provider):
         evidence = collect_runtime_evidence(
             running.base_url,
             plan,
-            episode_timeout_s=min(manifest.resources.episode_timeout_s, 300.0),
+            episode_timeout_s=manifest.resources.episode_timeout_s,
         )
         # A health endpoint without a functioning protocol isn't a startup success.
         if not evidence.exchanges and evidence.failure_reason:

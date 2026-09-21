@@ -102,6 +102,23 @@ def test_runtime_collects_once_cleans_up_and_marks_remaining_work(
     assert json.loads((bundle / "runtime-plan.json").read_text())["reset"]["seed"] == 42
 
 
+def test_runtime_collection_uses_declared_episode_timeout(package, monkeypatch):
+    path = package / "openenv.yaml"
+    path.write_text(
+        path.read_text().replace("episode_timeout_s: 30.0", "episode_timeout_s: 600.0")
+    )
+    calls = []
+
+    def collect(*args, **kwargs):
+        calls.append(kwargs)
+        return measured_episode()
+
+    monkeypatch.setattr("openenv.validation.runner.collect_runtime_evidence", collect)
+    run_validation(package, max_level=Level.RUNTIME, provider=FakeRuntimeProvider())
+
+    assert calls[0]["episode_timeout_s"] == 600.0
+
+
 def test_skip_build_has_no_provider_side_effects(package):
     provider = FakeRuntimeProvider()
     report = run_validation(

@@ -256,6 +256,7 @@ def test_schema_mismatch_evidence_does_not_echo_private_subject_values(tmp_path)
 def test_schema_worker_deadline_becomes_a_validation_finding(tmp_path, monkeypatch):
     def timeout(command, **kwargs):
         assert command[-1].endswith("schema_worker.py")
+        assert kwargs["encoding"] == "utf-8"
         assert 0 < kwargs["timeout"] <= 5
         raise subprocess.TimeoutExpired(command, kwargs["timeout"])
 
