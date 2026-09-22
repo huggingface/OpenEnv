@@ -113,6 +113,7 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
         websocket_ping_timeout_s: Optional[float] = 20.0,
         provider: Optional[Any] = None,
         mode: Optional[str] = None,
+        max_message_size_mb: float = 100.0,
     ):
         """
         Initialize MCP client.
@@ -132,6 +133,11 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
                 Container/runtime provider for lifecycle management.
             mode (`str`, *optional*):
                 Communication mode. Must be 'production' for MCP clients. Defaults to 'production'.
+            max_message_size_mb (`float`, *optional*, defaults to `100.0`):
+                Largest WebSocket frame to accept. `EnvClient` has always taken this, but
+                `MCPClientBase` did not forward it, so no MCP client could raise it — an environment
+                whose tool returns a large result closed the connection with `1009 message too big`
+                and there was no way to ask for more from the client side.
         """
         # MCPClientBase defaults to production mode, but allow override for validation
         if mode is None:
@@ -153,6 +159,7 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
             websocket_ping_timeout_s=websocket_ping_timeout_s,
             provider=provider,
             mode=mode,
+            max_message_size_mb=max_message_size_mb,
         )
         self._tools_cache: Optional[List[Tool]] = None
         self.use_production_mode = self._mode == "production"
