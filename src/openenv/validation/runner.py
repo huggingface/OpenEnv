@@ -232,7 +232,7 @@ def _runtime(subject, *, skip_build, provider):
             try:
                 running.stop()
                 cleanup["completed"] = True
-            except Exception:
+            except (Exception, KeyboardInterrupt):
                 cleanup["completed"] = False
                 if result is None:
                     result = _outcome(
@@ -357,7 +357,11 @@ def run_validation(
                 }:
                     reason = "unmet dependency: runtime.startup"
                 results.append(_outcome(entry.check_id, CheckStatus.SKIP, reason))
-        if source_digest(target) != digest_before:
+        try:
+            source_changed = source_digest(target) != digest_before
+        except (OSError, ValueError):
+            source_changed = True
+        if source_changed:
             results = [
                 _outcome(
                     r.check_id,

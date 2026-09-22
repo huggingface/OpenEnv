@@ -235,6 +235,8 @@ def test_invalid_raw_envelope_is_rejected_before_defaults(tmp_path, field, value
 @pytest.mark.parametrize(
     "grader,index,envelope",
     [
+        (RewardWellFormedGrader, 0, "reward"),
+        (RewardWellFormedGrader, 2, "reward"),
         (ObservationSchemaGrader, 0, "observation"),
         (ObservationSchemaGrader, 2, "observation"),
         (StateContractGrader, 1, "state"),

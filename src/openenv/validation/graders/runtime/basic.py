@@ -86,6 +86,9 @@ class RewardWellFormedGrader(_RuntimeGrader):
                 continue
             observations += 1
             data = json.loads(exchange.response_json)["data"]
+            if not isinstance(data, dict):
+                problems.append(f"exchange {index}: malformed reward envelope")
+                continue
             if "reward" not in data:
                 problems.append(f"exchange {index}: missing reward")
                 continue

@@ -227,6 +227,37 @@ def test_source_change_withdraws_dependent_runtime_results(package, monkeypatch)
     assert provider.subject.stopped
 
 
+@pytest.mark.parametrize("failure", [OSError, ValueError])
+def test_source_digest_failure_after_runtime_still_writes_report_and_artifacts(
+    package, monkeypatch, tmp_path, failure
+):
+    provider = FakeRuntimeProvider()
+    digest_calls = 0
+
+    def fail_second_digest(root):
+        nonlocal digest_calls
+        digest_calls += 1
+        if digest_calls == 2:
+            raise failure("token=must-not-appear")
+        return source_digest(root)
+
+    monkeypatch.setattr("openenv.validation.runner.source_digest", fail_second_digest)
+    monkeypatch.setattr(
+        "openenv.validation.runner.collect_runtime_evidence",
+        lambda *a, **k: measured_episode(),
+    )
+    bundle = tmp_path / "bundle"
+    report = run_validation(
+        package, max_level=Level.RUNTIME, provider=provider, artifacts_dir=bundle
+    )
+    results = {result.check_id: result for result in report.results}
+    assert results["runtime.startup"].status is CheckStatus.ERROR
+    for name in ("reward_well_formed", "observation_schema", "state_contract"):
+        assert results[f"runtime.{name}"].status is CheckStatus.SKIP
+    assert (bundle / "run-manifest.json").is_file()
+    assert "must-not-appear" not in report.model_dump_json()
+
+
 @pytest.mark.parametrize("failure", [RuntimeError, KeyboardInterrupt])
 def test_collector_crash_or_cancel_always_tears_down(package, monkeypatch, failure):
     provider = FakeRuntimeProvider()
@@ -264,8 +295,9 @@ def test_teardown_failure_preserves_primary_provider_error(
 
 
 @pytest.mark.parametrize("collection_failed", [False, True])
+@pytest.mark.parametrize("teardown_failure", [RuntimeError, KeyboardInterrupt])
 def test_teardown_failure_preserves_collection_outcome(
-    package, monkeypatch, tmp_path, collection_failed
+    package, monkeypatch, tmp_path, collection_failed, teardown_failure
 ):
     provider = FakeRuntimeProvider()
     collected = (
@@ -275,7 +307,7 @@ def test_teardown_failure_preserves_collection_outcome(
     )
 
     def failed_stop():
-        raise RuntimeError("token=must-not-appear")
+        raise teardown_failure("token=must-not-appear")
 
     monkeypatch.setattr(provider.subject, "stop", failed_stop)
     monkeypatch.setattr(
