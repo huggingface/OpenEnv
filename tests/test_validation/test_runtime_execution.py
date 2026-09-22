@@ -2,6 +2,7 @@
 
 import json
 import shutil
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -207,23 +208,56 @@ def test_provider_failure_diagnostics_are_visible_and_bounded(package):
     assert len(result.evidence[0]) == 4096
 
 
-def test_source_change_withdraws_dependent_runtime_results(package, monkeypatch):
+@pytest.mark.parametrize("mutation", ["content", "symlink", "unreadable"])
+def test_source_change_withdraws_dependent_runtime_results(
+    package, monkeypatch, tmp_path, mutation
+):
     provider = FakeRuntimeProvider()
+    original_digest = source_digest(package)
+
+    def unreadable_source(*args):
+        raise OSError("private-source-path")
 
     def collect(*args, **kwargs):
-        (package / "changed.txt").write_text("changed during collection")
+        if mutation == "content":
+            (package / "changed.txt").write_text("changed during collection")
+        elif mutation == "symlink":
+            (package / "changed.txt").symlink_to(tmp_path / "private-source-path")
+        else:
+            monkeypatch.setattr(
+                "openenv.validation.runner.source_digest", unreadable_source
+            )
         return measured_episode()
 
     monkeypatch.setattr("openenv.validation.runner.collect_runtime_evidence", collect)
-    report = run_validation(package, max_level=Level.RUNTIME, provider=provider)
+    bundle = tmp_path / "bundle"
+    report = run_validation(
+        package, max_level=Level.RUNTIME, provider=provider, artifacts_dir=bundle
+    )
     results = {result.check_id: result for result in report.results}
     assert results["runtime.startup"].status is CheckStatus.ERROR
+    reason = (
+        "package source changed during validation"
+        if mutation == "content"
+        else "package source could not be verified after validation"
+    )
+    assert results["runtime.startup"].evidence == [reason]
     for name in ("reward_well_formed", "observation_schema", "state_contract"):
         result = results[f"runtime.{name}"]
         assert result.status is CheckStatus.SKIP
         assert "runtime.startup" in result.evidence[0]
-        assert "source changed" in result.evidence[0]
+        assert reason in result.evidence[0]
     assert report.verdict.value == "fail"
+    assert report.source_digest == original_digest
+    assert json.loads((bundle / "report.json").read_text()) == report.model_dump(
+        mode="json"
+    )
+    assert json.loads((bundle / "cleanup.json").read_text()) == {
+        "required": True,
+        "completed": True,
+    }
+    assert len(json.loads((bundle / "collector-trace.json").read_text())) == 4
+    assert "private-source-path" not in report.model_dump_json()
     assert provider.subject.stopped
 
 
@@ -263,19 +297,27 @@ def test_teardown_failure_preserves_primary_provider_error(
     assert "must-not-appear" not in report.model_dump_json()
 
 
-@pytest.mark.parametrize("collection_failed", [False, True])
+@pytest.mark.parametrize("collection_state", ["complete", "failed", "partial"])
+@pytest.mark.parametrize("teardown_error", [RuntimeError, KeyboardInterrupt])
 def test_teardown_failure_preserves_collection_outcome(
-    package, monkeypatch, tmp_path, collection_failed
+    package, monkeypatch, tmp_path, collection_state, teardown_error
 ):
     provider = FakeRuntimeProvider()
-    collected = (
-        RuntimeEvidence(failure_phase="schema", failure_reason="schema request failed")
-        if collection_failed
-        else measured_episode()
-    )
+    collected = measured_episode()
+    if collection_state == "failed":
+        collected = RuntimeEvidence(
+            failure_phase="schema", failure_reason="schema request failed"
+        )
+    elif collection_state == "partial":
+        collected = replace(
+            collected,
+            exchanges=collected.exchanges[:2],
+            failure_phase="step",
+            failure_reason="step request failed",
+        )
 
     def failed_stop():
-        raise RuntimeError("token=must-not-appear")
+        raise teardown_error("token=must-not-appear")
 
     monkeypatch.setattr(provider.subject, "stop", failed_stop)
     monkeypatch.setattr(
@@ -289,11 +331,11 @@ def test_teardown_failure_preserves_collection_outcome(
     assert result.status is CheckStatus.ERROR
     assert result.evidence == [
         "schema request failed"
-        if collection_failed
+        if collection_state == "failed"
         else "subject built and reached its control endpoint",
         "subject teardown failed",
     ]
-    if not collection_failed:
+    if collection_state != "failed":
         assert result.measured == {
             "provider": provider.name,
             "image_ref": "sha256:" + "a" * 64,
@@ -303,6 +345,14 @@ def test_teardown_failure_preserves_collection_outcome(
         "required": True,
         "completed": False,
     }
+    assert len(json.loads((bundle / "collector-trace.json").read_text())) == len(
+        collected.exchanges
+    )
+    saved_evidence = json.loads((bundle / "collector-evidence.json").read_text())
+    assert saved_evidence["failure_reason"] == collected.failure_reason
+    assert json.loads((bundle / "report.json").read_text()) == report.model_dump(
+        mode="json"
+    )
     assert "must-not-appear" not in report.model_dump_json()
 
 

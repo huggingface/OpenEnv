@@ -232,7 +232,7 @@ def _runtime(subject, *, skip_build, provider):
             try:
                 running.stop()
                 cleanup["completed"] = True
-            except Exception:
+            except (Exception, KeyboardInterrupt):
                 cleanup["completed"] = False
                 if result is None:
                     result = _outcome(
@@ -357,12 +357,21 @@ def run_validation(
                 }:
                     reason = "unmet dependency: runtime.startup"
                 results.append(_outcome(entry.check_id, CheckStatus.SKIP, reason))
-        if source_digest(target) != digest_before:
+        try:
+            digest_after = source_digest(target)
+        except (ValueError, OSError):
+            digest_after = None
+        if digest_after != digest_before:
+            source_problem = (
+                "package source changed during validation"
+                if digest_after is not None
+                else "package source could not be verified after validation"
+            )
             results = [
                 _outcome(
                     r.check_id,
                     CheckStatus.SKIP,
-                    "unmet dependency: runtime.startup (package source changed)",
+                    f"unmet dependency: runtime.startup ({source_problem})",
                 )
                 if r.check_id
                 in {
@@ -378,7 +387,7 @@ def run_validation(
                 _outcome(
                     "runtime.startup",
                     CheckStatus.ERROR,
-                    "package source changed during validation",
+                    source_problem,
                 )
             )
 
