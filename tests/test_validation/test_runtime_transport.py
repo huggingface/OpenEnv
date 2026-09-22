@@ -33,12 +33,6 @@ class EpisodeConnection:
         self.operation = None
         self.steps = 0
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_args):
-        self.close()
-
     def send(self, payload):
         self.operation = json.loads(payload)["type"]
         if self.block_send:

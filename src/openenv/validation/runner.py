@@ -108,6 +108,7 @@ def _runtime(subject, *, skip_build, provider):
     started = time.monotonic()
     attempted = False
     result = None
+    checks = []
     try:
         if skip_build:
             raise UnsupportedCapability(
@@ -184,23 +185,13 @@ def _runtime(subject, *, skip_build, provider):
         result = _outcome(
             "runtime.startup", CheckStatus.SKIP, str(exc), started=started
         )
-        checks = []
-    except RuntimePlanError as exc:
+    except (RuntimePlanError, StartupError) as exc:
         result = _outcome(
             "runtime.startup",
             CheckStatus.FAIL,
             str(exc)[:4096],
             started=started,
         )
-        checks = []
-    except StartupError as exc:
-        result = _outcome(
-            "runtime.startup",
-            CheckStatus.FAIL,
-            str(exc)[:4096],
-            started=started,
-        )
-        checks = []
     except ProviderError as exc:
         result = _outcome(
             "runtime.startup",
@@ -208,7 +199,6 @@ def _runtime(subject, *, skip_build, provider):
             str(exc)[:4096],
             started=started,
         )
-        checks = []
     except KeyboardInterrupt as exc:
         if isinstance(exc, RuntimeCollectionInterrupted):
             evidence = exc.evidence
@@ -218,7 +208,6 @@ def _runtime(subject, *, skip_build, provider):
             "validation interrupted",
             started=started,
         )
-        checks = []
     except Exception as exc:
         result = _outcome(
             "runtime.startup",
@@ -226,7 +215,6 @@ def _runtime(subject, *, skip_build, provider):
             f"runtime orchestration failed ({type(exc).__name__})",
             started=started,
         )
-        checks = []
     finally:
         if running is not None:
             try:

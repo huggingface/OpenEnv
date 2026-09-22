@@ -1,6 +1,7 @@
 """Deterministic dependency ordering and capability-aware grader execution."""
 
 import time
+from graphlib import CycleError, TopologicalSorter
 
 from ..policy import PolicyError
 from ..report import CheckResult
@@ -12,27 +13,14 @@ def order_graders(graders: list) -> list:
     by_id = {grader.check_id: grader for grader in graders}
     if len(by_id) != len(graders):
         raise PolicyError("duplicate grader IDs")
-    visiting = set()
-    visited = set()
-    ordered = []
-
-    def visit(check_id):
-        if check_id in visiting:
-            raise PolicyError(f"grader dependency cycle at {check_id}")
-        if check_id in visited:
-            return
-        visiting.add(check_id)
-        grader = by_id[check_id]
-        for dependency in sorted(grader.depends_on):
-            if dependency in by_id:
-                visit(dependency)
-        visiting.remove(check_id)
-        visited.add(check_id)
-        ordered.append(grader)
-
-    for check_id in sorted(by_id):
-        visit(check_id)
-    return ordered
+    graph = {
+        check_id: sorted(dep for dep in grader.depends_on if dep in by_id)
+        for check_id, grader in sorted(by_id.items())
+    }
+    try:
+        return [by_id[check_id] for check_id in TopologicalSorter(graph).static_order()]
+    except CycleError as exc:
+        raise PolicyError(f"grader dependency cycle at {exc.args[1][0]}") from exc
 
 
 def execute_graders(graders, subject, *, provider_capabilities=frozenset(), prior=()):
