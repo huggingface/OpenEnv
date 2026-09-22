@@ -8,7 +8,7 @@ dependencies = [
     "pytest-asyncio==1.2.0",
     "jsonschema==4.25.1",
     "pip==25.2",
-    "setuptools==80.9.0",
+    "setuptools==83.0.0",
     "wheel==0.45.1",
 ]
 
