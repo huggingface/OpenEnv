@@ -78,6 +78,7 @@ async def main():
                 arguments={"message": "Hello, World!"},
             )
         )
+        print(result.observation.result["data"])  # "Hello, World!"
         print(result.reward)
 
 
@@ -97,7 +98,7 @@ with EchoEnv(base_url="https://openenv-echo-env.hf.space").sync() as client:
             arguments={"message": "Hello, World!"},
         )
     )
-    print(result.observation.result)
+    print(result.observation.result["data"])  # "Hello, World!"
 ```
 
 ## Use Containers or Local Servers
@@ -122,11 +123,11 @@ async def main():
 asyncio.run(main())
 ```
 
-If you run the Hugging Face Space image yourself with `docker run`, expose port
-`7860` and connect to that port:
+If you run the Hugging Face Space image yourself with `docker run`, publish the
+container's port `8000` as local port `7860` and connect to that local port:
 
 ```bash
-docker run -it -p 7860:7860 --platform=linux/amd64 \
+docker run -it -p 7860:8000 --platform=linux/amd64 \
     registry.hf.space/openenv-echo-env:latest
 ```
 

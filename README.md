@@ -41,18 +41,18 @@ async def main():
     # Connect to a running Space (async context manager)
     async with EchoEnv(base_url="https://openenv-echo-env.hf.space") as client:
         # Reset the environment
-        result = await client.reset()
-        print(result.observation.echoed_message)  # "Echo environment ready!"
+        reset_result = await client.reset()
+        print(reset_result.observation.metadata["message"])  # "Echo environment ready!"
 
         # Send messages
-        result = await client.step(
+        step_result = await client.step(
             CallToolAction(
                 tool_name="echo_message",
                 arguments={"message": "Hello, World!"},
             )
         )
-        print(result.observation.result)  # "Hello, World!"
-        print(result.reward)
+        print(step_result.observation.result["data"])  # "Hello, World!"
+        print(step_result.reward)
 
 asyncio.run(main())
 ```
@@ -64,14 +64,14 @@ from echo_env import CallToolAction, EchoEnv
 
 # Use .sync() for synchronous context manager
 with EchoEnv(base_url="https://openenv-echo-env.hf.space").sync() as client:
-    result = client.reset()
-    result = client.step(
+    client.reset()
+    step_result = client.step(
         CallToolAction(
             tool_name="echo_message",
             arguments={"message": "Hello, World!"},
         )
     )
-    print(result.observation.result)
+    print(step_result.observation.result["data"])
 ```
 
 For a detailed quick start, check out the [docs page](https://huggingface.co/docs/openenv/getting-started).
