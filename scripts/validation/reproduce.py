@@ -55,29 +55,39 @@ def write_json(path, value):
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
 
 
-def run(argv, *, cwd=ROOT, timeout=600, log=None, env=None):
+def run(argv, *, cwd=ROOT, timeout=600, log=None, env=None, separate_stderr=False):
     process = subprocess.Popen(
         [str(arg) for arg in argv],
         cwd=cwd,
         env=env,
         stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stderr=subprocess.PIPE if separate_stderr else subprocess.STDOUT,
         stdin=subprocess.DEVNULL,
         start_new_session=True,
     )
-    tail = bytearray()
+    stdout_tail = bytearray()
+    stderr_tail = bytearray()
 
-    def drain():
+    def drain(stream, tail):
         try:
-            while chunk := process.stdout.read(8192):
+            while chunk := stream.read(8192):
                 tail.extend(chunk)
                 if len(tail) > MAX_LOG_BYTES:
                     del tail[:-MAX_LOG_BYTES]
         finally:
-            process.stdout.close()
+            stream.close()
 
-    reader = threading.Thread(target=drain, daemon=True)
-    reader.start()
+    readers = [
+        threading.Thread(target=drain, args=(process.stdout, stdout_tail), daemon=True)
+    ]
+    if separate_stderr:
+        readers.append(
+            threading.Thread(
+                target=drain, args=(process.stderr, stderr_tail), daemon=True
+            )
+        )
+    for reader in readers:
+        reader.start()
     try:
         process.wait(timeout=timeout)
     except BaseException:
@@ -89,25 +99,32 @@ def run(argv, *, cwd=ROOT, timeout=600, log=None, env=None):
         process.wait()
         raise
     finally:
-        reader.join(timeout=5)
-        if reader.is_alive():
+        for reader in readers:
+            reader.join(timeout=5)
+        if any(reader.is_alive() for reader in readers):
             # A descendant may retain a pipe after the main command exited.
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 # Descendants may exit while the output reader is finishing.
                 pass
-            reader.join(timeout=5)
-        output = bytes(tail).decode("utf-8", "replace")
+            for reader in readers:
+                reader.join(timeout=5)
+        output = bytes(stdout_tail).decode("utf-8", "replace")
+        errors = bytes(stderr_tail).decode("utf-8", "replace")
         output = re.sub(
             r"(?:hf_|ghp_|github_pat_|sk-)[A-Za-z0-9_-]{8,}", "[REDACTED]", output
         )
+        errors = re.sub(
+            r"(?:hf_|ghp_|github_pat_|sk-)[A-Za-z0-9_-]{8,}", "[REDACTED]", errors
+        )
         if log:
             log.parent.mkdir(parents=True, exist_ok=True)
-            log.write_text(output)
+            log.write_text(output + errors)
     if process.returncode:
         raise RuntimeError(
-            f"Command failed ({process.returncode}): {argv[0:3]}\n{output[-4000:]}"
+            f"Command failed ({process.returncode}): {argv[0:3]}\n"
+            f"{(output + errors)[-4000:]}"
         )
     return output.strip()
 
@@ -196,6 +213,7 @@ def download_linux_wheels(
                 "print(json.dumps(list(platform_tags())))",
             ],
             timeout=120,
+            separate_stderr=True,
         )
     )
     run(
@@ -284,7 +302,9 @@ def stage_image(work, output, pins, manifest):
     context = work / "subject"
     context.mkdir()
     wheelhouse = output / "wheelhouse"
-    architecture = run(["docker", "info", "--format", "{{.Architecture}}"])
+    architecture = run(
+        ["docker", "info", "--format", "{{.Architecture}}"], separate_stderr=True
+    )
     arch = {
         "x86_64": "x86_64",
         "amd64": "x86_64",
@@ -378,7 +398,11 @@ def main():
         with tempfile.TemporaryDirectory(prefix="openenv-validation-") as temporary:
             if args.suite == "docker":
                 manifest["docker_info"] = json.loads(
-                    run(["docker", "info", "--format", "{{json .}}"], timeout=30)
+                    run(
+                        ["docker", "info", "--format", "{{json .}}"],
+                        timeout=30,
+                        separate_stderr=True,
+                    )
                 )
                 # Exclude host-specific paths, labels and proxy settings from retained evidence.
                 manifest["docker_info"] = {
