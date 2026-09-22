@@ -93,6 +93,15 @@ negative rewards and values above 1 are accepted too. A value that is not a
 finite number is ignored, the pass rate is used, and the reason is recorded in
 `state.reward_override_ignored`.
 
+Verify commands, the clearing of that file and the read of it run as their own
+sandbox processes through E2B's process API, as `root` in `/home/user`, rather
+than inside the notebook kernel. A cell can rebind `subprocess.run`, change the
+working directory or edit `os.environ`, and none of that reaches verification.
+This removes the coupling to the kernel; it does not isolate verification from
+the agent. The notebook kernel runs as root in E2B's default code-interpreter
+template, so agent code can still change anything in the sandbox, including the
+files a verify command reads and the startup files of the shell it runs in.
+
 ## Notes
 
 This first version intentionally keeps sandbox provider selection local to the
