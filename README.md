@@ -358,6 +358,9 @@ See the [Oumi example](https://github.com/oumi-ai/oumi/blob/main/notebooks/Oumi%
 ### Lightning AI
 [Lightning AI templates](https://lightning.ai/templates?section=featured&query=openenv)
 
+### Miles
+See the [Terminal-Bench-2 GRPO example](https://github.com/radixark/miles/tree/main/examples/experimental/openenv) on how to train on OpenEnv environments with Miles.
+
 ## Example Environments
 
 | Environment | Description |
