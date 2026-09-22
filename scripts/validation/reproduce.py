@@ -55,13 +55,13 @@ def write_json(path, value):
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
 
 
-def run(argv, *, cwd=ROOT, timeout=600, log=None, env=None, separate_stderr=False):
+def run(argv, *, cwd=ROOT, timeout=600, log=None, env=None):
     process = subprocess.Popen(
         [str(arg) for arg in argv],
         cwd=cwd,
         env=env,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE if separate_stderr else subprocess.STDOUT,
+        stderr=subprocess.PIPE,
         stdin=subprocess.DEVNULL,
         start_new_session=True,
     )
@@ -78,14 +78,12 @@ def run(argv, *, cwd=ROOT, timeout=600, log=None, env=None, separate_stderr=Fals
             stream.close()
 
     readers = [
-        threading.Thread(target=drain, args=(process.stdout, stdout_tail), daemon=True)
-    ]
-    if separate_stderr:
-        readers.append(
-            threading.Thread(
-                target=drain, args=(process.stderr, stderr_tail), daemon=True
-            )
+        threading.Thread(target=drain, args=(stream, tail), daemon=True)
+        for stream, tail in (
+            (process.stdout, stdout_tail),
+            (process.stderr, stderr_tail),
         )
+    ]
     for reader in readers:
         reader.start()
     try:
@@ -118,13 +116,15 @@ def run(argv, *, cwd=ROOT, timeout=600, log=None, env=None, separate_stderr=Fals
         errors = re.sub(
             r"(?:hf_|ghp_|github_pat_|sk-)[A-Za-z0-9_-]{8,}", "[REDACTED]", errors
         )
+        diagnostics = (
+            (output + errors).encode("utf-8")[-MAX_LOG_BYTES:].decode("utf-8", "ignore")
+        )
         if log:
             log.parent.mkdir(parents=True, exist_ok=True)
-            log.write_text(output + errors)
+            log.write_text(diagnostics)
     if process.returncode:
         raise RuntimeError(
-            f"Command failed ({process.returncode}): {argv[0:3]}\n"
-            f"{(output + errors)[-4000:]}"
+            f"Command failed ({process.returncode}): {argv[0:3]}\n{diagnostics[-4000:]}"
         )
     return output.strip()
 
@@ -213,7 +213,6 @@ def download_linux_wheels(
                 "print(json.dumps(list(platform_tags())))",
             ],
             timeout=120,
-            separate_stderr=True,
         )
     )
     run(
@@ -302,9 +301,7 @@ def stage_image(work, output, pins, manifest):
     context = work / "subject"
     context.mkdir()
     wheelhouse = output / "wheelhouse"
-    architecture = run(
-        ["docker", "info", "--format", "{{.Architecture}}"], separate_stderr=True
-    )
+    architecture = run(["docker", "info", "--format", "{{.Architecture}}"])
     arch = {
         "x86_64": "x86_64",
         "amd64": "x86_64",
@@ -401,7 +398,6 @@ def main():
                     run(
                         ["docker", "info", "--format", "{{json .}}"],
                         timeout=30,
-                        separate_stderr=True,
                     )
                 )
                 # Exclude host-specific paths, labels and proxy settings from retained evidence.

@@ -136,15 +136,64 @@ def test_nested_case_checksum_is_itself_covered_by_bundle(tmp_path):
     assert module("verify_artifacts").verify(tmp_path) == 1
 
 
-def test_command_drains_large_output_without_unbounded_retention(tmp_path):
+@pytest.mark.parametrize("stdout", ['{"Architecture": "aarch64"}', "aarch64", ""])
+def test_command_keeps_warnings_out_of_returned_stdout(tmp_path, stdout):
     reproduction = module("reproduce")
     log = tmp_path / "command.log"
     result = reproduction.run(
-        [sys.executable, "-c", "import sys; sys.stdout.write('x' * 3000000)"],
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.stdout.write(sys.argv[1]); "
+            "sys.stderr.write('warning ghp_abcdefgh\\n')",
+            stdout,
+        ],
         log=log,
     )
-    assert len(result) == reproduction.MAX_LOG_BYTES
+    assert result == stdout
+    assert stdout in log.read_text()
+    assert "warning [REDACTED]" in log.read_text()
+    assert "ghp_abcdefgh" not in log.read_text()
+
+
+def test_command_drains_large_stdout_and_stderr_without_unbounded_retention(tmp_path):
+    reproduction = module("reproduce")
+    log = tmp_path / "command.log"
+    result = reproduction.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.stdout.write('x' * 3000000); "
+            "sys.stderr.write('y' * 3000000)",
+        ],
+        timeout=5,
+        log=log,
+    )
+    assert result == "x" * reproduction.MAX_LOG_BYTES
     assert log.stat().st_size == reproduction.MAX_LOG_BYTES
+    assert "y" * 8192 in log.read_text()
+
+
+def test_command_failure_preserves_redacted_stderr(tmp_path, monkeypatch):
+    reproduction = module("reproduce")
+    log = tmp_path / "command.log"
+    token = "hf_testsecret123456"
+    monkeypatch.setenv("TEST_TOKEN", token)
+    with pytest.raises(RuntimeError, match=r"Command failed \(7\)") as error:
+        reproduction.run(
+            [
+                sys.executable,
+                "-c",
+                "import os, sys; print('partial stdout'); "
+                "print('fatal ' + os.environ['TEST_TOKEN'], file=sys.stderr); "
+                "sys.exit(7)",
+            ],
+            log=log,
+        )
+    for output in (str(error.value), log.read_text()):
+        assert "partial stdout" in output
+        assert "fatal [REDACTED]" in output
+        assert token not in output
 
 
 def test_command_digest_hashes_complete_unsanitized_bytes():
@@ -170,9 +219,13 @@ def test_command_timeout_retains_partial_log(tmp_path):
             [
                 sys.executable,
                 "-c",
-                "import time; print('started', flush=True); time.sleep(10)",
+                "import sys, time; print('started', flush=True); "
+                "print('warning hf_testsecret123456', file=sys.stderr, flush=True); "
+                "time.sleep(10)",
             ],
             timeout=0.2,
             log=log,
         )
-    assert log.read_text() == "started\n"
+    assert "started\n" in log.read_text()
+    assert "warning [REDACTED]\n" in log.read_text()
+    assert "hf_testsecret123456" not in log.read_text()
