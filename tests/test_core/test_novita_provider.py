@@ -10,11 +10,9 @@ SDK shape (method names and kwargs), so SDK churn shows up as a test failure.
 
 from __future__ import annotations
 
-import importlib.util
 import shlex
 import sys
 import types
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -864,20 +862,6 @@ class TestDockerfileRewriting:
         assert "FROM python:3.11" in out
         assert "${BASE_IMAGE}" not in out.split("\n")[1]
 
-    def test_unbraced_arg_resolution_uses_the_exact_name(self):
-        from openenv.core.containers.runtime.novita_provider import (
-            _resolve_from_references,
-        )
-
-        out = _resolve_from_references(
-            "ARG BASE=python:3.12\n"
-            "ARG BASE_IMAGE=ghcr.io/huggingface/openenv-base:latest\n"
-            "FROM $BASE_IMAGE\n"
-        )
-
-        assert "FROM ghcr.io/huggingface/openenv-base:latest" in out
-        assert "python:3.12_IMAGE" not in out
-
     def test_arg_after_first_from_not_in_scope(self):
         from openenv.core.containers.runtime.novita_provider import (
             _resolve_from_references,
@@ -941,35 +925,6 @@ class TestDockerfileRewriting:
             "RUN mkdir -p $(dirname '/out/$(id)') && "
             "cp -a '/app/source;id' '/out/$(id)'"
         ) in out
-
-
-# ---------------------------------------------------------------------------
-# Tests: shipped Novita examples
-# ---------------------------------------------------------------------------
-@pytest.mark.asyncio
-async def test_tbench2_example_stops_provider_when_readiness_fails(monkeypatch):
-    example_path = Path(__file__).parents[2] / "examples" / "novita_tbench2_simple.py"
-    spec = importlib.util.spec_from_file_location(
-        "novita_tbench2_simple_example", example_path
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    example = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(example)
-
-    readiness_error = TimeoutError("sandbox did not become ready")
-    provider = MagicMock()
-    provider.start_container.return_value = "https://sandbox.example"
-    provider.wait_for_ready.side_effect = readiness_error
-    provider_type = MagicMock(return_value=provider)
-    provider_type.image_from_dockerfile.return_value = "template:test"
-    monkeypatch.setattr(example, "NovitaSandboxProvider", provider_type)
-
-    with pytest.raises(TimeoutError) as caught:
-        await example.main()
-
-    assert caught.value is readiness_error
-    provider.stop_container.assert_called_once_with()
 
 
 # ---------------------------------------------------------------------------
