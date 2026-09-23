@@ -54,6 +54,139 @@ def mock_provider():
 # ============================================================================
 
 
+@pytest.fixture(params=[("start_container", "stop_container"), ("start", "stop")])
+def session_provider(request):
+    start_name, stop_name = request.param
+    provider = Mock(spec=[start_name, stop_name, "wait_for_ready"])
+    start = getattr(provider, start_name)
+    stop = getattr(provider, stop_name)
+    start.return_value = "http://localhost:8000"
+    return provider, start, stop
+
+
+class FailingSessionClient(GenericEnvClient):
+    def __init__(self, base_url=None, provider=None, **kwargs):
+        if base_url is not None:
+            raise ValueError("child constructor failed")
+        super().__init__(base_url=base_url, provider=provider, **kwargs)
+
+
+class TestSessionProviderCleanup:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("failure", ["readiness", "constructor"])
+    async def test_failed_session_is_cleaned_up_only_once(
+        self, session_provider, failure
+    ):
+        provider, start, stop = session_provider
+        stop.side_effect = [None, RuntimeError("already stopped")]
+        if failure == "readiness":
+            error = TimeoutError("not ready")
+            provider.wait_for_ready.side_effect = error
+            client = GenericEnvClient(provider=provider)
+        else:
+            client = FailingSessionClient(provider=provider)
+
+        with patch("openenv.core.env_client.ws_connect", AsyncMock()) as connect:
+            with pytest.raises((TimeoutError, ValueError)) as caught:
+                await client.new_session()
+
+        if failure == "readiness":
+            assert caught.value is error
+        else:
+            assert str(caught.value) == "child constructor failed"
+        start.assert_called_once_with()
+        stop.assert_called_once_with()
+        connect.assert_not_called()
+        assert client.base_url is None
+        assert client._ws_url is None
+        assert client._child_clients == []
+        await client.close()
+        await client.close()
+        stop.assert_called_once_with()
+
+    @pytest.mark.asyncio
+    async def test_failed_cleanup_can_be_retried(self, session_provider):
+        provider, start, stop = session_provider
+        error = TimeoutError("not ready")
+        provider.wait_for_ready.side_effect = error
+        stop.side_effect = [RuntimeError("cleanup failed"), None]
+        client = GenericEnvClient(provider=provider)
+        with pytest.raises(TimeoutError) as caught:
+            await client.new_session()
+        assert caught.value is error
+        assert client._provider is provider
+        stop.assert_called_once_with()
+        await client.close()
+        assert stop.call_count == 2
+        await client.close()
+        assert stop.call_count == 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("connect_parent", [False, True])
+    async def test_constructor_failure_preserves_running_provider(
+        self, session_provider, connect_parent
+    ):
+        provider, start, stop = session_provider
+        parent = FailingSessionClient(provider=provider)
+        ws = AsyncMock()
+        with patch("openenv.core.env_client.ws_connect", AsyncMock(return_value=ws)):
+            if connect_parent:
+                await parent.connect()
+            else:
+                parent._start_provider_if_needed()
+            with pytest.raises(ValueError, match="child constructor failed"):
+                await parent.new_session()
+            start.assert_called_once_with()
+            stop.assert_not_called()
+            assert parent.base_url == "http://localhost:8000"
+            if connect_parent:
+                assert parent._ws is ws
+                ws.close.assert_not_called()
+            await parent.close()
+        stop.assert_called_once_with()
+
+    @pytest.mark.asyncio
+    async def test_provider_can_restart_after_successful_cleanup(
+        self, session_provider
+    ):
+        provider, start, stop = session_provider
+        provider.wait_for_ready.side_effect = TimeoutError("not ready")
+        parent = GenericEnvClient(provider=provider)
+        with pytest.raises(TimeoutError):
+            await parent.new_session()
+        stop.assert_called_once_with()
+        provider.wait_for_ready.side_effect = None
+        with patch(
+            "openenv.core.env_client.ws_connect",
+            AsyncMock(return_value=AsyncMock()),
+        ):
+            child = await parent.new_session()
+            assert child.base_url == "http://localhost:8000"
+            assert start.call_count == 2
+            await parent.close()
+        assert stop.call_count == 2
+
+    @pytest.mark.parametrize("failure", ["readiness", "constructor"])
+    def test_sync_session_failure_is_cleaned_up_only_once(
+        self, session_provider, failure
+    ):
+        provider, start, stop = session_provider
+        stop.side_effect = [None, RuntimeError("already stopped")]
+        if failure == "readiness":
+            provider.wait_for_ready.side_effect = TimeoutError("not ready")
+            parent = GenericEnvClient(provider=provider)
+        else:
+            parent = FailingSessionClient(provider=provider)
+        client = parent.sync()
+        try:
+            with pytest.raises((TimeoutError, ValueError)):
+                client.new_session()
+            stop.assert_called_once_with()
+        finally:
+            client.close()
+        stop.assert_called_once_with()
+
+
 class TestGenericEnvClientInstantiation:
     """Test GenericEnvClient instantiation."""
 
@@ -134,7 +267,10 @@ class TestGenericEnvClientInstantiation:
             await client.connect()
 
     @pytest.mark.asyncio
-    async def test_new_session_reuses_provider_server(self, mock_provider):
+    @pytest.mark.parametrize("connect_parent", [False, True])
+    async def test_new_session_reuses_provider_server(
+        self, mock_provider, connect_parent
+    ):
         """Child sessions connect to the same server without owning the provider."""
         websockets = []
 
@@ -145,7 +281,8 @@ class TestGenericEnvClientInstantiation:
 
         with patch("openenv.core.env_client.ws_connect", side_effect=fake_ws_connect):
             client = GenericEnvClient(provider=mock_provider)
-            await client.connect()
+            if connect_parent:
+                await client.connect()
             session = await client.new_session()
 
             assert isinstance(session, GenericEnvClient)
@@ -153,12 +290,42 @@ class TestGenericEnvClientInstantiation:
             assert session._provider is None
             assert session._base_url == "http://localhost:8000"
             assert session._ws_url == "ws://localhost:8000/ws"
-            assert len(websockets) == 2
+            assert len(websockets) == 1 + int(connect_parent)
             mock_provider.start_container.assert_called_once_with()
 
             await client.close()
 
         mock_provider.stop_container.assert_called_once_with()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "start_method,stop_method",
+        [("start_container", "stop_container"), ("start", "stop")],
+    )
+    @pytest.mark.parametrize("cleanup_fails", [False, True])
+    async def test_new_session_stops_provider_when_readiness_fails(
+        self, start_method, stop_method, cleanup_fails
+    ):
+        provider = Mock(spec=[start_method, stop_method, "wait_for_ready"])
+        start = getattr(provider, start_method)
+        stop = getattr(provider, stop_method)
+        start.return_value = "http://localhost:8000"
+        error = TimeoutError("environment never became ready")
+        provider.wait_for_ready.side_effect = error
+        if cleanup_fails:
+            stop.side_effect = RuntimeError("cleanup failed")
+        client = GenericEnvClient(provider=provider)
+
+        with patch("openenv.core.env_client.ws_connect", AsyncMock()) as connect:
+            with pytest.raises(TimeoutError) as exc_info:
+                await client.new_session()
+
+        assert exc_info.value is error
+        start.assert_called_once_with()
+        stop.assert_called_once_with()
+        connect.assert_not_called()
+        assert client.base_url is None
+        assert client._child_clients == []
 
     @pytest.mark.asyncio
     async def test_close_stops_provider_when_child_close_raises(self, mock_provider):
