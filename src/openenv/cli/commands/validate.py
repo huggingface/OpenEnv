@@ -4,7 +4,7 @@
 
 import json
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from openenv.cli._validation import validate_running_environment
@@ -38,7 +38,30 @@ def _looks_like_url(value: str) -> bool:
     return candidate.startswith("http://") or candidate.startswith("https://")
 
 
-def _render_report(report: ValidationReport) -> str:
+def _render_report(report: ValidationReport | dict[str, Any]) -> str:
+    if isinstance(report, dict):
+        lines = [
+            f"Validation report for {report.get('target', '')} (profile: {report.get('standard_profile', 'running_environment')})",
+            f"  standard version: {report.get('standard_version', 'unknown')} · mode: {report.get('mode', 'unknown')}",
+        ]
+        for criterion in report.get("criteria", []):
+            status = "PASS " if criterion.get("passed") else "FAIL "
+            check_id = criterion.get("id", "")
+            lines.append(f"  {status} {check_id}")
+            if not criterion.get("passed"):
+                details = criterion.get("details")
+                if details:
+                    lines.append(f"          {details}")
+                expected = criterion.get("expected")
+                if expected is not None:
+                    lines.append(f"          expected: {expected}")
+                actual = criterion.get("actual")
+                if actual is not None:
+                    lines.append(f"          actual: {actual}")
+        verdict = "PASS" if report.get("passed", False) else "FAIL"
+        lines.append(f"Verdict: {verdict}")
+        return "\n".join(lines)
+
     lines = [
         f"Validation report for {report.target} (signature: {report.signature.value})",
         f"  policy {report.policy_version} · levels run: "
@@ -55,6 +78,13 @@ def _render_report(report: ValidationReport) -> str:
                 lines.append(f"          remediation: {result.remediation}")
     lines.append(f"Verdict: {report.verdict.value.upper()}")
     return "\n".join(lines)
+
+
+def _write_runtime_report(report: dict[str, Any], path: Path | None = None) -> str:
+    payload = json.dumps(report, indent=2)
+    if path is not None:
+        path.write_text(payload + "\n")
+    return payload
 
 
 def validate(
@@ -164,7 +194,16 @@ def validate(
             typer.echo(f"Error: {exc}", err=True)
             raise typer.Exit(EXIT_FAIL) from exc
 
-        typer.echo(json.dumps(report, indent=2))
+        try:
+            report_json = _write_runtime_report(report, output)
+        except Exception as exc:
+            typer.echo(f"Internal error: {exc}", err=True)
+            raise typer.Exit(EXIT_INTERNAL) from exc
+        if json_output:
+            typer.echo(report_json)
+        else:
+            typer.echo(_render_report(report))
+
         if not report.get("passed", False):
             raise typer.Exit(EXIT_FAIL)
         return

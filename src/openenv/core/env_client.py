@@ -255,6 +255,15 @@ async def _best_effort_close(ws: ClientConnection) -> None:
         pass  # Best effort
 
 
+async def _best_effort_graceful_close(ws: ClientConnection) -> None:
+    """Notify the server, then close a socket without propagating failures."""
+    try:
+        await ws.send(json.dumps({"type": "close"}))
+    except (Exception, asyncio.CancelledError):
+        pass  # Best effort
+    await _best_effort_close(ws)
+
+
 class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
     """
     Async environment client for persistent sessions.
@@ -350,6 +359,8 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         self._websocket_ping_interval_s = websocket_ping_interval_s
         self._websocket_ping_timeout_s = websocket_ping_timeout_s
         self._provider = provider
+        self._provider_stopped = False
+        self._provider_cleanup_pending = False
         self._start_provider_on_connect = base_url is None
         self._child_clients: list[EnvClient[Any, Any, Any]] = []
         self._ws: Optional[ClientConnection] = None
@@ -382,6 +393,16 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         self._ws_url = f"{ws_url}/ws"
 
     def _start_provider_if_needed(self) -> None:
+        # A missing URL does not mean the previous resource was released.
+        # Retry its cleanup before start can overwrite the provider's handle.
+        if self._provider_cleanup_pending:
+            if not self._start_provider_on_connect:
+                raise RuntimeError(
+                    "Provider cleanup is pending for this client with an existing "
+                    "base URL. Retry close() to finish cleanup, then create a new "
+                    "client instead of reconnecting to the old URL."
+                )
+            self._stop_provider()
         if self._ws_url is not None:
             return
         if self._provider is None:
@@ -396,9 +417,11 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
                     f"{required}. Start the provider manually and pass base_url, "
                     "or configure a provider with a constructor-owned image/source."
                 )
+            self._provider_stopped = False
             base_url = self._provider.start_container()
             self._provider.wait_for_ready(base_url)
         elif hasattr(self._provider, "start"):
+            self._provider_stopped = False
             base_url = self._provider.start()
             self._provider.wait_for_ready()
         else:
@@ -406,31 +429,38 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         self._set_base_url(base_url)
 
     def _create_session_client(self) -> "EnvClient[Any, Any, Any]":
-        self._start_provider_if_needed()
-        if self._base_url is None:
-            raise RuntimeError("EnvClient has no base URL.")
+        # Match _start_provider_if_needed's startup condition. A provider with
+        # an existing URL may already be serving the parent or other children.
+        starts_provider_here = self._provider is not None and self._ws_url is None
+        try:
+            self._start_provider_if_needed()
+            if self._base_url is None:
+                raise RuntimeError("EnvClient has no base URL.")
 
-        signature = inspect.signature(type(self))
-        accepts_kwargs = any(
-            parameter.kind == inspect.Parameter.VAR_KEYWORD
-            for parameter in signature.parameters.values()
-        )
-        candidate_kwargs = {
-            "base_url": self._base_url,
-            "connect_timeout_s": self._connect_timeout,
-            "message_timeout_s": self._message_timeout,
-            "max_message_size_mb": self._max_message_size / (1024 * 1024),
-            "websocket_ping_interval_s": self._websocket_ping_interval_s,
-            "websocket_ping_timeout_s": self._websocket_ping_timeout_s,
-            "mode": self._mode,
-        }
-        constructor_kwargs = {}
-        for name, value in candidate_kwargs.items():
-            if accepts_kwargs or name in signature.parameters:
-                constructor_kwargs[name] = value
+            signature = inspect.signature(type(self))
+            accepts_kwargs = any(
+                parameter.kind == inspect.Parameter.VAR_KEYWORD
+                for parameter in signature.parameters.values()
+            )
+            candidate_kwargs = {
+                "base_url": self._base_url,
+                "connect_timeout_s": self._connect_timeout,
+                "message_timeout_s": self._message_timeout,
+                "max_message_size_mb": self._max_message_size / (1024 * 1024),
+                "websocket_ping_interval_s": self._websocket_ping_interval_s,
+                "websocket_ping_timeout_s": self._websocket_ping_timeout_s,
+                "mode": self._mode,
+            }
+            constructor_kwargs = {}
+            for name, value in candidate_kwargs.items():
+                if accepts_kwargs or name in signature.parameters:
+                    constructor_kwargs[name] = value
 
-        client = type(self)(**constructor_kwargs)
-        return client
+            return type(self)(**constructor_kwargs)
+        except Exception:
+            if starts_provider_here and not self._provider_cleanup_pending:
+                self._stop_provider_best_effort()
+            raise
 
     async def new_session(self) -> "EnvClient[Any, Any, Any]":
         """
@@ -538,10 +568,21 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
             self._ws = None
             self._ws_loop = None
 
+        # A timed-out request drops its socket immediately but closes it in the
+        # background so the timeout itself remains prompt. Wait for that close
+        # before opening a replacement: the old server-side session continues
+        # occupying a capacity slot until the close handshake finishes, and
+        # many environments allow only one session.
+        await self._drain_pending_close_tasks()
+
         try:
             self._start_provider_if_needed()
         except Exception:
-            await self.close()
+            # A failed cleanup retry must propagate without attempting stop
+            # again. For a new startup failure, preserve its original error.
+            if not self._provider_cleanup_pending:
+                with suppress(Exception):
+                    await self.close()
             raise
 
         assert self._ws_url is not None
@@ -573,24 +614,51 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
     def disconnect(self) -> Any:
         return self._dispatch(self._disconnect_async)
 
+    def _schedule_socket_close(
+        self, ws: ClientConnection, *, notify_server: bool = False
+    ) -> asyncio.Task[None]:
+        """Schedule and track a socket close until its handshake finishes."""
+        close_coro = (
+            _best_effort_graceful_close(ws) if notify_server else _best_effort_close(ws)
+        )
+        close_task = asyncio.create_task(close_coro)
+        self._pending_close_tasks.add(close_task)
+        close_task.add_done_callback(self._pending_close_tasks.discard)
+        return close_task
+
     async def _disconnect_async(self) -> None:
         """Close the WebSocket connection."""
         if self._ws is not None:
             ws = self._ws
             ws_loop = self._ws_loop
-            same_loop = ws_loop is asyncio.get_running_loop()
-            try:
-                if same_loop:
-                    await ws.send(json.dumps({"type": "close"}))
-            except Exception:
-                pass  # Best effort
-            try:
-                if same_loop:
-                    await ws.close()
-            except Exception:
-                pass
+            # Detach first so cancellation during the close handshake cannot
+            # leave a stale socket cached for a later operation.
             self._ws = None
             self._ws_loop = None
+            same_loop = ws_loop is asyncio.get_running_loop()
+            if same_loop:
+                # Keep ownership of the handshake if this caller is cancelled.
+                # A later close/reconnect drains the task before tearing down
+                # the loop or opening a replacement server session.
+                close_task = self._schedule_socket_close(ws, notify_server=True)
+                await asyncio.shield(close_task)
+
+    async def _drain_pending_close_tasks(self) -> None:
+        """Wait for background socket closes owned by the current event loop.
+
+        Shielding keeps cancellation of the caller from cancelling the close
+        tasks themselves. This matters both before reconnecting, when the old
+        server session must release its capacity slot, and during explicit
+        client shutdown.
+        """
+        loop = asyncio.get_running_loop()
+        tasks = [
+            task
+            for task in tuple(self._pending_close_tasks)
+            if not task.done() and task.get_loop() is loop
+        ]
+        if tasks:
+            await asyncio.shield(asyncio.gather(*tasks, return_exceptions=True))
 
     async def _ensure_connected(self) -> None:
         """Ensure WebSocket connection is established on the current loop.
@@ -641,9 +709,7 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
             # would actually block for up to 10s before its deadline was
             # honored. Scheduling it lets the exception propagate
             # immediately while the close still happens in the background.
-            close_task = asyncio.ensure_future(_best_effort_close(ws))
-            self._pending_close_tasks.add(close_task)
-            close_task.add_done_callback(self._pending_close_tasks.discard)
+            self._schedule_socket_close(ws)
             raise
         return json.loads(raw)
 
@@ -950,6 +1016,40 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
     def close(self) -> Any:
         return self._dispatch(self._close_async)
 
+    async def _close_child_clients(self) -> asyncio.CancelledError | None:
+        """Close every captured child while deferring caller cancellation."""
+        children = list(self._child_clients)
+        self._child_clients.clear()
+        close_tasks = []
+        deferred_cancellation: asyncio.CancelledError | None = None
+
+        for child in children:
+            try:
+                close_tasks.append(asyncio.ensure_future(child.close()))
+            except asyncio.CancelledError as exc:
+                if deferred_cancellation is None:
+                    deferred_cancellation = exc
+            except Exception:
+                pass  # Best effort
+
+        if close_tasks:
+            close_group = asyncio.gather(*close_tasks, return_exceptions=True)
+            while not close_group.done():
+                try:
+                    await asyncio.shield(close_group)
+                except asyncio.CancelledError as exc:
+                    if deferred_cancellation is None:
+                        deferred_cancellation = exc
+
+            for result in close_group.result():
+                if (
+                    isinstance(result, asyncio.CancelledError)
+                    and deferred_cancellation is None
+                ):
+                    deferred_cancellation = result
+
+        return deferred_cancellation
+
     async def _close_async(self) -> None:
         """
         Close the WebSocket connection and clean up resources.
@@ -957,34 +1057,61 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         If this client was created via from_docker_image() or from_env(),
         this will also stop and remove the associated container/process.
         """
-        for child in list(self._child_clients):
-            with suppress(Exception):
-                await child.close()
-        self._child_clients.clear()
-
+        deferred_cancellation: asyncio.CancelledError | None = None
         try:
-            # Wait out any backgrounded closes from a dropped socket (see
-            # `_receive()` / `_best_effort_close`) so a real close() call still
-            # sees the handshake through. SyncEnvClient.close() waits for
-            # `_close_async()` before stopping its loop, so the relevant risk
-            # is async-context cancellation of close itself — not `_stop_loop()`.
-            # Keep this gather inside the provider-teardown try/finally so a
-            # cancelled close cannot skip container/process cleanup.
-            if self._pending_close_tasks:
-                await asyncio.gather(*self._pending_close_tasks, return_exceptions=True)
-            await self._disconnect_async()
-        finally:
             try:
-                if self._provider is not None:
-                    # Handle both ContainerProvider and RuntimeProvider
-                    if hasattr(self._provider, "stop_container"):
-                        self._provider.stop_container()
-                    elif hasattr(self._provider, "stop"):
-                        self._provider.stop()
+                try:
+                    child_cancellation = await self._close_child_clients()
+                except asyncio.CancelledError as exc:
+                    child_cancellation = exc
+                if child_cancellation is not None:
+                    deferred_cancellation = child_cancellation
+
+                # A real close waits out backgrounded closes, while shielding
+                # their socket handshakes from cancellation.
+                try:
+                    await self._drain_pending_close_tasks()
+                except asyncio.CancelledError as exc:
+                    if deferred_cancellation is None:
+                        deferred_cancellation = exc
             finally:
-                if self._start_provider_on_connect:
-                    self._base_url = None
-                    self._ws_url = None
+                # Run even when child or pending-close cleanup is cancelled. A
+                # client may already have reconnected, and that current socket
+                # must not remain cached or open during teardown.
+                try:
+                    await self._disconnect_async()
+                except asyncio.CancelledError as exc:
+                    if deferred_cancellation is None:
+                        deferred_cancellation = exc
+        finally:
+            self._stop_provider()
+
+        if deferred_cancellation is not None:
+            raise deferred_cancellation
+
+    def _stop_provider(self) -> None:
+        """Stop the provider once, retaining it for retries and later startup."""
+        try:
+            provider = self._provider
+            if provider is None or self._provider_stopped:
+                return
+
+            if hasattr(provider, "stop_container"):
+                stop = provider.stop_container
+            elif hasattr(provider, "stop"):
+                stop = provider.stop
+            else:
+                return
+
+            self._provider_cleanup_pending = True
+            stop()
+            # Only a successful stop discharges our cleanup responsibility.
+            self._provider_cleanup_pending = False
+            self._provider_stopped = True
+        finally:
+            if self._start_provider_on_connect:
+                self._base_url = None
+                self._ws_url = None
 
     def _stop_provider_best_effort(self) -> None:
         """Stop the underlying provider directly, ignoring any errors.
@@ -994,14 +1121,8 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         after the provider started but before the connection is established, so
         routing cleanup through the (possibly broken) sync loop is not an option.
         """
-        provider = self._provider
-        if provider is None:
-            return
         with suppress(Exception):
-            if hasattr(provider, "stop_container"):
-                provider.stop_container()
-            elif hasattr(provider, "stop"):
-                provider.stop()
+            self._stop_provider()
 
     async def __aenter__(self) -> "EnvClient":
         """Enter async context manager, ensuring connection is established."""
