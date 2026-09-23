@@ -340,6 +340,34 @@ class TestModeWiring:
 class TestTurnBoundaries:
     """A production turn must end: on its own, on timeout, or with an error."""
 
+    @pytest.mark.parametrize("completed_turns", [0, 1])
+    def test_dead_harness_is_reported_before_sending(self, completed_turns):
+        app, server = make_app(ServerMode.PRODUCTION)
+        client = TestClient(app)
+
+        with client.websocket_connect("/harness") as websocket:
+            websocket.receive_json()  # session_started
+            adapter = [a for a in FakeAdapter.created if a.alive][0]
+            for _ in range(completed_turns):
+                websocket.send_json({"type": "message", "content": "first"})
+                assert websocket.receive_json()["type"] == "tool_call"
+                assert websocket.receive_json()["type"] == "turn_complete"
+
+            adapter.alive = False
+            adapter.hang_on_send = True
+            adapter.config.session_timeout_s = 0.2
+
+            websocket.send_json({"type": "message", "content": "after crash"})
+            event = websocket.receive_json()
+            assert event["type"] == "error"
+            assert event["data"]["recoverable"] is False
+            assert event["data"]["message"] == "harness process is not running"
+            assert "send:after crash" not in adapter.calls
+
+        assert server.active_sessions == 0
+        assert "stop" in adapter.calls
+        assert not server._session_websocket_attachments
+
     def test_hung_turn_is_bounded_by_session_timeout(self):
         app, server = make_app(ServerMode.PRODUCTION)
         client = TestClient(app)

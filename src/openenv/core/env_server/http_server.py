@@ -667,6 +667,7 @@ class HTTPEnvServer:
         ending with a `turn_complete` event.
         """
         # Lazy import to avoid a circular import with openenv.core.harness.
+        from ..harness.adapter import HarnessNotRunningError
         from ..harness.events import (
             HarnessClientMessage,
             HarnessEvent,
@@ -747,6 +748,10 @@ class HTTPEnvServer:
                             """Stream one turn; True if it ended with TURN_COMPLETE."""
                             saw_terminal = False
                             adapter = session_env.adapter
+                            if not await adapter.is_alive():
+                                raise HarnessNotRunningError(
+                                    "harness process is not running"
+                                )
                             async for event in adapter.send_message_streaming(content):
                                 await websocket.send_text(event.model_dump_json())
                                 # Record progress throughout the turn.
