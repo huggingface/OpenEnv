@@ -10,9 +10,12 @@ SDK shape (method names and kwargs), so SDK churn shows up as a test failure.
 
 from __future__ import annotations
 
+import asyncio
+import importlib.util
 import shlex
 import sys
 import types
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -700,6 +703,23 @@ class TestImageFromDockerfile:
         assert "cp -a /app/env/.venv /app/.venv" in content
         assert "COPY --from=" not in content
 
+    def test_arg_prefixes_are_resolved_as_exact_names(self, tmp_path, adapter):
+        """A shorter ARG name must not rewrite a longer unbraced reference."""
+        df = self._write_dockerfile(
+            tmp_path,
+            "ARG BASE=python:3.12\n"
+            "ARG BASE_IMAGE=python:3.11\n"
+            "FROM $BASE_IMAGE\n"
+            "RUN echo hi\n",
+        )
+        image = NovitaSandboxProvider.image_from_dockerfile(str(df))
+        provider = NovitaSandboxProvider(image=image, _adapter=adapter)
+        provider.start_container()
+
+        content = adapter.template_builds[0]["content"]
+        assert "FROM python:3.11" in content
+        assert "python:3.12_IMAGE" not in content
+
     def test_incompatible_multistage_raises_with_registry_hint(self, tmp_path):
         """Stages with different base images cannot be flattened."""
         df = self._write_dockerfile(
@@ -1290,3 +1310,46 @@ class TestDefaultAdapter:
             sandbox.kill.assert_called_once_with()
         finally:
             sys.modules.pop("novita_sandbox", None)
+
+
+def test_tbench2_example_cleans_up_when_readiness_times_out(monkeypatch):
+    example_path = (
+        Path(__file__).parents[2] / "examples" / "novita_tbench2_simple.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "novita_tbench2_simple_test", example_path
+    )
+    assert spec is not None and spec.loader is not None
+    example = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(example)
+
+    class FailingProvider:
+        instance = None
+
+        def __init__(self):
+            type(self).instance = self
+            self.stop_calls = 0
+
+        @staticmethod
+        def image_from_dockerfile(_path):
+            return "template:test"
+
+        def start_container(self, image):
+            assert image == "template:test"
+            return "https://sandbox.example"
+
+        def wait_for_ready(self, base_url, timeout_s):
+            assert (base_url, timeout_s) == ("https://sandbox.example", 300)
+            raise TimeoutError("sandbox did not become ready")
+
+        def stop_container(self):
+            self.stop_calls += 1
+
+    monkeypatch.setattr(example, "NovitaSandboxProvider", FailingProvider)
+    monkeypatch.setenv("TB2_TASKS_DIR", "/tmp/tasks")
+
+    with pytest.raises(TimeoutError, match="did not become ready"):
+        asyncio.run(example.main())
+
+    assert FailingProvider.instance is not None
+    assert FailingProvider.instance.stop_calls == 1

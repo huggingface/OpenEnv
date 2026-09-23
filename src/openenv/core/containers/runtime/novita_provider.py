@@ -62,6 +62,7 @@ _RUN_RE = re.compile(r"^\s*RUN\s+(?P<rest>.*)$", re.IGNORECASE)
 _ARG_DEFAULT_RE = re.compile(
     r"^\s*ARG\s+(?P<name>\w+)=(?P<value>\S+)\s*$", re.IGNORECASE
 )
+_ARG_REFERENCE_RE = re.compile(r"\$(?:\{(?P<braced>\w+)\}|(?P<bare>\w+))")
 
 
 def _strip_mount_flags(content: str) -> str:
@@ -125,7 +126,9 @@ def _resolve_from_references(content: str) -> str:
     - The parser stores a ``FROM ${BASE_IMAGE}`` line verbatim, so the template
       would be built from a literal image named ``${BASE_IMAGE}``. Only global
       ARGs (declared before the first ``FROM``) are in scope for a ``FROM``
-      line, which is the form every in-repo Dockerfile uses.
+      line, which is the form every in-repo Dockerfile uses. References are
+      matched as complete variable tokens so prefix names cannot rewrite one
+      another.
     - ``FROM --platform=linux/amd64 python:3.10-slim`` likewise keeps the flag
       as part of the name. Novita builds for its own platform, so the flag is
       dropped rather than propagated.
@@ -138,6 +141,10 @@ def _resolve_from_references(content: str) -> str:
         if match:
             arg_defaults[match.group("name")] = match.group("value")
 
+    def substitute_arg(match: re.Match[str]) -> str:
+        name = match.group("braced") or match.group("bare")
+        return arg_defaults.get(name, match.group(0))
+
     out: List[str] = []
     for line in content.split("\n"):
         match = _FROM_RE.match(line)
@@ -147,9 +154,7 @@ def _resolve_from_references(content: str) -> str:
 
         reference = match.group("rest").strip()
         reference = re.sub(r"^(--platform=\S+\s*)+", "", reference).strip()
-        for name, value in arg_defaults.items():
-            reference = reference.replace(f"${{{name}}}", value)
-            reference = reference.replace(f"${name}", value)
+        reference = _ARG_REFERENCE_RE.sub(substitute_arg, reference)
         out.append(f"FROM {reference}")
     return "\n".join(out)
 
