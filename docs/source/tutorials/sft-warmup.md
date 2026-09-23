@@ -146,6 +146,21 @@ hub_repo_arg = shlex.quote(f"{YOUR_HF_USERNAME}/chain-sum-rollouts")
   --output-dir ./rollouts
 ```
 
+To use a self-hosted teacher instead of a hosted provider, point `--llm-endpoint` at any
+OpenAI-compatible server (vLLM, TGI, Ollama) and pass the model id it serves:
+
+```bash
+openenv collect reasoning_gym:chain_sum \
+  --base-url https://sergiopaniego-reasoning-gym.hf.space \
+  --llm-endpoint http://localhost:8000 \
+  --model Qwen/Qwen3-1.7B \
+  --num-episodes 300 \
+  --output-dir ./rollouts
+```
+
+The teacher drives the environment through tool calls, so the server must have tool calling
+enabled (for vLLM: `--enable-auto-tool-choice --tool-call-parser <parser for your model>`).
+
 The command prints a live progress summary and pushes the collected episodes to the Hub as
 `{YOUR_HF_USERNAME}/chain-sum-rollouts`. Pull them back to start filtering:
 
