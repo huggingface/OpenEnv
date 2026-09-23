@@ -15,6 +15,7 @@ is a one-line change.
 | `DaytonaProvider` | Daytona cloud sandboxes | `pip install openenv[daytona]` | ✅ |
 | `ACASandboxProvider` | Azure Container Apps Sandboxes | `pip install openenv[aca]` | ✅ |
 | `ModalProvider` | Modal sandboxes | `pip install openenv[modal]` | ✅ |
+| `NovitaSandboxProvider` | Novita AI sandboxes | `pip install openenv[novita]` | ✅ |
 | `KubernetesProvider` | Kubernetes cluster | core | 🚧 planned |
 
 Cloud-provider SDKs are optional extras, imported lazily, so installing core
@@ -189,6 +190,45 @@ provider = ModalProvider(app_name="openenv", image=image)
 ```
 
 Full example: [`examples/modal_echo_env.py`](https://github.com/huggingface/OpenEnv/blob/main/examples/modal_echo_env.py).
+
+### NovitaSandboxProvider
+
+Runs the server in a Novita AI sandbox. Install with
+`pip install openenv[novita]`. Requires the `NOVITA_API_KEY` environment
+variable (and optionally `NOVITA_DOMAIN` to select a region — the default is
+`us-phx-1`).
+
+```python
+from openenv.core.containers.runtime.novita_provider import NovitaSandboxProvider
+
+provider = NovitaSandboxProvider(image="ghcr.io/org/echo-env:latest")
+```
+
+A local Dockerfile works too, and builds a Novita template on first use:
+
+```python
+image = NovitaSandboxProvider.image_from_dockerfile(
+    "envs/echo_env/server/Dockerfile"
+)
+provider = NovitaSandboxProvider(image=image)
+```
+
+Novita's template parser does not accept multi-stage build definitions, which is
+the layout every in-repo environment uses, so `image_from_dockerfile` rewrites
+the Dockerfile before handing it over: BuildKit `--mount` flags are stripped,
+`ARG`/`--platform` in `FROM` lines are resolved, and a two-stage build whose
+stages share one base image is replayed as a single stage. A Dockerfile that
+does not fit those rules raises with the registry route as the alternative —
+build with `openenv build`, push with `openenv push --registry`, and pass the
+resulting registry reference.
+
+Two things the provider pins that the image does not: the sandbox runs as
+`root` (Novita's parser otherwise rewrites USER to a non-root `user`, which
+cannot write the root-owned `/app` the server installs into), and the template's
+start command is a keepalive rather than the image's `CMD`, which leaves port
+8000 free for the server the provider launches itself. That launch writes a PID
+file, so `wait_for_ready` can report a crashed server immediately instead of
+waiting out the full timeout.
 
 ### UVProvider
 

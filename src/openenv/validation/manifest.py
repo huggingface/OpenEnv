@@ -5,9 +5,11 @@ contract graders; type tags select domain graders. The manifest's `signature` fi
 report provenance only — grader selection never reads it.
 """
 
+import math
+from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .types import SignatureKind
 
@@ -303,4 +305,82 @@ class NormalizedManifest(BaseModel):
             raise ValueError(
                 "a judge pin is declared but capabilities.llm_judged is false"
             )
+        return self
+
+
+class ExecutionDeclaration(BaseModel):
+    """
+    Author-declared runtime binding, introduced by manifest schema 2.
+
+    All paths are portable package-relative paths. Resolving the probe or build
+    context must additionally reject symlink escapes before reading source files.
+    The data-only probe supplies actions; it cannot change declared capabilities.
+
+    Attributes:
+        kind (`str`):
+            The implemented transport binding, `"openenv_ws"`.
+        probe_path (`str`):
+            JSON file containing the versioned runtime plan.
+        dockerfile (`str`):
+            Dockerfile relative to the package root.
+        context (`str`):
+            Build context relative to the package root.
+        agent_boundary (`str`):
+            The access granted to an agent; currently only API access is supported.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["openenv_ws"] = "openenv_ws"
+    probe_path: str = "validation/runtime.json"
+    dockerfile: str = "Dockerfile"
+    context: str = "."
+    agent_boundary: Literal["api"] = "api"
+
+    @field_validator("probe_path", "dockerfile", "context")
+    @classmethod
+    def _package_relative(cls, value: str) -> str:
+        path = PurePosixPath(value)
+        if (
+            not value
+            or "\\" in value
+            or ":" in value
+            or "\x00" in value
+            or path.is_absolute()
+            or ".." in path.parts
+        ):
+            raise ValueError("must be a portable package-relative path without '..'")
+        return value
+
+    @field_validator("probe_path", "dockerfile")
+    @classmethod
+    def _file_path(cls, value: str) -> str:
+        if PurePosixPath(value) == PurePosixPath("."):
+            raise ValueError("must name a file")
+        return value
+
+
+class NormalizedManifestV2(NormalizedManifest):
+    """
+    Version 2 adds the runtime execution declaration without changing schema 1.
+
+    Static packages without `validation.execution` continue to normalize to
+    [`~openenv.validation.manifest.NormalizedManifest`]. An explicit execution
+    declaration opts into this model and the corresponding version 2 report.
+    """
+
+    manifest_schema_version: Literal["2"]
+    execution: ExecutionDeclaration
+
+    @model_validator(mode="after")
+    def _finite_declarations(self) -> "NormalizedManifestV2":
+        pending = [self.model_dump()]
+        while pending:
+            value = pending.pop()
+            if isinstance(value, float) and not math.isfinite(value):
+                raise ValueError("schema 2 numeric declarations must be finite")
+            if isinstance(value, dict):
+                pending.extend(value.values())
+            elif isinstance(value, (list, tuple)):
+                pending.extend(value)
         return self
