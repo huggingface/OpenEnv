@@ -13,10 +13,24 @@ Universal invariants inherited from core: internal port 8000, readiness =
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from ..manifest import NetworkPolicy
+from ..manifest import ExecutionDeclaration
+from ..runtime.contracts import LaunchSpec
 from ..types import ProviderCapability
+
+
+class ProviderError(RuntimeError):
+    """A bounded, sanitized provider operation failed."""
+
+
+class StartupError(ProviderError):
+    """A subject did not become healthy within its startup deadline."""
+
+
+class UnsupportedCapability(ProviderError):
+    """The provider cannot enforce the requested execution contract."""
 
 
 @dataclass(frozen=True)
@@ -35,6 +49,10 @@ class RunningSubject(Protocol):
 
     base_url: str
 
+    def inspect(self) -> dict: ...
+
+    def logs(self, max_bytes: int = 65536) -> str: ...
+
     def exec(self, argv: list[str], timeout_s: float) -> ExecResult: ...
 
     def stop(self) -> None: ...
@@ -46,19 +64,16 @@ class ValidationProvider(Protocol):
     Starts validation subjects in a sandbox with declared capabilities.
 
     A grader whose `requires_provider` names a capability the provider lacks is
-    SKIPped with the capability named. The subject starts under the given network
-    policy (the runner passes the manifest's declared policy; `None` means the
-    default `public` mode — egress allowed). Enforcing `no-network`/`allowlist`
-    modes requires the `NETWORK_POLICY` capability.
+    SKIPped with the capability named. The runner checks the manifest's declared
+    network mode and GPU requirements before building. The provider must enforce
+    the complete launch specification or refuse it. Enforcing `no-network` or
+    `allowlist` modes requires the `NETWORK_POLICY` capability.
     """
 
     name: str
     capabilities: frozenset[ProviderCapability]
+    supported_network_modes: frozenset[str]
 
-    def start(
-        self,
-        image_ref: str,
-        *,
-        network: NetworkPolicy | None = None,
-        env_vars: dict[str, str] | None = None,
-    ) -> RunningSubject: ...
+    def build(self, root: Path, execution: ExecutionDeclaration) -> str: ...
+
+    def start(self, spec: LaunchSpec) -> RunningSubject: ...
