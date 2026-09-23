@@ -6,5 +6,5 @@
   "reference_platform": "linux/amd64",
   "supported_platforms": ["linux/amd64", "linux/arm64"],
   "setuptools": "80.9.0",
-  "wheel": "0.45.1"
+  "wheel": "0.48.0"
 }
