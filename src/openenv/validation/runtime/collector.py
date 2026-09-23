@@ -216,11 +216,11 @@ def collect_runtime_evidence(
                         lambda: connection.send(json.dumps({"type": "close"})),
                         min(remaining(), 1.0),
                     )
-                except Exception:
+                except (Exception, KeyboardInterrupt):
                     pass  # A server may close immediately after its final response.
             try:
                 _bounded_call(connection, connection.close, 1.0)
-            except Exception:
+            except (Exception, KeyboardInterrupt):
                 _abort_transport(connection)
         return RuntimeEvidence(
             exchanges=tuple(exchanges), observation_schema_json=schema_json

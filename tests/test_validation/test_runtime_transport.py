@@ -121,9 +121,57 @@ def test_teardown_noise_does_not_fail_a_completed_episode(collect, fault):
     assert connection.closed
 
 
+@pytest.mark.parametrize("fault", ["close_send", "close"])
+def test_teardown_interrupt_does_not_fail_a_completed_episode(collect, fault):
+    connection = EpisodeConnection()
+    if fault == "close_send":
+        send = connection.send
+
+        def interrupt_close_send(payload):
+            send(payload)
+            if connection.operation == "close":
+                raise KeyboardInterrupt
+
+        connection.send = interrupt_close_send
+    else:
+
+        def interrupt_close():
+            connection.closed = True
+            raise KeyboardInterrupt
+
+        connection.close = interrupt_close
+
+    evidence = collect(connection)
+    assert [row.operation for row in evidence.exchanges] == [
+        "reset",
+        "state",
+        "step",
+        "state",
+    ]
+    assert evidence.failure_reason is None
+    assert evidence.failure_phase is None
+    assert connection.closed
+
+
 def test_teardown_failure_does_not_replace_a_genuine_operation_failure(collect):
     connection = EpisodeConnection(close_failure=True)
     connection.step_failure = True
+    evidence = collect(connection)
+    assert evidence.failure_phase == "step"
+    assert evidence.failure_reason == "step failed (ValueError)"
+    assert [row.operation for row in evidence.exchanges] == ["reset", "state"]
+    assert connection.closed
+
+
+def test_teardown_interrupt_does_not_replace_a_genuine_operation_failure(collect):
+    connection = EpisodeConnection()
+    connection.step_failure = True
+
+    def interrupt_close():
+        connection.closed = True
+        raise KeyboardInterrupt
+
+    connection.close = interrupt_close
     evidence = collect(connection)
     assert evidence.failure_phase == "step"
     assert evidence.failure_reason == "step failed (ValueError)"
