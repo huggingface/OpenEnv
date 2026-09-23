@@ -28,14 +28,14 @@ Inside the REPL, the model can:
 
 Main modules:
 
-- [`client.py`](client.py): remote async OpenEnv client
-- [`local.py`](local.py): explicit in-process local env helper
-- [`runner.py`](runner.py): local RLM orchestration loop
-- [`recursive_backends.py`](recursive_backends.py): direct and recursive backend implementations
-- [`recursive_controller.py`](recursive_controller.py): server-side backend/broker composition
-- [`rubrics.py`](rubrics.py): reward rubrics (OpenEnv RFC 004)
-- [`server/repl_environment.py`](server/repl_environment.py): server-side execution environment
-- [`server/app.py`](server/app.py): OpenEnv HTTP server app and env factory
+- [`client.py`](https://github.com/huggingface/OpenEnv/blob/main/envs/repl_env/client.py): remote async OpenEnv client
+- [`local.py`](https://github.com/huggingface/OpenEnv/blob/main/envs/repl_env/local.py): explicit in-process local env helper
+- [`runner.py`](https://github.com/huggingface/OpenEnv/blob/main/envs/repl_env/runner.py): local RLM orchestration loop
+- [`recursive_backends.py`](https://github.com/huggingface/OpenEnv/blob/main/envs/repl_env/recursive_backends.py): direct and recursive backend implementations
+- [`recursive_controller.py`](https://github.com/huggingface/OpenEnv/blob/main/envs/repl_env/recursive_controller.py): server-side backend/broker composition
+- [`rubrics.py`](https://github.com/huggingface/OpenEnv/blob/main/envs/repl_env/rubrics.py): reward rubrics (OpenEnv RFC 004)
+- [`server/repl_environment.py`](https://github.com/huggingface/OpenEnv/blob/main/envs/repl_env/server/repl_environment.py): server-side execution environment
+- [`server/app.py`](https://github.com/huggingface/OpenEnv/blob/main/envs/repl_env/server/app.py): OpenEnv HTTP server app and env factory
 
 ## What Works Today
 
@@ -256,7 +256,7 @@ Run the local server:
 PYTHONPATH=src:envs uvicorn envs.repl_env.server.app:app --host 127.0.0.1 --port 8000
 ```
 
-The server uses a proper OpenEnv environment factory in [`server/app.py`](server/app.py).
+The server uses a proper OpenEnv environment factory in [`server/app.py`](https://github.com/huggingface/OpenEnv/blob/main/envs/repl_env/server/app.py).
 
 ## API Surface
 
@@ -355,7 +355,7 @@ result = env.execute("answer['ready'] = True")
 
 ## Prompt Utilities
 
-[`prompts.py`](prompts.py) contains the current message-building and parsing helpers used by the examples and runner.
+[`prompts.py`](https://github.com/huggingface/OpenEnv/blob/main/envs/repl_env/prompts.py) contains the current message-building and parsing helpers used by the examples and runner.
 
 Important exports:
 
@@ -371,14 +371,14 @@ These prompts were updated to reflect the actual helper surface the environment 
 
 ## Examples
 
-- [`examples/repl_with_llm.py`](../../examples/repl_with_llm.py)
-- [`examples/repl_oolong_simple.py`](../../examples/repl_oolong_simple.py)
+- [`examples/repl_with_llm.py`](https://github.com/huggingface/OpenEnv/blob/main/examples/repl_with_llm.py)
+- [`examples/repl_oolong_simple.py`](https://github.com/huggingface/OpenEnv/blob/main/examples/repl_oolong_simple.py)
 
 Default hosted model in the examples is currently `Qwen/Qwen3.5-9B`, but real hosted inference still depends on provider availability and token access.
 
 ## Environment Variables
 
-Server-side configuration in [`server/app.py`](server/app.py):
+Server-side configuration in [`server/app.py`](https://github.com/huggingface/OpenEnv/blob/main/envs/repl_env/server/app.py):
 
 - `LLM_MODEL`
 - `HF_TOKEN`

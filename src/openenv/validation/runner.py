@@ -6,11 +6,11 @@ from pathlib import Path
 
 from .graders import GraderRegistry, Subject
 from .graders.static import StaticManifestGrader
-from .manifest import ManifestError, NormalizedManifest
+from .manifest import ManifestError, NormalizedManifest, NormalizedManifestV2
 from .parsers import ParserRegistry
 from .parsers.openenv_yaml import OpenEnvYamlParser
 from .policy import apply_policy, load_policy, SeverityPolicy
-from .report import CheckResult, ValidationReport
+from .report import CheckResult, ValidationReport, ValidationReportV2
 from .signature import detect_signature
 from .types import CheckStatus, Lane, Level
 
@@ -136,8 +136,15 @@ def run_validation(
             for grader in graders.select(manifest, max_level)
         )
 
-    return ValidationReport(
-        report_schema_version=REPORT_SCHEMA_VERSION,
+    report_type = (
+        ValidationReportV2
+        if isinstance(manifest, NormalizedManifestV2)
+        else ValidationReport
+    )
+    return report_type(
+        report_schema_version=(
+            "2" if report_type is ValidationReportV2 else REPORT_SCHEMA_VERSION
+        ),
         target=str(target),
         source_digest=source_digest(target),
         signature=signature,
