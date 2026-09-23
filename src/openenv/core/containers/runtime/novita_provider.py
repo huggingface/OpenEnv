@@ -62,9 +62,7 @@ _RUN_RE = re.compile(r"^\s*RUN\s+(?P<rest>.*)$", re.IGNORECASE)
 _ARG_DEFAULT_RE = re.compile(
     r"^\s*ARG\s+(?P<name>\w+)=(?P<value>\S+)\s*$", re.IGNORECASE
 )
-_ARG_REFERENCE_RE = re.compile(
-    r"\$(?:\{(?P<braced_name>\w+)\}|(?P<unbraced_name>\w+))"
-)
+_ARG_REFERENCE_RE = re.compile(r"\$(?:\{(?P<braced_name>\w+)\}|(?P<unbraced_name>\w+))")
 
 
 def _strip_mount_flags(content: str) -> str:
