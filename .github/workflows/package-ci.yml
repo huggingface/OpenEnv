@@ -10,11 +10,13 @@ on:
       - main
   workflow_dispatch:
 
-permissions:
-  contents: read
+
+permissions: {}
 
 jobs:
   package:
+    permissions:
+      contents: read
     name: Build and smoke-test package
     runs-on: ubuntu-latest
 
