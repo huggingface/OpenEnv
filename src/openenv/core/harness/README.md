@@ -28,6 +28,12 @@ OPENAI_API_KEY=... openenv collect openspiel:tic_tac_toe \
     --output-dir /tmp/ttt-sft-v1 \
     -n 200 --provider openai --model gpt-5-mini \
     --push-to-hub <user>/ttt-sft-v1
+
+# Self-hosted teacher (vLLM/TGI/Ollama) via any OpenAI-compatible base URL
+openenv collect openspiel:tic_tac_toe \
+    --base-url https://<user>-<space>.hf.space \
+    --output-dir /tmp/ttt-sft-local \
+    -n 200 --llm-endpoint http://localhost:8000 --model Qwen/Qwen3-1.7B
 ```
 
 Programmatic use:
