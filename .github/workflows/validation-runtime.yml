@@ -6,11 +6,13 @@ on:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: read
+
+permissions: {}
 
 jobs:
   runtime:
+    permissions:
+      contents: read
     name: Runtime validation / Linux Docker
     runs-on: ubuntu-24.04
     timeout-minutes: 30

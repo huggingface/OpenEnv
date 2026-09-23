@@ -13,8 +13,12 @@ on:
 env:
   UV_VERSION: "0.9.3"
 
+permissions: {}
+
 jobs:
   validate-env-locks:
+    permissions:
+      contents: read
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
 
@@ -61,6 +65,8 @@ jobs:
           done
 
   test:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -97,6 +103,8 @@ jobs:
           PYTHONPATH: src:envs
 
   test-thinkingbox-env:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -131,6 +139,8 @@ jobs:
           PYTHONPATH: src:envs
 
   check-env-docs:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -145,6 +155,8 @@ jobs:
         run: python scripts/sync_env_docs.py --check
 
   lint:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

@@ -12,8 +12,6 @@ on:
         required: false
         type: string
 
-permissions:
-  contents: read
 
 concurrency:
   group: openenv-package-publish
@@ -22,8 +20,12 @@ concurrency:
 env:
   PACKAGE_NAME: openenv
 
+permissions: {}
+
 jobs:
   build:
+    permissions:
+      contents: read
     name: Build TestPyPI distribution
     runs-on: ubuntu-latest
     outputs:
