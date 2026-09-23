@@ -4,6 +4,11 @@ name: Publish OpenEnv to TestPyPI
 # - repository: huggingface/OpenEnv
 # - workflow: publish-testpypi.yml
 # - environment: testpypi
+# Two ways to trigger a TestPyPI candidate build:
+# - manual dispatch (optionally with an explicit version_suffix), or
+# - pushing a release candidate to a `testpypi/<version>` branch, which lets the
+#   release automation validate a candidate without `actions: write` credentials.
+#   Push-triggered runs use the default `.dev<run_number><run_attempt>` suffix.
 on:
   workflow_dispatch:
     inputs:
@@ -11,7 +16,9 @@ on:
         description: "PEP 440 suffix for the TestPyPI build, for example .dev123 or rc1. Defaults to .dev<run_number><run_attempt>."
         required: false
         type: string
-
+  push:
+    branches:
+      - "testpypi/**"
 
 concurrency:
   group: openenv-package-publish
