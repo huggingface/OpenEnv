@@ -862,6 +862,37 @@ class TestDockerfileRewriting:
         assert "FROM python:3.11" in out
         assert "${BASE_IMAGE}" not in out.split("\n")[1]
 
+    def test_resolve_prefix_colliding_unbraced_args(self):
+        """Shorter ARG names must not corrupt longer sibling references.
+
+        Declaring ``ARG BASE`` before ``ARG BASE_IMAGE`` used to rewrite
+        ``FROM $BASE_IMAGE`` / ``FROM ${BASE_IMAGE}`` into
+        ``FROM python:3.12_IMAGE`` because ``$BASE`` is a prefix of
+        ``$BASE_IMAGE``.
+        """
+        from openenv.core.containers.runtime.novita_provider import (
+            _resolve_from_references,
+        )
+
+        dockerfile = (
+            "ARG BASE=python:3.12\n"
+            "ARG BASE_IMAGE=python:3.12-slim\n"
+            "FROM $BASE_IMAGE\n"
+            "RUN echo hi\n"
+        )
+        out = _resolve_from_references(dockerfile)
+        assert "FROM python:3.12-slim" in out
+        assert "python:3.12_IMAGE" not in out
+
+        braced = (
+            "ARG BASE=python:3.12\n"
+            "ARG BASE_IMAGE=python:3.12-slim\n"
+            "FROM ${BASE_IMAGE}\n"
+        )
+        out_braced = _resolve_from_references(braced)
+        assert "FROM python:3.12-slim" in out_braced
+        assert "python:3.12_IMAGE" not in out_braced
+
     def test_arg_after_first_from_not_in_scope(self):
         from openenv.core.containers.runtime.novita_provider import (
             _resolve_from_references,

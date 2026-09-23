@@ -28,10 +28,11 @@ async def main() -> int:
     provider = NovitaSandboxProvider()
     # First start builds a Novita template from the Dockerfile, which can take a
     # few minutes; later starts reuse the cached template.
+    # Keep wait_for_ready inside try/finally so a readiness timeout still stops
+    # the sandbox (otherwise it lives until Novita's hard lifetime).
     base_url = provider.start_container(image=image)
-    provider.wait_for_ready(base_url, timeout_s=300)
-
     try:
+        provider.wait_for_ready(base_url, timeout_s=300)
         async with Tbench2Env(base_url=base_url, provider=provider) as env:
             result = await env.reset(task_id=task_id)
             print("Instruction head:")
