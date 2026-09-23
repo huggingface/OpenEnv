@@ -62,6 +62,7 @@ _RUN_RE = re.compile(r"^\s*RUN\s+(?P<rest>.*)$", re.IGNORECASE)
 _ARG_DEFAULT_RE = re.compile(
     r"^\s*ARG\s+(?P<name>\w+)=(?P<value>\S+)\s*$", re.IGNORECASE
 )
+_ARG_REFERENCE_RE = re.compile(r"\$(?:\{(?P<braced>\w+)\}|(?P<bare>\w+))")
 
 
 def _strip_mount_flags(content: str) -> str:
@@ -116,6 +117,23 @@ def _strip_mount_flags(content: str) -> str:
     return "\n".join(out)
 
 
+def _substitute_args(reference: str, arg_defaults: Dict[str, str]) -> str:
+    """Expand ``$NAME`` and ``${NAME}`` in one pass against *arg_defaults*.
+
+    Substituting name by name would let a shorter ARG consume the prefix of a
+    longer one: with ``ARG BASE`` declared before ``ARG BASE_IMAGE``, an
+    unbraced ``FROM $BASE_IMAGE`` became ``<base value>_IMAGE``. Matching the
+    whole name in a single pass makes the result independent of declaration
+    order. Names with no default are left verbatim, as before.
+    """
+
+    def replace(match: "re.Match[str]") -> str:
+        name = match.group("braced") or match.group("bare")
+        return arg_defaults.get(name, match.group(0))
+
+    return _ARG_REFERENCE_RE.sub(replace, reference)
+
+
 def _resolve_from_references(content: str) -> str:
     """Substitute ``ARG`` defaults into ``FROM`` lines and drop ``--platform``.
 
@@ -147,9 +165,7 @@ def _resolve_from_references(content: str) -> str:
 
         reference = match.group("rest").strip()
         reference = re.sub(r"^(--platform=\S+\s*)+", "", reference).strip()
-        for name, value in arg_defaults.items():
-            reference = reference.replace(f"${{{name}}}", value)
-            reference = reference.replace(f"${name}", value)
+        reference = _substitute_args(reference, arg_defaults)
         out.append(f"FROM {reference}")
     return "\n".join(out)
 
