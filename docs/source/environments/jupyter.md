@@ -95,6 +95,14 @@ agent. The notebook kernel runs as root in E2B's default code-interpreter
 template, so agent code can still change anything in the sandbox, including
 the files a verify command reads and the startup files of the shell it runs in.
 
+Only a command that ran and exited decides a verify result. If the sandbox
+itself fails — it cannot be reached, the command cannot be started, or the wait
+for it ends without an exit status — the error is raised instead: verification
+stops, no reward is produced, and the episode does not finish. A sandbox that
+is unreachable, expired or unauthenticated says nothing about the agent's work,
+and a command with no exit status may still be running, since E2B's kill
+signals the command's own process and not the children it started.
+
 ## Notes
 
 This first version intentionally keeps sandbox provider selection local to the

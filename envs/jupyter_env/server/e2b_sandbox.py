@@ -4,6 +4,7 @@ Wraps the E2B Code Interpreter SDK to provide a normalized execution interface
 that decouples the rest of the environment from the E2B API surface.
 """
 
+import contextlib
 from dataclasses import dataclass
 from typing import Any, List, Optional
 
@@ -37,18 +38,14 @@ class CellResult:
     success: bool
 
 
-def _failed_command(exc: Exception) -> CellResult:
-    """Describe a command that did not exit cleanly as a failed `CellResult`.
+def _failed_command(exc: Exception, exit_code: int) -> CellResult:
+    """Describe a command that exited non-zero as a failed `CellResult`.
 
     A non-zero exit raises the SDK's ``CommandExitException``, which carries the
     exit code and output. It is matched by attribute so this module still
     imports without the SDK installed.
     """
-    exit_code = getattr(exc, "exit_code", None)
-    if exit_code is None:
-        error = f"{type(exc).__name__}: {exc}"
-    else:
-        error = f"exit code {exit_code}"
+    error = f"exit code {exit_code}"
     return CellResult(
         stdout=getattr(exc, "stdout", "") or "",
         stderr=getattr(exc, "stderr", "") or "",
@@ -152,34 +149,41 @@ del _patched_show
             command (`str`):
                 Shell command to run.
             timeout_s (`float`, *optional*, defaults to `120`):
-                Seconds before the command is killed and reported as failed.
+                Seconds to wait for the command before giving up on it.
 
         Returns:
             [`CellResult`]: `success` is `True` only for a zero exit status.
+
+        Raises:
+            `Exception`: whatever the SDK raises when the command cannot be
+                started, or when the wait for it ends without an exit status.
+                Only a command that ran and exited is reported as a result:
+                a sandbox that is unreachable, expired or unauthenticated says
+                nothing about the work being verified.
         """
-        try:
-            # Started in the background so there is a handle to kill if the
-            # wait fails: E2B keeps a command running when its connection drops.
-            handle = self._sbx.commands.run(
-                command,
-                background=True,
-                user=_COMMAND_USER,
-                cwd=_COMMAND_CWD,
-                timeout=timeout_s,
-            )
-        except Exception as exc:  # noqa: BLE001
-            return _failed_command(exc)
+        # Started in the background so there is a handle to kill if the wait
+        # fails: E2B keeps a command running when its connection drops.
+        handle = self._sbx.commands.run(
+            command,
+            background=True,
+            user=_COMMAND_USER,
+            cwd=_COMMAND_CWD,
+            timeout=timeout_s,
+        )
         try:
             result = handle.wait()
-        except Exception as exc:  # noqa: BLE001
-            if getattr(exc, "exit_code", None) is None:
-                # Timed out or lost the connection, so the command may still be
-                # running and could write the reward file after it is read.
-                try:
-                    handle.kill()
-                except Exception:  # noqa: BLE001
-                    pass
-            return _failed_command(exc)
+        except Exception as exc:
+            exit_code = getattr(exc, "exit_code", None)
+            if exit_code is not None:
+                return _failed_command(exc, exit_code)
+            # No exit status: the command timed out, or the connection to it
+            # broke. Ask E2B to stop it, but a kill signals the command's own
+            # process, so a child of it can stay alive and still write to the
+            # sandbox. Nothing here can call the command finished, so the
+            # failure is raised rather than counted as a verify result.
+            with contextlib.suppress(Exception):
+                handle.kill()
+            raise
         return CellResult(
             stdout=result.stdout or "",
             stderr=result.stderr or "",

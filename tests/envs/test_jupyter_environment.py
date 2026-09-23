@@ -286,8 +286,11 @@ class _Processes:
 class _Handle:
     """What `commands.run(background=True)` returns: wait for it, or kill it."""
 
-    def __init__(self, done=None, wait_error=None) -> None:
+    def __init__(
+        self, done=None, wait_error=None, kill_result=True, kill_error=None
+    ) -> None:
         self._done, self._wait_error = done, wait_error
+        self._kill_result, self._kill_error = kill_result, kill_error
         self.killed = False
 
     def wait(self):
@@ -303,7 +306,9 @@ class _Handle:
 
     def kill(self) -> bool:
         self.killed = True
-        return True
+        if self._kill_error is not None:
+            raise self._kill_error
+        return self._kill_result
 
 
 def _environment_on_real_sandbox(home, verify_commands):
@@ -416,23 +421,35 @@ def test_run_command_reports_a_non_zero_exit():
     assert not handle.killed
 
 
-def test_run_command_kills_a_command_it_stops_waiting_for():
-    handle = _Handle(wait_error=TimeoutError("context deadline exceeded"))
+def test_run_command_kills_a_command_it_stops_waiting_for_and_raises():
+    # The kill reports that it stopped nothing, as E2B's does when the command
+    # has already left a child behind: either way the command is not a result.
+    handle = _Handle(
+        wait_error=TimeoutError("context deadline exceeded"), kill_result=False
+    )
+    sandbox = _sandbox_with_handle(handle)
 
-    result = _sandbox_with_handle(handle).run_command("sleep 999")
+    with pytest.raises(TimeoutError):
+        sandbox.run_command("sleep 999")
 
-    assert not result.success
-    assert result.error == "TimeoutError: context deadline exceeded"
     assert handle.killed
 
 
-def test_run_command_reports_a_command_that_could_not_start():
+def test_run_command_raises_the_wait_failure_even_when_the_kill_fails():
+    handle = _Handle(
+        wait_error=TimeoutError("context deadline exceeded"),
+        kill_error=RuntimeError("process not found"),
+    )
+
+    with pytest.raises(TimeoutError):
+        _sandbox_with_handle(handle).run_command("sleep 999")
+
+
+def test_run_command_propagates_a_command_that_could_not_start():
     sandbox = _sandbox_with_handle(start_error=ConnectionError("sandbox unreachable"))
 
-    result = sandbox.run_command("true")
-
-    assert not result.success
-    assert result.error == "ConnectionError: sandbox unreachable"
+    with pytest.raises(ConnectionError):
+        sandbox.run_command("true")
 
 
 def test_run_command_matches_the_sdk_exception():
@@ -446,3 +463,26 @@ def test_run_command_matches_the_sdk_exception():
     assert result.error == "exit code 2"
     assert result.stderr == "boom"
     assert not handle.killed
+
+
+def test_a_sandbox_failure_during_verification_is_not_a_reward(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.chdir(tmp_path)
+    env, _, processes = _environment_on_real_sandbox(home, ["true", "true"])
+
+    def unreachable(*args, **kwargs):
+        raise ConnectionError("sandbox unreachable")
+
+    # The sandbox goes away after the agent's work, while verification runs.
+    processes.run = unreachable
+    obs = env.step(
+        CallToolAction(tool_name="final_answer", arguments={"answer": "done"})
+    )
+
+    # Reported as an error rather than scored: no verify results, no reward,
+    # and the episode is not finished.
+    assert "sandbox unreachable" in obs.error.message
+    assert env.state.verify_results == []
+    assert env.state.last_reward is None
+    assert not obs.done
