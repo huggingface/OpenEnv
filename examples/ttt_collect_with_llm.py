@@ -21,7 +21,7 @@ Examples:
     # Local vLLM (OpenAI-compatible) with Qwen:
     python examples/ttt_collect_with_llm.py \\
         --base-url http://localhost:8000 \\
-        --llm-endpoint http://localhost --llm-port 8001 \\
+        --llm-endpoint http://localhost:8001 \\
         --model Qwen/Qwen2.5-7B-Instruct \\
         --num-episodes 20
 
@@ -136,9 +136,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--llm-endpoint",
         default=None,
-        help="OpenAI-compatible endpoint (e.g. http://localhost for vLLM).",
+        help=(
+            "Base URL of an OpenAI-compatible server (e.g. http://localhost:8001 "
+            "for vLLM). /v1 is appended when the URL has no path."
+        ),
     )
-    parser.add_argument("--llm-port", type=int, default=8000)
+    parser.add_argument(
+        "--llm-port",
+        type=int,
+        default=None,
+        help=(
+            "Port appended to --llm-endpoint when the URL does not include one. "
+            "No default: earlier versions assumed 8000."
+        ),
+    )
     parser.add_argument("--temperature", type=float, default=0.2)
     parser.add_argument("--max-tokens", type=int, default=200)
 
@@ -156,7 +167,7 @@ def main() -> None:
 
     llm_client = build_llm_client(args)
     teacher_label = (
-        f"{args.llm_endpoint}:{args.llm_port}/{args.model}"
+        f"{llm_client.base_url}/{args.model}"
         if args.llm_endpoint
         else f"{args.provider}/{args.model}"
     )

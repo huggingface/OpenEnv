@@ -53,6 +53,9 @@ modal = [
     "modal>=1.4.0",
     "pyyaml>=6.0",
 ]
+novita = [
+    "novita-sandbox>=2.1.1",
+]
 inspect = [
     "inspect-ai>=0.3.0",
 ]

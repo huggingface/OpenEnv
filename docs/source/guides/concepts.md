@@ -82,7 +82,7 @@ with env.sync() as client:
 with env.sync() as client:
     result = client.reset()
 
-    while not result.terminated:
+    while not result.done:
         obs = result.observation
         action = decide_action(obs)
         result = client.step(action)
