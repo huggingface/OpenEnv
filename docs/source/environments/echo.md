@@ -29,7 +29,7 @@ async def main():
                 )
             )
             print(f"Sent: '{msg}'")
-            print(f"  → Echoed: '{result.observation.result['data']}'")
+            print(f"  → Echoed: '{result.observation.result}'")
             print(f"  → Reward: {result.reward}")
 
 asyncio.run(main())
@@ -48,7 +48,7 @@ with EchoEnv(base_url="http://localhost:8000").sync() as client:
             arguments={"message": "Hello!"},
         )
     )
-    print(result.observation.result["data"])
+    print(result.observation.result)
 ```
 
 The `EchoEnv.from_docker_image()` method handles:

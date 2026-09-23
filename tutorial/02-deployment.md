@@ -398,7 +398,7 @@ Pull and run the container from the HF registry, or open the [browser](https://h
 docker pull registry.hf.space/openenv-echo-env:latest
 
 # Run locally
-docker run -it -p 7860:8000 --platform=linux/amd64 \
+docker run -it -p 7860:7860 --platform=linux/amd64 \
 	registry.hf.space/openenv-echo-env:latest
 ```
 
