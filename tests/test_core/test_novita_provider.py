@@ -700,6 +700,22 @@ class TestImageFromDockerfile:
         assert "cp -a /app/env/.venv /app/.venv" in content
         assert "COPY --from=" not in content
 
+    def test_unbraced_arg_names_are_substituted_exactly(self, tmp_path, adapter):
+        df = self._write_dockerfile(
+            tmp_path,
+            "ARG BASE=python:3.12\n"
+            "ARG BASE_IMAGE=python:3.11\n"
+            "FROM $BASE_IMAGE\n"
+            "RUN echo hi\n",
+        )
+        image = NovitaSandboxProvider.image_from_dockerfile(str(df))
+        provider = NovitaSandboxProvider(image=image, _adapter=adapter)
+        provider.start_container()
+
+        content = adapter.template_builds[0]["content"]
+        assert "FROM python:3.11" in content
+        assert "python:3.12_IMAGE" not in content
+
     def test_incompatible_multistage_raises_with_registry_hint(self, tmp_path):
         """Stages with different base images cannot be flattened."""
         df = self._write_dockerfile(
