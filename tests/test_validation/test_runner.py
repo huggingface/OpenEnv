@@ -87,3 +87,21 @@ def test_source_digest_uses_portable_relative_paths(tmp_path):
 
     expected = hashlib.sha256(b"nested/file.txt\0contents\0").hexdigest()
     assert source_digest(package_root) == expected
+
+
+@pytest.mark.parametrize("failure", [ValueError, OSError])
+def test_initial_source_digest_failure_is_reported(monkeypatch, failure):
+    def fail_digest(*args):
+        raise failure("private-source-path")
+
+    monkeypatch.setattr("openenv.validation.runner.source_digest", fail_digest)
+    report = run_validation(FIXTURES / "served_min_pass", max_level=Level.STATIC)
+
+    (result,) = report.results
+    assert report.source_digest == ""
+    assert result.status is CheckStatus.ERROR
+    assert (
+        result.evidence[-1] == "package source could not be verified before validation"
+    )
+    assert report.verdict is Verdict.FAIL
+    assert "private-source-path" not in report.model_dump_json()
