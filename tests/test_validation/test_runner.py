@@ -94,7 +94,13 @@ def test_initial_source_digest_failure_is_reported(monkeypatch, failure):
     def fail_digest(*args):
         raise failure("private-source-path")
 
+    def fail_parse(*args):
+        raise AssertionError("rejected source must not be parsed")
+
     monkeypatch.setattr("openenv.validation.runner.source_digest", fail_digest)
+    monkeypatch.setattr(
+        "openenv.validation.parsers.openenv_yaml.OpenEnvYamlParser.parse", fail_parse
+    )
     report = run_validation(FIXTURES / "served_min_pass", max_level=Level.STATIC)
 
     (result,) = report.results

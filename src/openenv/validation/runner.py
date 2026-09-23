@@ -290,19 +290,29 @@ def run_validation(
     results: list[CheckResult] = []
 
     parse_started = time.monotonic()
-    try:
-        manifest = parser.parse(target)
-    except ManifestError as exc:
+    if not digest_before:
         results.append(
-            CheckResult(
-                check_id="static.manifest",
-                status=CheckStatus.FAIL,
-                measured={"schema_errors": len(exc.errors)},
-                evidence=exc.errors,
-                remediation=exc.remediation,
-                duration_s=time.monotonic() - parse_started,
+            _outcome(
+                "static.manifest",
+                CheckStatus.ERROR,
+                "package source could not be verified before validation",
+                started=parse_started,
             )
         )
+    else:
+        try:
+            manifest = parser.parse(target)
+        except ManifestError as exc:
+            results.append(
+                CheckResult(
+                    check_id="static.manifest",
+                    status=CheckStatus.FAIL,
+                    measured={"schema_errors": len(exc.errors)},
+                    evidence=exc.errors,
+                    remediation=exc.remediation,
+                    duration_s=time.monotonic() - parse_started,
+                )
+            )
 
     levels = [Level.STATIC]
     plan = evidence = None
@@ -327,15 +337,6 @@ def run_validation(
             if attempted:
                 levels.append(Level.RUNTIME)
 
-    if not digest_before:
-        static_result = next(
-            result for result in results if result.check_id == "static.manifest"
-        )
-        static_result.status = CheckStatus.ERROR
-        static_result.evidence.append(
-            "package source could not be verified before validation"
-        )
-
     if wants_runtime:
         # Policy IDs are an inventory, not evidence that a grader exists. Keep the
         # incomplete surface explicit throughout the staged implementation.
@@ -357,20 +358,21 @@ def run_validation(
                 }:
                     reason = "unmet dependency: runtime.startup"
                 results.append(_outcome(entry.check_id, CheckStatus.SKIP, reason))
-        try:
-            digest_after = source_digest(target)
-        except (ValueError, OSError):
-            digest_after = None
-        if digest_after != digest_before:
-            source_problem = (
-                "package source could not be verified before validation"
-                if not digest_before
-                else (
+        source_problem = None
+        if not digest_before:
+            source_problem = "package source could not be verified before validation"
+        else:
+            try:
+                digest_after = source_digest(target)
+            except (ValueError, OSError):
+                digest_after = None
+            if digest_after != digest_before:
+                source_problem = (
                     "package source changed during validation"
                     if digest_after is not None
                     else "package source could not be verified after validation"
                 )
-            )
+        if source_problem is not None:
             results = [
                 _outcome(
                     r.check_id,
