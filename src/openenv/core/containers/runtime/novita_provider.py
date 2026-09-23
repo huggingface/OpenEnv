@@ -125,7 +125,9 @@ def _resolve_from_references(content: str) -> str:
     - The parser stores a ``FROM ${BASE_IMAGE}`` line verbatim, so the template
       would be built from a literal image named ``${BASE_IMAGE}``. Only global
       ARGs (declared before the first ``FROM``) are in scope for a ``FROM``
-      line, which is the form every in-repo Dockerfile uses.
+      line, which is the form every in-repo Dockerfile uses. Substitution is
+      longest-name-first with a word-boundary check on unbraced ``$NAME`` forms
+      so ``$BASE`` cannot corrupt ``$BASE_IMAGE``.
     - ``FROM --platform=linux/amd64 python:3.10-slim`` likewise keeps the flag
       as part of the name. Novita builds for its own platform, so the flag is
       dropped rather than propagated.
@@ -147,9 +149,14 @@ def _resolve_from_references(content: str) -> str:
 
         reference = match.group("rest").strip()
         reference = re.sub(r"^(--platform=\S+\s*)+", "", reference).strip()
-        for name, value in arg_defaults.items():
+        # Longest names first so an unbraced `$BASE` cannot corrupt
+        # `$BASE_IMAGE` into `<BASE-value>_IMAGE`. Prefer word-boundary
+        # matching for the unbraced form for the same reason.
+        for name, value in sorted(
+            arg_defaults.items(), key=lambda item: len(item[0]), reverse=True
+        ):
             reference = reference.replace(f"${{{name}}}", value)
-            reference = reference.replace(f"${name}", value)
+            reference = re.sub(rf"\${re.escape(name)}(?!\w)", value, reference)
         out.append(f"FROM {reference}")
     return "\n".join(out)
 

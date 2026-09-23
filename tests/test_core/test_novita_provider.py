@@ -871,6 +871,30 @@ class TestDockerfileRewriting:
         out = _resolve_from_references("FROM python:3.11\nARG X=alpine\nRUN echo hi\n")
         assert "FROM python:3.11" in out
 
+    def test_resolve_unbraced_arg_does_not_prefix_longer_name(self):
+        from openenv.core.containers.runtime.novita_provider import (
+            _resolve_from_references,
+        )
+
+        # Declaring a shorter ARG before a longer one must not turn
+        # `$BASE_IMAGE` into `<BASE-value>_IMAGE`.
+        out = _resolve_from_references(
+            "ARG BASE=python:3.12\n"
+            "ARG BASE_IMAGE=python:3.11-slim\n"
+            "FROM $BASE_IMAGE\n"
+            "RUN echo hi\n"
+        )
+        assert "FROM python:3.11-slim" in out
+        assert "python:3.12_IMAGE" not in out
+
+        braced = _resolve_from_references(
+            "ARG BASE=python:3.12\n"
+            "ARG BASE_IMAGE=python:3.11-slim\n"
+            "FROM ${BASE_IMAGE}\n"
+        )
+        assert "FROM python:3.11-slim" in braced
+        assert "python:3.12_IMAGE" not in braced
+
     def test_flatten_drops_same_path_copy(self):
         from openenv.core.containers.runtime.novita_provider import _flatten_multistage
 
