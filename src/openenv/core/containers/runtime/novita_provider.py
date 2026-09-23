@@ -62,7 +62,6 @@ _RUN_RE = re.compile(r"^\s*RUN\s+(?P<rest>.*)$", re.IGNORECASE)
 _ARG_DEFAULT_RE = re.compile(
     r"^\s*ARG\s+(?P<name>\w+)=(?P<value>\S+)\s*$", re.IGNORECASE
 )
-_ARG_REFERENCE_RE = re.compile(r"\$(?:\{(?P<braced_name>\w+)\}|(?P<unbraced_name>\w+))")
 
 
 def _strip_mount_flags(content: str) -> str:
@@ -148,12 +147,9 @@ def _resolve_from_references(content: str) -> str:
 
         reference = match.group("rest").strip()
         reference = re.sub(r"^(--platform=\S+\s*)+", "", reference).strip()
-
-        def replace_arg(arg_match: re.Match[str]) -> str:
-            name = arg_match.group("braced_name") or arg_match.group("unbraced_name")
-            return arg_defaults.get(name, arg_match.group(0))
-
-        reference = _ARG_REFERENCE_RE.sub(replace_arg, reference)
+        for name, value in arg_defaults.items():
+            reference = reference.replace(f"${{{name}}}", value)
+            reference = reference.replace(f"${name}", value)
         out.append(f"FROM {reference}")
     return "\n".join(out)
 
