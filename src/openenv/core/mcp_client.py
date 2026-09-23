@@ -162,7 +162,7 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
             max_message_size_mb=max_message_size_mb,
         )
         self._tools_cache: Optional[List[Tool]] = None
-        self.use_production_mode = False
+        self.use_production_mode = self._mode == "production"
         self._production_session_id: Optional[str] = None
         self._production_connect_lock = asyncio.Lock()
         self._production_session_lock = asyncio.Lock()
@@ -391,7 +391,7 @@ class MCPClientBase(EnvClient[Any, Observation, State]):
             step_count=payload.get("step_count", 0),
         )
 
-    async def close(self) -> None:
+    async def _close_async(self) -> None:
         """
         Close client resources.
 

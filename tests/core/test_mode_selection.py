@@ -23,7 +23,7 @@ Test coverage:
 
 import asyncio
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastmcp import FastMCP
@@ -527,6 +527,7 @@ class TestCrossClientModeConsistency:
 
         # MCPToolClient should default to production mode
         assert client._mode == "production"
+        assert client.use_production_mode is True
 
     def test_mcp_client_cannot_use_simulation_mode(self, clean_env):
         """Test that MCPToolClient raises error if simulation mode is requested."""
