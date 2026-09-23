@@ -1313,9 +1313,7 @@ class TestDefaultAdapter:
 
 
 def test_tbench2_example_cleans_up_when_readiness_times_out(monkeypatch):
-    example_path = (
-        Path(__file__).parents[2] / "examples" / "novita_tbench2_simple.py"
-    )
+    example_path = Path(__file__).parents[2] / "examples" / "novita_tbench2_simple.py"
     spec = importlib.util.spec_from_file_location(
         "novita_tbench2_simple_test", example_path
     )
