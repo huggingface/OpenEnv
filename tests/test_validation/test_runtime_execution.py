@@ -462,6 +462,10 @@ def test_bundle_cleanup_includes_failed_replay_teardown(
         next(row for row in result.results if row.check_id == "runtime.startup").status
         is CheckStatus.ERROR
     )
+    if not interrupted:
+        checks = {row.check_id: row for row in result.results}
+        assert checks["runtime.reward_well_formed"].status is CheckStatus.PASS
+        assert "completed_replays" in checks["runtime.episode_determinism"].measured
     assert json.loads((bundle / "cleanup.json").read_text()) == {
         "required": True,
         "completed": False,
