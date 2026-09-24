@@ -253,3 +253,21 @@ For dataset-backed environments that publish enumerable tasks and splits, see th
 [[autodoc]] openenv.core.containers.runtime.aca_provider.ACASandboxProvider
 
 [[autodoc]] openenv.core.containers.runtime.modal_provider.ModalProvider
+
+## openenvd runtime
+
+`openenv.core.openenvd` provides the opt-in RFC 009 runtime: policy-scoped agent,
+grader, orchestrator, and observer surfaces around one isolated environment
+workload. Public entry points include `Principal`, `SurfacePolicy`,
+`OpenEnvDConfig`, `Runtime`, and `create_surface_app`. Use `GraderClient` for
+authenticated grader tool calls and `observer_stream` for observation events.
+`EnvClient` and `GenericEnvClient` accept optional `headers` for authenticated
+orchestrator WebSocket connections.
+
+Deployment requires Linux root, network namespace support, and writable cgroup
+v2. Startup uses `python -m openenv.core.openenvd --manifest ...` with explicit
+workspace, asset-root, and identity arguments when `openenvd` is enabled.
+`--manifest` is required; if its `openenvd` section is absent or disabled, the CLI
+runs the manifest's original app unchanged. See the
+[openenvd runtime guide](https://github.com/huggingface/OpenEnv/blob/main/src/openenv/core/openenvd/README.md)
+for policies, principal credentials, permissions, and observation limitations.

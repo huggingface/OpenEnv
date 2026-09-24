@@ -9,6 +9,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .._openenvd_config import OpenEnvDConfig
 from .types import SignatureKind
 
 
@@ -285,6 +286,7 @@ class NormalizedManifest(BaseModel):
     resources: ResourceDeclaration
     task_distribution: TaskDistributionPin | None = None
     network: NetworkPolicy = Field(default_factory=NetworkPolicy)
+    openenvd: OpenEnvDConfig = Field(default_factory=OpenEnvDConfig)
     capabilities: CapabilitiesSpec
     types: TypeSpec
 

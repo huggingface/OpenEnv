@@ -30,6 +30,7 @@ OpenEnv/
 src/
 ├── openenv/                  # Main package
 │   ├── __init__.py
+│   ├── _openenvd_config.py    # Shared policy models; validation imports without server code
 │   │
 │   ├── core/                 # Core abstractions - the heart of OpenEnv
 │   │   ├── env_client.py         # EnvClient base class (WebSocket client)
@@ -53,6 +54,16 @@ src/
 │   │   │   │   └── uv_provider.py         # UVProvider (for local dev)
 │   │   │   └── images/               # Base Docker images
 │   │   │       └── Dockerfile            # openenv-base image
+│   │   │
+│   │   ├── openenvd/             # RFC 009 isolated environment runtime
+│   │   │   ├── daemon.py             # Manifest-based CLI startup
+│   │   │   ├── runtime.py            # Workload ownership and episode reset
+│   │   │   ├── policy.py             # Compatibility exports of shared policy models
+│   │   │   ├── surfaces.py           # Agent, grader, orchestrator, and observer routes
+│   │   │   ├── isolation.py          # Workload identity and network isolation
+│   │   │   ├── cgroup.py             # Workload process-tree containment and cleanup
+│   │   │   ├── observation.py        # Workspace snapshots and episode observations
+│   │   │   └── client.py             # Grader and observer clients
 │   │   │
 │   │   └── tools/                # Reusable tool implementations
 │   │       ├── local_python_executor.py  # Python code execution
@@ -155,7 +166,8 @@ rfcs/
 ├── 000-project-phases.md     # Project vision and phases
 ├── 001-abstractions.md       # Core abstractions (Environment, Client, two-interface model)
 ├── 002-env-spec.md           # Environment specification
-└── 003-mcp-support.md        # MCP integration design
+├── 003-mcp-support.md        # MCP integration design
+└── 009-openenvd.md           # Privileged runtime, principal surfaces, and episode isolation
 ```
 
 ## Claude Code Configuration (`.claude/`)

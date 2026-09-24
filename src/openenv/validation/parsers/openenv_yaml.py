@@ -16,7 +16,8 @@ VALIDATION_BLOCK_REMEDIATION = (
 )
 
 SCHEMA_REMEDIATION = (
-    "fix the `validation:` block in openenv.yaml so it matches the normalized "
+    "fix the `validation:` block or top-level `openenvd:` declaration in "
+    "openenv.yaml so it matches the normalized "
     "manifest schema at src/openenv/validation/schemas/manifest.schema.json"
 )
 
@@ -36,7 +37,8 @@ class OpenEnvYamlParser:
     A parse is a pure read: it never imports or executes package code. Top-level
     `name`/`version` identify the environment; everything validation-specific lives
     under the `validation:` block, which maps onto
-    [`~openenv.validation.manifest.NormalizedManifest`] sections.
+    [`~openenv.validation.manifest.NormalizedManifest`] sections. The optional
+    top-level `openenvd:` declaration supplies the daemon's principal policies.
     """
 
     signature = SignatureKind.OPENENV_SERVED
@@ -76,6 +78,8 @@ class OpenEnvYamlParser:
             "judge": validation.get("judge"),
             "task_distribution": validation.get("task_distribution"),
         }
+        if "openenvd" in raw:
+            data["openenvd"] = raw["openenvd"]
         for key, value in (
             ("name", raw.get("name")),
             ("reward", validation.get("reward")),

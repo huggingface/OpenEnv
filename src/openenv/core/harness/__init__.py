@@ -489,7 +489,21 @@ class SessionMCPBridge:
 
 
 class MCPHarnessAdapter(HarnessAdapter):
-    """White-box harness that follows an MCP tool-calling loop."""
+    """White-box harness that follows an MCP tool-calling loop.
+
+    Args:
+        event_sink (`Callable`, *optional*):
+            Receives each rollout event as it happens. An openenvd
+            `HarnessEventSink` can retain events outside the workload.
+    """
+
+    def __init__(self, event_sink: Callable[[RolloutEvent], None] | None = None):
+        self._event_sink = event_sink
+
+    def _record_event(self, result: HarnessRolloutResult, event: RolloutEvent):
+        result.events.append(event)
+        if self._event_sink is not None:
+            self._event_sink(event)
 
     def run_white_box(
         self,
@@ -511,7 +525,8 @@ class MCPHarnessAdapter(HarnessAdapter):
             result.prompt_ids.extend(step_result.prompt_ids)
             result.completion_ids.extend(step_result.completion_ids)
             result.logprobs.extend(step_result.logprobs)
-            result.events.append(
+            self._record_event(
+                result,
                 RolloutEvent(
                     type="model_response",
                     payload={
@@ -526,7 +541,7 @@ class MCPHarnessAdapter(HarnessAdapter):
                             for tool_call in step_result.response.tool_calls
                         ],
                     },
-                )
+                ),
             )
 
             if not step_result.response.tool_calls:
@@ -555,7 +570,8 @@ class MCPHarnessAdapter(HarnessAdapter):
                     result=tool_result,
                 )
                 result.tool_trace.append(trace_entry)
-                result.events.append(
+                self._record_event(
+                    result,
                     RolloutEvent(
                         type="tool_call",
                         payload={
@@ -563,7 +579,7 @@ class MCPHarnessAdapter(HarnessAdapter):
                             "arguments": dict(tool_call.args),
                             "done": tool_result.done,
                         },
-                    )
+                    ),
                 )
 
                 messages.append(

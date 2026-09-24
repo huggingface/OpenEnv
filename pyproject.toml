@@ -59,6 +59,7 @@ inspect = [
 
 [project.scripts]
 openenv = "openenv.cli.__main__:main"
+openenvd = "openenv.core.openenvd.daemon:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

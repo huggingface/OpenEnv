@@ -2,6 +2,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+import yaml
 from conftest import FIXTURES
 from openenv.validation.report import ValidationReport
 
@@ -46,6 +48,60 @@ def test_json_report_is_schema_valid():
     assert result.returncode == 0, result.stdout + result.stderr
     report = ValidationReport.model_validate_json(result.stdout)
     assert report.verdict.value == "pass"
+    assert report.manifest.openenvd.enabled is False
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        None,
+        {"surfaces": {"agent": {"tools": ["grader.*"]}}},
+        {"surfaces": {"agent": {"allow_lifecycle": True}}},
+        {"surfaces": {"agent": {"fs_read": ["/openenvd/assets/**"]}}},
+    ],
+)
+def test_invalid_openenvd_policy_fails_static_manifest(tmp_path, config):
+    src = (FIXTURES / "served_min_pass" / "openenv.yaml").read_text()
+    (tmp_path / "openenv.yaml").write_text(src + yaml.safe_dump({"openenvd": config}))
+    result = _validate(str(tmp_path), "--level", "static", "--skip-build", "--json")
+    assert result.returncode == 1, result.stdout + result.stderr
+    report = ValidationReport.model_validate_json(result.stdout)
+    failure = next(r for r in report.results if r.check_id == "static.manifest")
+    assert failure.status.value == "fail"
+    assert any("openenvd" in evidence for evidence in failure.evidence)
+    assert "openenvd" in failure.remediation
+
+
+def test_json_report_preserves_openenvd_policy_without_importing_app(tmp_path):
+    src = (FIXTURES / "served_min_pass" / "openenv.yaml").read_text()
+    config = {
+        "enabled": True,
+        "surfaces": {
+            "agent": {"tools": ["env.*"]},
+            "grader": {"tools": ["grader.*"], "allow_privileged_exec": True},
+            "orchestrator": {"allow_lifecycle": True},
+            "observer": {"stream": ["process", "fs_diff"]},
+        },
+        "privileged_assets": {"oracle": "solution/oracle.py"},
+    }
+    (tmp_path / "openenv.yaml").write_text(src + yaml.safe_dump({"openenvd": config}))
+    marker = tmp_path / "imported"
+    (tmp_path / "server").mkdir()
+    (tmp_path / "server" / "__init__.py").write_text(
+        f"from pathlib import Path\nPath({str(marker)!r}).touch()\n"
+        "raise RuntimeError('validation imported package code')\n"
+    )
+    result = _validate(str(tmp_path), "--level", "static", "--skip-build", "--json")
+    assert result.returncode == 0, result.stdout + result.stderr
+    report = ValidationReport.model_validate_json(result.stdout)
+    normalized = report.manifest.openenvd.model_dump(mode="json")
+    assert normalized["enabled"] is True
+    assert normalized["privileged_assets"] == config["privileged_assets"]
+    for principal, policy in config["surfaces"].items():
+        assert normalized["surfaces"][principal]["principal"] == principal
+        for permission, value in policy.items():
+            assert normalized["surfaces"][principal][permission] == value
+    assert not marker.exists()
 
 
 def test_output_writes_the_json_report(tmp_path):

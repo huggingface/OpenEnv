@@ -71,6 +71,57 @@
       "title": "CapabilitiesSpec",
       "type": "object"
     },
+    "EgressPolicy": {
+      "additionalProperties": false,
+      "description": "Default-deny egress policy for the workload's kernel network.",
+      "properties": {
+        "allow": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/EgressRule"
+          },
+          "title": "Allow",
+          "type": "array"
+        }
+      },
+      "title": "EgressPolicy",
+      "type": "object"
+    },
+    "EgressRule": {
+      "additionalProperties": false,
+      "description": "Explicit IPv4 destination, protocol, and ports; special ranges stay denied.",
+      "properties": {
+        "cidr": {
+          "title": "Cidr",
+          "type": "string"
+        },
+        "ports": {
+          "items": {
+            "maximum": 65535,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "minItems": 1,
+          "title": "Ports",
+          "type": "array"
+        },
+        "protocol": {
+          "enum": [
+            "tcp",
+            "udp"
+          ],
+          "title": "Protocol",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cidr",
+        "protocol",
+        "ports"
+      ],
+      "title": "EgressRule",
+      "type": "object"
+    },
     "JudgePin": {
       "additionalProperties": false,
       "description": "Pinned judge configuration. Required iff `capabilities.llm_judged`.\n\nThe pin lives in the manifest, not the rubric object: `LLMJudge.state_dict()` does\nnot serialize model/version/params, so validation checks the declared pin.",
@@ -121,6 +172,39 @@
       "title": "NetworkPolicy",
       "type": "object"
     },
+    "OpenEnvDConfig": {
+      "additionalProperties": false,
+      "description": "The optional ``openenvd`` section of an environment manifest.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "network": {
+          "$ref": "#/$defs/EgressPolicy"
+        },
+        "privileged_assets": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Privileged Assets",
+          "type": "object"
+        },
+        "surfaces": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SurfacePolicy"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/Principal"
+          },
+          "title": "Surfaces",
+          "type": "object"
+        }
+      },
+      "title": "OpenEnvDConfig",
+      "type": "object"
+    },
     "OracleDeclaration": {
       "additionalProperties": false,
       "description": "How the package demonstrates max reward.\n\nAttributes:\n    form (`str`):\n        `\"injected_state\"` (preferred \u2014 most deterministic; requires the\n        `set_state` capability) or `\"script\"` (Harbor `solution/solve.sh`\n        precedent, executed inside the sandbox).\n    location (`str`):\n        Package-relative path to the oracle artifact; containment-checked.",
@@ -144,6 +228,16 @@
       ],
       "title": "OracleDeclaration",
       "type": "object"
+    },
+    "Principal": {
+      "enum": [
+        "orchestrator",
+        "agent",
+        "grader",
+        "observer"
+      ],
+      "title": "Principal",
+      "type": "string"
     },
     "ResourceDeclaration": {
       "additionalProperties": false,
@@ -254,6 +348,55 @@
       ],
       "title": "SignatureKind",
       "type": "string"
+    },
+    "SurfacePolicy": {
+      "additionalProperties": false,
+      "description": "An explicit allowlist for one principal; unspecified permissions are denied.",
+      "properties": {
+        "allow_lifecycle": {
+          "default": false,
+          "title": "Allow Lifecycle",
+          "type": "boolean"
+        },
+        "allow_privileged_exec": {
+          "default": false,
+          "title": "Allow Privileged Exec",
+          "type": "boolean"
+        },
+        "fs_read": {
+          "default": [],
+          "description": "Allowed file paths for grader tools; unsupported for other principals.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Fs Read",
+          "type": "array"
+        },
+        "principal": {
+          "$ref": "#/$defs/Principal"
+        },
+        "stream": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Stream",
+          "type": "array"
+        },
+        "tools": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Tools",
+          "type": "array"
+        }
+      },
+      "required": [
+        "principal"
+      ],
+      "title": "SurfacePolicy",
+      "type": "object"
     },
     "TaskDistributionPin": {
       "additionalProperties": false,
@@ -379,6 +522,9 @@
     },
     "network": {
       "$ref": "#/$defs/NetworkPolicy"
+    },
+    "openenvd": {
+      "$ref": "#/$defs/OpenEnvDConfig"
     },
     "resources": {
       "$ref": "#/$defs/ResourceDeclaration"

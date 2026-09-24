@@ -315,6 +315,7 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         websocket_ping_timeout_s: Optional[float] = 20.0,
         provider: Optional["ContainerProvider | RuntimeProvider"] = None,
         mode: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None,
     ):
         """
         Initialize environment client.
@@ -342,6 +343,9 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
                 `'production'` for MCP JSON-RPC protocol. Can also be set via the
                 `OPENENV_CLIENT_MODE` environment variable. Constructor parameter takes
                 precedence over environment variable. Case-insensitive.
+            headers (`dict[str, str]`, *optional*):
+                Headers for the WebSocket handshake, such as an openenvd
+                orchestrator bearer token. Never passed to the environment.
         """
         if base_url is None and provider is None:
             raise ValueError("EnvClient requires either base_url or provider.")
@@ -359,6 +363,7 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         self._websocket_ping_interval_s = websocket_ping_interval_s
         self._websocket_ping_timeout_s = websocket_ping_timeout_s
         self._provider = provider
+        self._headers = dict(headers or {})
         self._start_provider_on_connect = base_url is None
         self._child_clients: list[EnvClient[Any, Any, Any]] = []
         self._ws: Optional[ClientConnection] = None
@@ -432,6 +437,7 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
             "websocket_ping_interval_s": self._websocket_ping_interval_s,
             "websocket_ping_timeout_s": self._websocket_ping_timeout_s,
             "mode": self._mode,
+            "headers": self._headers.copy(),
         }
         constructor_kwargs = {}
         for name, value in candidate_kwargs.items():
@@ -567,6 +573,8 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         # env var: concurrent connect() calls (e.g. asyncio.gather over many
         # env clients) would otherwise race on os.environ and leak state.
         connect_kwargs: Dict[str, Any] = {}
+        if self._headers:
+            connect_kwargs["additional_headers"] = self._headers
         if _is_localhost_ws_url(self._ws_url):
             connect_kwargs["proxy"] = None
 
@@ -582,7 +590,11 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
             self._ws_loop = asyncio.get_running_loop()
         except Exception as e:
             await self.close()
-            raise ConnectionError(f"Failed to connect to {self._ws_url}: {e}") from e
+            # Transport validation errors can quote credential-bearing headers.
+            detail = type(e).__name__ if self._headers else str(e)
+            raise ConnectionError(
+                f"Failed to connect to {self._ws_url}: {detail}"
+            ) from (None if self._headers else e)
 
         return self
 

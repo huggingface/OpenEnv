@@ -1,0 +1,57 @@
+name: openenvd isolation
+
+on:
+  pull_request:
+    branches: [main, release]
+    paths:
+      - src/openenv/_openenvd_config.py
+      - src/openenv/core/openenvd/**
+      - src/openenv/core/env_client.py
+      - src/openenv/core/env_server/http_server.py
+      - src/openenv/core/harness/**
+      - tests/core/test_openenvd*.py
+      - pyproject.toml
+      - .github/workflows/openenvd.yml
+  push:
+    branches: [main]
+    paths:
+      - src/openenv/_openenvd_config.py
+      - src/openenv/core/openenvd/**
+      - tests/core/test_openenvd*.py
+      - .github/workflows/openenvd.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-isolation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install privileged test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-venv iproute2 nftables conntrack libnetfilter-log1 libseccomp2
+          sudo sysctl -w net.ipv4.ip_forward=1
+          sudo python3 -m venv /opt/openenvd-test
+          sudo /opt/openenvd-test/bin/pip install -e . -e ./envs/echo_env pytest pytest-asyncio
+
+      - name: Require real Linux isolation capabilities
+        run: |
+          sudo /opt/openenvd-test/bin/python - <<'PY'
+          from openenv.core.openenvd.cgroup import WorkloadCgroup
+          from openenv.core.openenvd.isolation import detect_capabilities
+          caps = detect_capabilities()
+          assert caps.can_drop_uid and caps.can_allocate_uids and caps.can_unshare_net, caps
+          group = WorkloadCgroup()
+          group.create()
+          group.close()
+          PY
+
+      - name: Test process and namespace boundaries as root
+        run: sudo env PYTHONPATH=src:envs /opt/openenvd-test/bin/python -m pytest tests/core/test_openenvd*.py -q -rs --tb=short

@@ -1959,4 +1959,7 @@ HTTP API for interacting with OpenEnv environments through a standardized interf
         env_name=env_name,
     )
     server.register_routes(app)
+    # Deployment metadata lets openenvd reuse an existing environment factory
+    # without importing or constructing a client, or changing agent responses.
+    app.state.openenv_spec = (env, action_cls)
     return app

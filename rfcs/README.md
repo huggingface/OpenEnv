@@ -96,6 +96,9 @@ Each RFC should include the following sections:
 ### Validation
 - [008-environment-auto-validation.md](./008-environment-auto-validation.md) - Environment Auto-Validation: local `openenv validate` levels 1-3 + the contracts for operator-run hubs
 
+### Privileged Runtime
+- [009-openenvd.md](./009-openenvd.md) - Privileged Environment Sidecar with Policy-Scoped Surfaces
+
 ### World Modeling
 - [010-echo-env-token-world-model.md](./010-echo-env-token-world-model.md) - Env-token World Modeling (ECHO): trajectory token-role masks + an optimizer world-loss seam
 

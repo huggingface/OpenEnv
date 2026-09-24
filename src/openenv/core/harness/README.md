@@ -102,3 +102,23 @@ HF Dataset Viewer renders `results.jsonl` as `split=train`.
 - **Filtering** — `should_keep` is a `Callable[[EpisodeRecord], bool]`. Defaults
   to keeping everything. The CLI filters `reward >= 0` unless `--keep-losses`
   is set.
+
+## openenvd event publication
+
+`MCPHarnessAdapter` accepts an optional `event_sink` callable. Existing
+`MCPHarnessAdapter()` callers keep their current behavior. Inside an openenvd
+workload, publish events through the daemon-provided write-only pipe:
+
+```python
+from openenv.core.harness import MCPHarnessAdapter
+from openenv.core.openenvd import HarnessEventSink
+
+adapter = MCPHarnessAdapter(event_sink=HarnessEventSink())
+```
+
+`HarnessEventSink()` reads `OPENENVD_EVENT_FD`; construct it only where the
+runtime-provided descriptor exists. Events remain in the rollout result and are
+also forwarded to the sink. Sink failures propagate, and each serialized event
+must fit the pipe's atomic write limit. These are workload-reported events,
+separate from daemon-observed OS activity. See the
+[openenvd runtime guide](../openenvd/README.md) for requirements and limitations.
