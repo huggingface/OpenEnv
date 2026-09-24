@@ -197,9 +197,10 @@ configuration (model, version, params) in the manifest; the oracle check becomes
 bit-exact. RFC 004 rubrics are **leveraged, not required**: the contract stays spec-neutral
 (graders read the manifest), but for the served OpenEnv format the rubric tree is the native
 satisfaction path — `LLMJudge` is the in-repo `llm_judged` implementation, and the
-introspectability and reward-attribution graders read `named_rubrics()` / `state_dict()` /
-per-child scores. Judge pinning stays a *manifest* declaration because the rubric object does not
-serialize model/version/params today.
+introspectability and reward-attribution graders read `named_rubrics()`, explicit
+`validation_config()` and fresh per-child scores. `state_dict()` is never serialized
+as validation configuration. Judge pinning stays a *manifest* declaration because
+the rubric object does not serialize model/version/params today.
 
 Tolerances, margins, and variance bounds are author-declared in the manifest, **bounded by the
 versioned severity policy**, and carried verbatim in reports so hubs can apply stricter ceilings.

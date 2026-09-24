@@ -191,22 +191,28 @@ def collect_runtime_evidence(
             capability = None
             if validation_token:
                 phase = "validation_open"
-                response = telemetry_request(
-                    phase, {"schema_version": 1, "token": validation_token}
-                )
-                data = response.get("data")
-                if (
-                    response.get("type") == "validation_open"
-                    and isinstance(data, dict)
-                    and data.get("schema_version") == 1
-                    and isinstance(data.get("capability"), str)
-                    and 16 <= len(data["capability"]) <= 256
-                ):
-                    capability = data["capability"]
-                else:
-                    telemetry_error = (
-                        "session telemetry unavailable or authorization refused"
+                try:
+                    response = telemetry_request(
+                        phase, {"schema_version": 1, "token": validation_token}
                     )
+                except (ValueError, RecursionError) as exc:
+                    # A consumed malformed reply only invalidates optional telemetry.
+                    # Transport failure still aborts this same-session collection.
+                    telemetry_error = f"session telemetry failed ({type(exc).__name__})"
+                else:
+                    data = response.get("data")
+                    if (
+                        response.get("type") == "validation_open"
+                        and isinstance(data, dict)
+                        and data.get("schema_version") == 1
+                        and isinstance(data.get("capability"), str)
+                        and 16 <= len(data["capability"]) <= 256
+                    ):
+                        capability = data["capability"]
+                    else:
+                        telemetry_error = (
+                            "session telemetry unavailable or authorization refused"
+                        )
 
             def contains_credential(value):
                 if isinstance(value, str):
