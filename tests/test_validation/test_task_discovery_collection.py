@@ -1,0 +1,127 @@
+import json
+import time
+
+import httpx
+import pytest
+from openenv.validation.runtime import discovery
+
+
+def collect(monkeypatch, handler, **kwargs):
+    original = httpx.Client
+
+    def client(**options):
+        assert options == {"trust_env": False, "follow_redirects": False}
+        return original(transport=httpx.MockTransport(handler), **options)
+
+    monkeypatch.setattr(discovery.httpx, "Client", client)
+    return discovery.collect_task_evidence(
+        "http://127.0.0.1:8000", "name?secret", deadline=time.monotonic() + 1, **kwargs
+    )
+
+
+def test_task_sampling_uses_true_counts_and_two_bounded_specs(monkeypatch):
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        assert request.url.query == b""
+        assert request.url.raw_path.startswith(b"/name%3Fsecret/")
+        if request.url.path.endswith("/splits"):
+            return httpx.Response(200, json=[{"name": "train"}, {"name": "empty"}])
+        data = json.loads(request.content)
+        if request.url.path.endswith("/num_tasks"):
+            return httpx.Response(
+                200, json={"num_tasks": 10**9 if data["split"] == "train" else 0}
+            )
+        assert request.url.path.endswith("/task") and data["index"] < 2
+        return httpx.Response(200, json={"task": [data["split"], data["index"]]})
+
+    payload, error = collect(monkeypatch, handler)
+    assert error is None
+    assert json.loads(payload) == {
+        "splits": [{"name": "train"}, {"name": "empty"}],
+        "counts": {"train": 10**9, "empty": 0},
+        "previews": {"train": [["train", 0], ["train", 1]], "empty": []},
+    }
+    assert len(seen) == 5
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "unsupported",
+        "redirect",
+        "too_large",
+        "duplicate",
+        "boolean_count",
+        "too_many_splits",
+        "compressed",
+        "missing_task",
+    ],
+)
+def test_bad_discovery_is_explicit_failure_without_private_values(monkeypatch, fault):
+    def handler(request):
+        if request.url.path.endswith("/splits"):
+            if fault == "unsupported":
+                return httpx.Response(501, text="private-error")
+            if fault == "redirect":
+                return httpx.Response(
+                    302, headers={"Location": "http://secret.invalid"}
+                )
+            if fault == "too_large":
+                return httpx.Response(
+                    200, content=b"x" * (discovery.MAX_RESPONSE_BYTES + 1)
+                )
+            if fault == "duplicate":
+                return httpx.Response(200, json=[{"name": "train"}] * 2)
+            if fault == "too_many_splits":
+                return httpx.Response(200, json=[{}] * (discovery.MAX_TASK_SPLITS + 1))
+            if fault == "compressed":
+                return httpx.Response(
+                    200, headers={"Content-Encoding": "br"}, content=b"invalid"
+                )
+            return httpx.Response(200, json=[{"name": "train"}])
+        if request.url.path.endswith("/num_tasks"):
+            return httpx.Response(
+                200, json={"num_tasks": True if fault == "boolean_count" else 1}
+            )
+        return httpx.Response(
+            200,
+            json={"wrong": "private-error"}
+            if fault == "missing_task"
+            else {"task": "valid"},
+        )
+
+    payload, error = collect(monkeypatch, handler)
+    assert payload is None
+    assert error.startswith("task discovery failed (")
+    assert "private" not in error and "secret" not in error
+
+
+def test_expired_deadline_makes_no_network_request(monkeypatch):
+    def handler(request):
+        pytest.fail("expired discovery budget must not contact the subject")
+
+    payload, error = collect(monkeypatch, handler, request_timeout_s=0)
+    assert payload is None and error == "task discovery failed (TimeoutError)"
+
+
+@pytest.mark.parametrize("split,task", [("train", "😀" * 40), ("s" * 200, None)])
+def test_retained_task_evidence_respects_byte_bound(monkeypatch, split, task):
+    monkeypatch.setattr(discovery, "MAX_DISCOVERY_BYTES", 400)
+
+    def handler(request):
+        if request.url.path.endswith("/splits"):
+            return httpx.Response(200, json=[{"name": split}])
+        if request.url.path.endswith("/num_tasks"):
+            return httpx.Response(200, json={"num_tasks": 1 if task else 0})
+        return httpx.Response(200, json={"task": task})
+
+    payload, error = collect(monkeypatch, handler)
+    if task:
+        assert error is None
+        assert "😀" in payload and len(payload.encode()) <= 400
+    else:
+        # Split names occur in three sections; received bytes alone do not bound
+        # the normalized evidence document.
+        assert payload is None and error == "task discovery failed (ValueError)"

@@ -10,7 +10,7 @@ from pathlib import Path
 
 _SECRET_KEY = re.compile(r"(?i)(password|secret|token|authorization|api[_-]?key)")
 _TOKEN = re.compile(
-    r"(?:hf_[A-Za-z0-9]{8,}|(?:sk|ghp|github_pat)[-_][A-Za-z0-9_-]{8,}|(?i:bearer)\s+\S+)"
+    r"(?<![A-Za-z0-9_])(?:hf_[A-Za-z0-9]{8,}|(?:sk|ghp|github_pat)[-_][A-Za-z0-9_-]{8,}|(?i:bearer)\s+\S+)"
 )
 _MAX_ARTIFACT_DEPTH = 64
 
@@ -122,6 +122,21 @@ def write_runtime_bundle(
         )
     files["collector-trace.json"] = trace
     files["collector-evidence.json"] = collector_metadata
+    if evidence:
+        discovery = {}
+        omitted = []
+        for name in ("tools", "tasks"):
+            raw = getattr(evidence, name + "_json")
+            discovery[name + "_available"] = raw is not None
+            discovery[name + "_error"] = getattr(evidence, name + "_error")
+            try:
+                discovery[name] = json.loads(raw) if raw is not None else None
+            except (ValueError, RecursionError):
+                discovery[name] = "[malformed evidence omitted]"
+                omitted.append(name)
+        discovery["omitted_fields"] = omitted
+        discovery["redacted"] = bool(omitted) or _redact(discovery) != discovery
+        files["discovery.json"] = discovery
     if evidence and (evidence.replays or evidence.replay_failure_reason):
         samples = []
         for replay in evidence.replays:
@@ -169,7 +184,12 @@ def write_runtime_bundle(
             "failure_reason": evidence.replay_failure_reason,
             "samples": samples,
         }
-    for name in ("runtime-plan.json", "session-telemetry.json", "replays.json"):
+    for name in (
+        "runtime-plan.json",
+        "session-telemetry.json",
+        "replays.json",
+        "discovery.json",
+    ):
         if name not in files:
             (directory / name).unlink(missing_ok=True)
     digests = []
