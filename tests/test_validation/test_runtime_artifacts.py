@@ -2,6 +2,7 @@ import hashlib
 import json
 from dataclasses import replace
 
+import pytest
 from conftest import load_fixture_manifest
 from openenv.validation.graders import Subject
 from openenv.validation.graders.runtime import (
@@ -222,3 +223,16 @@ def test_malformed_wire_omission_is_visible_in_metadata(tmp_path):
     assert metadata["omitted_trace_fields"] == [
         {"exchange_index": 0, "field": "response_json"}
     ]
+
+
+@pytest.mark.parametrize(
+    "telemetry", ['{"rubric":[{"config":{"api_key":"private-value"}}]}', "{broken"]
+)
+def test_telemetry_redaction_or_omission_marks_bundle_modified(tmp_path, telemetry):
+    original = replace(measured(), telemetry_json=telemetry)
+    write_runtime_bundle(tmp_path, report(), evidence=original)
+    metadata = json.loads((tmp_path / "collector-evidence.json").read_text())
+    assert metadata["redacted"] is True
+    assert "private-value" not in "".join(
+        path.read_text() for path in tmp_path.iterdir()
+    )

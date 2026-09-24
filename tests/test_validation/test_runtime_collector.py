@@ -105,3 +105,15 @@ def test_uncompressed_schema_still_obeys_total_byte_budget(monkeypatch, plan):
     assert evidence.failure_phase == "schema"
     assert evidence.failure_reason == "schema failed (ValueError)"
     assert evidence.observation_schema_json is None
+
+
+def test_schema_cannot_persist_validation_credential(monkeypatch, plan):
+    token = "validation-secret-value-" * 2
+    stream = TrackedStream(json.dumps({"observation": {"description": token}}).encode())
+    schema_transport(monkeypatch, stream)
+    evidence = collector.collect_runtime_evidence(
+        "http://127.0.0.1:8000", plan, episode_timeout_s=2, validation_token=token
+    )
+    assert evidence.observation_schema_json is None
+    assert evidence.failure_phase == "schema"
+    assert token not in str(evidence)
