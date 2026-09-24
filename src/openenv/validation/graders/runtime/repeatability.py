@@ -111,7 +111,8 @@ class SeedControlGrader(_RuntimeGrader):
         problems = []
         original_seed = None
         for index, sample in enumerate(
-            [evidence] + [replay.evidence for replay in evidence.replays]
+            [evidence]
+            + [replay.evidence for replay in evidence.replays if replay.scope == "seed"]
         ):
             if sample.failure_reason or sample.telemetry_error:
                 problems.append(f"replay {index}: reset or telemetry collection failed")
@@ -129,7 +130,7 @@ class SeedControlGrader(_RuntimeGrader):
                 continue
             if index == 0:
                 original_seed = seed
-            elif evidence.replays[index - 1].scope == "seed" and seed == original_seed:
+            elif seed == original_seed:
                 problems.append(f"replay {index}: scheduled seed was not changed")
             observed = _telemetry(sample).get("seed")
             if (
@@ -204,49 +205,17 @@ class EpisodeDeterminismGrader(_RuntimeGrader):
             return CheckStatus.FAIL, ["invalid replay scope"], {}
         replays = [row for row in evidence.replays if row.scope != "seed"]
         samples = [evidence] + [row.evidence for row in replays]
-        measured = {
-            "completed_replays": sum(
-                not row.failure_reason
-                and any(exchange.operation == "step" for exchange in row.exchanges)
-                for row in samples
-            )
-        }
-        for index, sample in enumerate(samples):
-            if sample.failure_reason:
-                return (
-                    CheckStatus.FAIL,
-                    [f"replay {index}: collection failed"],
-                    measured,
-                )
-            if not any(row.operation == "step" for row in sample.exchanges):
-                return (
-                    CheckStatus.SKIP,
-                    [
-                        evidence.replay_failure_reason
-                        or f"replay {index}: no step was observed"
-                    ],
-                    measured,
-                )
+        completed = [
+            not row.failure_reason
+            and not row.failure_phase
+            and any(exchange.operation == "step" for exchange in row.exchanges)
+            for row in samples
+        ]
+        measured = {"completed_replays": sum(completed)}
         judged = subject.manifest.capabilities.llm_judged
         required = JUDGED_REPLAYS if judged else 3
-        if len(samples) < required or {row.scope for row in replays} != {
-            "session",
-            "container",
-        }:
-            return (
-                CheckStatus.SKIP,
-                [
-                    evidence.replay_failure_reason
-                    or f"requires {required} completed replays across fresh sessions and containers"
-                ],
-                measured,
-            )
-        if judged and len(samples) != JUDGED_REPLAYS:
-            return (
-                CheckStatus.FAIL,
-                ["judged procedure requires exactly 20 samples"],
-                measured,
-            )
+        # Inspect retained content before reporting an incomplete schedule: a
+        # timeout cannot conceal malformed wire data or an observed divergence.
         traces = [_trace(sample) for sample in samples]
         rewards = []
         for trace in traces:
@@ -273,13 +242,36 @@ class EpisodeDeterminismGrader(_RuntimeGrader):
         # Policy-owned volatile exclusions are deliberately empty. All replays
         # use the same episode identity; no author field can suppress a difference.
         for index, trace in enumerate(traces[1:], 1):
-            mismatch = _difference(traces[0], trace)
+            if completed[0] and completed[index]:
+                mismatch = _difference(traces[0], trace)
+            else:
+                shared = min(len(traces[0]), len(trace))
+                mismatch = _difference(traces[0][:shared], trace[:shared])
             if mismatch:
                 return (
                     CheckStatus.FAIL,
                     [f"replay {index}: first divergence at {mismatch}"],
                     measured,
                 )
+        if (
+            not all(completed)
+            or len(samples) < required
+            or {row.scope for row in replays} != {"session", "container"}
+        ):
+            return (
+                CheckStatus.SKIP,
+                [
+                    evidence.replay_failure_reason
+                    or f"requires {required} completed replays across fresh sessions and containers"
+                ],
+                measured,
+            )
+        if judged and len(samples) != JUDGED_REPLAYS:
+            return (
+                CheckStatus.FAIL,
+                ["judged procedure requires exactly 20 samples"],
+                measured,
+            )
         if judged:
             variances = [statistics.pvariance(values) for values in zip(*rewards)]
             measured.update(

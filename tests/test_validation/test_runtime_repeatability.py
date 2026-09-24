@@ -184,7 +184,8 @@ def test_fresh_sessions_without_fresh_container_are_incomplete(tmp_path):
     evidence = replace(
         subject.runtime_evidence,
         replays=tuple(
-            replace(row, scope="session") for row in subject.runtime_evidence.replays
+            replace(row, scope="session") if row.scope != "seed" else row
+            for row in subject.runtime_evidence.replays
         ),
     )
     result = EpisodeDeterminismGrader().run(replace(subject, runtime_evidence=evidence))
@@ -282,7 +283,84 @@ def test_truncated_primary_evidence_never_passes(tmp_path, grader):
     evidence = replace(
         subject.runtime_evidence, failure_reason="step failed (TimeoutError)"
     )
+    expected = (
+        CheckStatus.SKIP if grader is EpisodeDeterminismGrader else CheckStatus.FAIL
+    )
+    assert grader().run(replace(subject, runtime_evidence=evidence)).status is expected
+
+
+@pytest.mark.parametrize("scope", ["session", "container"])
+def test_seed_proof_is_independent_of_other_replay_collection_failures(tmp_path, scope):
+    subject = subject_with_replays(tmp_path)
+    evidence = subject.runtime_evidence
+    replays = tuple(
+        replace(
+            replay,
+            evidence=replace(
+                replay.evidence,
+                failure_reason="step failed (TimeoutError)",
+                telemetry_json=None,
+                telemetry_error="unrelated replay telemetry unavailable",
+            ),
+        )
+        if replay.scope == scope
+        else replay
+        for replay in evidence.replays
+    )
+    result = SeedControlGrader().run(
+        replace(subject, runtime_evidence=replace(evidence, replays=replays))
+    )
+    assert result.status is CheckStatus.PASS
+
+
+def test_changed_seed_rejection_still_fails_seed_control(tmp_path):
+    subject = subject_with_replays(tmp_path)
+    evidence = subject.runtime_evidence
+    changed = evidence.replays[-1]
+    changed = replace(
+        changed,
+        evidence=alter_telemetry(
+            changed.evidence, lambda value: value["seed"].update(accepted=False)
+        ),
+    )
+    evidence = replace(evidence, replays=evidence.replays[:-1] + (changed,))
     assert (
-        grader().run(replace(subject, runtime_evidence=evidence)).status
+        SeedControlGrader().run(replace(subject, runtime_evidence=evidence)).status
         is CheckStatus.FAIL
     )
+
+
+@pytest.mark.parametrize("judged", [False, True])
+@pytest.mark.parametrize("fault", ["timeout", "malformed", "diverged"])
+def test_incomplete_replay_preserves_observed_failures(tmp_path, judged, fault):
+    subject = subject_with_replays(tmp_path, judged=judged)
+    evidence = subject.runtime_evidence
+    replay = evidence.replays[-2]
+    rows = list(replay.evidence.exchanges[:3])
+    if fault == "malformed":
+        rows[2] = replace(rows[2], response_json="{not-json")
+    elif fault == "diverged":
+        rows = mutate_response(
+            rows, 2, lambda value: value["data"]["observation"].update(counter=99)
+        )
+    partial = replace(
+        replay.evidence,
+        exchanges=tuple(rows),
+        failure_phase="step",
+        failure_reason="step failed (TimeoutError)",
+    )
+    replay = replace(replay, evidence=partial)
+    evidence = replace(
+        evidence,
+        replays=evidence.replays[:-2] + (replay, evidence.replays[-1]),
+        replay_failure_reason="total replay deadline exceeded",
+    )
+    result = EpisodeDeterminismGrader().run(replace(subject, runtime_evidence=evidence))
+    assert result.status is (
+        CheckStatus.SKIP if fault == "timeout" else CheckStatus.FAIL
+    )
+    if fault == "timeout":
+        assert result.measured["completed_replays"] == (19 if judged else 2)
+        assert "reward_population_variance" not in result.measured
+    elif fault == "diverged":
+        assert "$[2].response.data.observation.counter" in result.evidence[0]
