@@ -110,9 +110,12 @@ class SeedControlGrader(_RuntimeGrader):
     def check(self, subject, evidence):
         problems = []
         original_seed = None
-        for index, sample in enumerate(
-            [evidence] + [replay.evidence for replay in evidence.replays]
-        ):
+        samples = [(0, evidence)] + [
+            (index, replay.evidence)
+            for index, replay in enumerate(evidence.replays, 1)
+            if replay.scope == "seed"
+        ]
+        for index, sample in samples:
             if sample.failure_reason or sample.telemetry_error:
                 problems.append(f"replay {index}: reset or telemetry collection failed")
                 continue
@@ -129,7 +132,7 @@ class SeedControlGrader(_RuntimeGrader):
                 continue
             if index == 0:
                 original_seed = seed
-            elif evidence.replays[index - 1].scope == "seed" and seed == original_seed:
+            elif seed == original_seed:
                 problems.append(f"replay {index}: scheduled seed was not changed")
             observed = _telemetry(sample).get("seed")
             if (
@@ -213,11 +216,13 @@ class EpisodeDeterminismGrader(_RuntimeGrader):
         }
         for index, sample in enumerate(samples):
             if sample.failure_reason:
-                return (
-                    CheckStatus.FAIL,
-                    [f"replay {index}: collection failed"],
-                    measured,
-                )
+                if index == 0:
+                    return (
+                        CheckStatus.FAIL,
+                        [f"replay {index}: collection failed"],
+                        measured,
+                    )
+                continue
             if not any(row.operation == "step" for row in sample.exchanges):
                 return (
                     CheckStatus.SKIP,
@@ -229,7 +234,9 @@ class EpisodeDeterminismGrader(_RuntimeGrader):
                 )
         judged = subject.manifest.capabilities.llm_judged
         required = JUDGED_REPLAYS if judged else 3
-        if len(samples) < required or {row.scope for row in replays} != {
+        if measured["completed_replays"] < required or {
+            row.scope for row in replays
+        } != {
             "session",
             "container",
         }:

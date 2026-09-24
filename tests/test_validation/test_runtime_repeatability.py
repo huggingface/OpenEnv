@@ -124,6 +124,20 @@ def test_different_seed_schedule_is_required_but_output_need_not_differ(tmp_path
     )
 
 
+def test_seed_control_ignores_unrelated_replay_failure(tmp_path):
+    subject = subject_with_replays(tmp_path)
+    replays = list(subject.runtime_evidence.replays)
+    replays[0] = replace(
+        replays[0],
+        evidence=replace(
+            replays[0].evidence, failure_reason="step failed (TimeoutError)"
+        ),
+    )
+    evidence = replace(subject.runtime_evidence, replays=tuple(replays))
+    result = SeedControlGrader().run(replace(subject, runtime_evidence=evidence))
+    assert result.status is CheckStatus.PASS
+
+
 @pytest.mark.parametrize(
     "field,value", [("trajectory", None), ("schema_version", True)]
 )
@@ -199,6 +213,25 @@ def test_partial_judged_sample_is_incomplete(tmp_path):
     result = EpisodeDeterminismGrader().run(replace(subject, runtime_evidence=evidence))
     assert result.status is CheckStatus.SKIP
     assert result.measured["completed_replays"] == 19
+
+
+def test_failed_replay_is_incomplete(tmp_path):
+    subject = subject_with_replays(tmp_path)
+    replays = list(subject.runtime_evidence.replays)
+    replays[1] = replace(
+        replays[1],
+        evidence=replace(
+            replays[1].evidence, failure_reason="step failed (TimeoutError)"
+        ),
+    )
+    evidence = replace(
+        subject.runtime_evidence,
+        replays=tuple(replays),
+        replay_failure_reason="fresh container replay failed (RuntimeError)",
+    )
+    result = EpisodeDeterminismGrader().run(replace(subject, runtime_evidence=evidence))
+    assert result.status is CheckStatus.SKIP
+    assert result.measured["completed_replays"] == 2
 
 
 @pytest.mark.parametrize(
