@@ -129,6 +129,10 @@ def _resolve_from_references(content: str) -> str:
     - ``FROM --platform=linux/amd64 python:3.10-slim`` likewise keeps the flag
       as part of the name. Novita builds for its own platform, so the flag is
       dropped rather than propagated.
+
+    Substitutions are applied longest-name-first so a short unbraced prefix
+    cannot corrupt a longer sibling (e.g. ``$BASE`` must not rewrite
+    ``$BASE_IMAGE`` / ``${BASE_IMAGE}`` into ``python:3.12_IMAGE``).
     """
     arg_defaults: Dict[str, str] = {}
     for line in content.split("\n"):
@@ -137,6 +141,11 @@ def _resolve_from_references(content: str) -> str:
         match = _ARG_DEFAULT_RE.match(line)
         if match:
             arg_defaults[match.group("name")] = match.group("value")
+
+    # Longest names first: `$BASE` must not rewrite `$BASE_IMAGE` mid-token.
+    arg_items = sorted(
+        arg_defaults.items(), key=lambda item: len(item[0]), reverse=True
+    )
 
     out: List[str] = []
     for line in content.split("\n"):
@@ -147,7 +156,7 @@ def _resolve_from_references(content: str) -> str:
 
         reference = match.group("rest").strip()
         reference = re.sub(r"^(--platform=\S+\s*)+", "", reference).strip()
-        for name, value in arg_defaults.items():
+        for name, value in arg_items:
             reference = reference.replace(f"${{{name}}}", value)
             reference = reference.replace(f"${name}", value)
         out.append(f"FROM {reference}")
