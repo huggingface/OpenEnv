@@ -6,12 +6,21 @@ import httpx
 import pytest
 from openenv.validation.runtime import collector
 from openenv.validation.runtime.contracts import RuntimePlan
+from websockets.exceptions import ConnectionClosedError
 
 TOKEN = "run-authorization-" + "x" * 32
 CAPABILITY = "socket-capability-" + "y" * 32
 
 
-def collect(monkeypatch, *, snapshot=None, leaked_response=None, escaped=False):
+def collect(
+    monkeypatch,
+    *,
+    snapshot=None,
+    leaked_response=None,
+    escaped=False,
+    opening_reply=None,
+    opening_error=None,
+):
     original = httpx.Client
     monkeypatch.setattr(
         collector.httpx,
@@ -31,6 +40,10 @@ def collect(monkeypatch, *, snapshot=None, leaked_response=None, escaped=False):
         def recv(self, timeout):
             operation = self.request["type"]
             if operation == "validation_open":
+                if opening_error is not None:
+                    raise opening_error
+                if opening_reply is not None:
+                    return opening_reply
                 response = {
                     "type": operation,
                     "data": {"schema_version": 1, "capability": CAPABILITY},
@@ -109,3 +122,48 @@ def test_normal_wire_cannot_persist_plain_or_escaped_credentials(
     assert result.exchanges == ()
     assert result.failure_reason == "reset failed (ValueError)"
     assert credential not in repr(result)
+
+
+@pytest.mark.parametrize(
+    "reply,error_name",
+    [
+        (TOKEN.encode(), "ValueError"),
+        ("not-json-" + TOKEN, "JSONDecodeError"),
+        (json.dumps([TOKEN]), "ValueError"),
+    ],
+    ids=["binary", "non-json", "list"],
+)
+def test_malformed_opening_reply_keeps_the_ordinary_session(
+    monkeypatch, reply, error_name
+):
+    result = collect(monkeypatch, opening_reply=reply)
+    assert result.telemetry_error == f"session telemetry failed ({error_name})"
+    assert result.telemetry_json is None
+    assert result.failure_reason is None
+    assert [row.operation for row in result.exchanges] == [
+        "reset",
+        "state",
+        "step",
+        "state",
+    ]
+    assert TOKEN not in repr(result)
+
+
+@pytest.mark.parametrize(
+    "error", [ConnectionClosedError(None, None), TimeoutError(TOKEN)]
+)
+def test_opening_transport_failure_still_aborts_collection(monkeypatch, error):
+    result = collect(monkeypatch, opening_error=error)
+    assert result.failure_phase == "validation_open"
+    assert result.failure_reason == f"validation_open failed ({type(error).__name__})"
+    assert result.telemetry_json is None
+    assert not result.exchanges
+    assert TOKEN not in repr(result)
+
+
+def test_opening_cancellation_is_not_downgraded_to_optional_telemetry(monkeypatch):
+    with pytest.raises(collector.RuntimeCollectionInterrupted) as error:
+        collect(monkeypatch, opening_error=KeyboardInterrupt(TOKEN))
+    assert error.value.evidence.failure_phase == "validation_open"
+    assert not error.value.evidence.exchanges
+    assert TOKEN not in repr(error.value.evidence)

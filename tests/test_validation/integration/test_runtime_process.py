@@ -147,7 +147,7 @@ class ProcessProvider:
                         if client.get(subject.base_url + "/health").status_code == 200:
                             return subject
                     except httpx.HTTPError:
-                        pass
+                        pass  # The process may still be starting its HTTP listener.
                     time.sleep(0.02)
             raise StartupError("test process failed readiness")
         except BaseException:
