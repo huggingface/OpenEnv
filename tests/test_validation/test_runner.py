@@ -1,4 +1,5 @@
 import hashlib
+import os
 import shutil
 
 import pytest
@@ -87,6 +88,13 @@ def test_source_digest_uses_portable_relative_paths(tmp_path):
 
     expected = hashlib.sha256(b"nested/file.txt\0contents\0").hexdigest()
     assert source_digest(package_root) == expected
+
+
+def test_source_digest_does_not_require_nonblocking_open(tmp_path, monkeypatch):
+    (tmp_path / "file.txt").write_bytes(b"contents")
+    monkeypatch.delattr(os, "O_NONBLOCK", raising=False)
+
+    assert len(source_digest(tmp_path)) == 64
 
 
 @pytest.mark.parametrize("failure", [ValueError, OSError])

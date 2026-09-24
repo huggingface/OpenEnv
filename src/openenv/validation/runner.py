@@ -58,7 +58,8 @@ def source_digest(package_root: Path) -> str:
     for relative_path, path in sorted(files, key=lambda item: item[0]):
         digest.update(relative_path.encode())
         digest.update(b"\0")
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
+        fd = os.open(path, flags)
         with os.fdopen(fd, "rb") as source:
             if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
                 raise ValueError("validation source must contain regular files")
