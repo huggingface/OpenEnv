@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -13,6 +14,8 @@ from openenv.cli.commands.collect import _extract_legal_actions
 from typer.testing import CliRunner
 
 runner = CliRunner()
+
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 @pytest.fixture
@@ -289,3 +292,123 @@ def test_default_filters_losing_rollouts(tmp_path: Path, mock_pipeline):
     losing = MagicMock(reward=-1.0)
     assert should_keep(winning) is True
     assert should_keep(losing) is False
+
+
+@pytest.mark.parametrize(
+    ("llm_args", "expected_base_url"),
+    [
+        (["--llm-endpoint", "http://localhost:8000"], "http://localhost:8000/v1"),
+        (["--llm-endpoint", "http://localhost:8000/v1"], "http://localhost:8000/v1"),
+        (
+            ["--llm-endpoint", "http://localhost", "--llm-port", "8001"],
+            "http://localhost:8001/v1",
+        ),
+        (["--llm-endpoint", "http://localhost:11434"], "http://localhost:11434/v1"),
+        (["--llm-endpoint", "http://localhost"], "http://localhost/v1"),
+        (["--llm-endpoint", "http://gw/openai/v1"], "http://gw/openai/v1"),
+    ],
+)
+def test_llm_endpoint_url_forms_reach_openai_client(
+    tmp_path: Path, mock_pipeline, llm_args, expected_base_url
+):
+    with patch("openenv.core.llm_client.AsyncOpenAI") as openai_cls:
+        result = runner.invoke(
+            app,
+            [
+                "collect",
+                "openspiel:tic_tac_toe",
+                "--base-url",
+                "https://example.hf.space",
+                "--output-dir",
+                str(tmp_path),
+                "--model",
+                "Qwen/Qwen3-1.7B",
+                *llm_args,
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    openai_cls.assert_called_once()
+    assert openai_cls.call_args.kwargs["base_url"] == expected_base_url
+
+
+@pytest.mark.parametrize(
+    ("llm_args", "expected_message"),
+    [
+        (
+            ["--llm-endpoint", "http://localhost:8000:8000"],
+            "Invalid endpoint URL",
+        ),
+        (
+            ["--llm-endpoint", "http://localhost:11434", "--llm-port", "8000"],
+            "conflicts with port=8000",
+        ),
+        (["--llm-endpoint", "ftp://localhost:8000"], "expected an http"),
+        (
+            ["--llm-endpoint", "http://localhost", "--llm-port", "99999"],
+            "out of range 1-65535",
+        ),
+        (
+            ["--llm-endpoint", "http://localhost:8000/v1?api-version=1"],
+            "query strings and fragments are not supported",
+        ),
+        (
+            ["--llm-endpoint", "http://user:s3cret@localhost:8000"],
+            "credentials in the URL are not supported",
+        ),
+    ],
+)
+def test_bad_llm_endpoint_is_usage_error_before_output_is_written(
+    tmp_path: Path, mock_pipeline, llm_args, expected_message
+):
+    result = runner.invoke(
+        app,
+        [
+            "collect",
+            "openspiel:tic_tac_toe",
+            "--base-url",
+            "https://example.hf.space",
+            "--output-dir",
+            str(tmp_path),
+            "--model",
+            "Qwen/Qwen3-1.7B",
+            *llm_args,
+        ],
+    )
+
+    # Typer renders usage errors in a wrapped box, coloured when GITHUB_ACTIONS
+    # or FORCE_COLOR is set; strip the colour codes and flatten before matching.
+    plain = _ANSI_ESCAPE.sub("", result.output)
+    output = " ".join(plain.replace("\u2502", " ").split())
+    assert result.exit_code == 2, result.output
+    assert "--llm-endpoint" in output
+    assert expected_message in output
+    assert "s3cret" not in result.output
+    mock_pipeline["serializer_cls"].return_value.write_metadata.assert_not_called()
+    mock_pipeline["runner_instance"].run.assert_not_called()
+
+
+def test_resolved_llm_endpoint_is_printed(tmp_path: Path, mock_pipeline):
+    with (
+        patch("openenv.core.llm_client.AsyncOpenAI"),
+        patch("openenv.cli.commands.collect.console") as console,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "collect",
+                "openspiel:tic_tac_toe",
+                "--base-url",
+                "https://example.hf.space",
+                "--output-dir",
+                str(tmp_path),
+                "--model",
+                "Qwen/Qwen3-1.7B",
+                "--llm-endpoint",
+                "http://localhost",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    printed = [str(call.args[0]) for call in console.print.call_args_list]
+    assert "[cyan]LLM endpoint:[/cyan] http://localhost" in printed
