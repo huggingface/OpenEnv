@@ -277,3 +277,15 @@ class RuntimeEvidence:
     failure_reason: str | None = None
     telemetry_json: str | None = None
     telemetry_error: str | None = None
+    replays: tuple["ReplayEvidence", ...] = ()
+    replay_failure_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class ReplayEvidence:
+    """A fresh replay and, for containers, inspected identity and cleanup evidence."""
+
+    scope: Literal["session", "container", "seed"]
+    evidence: RuntimeEvidence
+    provider_json: str | None = None
+    cleanup_complete: bool | None = None

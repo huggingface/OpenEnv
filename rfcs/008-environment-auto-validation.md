@@ -571,7 +571,7 @@ limitations. Alternate DNS, unmatched addresses and unsupported address families
 must fail closed. This requires a separate reviewed enforcement implementation;
 parsing these declarations does not claim they are enforced.
 
-### Later runtime evidence contracts
+### Runtime replay evidence (PR5)
 
 Seed acceptance and empirical determinism are separate findings. A reset that
 silently drops its seed does not establish seed control, while a deterministic
@@ -583,9 +583,18 @@ replays and population reward variance in reward-squared units, compared to the
 declared bound. The total run budget bounds all samples; fewer than 20 is incomplete.
 This procedure is a runtime check, not a statistical confidence claim.
 
+The initial implementation compares the baseline against a new session and an
+independently inspected new container, and separately requests a different seed.
+The judged sample count includes the completed baseline. Container identity must
+change while image identity remains fixed. There are no volatile-field exclusions
+in this version. Collection shares a 300-second deadline and retains at most
+32 MiB across baseline and replay evidence. Missing samples, missing provider
+capabilities and failed cleanup cannot produce a passing determinism finding.
+`replays.json` preserves completed traces, telemetry, identity and cleanup outcomes.
+
 Session telemetry for seed handling, named rubric/configuration, child attribution
-and subject-emitted record references is orchestrator-only. A future protocol
-slice must authorize access with an opt-in, random per-run/per-session capability
+and subject-emitted record references is orchestrator-only. The protocol
+authorizes access with an opt-in, random per-run/per-session capability
 attached to the **same** replay connection, reject unauthorized/cross-session
 reads and never expose telemetry as agent MCP tools. A second WebSocket creates
 another environment and cannot supply evidence for the measured instance.

@@ -15,6 +15,11 @@ from .graders.runtime import (
     RewardWellFormedGrader,
     StateContractGrader,
 )
+from .graders.runtime.repeatability import (
+    EpisodeDeterminismGrader,
+    SeedControlGrader,
+    TrajectoryRecordGrader,
+)
 from .graders.static import StaticManifestGrader
 from .manifest import ManifestError, NormalizedManifest, NormalizedManifestV2
 from .parsers import ParserRegistry
@@ -25,6 +30,7 @@ from .report import CheckResult, ValidationReport, ValidationReportV2
 from .runtime.artifacts import write_runtime_bundle
 from .runtime.collector import collect_runtime_evidence, RuntimeCollectionInterrupted
 from .runtime.contracts import LaunchSpec, load_runtime_plan, RuntimePlanError
+from .runtime.replay import collect_replays, REPLAY_BUDGET_SECONDS
 from .runtime.scheduler import execute_graders
 from .signature import detect_signature
 from .types import CheckStatus, Lane, Level, ProviderCapability
@@ -145,9 +151,8 @@ def _runtime(subject, *, skip_build, provider):
         )
         attempted = True
         image_ref = provider.build(subject.root, manifest.execution)
-        running = provider.start(
-            LaunchSpec.model_validate({**spec.model_dump(), "image_ref": image_ref})
-        )
+        spec = LaunchSpec.model_validate({**spec.model_dump(), "image_ref": image_ref})
+        running = provider.start(spec)
         cleanup = {"required": True, "completed": False}
         inspection = running.inspect()
         result = _outcome(
@@ -157,10 +162,13 @@ def _runtime(subject, *, skip_build, provider):
             started=started,
             measured={"provider": provider.name, "image_ref": image_ref},
         )
+        replay_deadline = time.monotonic() + REPLAY_BUDGET_SECONDS
         evidence = collect_runtime_evidence(
             running.base_url,
             plan,
-            episode_timeout_s=manifest.resources.episode_timeout_s,
+            episode_timeout_s=min(
+                manifest.resources.episode_timeout_s, REPLAY_BUDGET_SECONDS
+            ),
             validation_token=spec.env_vars["OPENENV_VALIDATION_TOKEN"],
         )
         # A health endpoint without a functioning protocol isn't a startup success.
@@ -171,6 +179,18 @@ def _runtime(subject, *, skip_build, provider):
                 evidence.failure_reason,
                 started=started,
             )
+        evidence = collect_replays(
+            provider,
+            running,
+            spec,
+            plan,
+            evidence,
+            capabilities=manifest.capabilities,
+            deadline=replay_deadline,
+        )
+        if any(replay.cleanup_complete is False for replay in evidence.replays):
+            result.status = CheckStatus.ERROR
+            result.evidence.append("replay subject teardown failed")
         subject = replace(
             subject, image_ref=image_ref, running=running, runtime_evidence=evidence
         )
@@ -179,6 +199,9 @@ def _runtime(subject, *, skip_build, provider):
                 RewardWellFormedGrader(),
                 ObservationSchemaGrader(),
                 StateContractGrader(),
+                SeedControlGrader(),
+                EpisodeDeterminismGrader(),
+                TrajectoryRecordGrader(),
             ],
             subject,
             provider_capabilities=provider.capabilities,
@@ -222,7 +245,12 @@ def _runtime(subject, *, skip_build, provider):
         if running is not None:
             try:
                 running.stop()
-                cleanup["completed"] = True
+                cleanup["completed"] = not (
+                    evidence
+                    and any(
+                        replay.cleanup_complete is False for replay in evidence.replays
+                    )
+                )
             except (Exception, KeyboardInterrupt):
                 cleanup["completed"] = False
                 if result is None:
@@ -358,6 +386,9 @@ def run_validation(
                     "runtime.reward_well_formed",
                     "runtime.observation_schema",
                     "runtime.state_contract",
+                    "runtime.seed_control",
+                    "runtime.episode_determinism",
+                    "runtime.trajectory_record",
                 }:
                     reason = "unmet dependency: runtime.startup"
                 results.append(_outcome(entry.check_id, CheckStatus.SKIP, reason))
@@ -387,6 +418,9 @@ def run_validation(
                     "runtime.reward_well_formed",
                     "runtime.observation_schema",
                     "runtime.state_contract",
+                    "runtime.seed_control",
+                    "runtime.episode_determinism",
+                    "runtime.trajectory_record",
                 }
                 else r
                 for r in results
