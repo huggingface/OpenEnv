@@ -119,6 +119,7 @@ class ProcessProvider:
                 [
                     sys.executable,
                     "-I",
+                    "-B",
                     "-c",
                     SERVER,
                     str(self.package / "app.py"),
