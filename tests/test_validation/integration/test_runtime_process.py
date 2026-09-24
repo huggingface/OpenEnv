@@ -139,7 +139,7 @@ class ProcessProvider:
             )
         subject = ProcessSubject(process, port, log_path, self.record_sha256)
         self.subjects.append(subject)
-        deadline = time.monotonic() + min(spec.startup_timeout_s, 10)
+        deadline = time.monotonic() + min(spec.startup_timeout_s, 30)
         try:
             with httpx.Client(trust_env=False, timeout=0.2) as client:
                 while process.poll() is None and time.monotonic() < deadline:

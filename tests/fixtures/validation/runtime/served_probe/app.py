@@ -61,13 +61,12 @@ class ProbeEnvironment(Environment):
         observation = ProbeObservation(counter=0, reward=0.0, done=False)
         if self.mode in {
             "nondeterministic",
-            "ignored_seed",
             "judged_stable",
             "judged_noisy",
         }:
             ProbeEnvironment._reset_ordinal += 1
             self.ordinal = ProbeEnvironment._reset_ordinal
-        if self.mode in {"nondeterministic", "ignored_seed"}:
+        if self.mode == "nondeterministic":
             observation.metadata["session_ordinal"] = self.ordinal
         if self.mode in {"judged_stable", "judged_noisy"}:
             score = 0.5 if self.mode == "judged_stable" else float(self.ordinal % 2)
