@@ -199,9 +199,6 @@ def _runtime(subject, *, skip_build, provider):
             capabilities=manifest.capabilities,
             deadline=replay_deadline,
         )
-        if any(replay.cleanup_complete is False for replay in evidence.replays):
-            result.status = CheckStatus.ERROR
-            result.evidence.append("replay subject teardown failed")
         subject = replace(
             subject, image_ref=image_ref, running=running, runtime_evidence=evidence
         )
@@ -223,6 +220,11 @@ def _runtime(subject, *, skip_build, provider):
             provider_capabilities=provider.capabilities,
             prior=[result],
         )
+        # Cleanup failure cannot invalidate evidence already collected from a
+        # healthy subject. Preserve its findings before failing the run closed.
+        if any(replay.cleanup_complete is False for replay in evidence.replays):
+            result.status = CheckStatus.ERROR
+            result.evidence.append("replay subject teardown failed")
     except UnsupportedCapability as exc:
         result = _outcome(
             "runtime.startup", CheckStatus.SKIP, str(exc), started=started

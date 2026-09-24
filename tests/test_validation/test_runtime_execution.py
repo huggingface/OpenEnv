@@ -517,6 +517,61 @@ def test_bundle_cleanup_includes_failed_replay_teardown(
     assert replay["cleanup_complete"] is False
 
 
+@pytest.mark.parametrize(
+    "fault,failed_check",
+    [
+        ("invalid_reward", "runtime.reward_well_formed"),
+        ("replay_divergence", "runtime.episode_determinism"),
+    ],
+)
+def test_replay_cleanup_failure_preserves_independent_runtime_findings(
+    package, monkeypatch, tmp_path, fault, failed_check
+):
+    baseline = measured_episode()
+    changed_rows = list(baseline.exchanges)
+    response = json.loads(changed_rows[2].response_json)
+    if fault == "invalid_reward":
+        response["data"]["reward"] = 2.0
+    else:
+        response["data"]["observation"]["counter"] = 99
+    changed_rows[2] = replace(changed_rows[2], response_json=json.dumps(response))
+    telemetry = json.loads(baseline.telemetry_json)
+    telemetry["trajectory"]["records"][2]["response"] = response
+    changed = replace(
+        baseline, exchanges=tuple(changed_rows), telemetry_json=json.dumps(telemetry)
+    )
+    if fault == "invalid_reward":
+        baseline = changed
+    combined = replace(
+        baseline,
+        replays=(
+            ReplayEvidence("session", baseline),
+            ReplayEvidence("container", changed, cleanup_complete=False),
+            ReplayEvidence("seed", measured_episode(seed=43)),
+        ),
+    )
+    monkeypatch.setattr(
+        "openenv.validation.runner.collect_runtime_evidence", lambda *a, **k: baseline
+    )
+    monkeypatch.setattr(
+        "openenv.validation.runner.collect_replays", lambda *a, **k: combined
+    )
+    bundle = tmp_path / "bundle"
+    report = run_validation(
+        package,
+        max_level=Level.RUNTIME,
+        provider=FakeRuntimeProvider(),
+        artifacts_dir=bundle,
+    )
+    checks = {row.check_id: row for row in report.results}
+    assert checks["runtime.startup"].status is CheckStatus.ERROR
+    assert "replay subject teardown failed" in checks["runtime.startup"].evidence
+    assert checks[failed_check].status is CheckStatus.FAIL
+    assert checks["runtime.state_contract"].status is CheckStatus.PASS
+    assert report.verdict.value == "fail"
+    assert json.loads((bundle / "cleanup.json").read_text())["completed"] is False
+
+
 def test_semantic_ceiling_does_not_claim_semantic_execution(package):
     report = run_validation(package, max_level=Level.SEMANTIC, skip_build=True)
     assert report.levels_run == [Level.STATIC]
