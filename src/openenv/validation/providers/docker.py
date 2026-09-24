@@ -209,10 +209,13 @@ class DockerValidationProvider:
     """Build isolated source snapshots and launch owned, resource-bounded subjects."""
 
     name = "docker-local"
-    capabilities = frozenset({
-        ProviderCapability.IMAGE_BUILD, ProviderCapability.EXEC,
-        ProviderCapability.FRESH_CONTAINER,
-    })
+    capabilities = frozenset(
+        {
+            ProviderCapability.IMAGE_BUILD,
+            ProviderCapability.EXEC,
+            ProviderCapability.FRESH_CONTAINER,
+        }
+    )
     supported_network_modes = frozenset({"public"})
 
     def __init__(self, *, build_timeout_s: float = 600, max_context_bytes: int = 2**30):
