@@ -8,12 +8,18 @@
 
 from openenv.core.env_server import create_app
 
-from ..models import ChessAction, ChessObservation
+from ..models import ChessAction, ChessObservation, ChessState
 from .chess_environment import ChessEnvironment
 
 # Create the FastAPI app
 # Pass the class (factory) instead of an instance for WebSocket session support
-app = create_app(ChessEnvironment, ChessAction, ChessObservation, env_name="chess_env")
+app = create_app(
+    ChessEnvironment,
+    ChessAction,
+    ChessObservation,
+    env_name="chess_env",
+    state_cls=ChessState,
+)
 
 
 def main():

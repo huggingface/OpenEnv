@@ -16,6 +16,7 @@ from openenv.core.env_server.http_server import create_app
 from openenv.core.env_server.mcp_types import CallToolAction, CallToolObservation
 from pydantic import field_validator
 
+from ..models import FinQAState
 from .finqa_environment import FinQAEnvironment
 
 DATA_PATH = os.environ.get("FINQA_DATA_PATH", "/app/env/data")
@@ -44,7 +45,11 @@ class FinQACallToolAction(CallToolAction):
 
 
 app = create_app(
-    _env_factory, FinQACallToolAction, CallToolObservation, env_name="finqa_env"
+    _env_factory,
+    FinQACallToolAction,
+    CallToolObservation,
+    env_name="finqa_env",
+    state_cls=FinQAState,
 )
 
 
