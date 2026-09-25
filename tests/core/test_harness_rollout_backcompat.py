@@ -52,3 +52,9 @@ def test_private_resolve_env_reward_reexported():
 def test_collect_modules_import():
     importlib.import_module("openenv.core.harness.collect")
     importlib.import_module("openenv.cli.commands.collect")
+
+
+def test_adapter_abcs_are_distinct():
+    assert harness_pkg.AgenticHarnessAdapter is not harness_pkg.HarnessAdapter
+    assert "AgenticHarnessAdapter" in harness_pkg.__all__
+    assert "HarnessAdapter" in harness_pkg.__all__
