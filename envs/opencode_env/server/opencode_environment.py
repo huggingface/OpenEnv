@@ -22,6 +22,7 @@ logprobs (Mode B) + setup/verify command results + file outputs.
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 from typing import Any, Optional
@@ -50,6 +51,7 @@ HOME = "/home/user"
 WORKDIR = f"{HOME}/workdir"
 INSTRUCTION_PATH = f"{HOME}/task/instruction.md"
 REWARD_FILE = f"{HOME}/logs/verifier/reward.txt"
+_CLEAR_REWARD_FILE = f"rm -f {REWARD_FILE} && test ! -e {REWARD_FILE}"
 PROXY_LOG = f"{HOME}/logs/agent/proxy.log"
 AGENT_LOG = f"{HOME}/logs/agent/opencode.jsonl"
 VERIFY_TIMEOUT_S = 120
@@ -375,6 +377,12 @@ class OpenCodeEnvironment(MCPEnvironment):
             # Verify + reward only when the run is clean; a failed setup or
             # agent leaves a half-prepared sandbox, so reward stays None.
             if result.error is None:
+                # The override is documented as verify-written, so drop anything
+                # the agent wrote there during its run before verification starts.
+                cleared = (
+                    self._exec_command(session.sandbox, _CLEAR_REWARD_FILE).exit_code
+                    == 0
+                )
                 verify_passed = 0
                 for i, cmd in enumerate(verify, 1):
                     _emit(f"verify [{i}/{len(verify)}]: {cmd[:80]}")
@@ -384,7 +392,9 @@ class OpenCodeEnvironment(MCPEnvironment):
                         verify_passed += 1
 
                 # Explicit reward.txt wins; else passed/total of verify.
-                override = self._read_reward(session.sandbox)
+                override, result.reward_override_ignored = self._read_reward(
+                    session.sandbox, cleared
+                )
                 if override is not None:
                     result.reward = override
                 elif verify:
@@ -447,14 +457,12 @@ class OpenCodeEnvironment(MCPEnvironment):
                 duration_s=round(time.time() - t, 3),
             )
 
-    def _read_reward(self, sandbox: Any) -> float | None:
-        raw = self._safe_read(sandbox, REWARD_FILE).strip()
-        if not raw:
-            return None
-        try:
-            return float(raw)
-        except ValueError:
-            return None
+    def _read_reward(
+        self, sandbox: Any, cleared: bool
+    ) -> tuple[float | None, str | None]:
+        if not cleared:
+            return None, "reward file could not be removed before verification"
+        return _parse_reward_override(self._safe_read(sandbox, REWARD_FILE))
 
     def _collect_files(
         self, sandbox: Any
@@ -514,3 +522,22 @@ class OpenCodeEnvironment(MCPEnvironment):
             return sandbox.read_text(path) or ""
         except Exception:
             return ""
+
+
+def _parse_reward_override(raw: str) -> tuple[float | None, str | None]:
+    """Parse the reward file written by a verify command.
+
+    Returns `(reward, None)` for a finite value in [0, 1], `(None, None)` when
+    the file is empty, and `(None, reason)` when the value is rejected, in
+    which case the caller falls back to the verify pass rate.
+    """
+    raw = raw.strip()
+    if not raw:
+        return None, None
+    try:
+        value = float(raw)
+    except ValueError:
+        return None, f"not a number: {raw[:40]!r}"
+    if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+        return None, f"outside [0, 1]: {raw[:40]!r}"
+    return value, None

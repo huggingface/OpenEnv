@@ -71,3 +71,8 @@ verify command can override this by writing a float to:
 ```text
 /home/user/logs/verifier/reward.txt
 ```
+
+The file is deleted before the verify commands run, so only a verify command
+can set it; anything the agent writes there earlier is discarded. The value
+must be a number in `[0, 1]`. Anything else is ignored, the pass rate is used,
+and the reason is recorded in `state.reward_override_ignored`.
