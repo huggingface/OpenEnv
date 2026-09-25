@@ -179,24 +179,39 @@ class TestHarnessWebSocket:
             "send:two",
         ]
 
-    def test_malformed_json_keeps_connection_usable(self):
-        app, _ = make_app(ServerMode.PRODUCTION)
+    @pytest.mark.parametrize(
+        ("frame", "code"),
+        [
+            ("this is not json", "INVALID_JSON"),
+            ('{"type": "bogus"}', "VALIDATION_ERROR"),
+            ('{"type": "message"}', "VALIDATION_ERROR"),
+            ("null", "VALIDATION_ERROR"),
+            ("[]", "VALIDATION_ERROR"),
+        ],
+    )
+    def test_malformed_frame_keeps_connection_usable(self, frame, code):
+        app, server = make_app(ServerMode.PRODUCTION)
         client = TestClient(app)
 
         with client.websocket_connect("/harness") as websocket:
-            websocket.receive_text()  # session_started
-            websocket.send_text("this is not json")
-            error = json.loads(websocket.receive_text())
-            assert error["type"] == "error"
-            assert error["data"]["code"] == "INVALID_JSON"
+            websocket.receive_json()  # session_started
+            adapter = [a for a in FakeAdapter.created if a.alive][0]
+            websocket.send_text(frame)
+            error = websocket.receive_json()
+            assert error["type"] == "protocol_error"
+            assert error["type"] not in {event.value for event in HarnessEventType}
+            assert error["data"]["code"] == code
+            assert error["data"]["message"]
+            assert not any(call.startswith("send:") for call in adapter.calls)
+            assert server.active_sessions == 1
 
-            websocket.send_text(json.dumps({"type": "bogus"}))
-            error = json.loads(websocket.receive_text())
-            assert error["type"] == "error"
-            assert error["data"]["code"] == "VALIDATION_ERROR"
+            websocket.send_json({"type": "message", "content": "ok"})
+            assert websocket.receive_json()["type"] == "tool_call"
+            completed = websocket.receive_json()
+            assert completed["type"] == "turn_complete"
+            assert completed["data"]["response"] == "handled: ok"
 
-            websocket.send_text(json.dumps({"type": "message", "content": "ok"}))
-            assert json.loads(websocket.receive_text())["type"] == "tool_call"
+        assert server.active_sessions == 0
 
     def test_adapter_crash_streams_error_event_then_closes(self):
         app, server = make_app(ServerMode.PRODUCTION)

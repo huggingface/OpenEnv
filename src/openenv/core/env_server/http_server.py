@@ -664,7 +664,9 @@ class HTTPEnvServer:
         the environment (which starts the harness process and injects tools),
         and each `{"type": "message", "content": ...}` frame runs one
         conversational turn, streamed back as `HarnessEvent` JSON frames
-        ending with a `turn_complete` event.
+        ending with a `turn_complete` event. Malformed client frames receive a
+        recoverable `protocol_error` response without starting a turn; the
+        connection remains usable. Terminal failures use `error`.
         """
         # Lazy import to avoid a circular import with openenv.core.harness.
         from ..harness.adapter import HarnessNotRunningError
@@ -672,6 +674,7 @@ class HTTPEnvServer:
             HarnessClientMessage,
             HarnessEvent,
             HarnessEventType,
+            HarnessProtocolError,
         )
 
         @app.websocket("/harness")
@@ -683,6 +686,12 @@ class HTTPEnvServer:
 
             async def send_error(message: str, code: WSErrorCode) -> None:
                 error_response = WSErrorResponse(
+                    data={"message": message, "code": code}
+                )
+                await websocket.send_text(error_response.model_dump_json())
+
+            async def send_protocol_error(message: str, code: WSErrorCode) -> None:
+                error_response = HarnessProtocolError(
                     data={"message": message, "code": code}
                 )
                 await websocket.send_text(error_response.model_dump_json())
@@ -729,14 +738,14 @@ class HTTPEnvServer:
                         try:
                             message_dict = json.loads(raw_message)
                         except json.JSONDecodeError as e:
-                            await send_error(
+                            await send_protocol_error(
                                 f"Invalid JSON: {e}", WSErrorCode.INVALID_JSON
                             )
                             continue
                         try:
                             client_message = HarnessClientMessage(**message_dict)
                         except (ValidationError, TypeError) as e:
-                            await send_error(
+                            await send_protocol_error(
                                 f"Invalid message: {e}",
                                 WSErrorCode.VALIDATION_ERROR,
                             )
