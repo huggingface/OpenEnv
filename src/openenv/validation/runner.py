@@ -15,6 +15,12 @@ from .graders.runtime import (
     RewardWellFormedGrader,
     StateContractGrader,
 )
+from .graders.runtime.discovery import (
+    RewardAttributionGrader,
+    RubricIntrospectableGrader,
+    TaskDeclarationAccuracyGrader,
+    ToolDeclarationAccuracyGrader,
+)
 from .graders.runtime.repeatability import (
     EpisodeDeterminismGrader,
     SeedControlGrader,
@@ -99,9 +105,9 @@ def _applicable(check_id, manifest):
     if check_id in {"runtime.rubric_introspectable", "runtime.reward_attribution"}:
         return manifest.capabilities.rubric_tree
     if check_id == "runtime.task_declaration_accuracy":
-        return manifest.capabilities.task_api or bool(
-            manifest.capabilities.declared_task_count
-        )
+        return TaskDeclarationAccuracyGrader().applies_to(manifest)
+    if check_id == "runtime.tool_declaration_accuracy":
+        return ToolDeclarationAccuracyGrader().applies_to(manifest)
     return True
 
 
@@ -171,6 +177,8 @@ def _runtime(subject, *, skip_build, provider):
                 manifest.resources.episode_timeout_s, REPLAY_BUDGET_SECONDS
             ),
             validation_token=spec.env_vars["OPENENV_VALIDATION_TOKEN"],
+            collect_tools=_applicable("runtime.tool_declaration_accuracy", manifest),
+            collect_tasks=_applicable("runtime.task_declaration_accuracy", manifest),
         )
         # A health endpoint without a functioning protocol isn't a startup success.
         if not evidence.exchanges and evidence.failure_reason:
@@ -192,15 +200,20 @@ def _runtime(subject, *, skip_build, provider):
         subject = replace(
             subject, image_ref=image_ref, running=running, runtime_evidence=evidence
         )
+        runtime_graders = [
+            RewardWellFormedGrader(),
+            ObservationSchemaGrader(),
+            StateContractGrader(),
+            SeedControlGrader(),
+            EpisodeDeterminismGrader(),
+            TrajectoryRecordGrader(),
+            ToolDeclarationAccuracyGrader(),
+            TaskDeclarationAccuracyGrader(),
+            RubricIntrospectableGrader(),
+            RewardAttributionGrader(),
+        ]
         checks = execute_graders(
-            [
-                RewardWellFormedGrader(),
-                ObservationSchemaGrader(),
-                StateContractGrader(),
-                SeedControlGrader(),
-                EpisodeDeterminismGrader(),
-                TrajectoryRecordGrader(),
-            ],
+            [grader for grader in runtime_graders if grader.applies_to(manifest)],
             subject,
             provider_capabilities=provider.capabilities,
             prior=[result],
@@ -392,6 +405,10 @@ def run_validation(
                     "runtime.seed_control",
                     "runtime.episode_determinism",
                     "runtime.trajectory_record",
+                    "runtime.tool_declaration_accuracy",
+                    "runtime.task_declaration_accuracy",
+                    "runtime.rubric_introspectable",
+                    "runtime.reward_attribution",
                 }:
                     reason = "unmet dependency: runtime.startup"
                 results.append(_outcome(entry.check_id, CheckStatus.SKIP, reason))
@@ -424,6 +441,10 @@ def run_validation(
                     "runtime.seed_control",
                     "runtime.episode_determinism",
                     "runtime.trajectory_record",
+                    "runtime.tool_declaration_accuracy",
+                    "runtime.task_declaration_accuracy",
+                    "runtime.rubric_introspectable",
+                    "runtime.reward_attribution",
                 }
                 else r
                 for r in results

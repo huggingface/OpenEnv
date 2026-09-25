@@ -33,10 +33,19 @@ with networking disabled. A cold cache is supported. The tests run outside the
 checkout with `PYTHONPATH` removed, exercising installed package data and the
 production OpenEnv `/ws` endpoint. Each launch uses a fresh subject.
 
-The image supports controlled `VALIDATION_FAULT` modes: `good`, `bad_reward`,
-`bad_observation`, `missing_done`, `bad_state`, `hung_step`, and `startup_failure`. All fault
-switches and wire corruption remain inside test assets. They share one fixture
-and one public runtime plan, so a defect changes one property at a time.
+The image includes controlled faults for malformed observations/rewards/state,
+startup and timeout failures, ignored seeds, session drift, missing/mismatched
+records, tool/task declarations, rubric configuration and child attribution.
+`judged_stable` and `judged_noisy` exercise the bounded judge procedure. All fault
+switches and wire corruption remain inside test assets with one public runtime plan.
+
+The fixture registers two real MCP tools and declares task counts of four train
+and two test tasks. Its task listing returns only one preview item; the collector
+uses `num_tasks` and samples at most two items per split. Empty tool declarations
+are checked through a real empty FastMCP registry. `discovery.json` preserves raw
+results and distinguishes failed discovery from an empty success. The protocol
+suite contains 36 required cases, including real tool calls and discovery/rubric
+faults through the installed-wheel process provider.
 
 Repeatability checks compare the original episode against a fresh session and an
 independently inspected fresh container, then exercise a different seed. Controlled
@@ -46,8 +55,8 @@ telemetry, container identity and cleanup outcome. A process-only provider expli
 skips fresh-container determinism. Subject-emitted records are compared with the
 independently collected wire trace.
 
-The Docker suite contains 19 required cases: three provider lifecycle tests,
-15 CLI fault/control cases, and one real `echo_env` canary. The hung-step case
+The Docker suite contains 26 required cases: three provider lifecycle tests,
+22 CLI fault/control cases, and one real `echo_env` canary. The hung-step case
 checks the episode deadline; the interruption case sends SIGINT only after a
 container log confirms the second step has begun. Both must retain the completed
 reset/state/step/state prefix and remove their own containers. Each CLI case uses
