@@ -38,8 +38,16 @@ The image supports controlled `VALIDATION_FAULT` modes: `good`, `bad_reward`,
 switches and wire corruption remain inside test assets. They share one fixture
 and one public runtime plan, so a defect changes one property at a time.
 
-The Docker suite contains 13 required cases: three provider lifecycle tests,
-nine CLI fault/control cases, and one real `echo_env` canary. The hung-step case
+Repeatability checks compare the original episode against a fresh session and an
+independently inspected fresh container, then exercise a different seed. Controlled
+judge fixtures use exactly 20 identical-input samples and per-step population
+variance; they make no inference calls. `replays.json` retains each trace, subject
+telemetry, container identity and cleanup outcome. A process-only provider explicitly
+skips fresh-container determinism. Subject-emitted records are compared with the
+independently collected wire trace.
+
+The Docker suite contains 19 required cases: three provider lifecycle tests,
+15 CLI fault/control cases, and one real `echo_env` canary. The hung-step case
 checks the episode deadline; the interruption case sends SIGINT only after a
 container log confirms the second step has begun. Both must retain the completed
 reset/state/step/state prefix and remove their own containers. Each CLI case uses
