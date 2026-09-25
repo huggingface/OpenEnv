@@ -2,6 +2,7 @@
 
 import hashlib
 import os
+import secrets
 import stat
 import time
 import uuid
@@ -141,6 +142,7 @@ def _runtime(subject, *, skip_build, provider):
             resources=manifest.resources,
             network=manifest.network,
             run_id="validation-" + uuid.uuid4().hex,
+            env_vars={"OPENENV_VALIDATION_TOKEN": secrets.token_urlsafe(32)},
         )
         attempted = True
         image_ref = provider.build(subject.root, manifest.execution)
@@ -160,6 +162,7 @@ def _runtime(subject, *, skip_build, provider):
             running.base_url,
             plan,
             episode_timeout_s=manifest.resources.episode_timeout_s,
+            validation_token=spec.env_vars["OPENENV_VALIDATION_TOKEN"],
         )
         # A health endpoint without a functioning protocol isn't a startup success.
         if not evidence.exchanges and evidence.failure_reason:

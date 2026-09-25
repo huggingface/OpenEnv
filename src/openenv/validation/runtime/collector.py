@@ -72,6 +72,7 @@ def collect_runtime_evidence(
     *,
     episode_timeout_s: float,
     request_timeout_s: float = 5.0,
+    validation_token: str | None = None,
 ) -> RuntimeEvidence:
     """
     Preserve schema and reset/step/state responses without model coercion.
@@ -89,6 +90,8 @@ def collect_runtime_evidence(
             Deadline for the complete collection, including schema retrieval.
         request_timeout_s (`float`, *optional*, defaults to `5.0`):
             Per-operation deadline, capped by the remaining episode budget.
+        validation_token (`str`, *optional*):
+            Run-scoped telemetry authorization; never retained in evidence.
 
     Returns:
         [`~openenv.validation.runtime.contracts.RuntimeEvidence`]: raw evidence.
@@ -98,6 +101,8 @@ def collect_runtime_evidence(
     schema_json = None
     phase = "schema"
     trace_bytes = 0
+    telemetry_json = None
+    telemetry_error = None
 
     def remaining() -> float:
         value = min(request_timeout_s, deadline - time.monotonic())
@@ -131,12 +136,15 @@ def collect_runtime_evidence(
             schema = json.loads(payload)
             if not isinstance(schema, dict) or "observation" not in schema:
                 raise ValueError("missing observation schema")
-            schema_json = json.dumps(
+            schema_payload = json.dumps(
                 schema["observation"],
                 allow_nan=False,
                 ensure_ascii=False,
                 separators=(",", ":"),
             )
+            if validation_token and validation_token in schema_payload:
+                raise ValueError("schema contains validation credentials")
+            schema_json = schema_payload
 
         endpoint = urlsplit(base_url)
         ws_url = urlunsplit(
@@ -154,12 +162,64 @@ def collect_runtime_evidence(
             proxy=None,
             open_timeout=remaining(),
             close_timeout=1,
-            max_size=MAX_MESSAGE_BYTES,
+            max_size=MAX_TRACE_BYTES if validation_token else MAX_MESSAGE_BYTES,
             max_queue=1,
             compression=None,
         )
         complete = False
         try:
+
+            def telemetry_request(operation, data):
+                request = json.dumps({"type": operation, "data": data})
+                _bounded_call(connection, lambda: connection.send(request), remaining())
+                raw = connection.recv(timeout=remaining())
+                if not isinstance(raw, str) or len(raw.encode()) > MAX_TRACE_BYTES:
+                    raise ValueError("invalid telemetry response")
+                response = json.loads(raw)
+                if not isinstance(response, dict):
+                    raise ValueError("invalid telemetry envelope")
+                return response
+
+            capability = None
+            if validation_token:
+                phase = "validation_open"
+                try:
+                    response = telemetry_request(
+                        phase, {"schema_version": 1, "token": validation_token}
+                    )
+                except (ValueError, RecursionError) as exc:
+                    # A consumed malformed reply only invalidates optional telemetry.
+                    # Transport failure still aborts this same-session collection.
+                    telemetry_error = f"session telemetry failed ({type(exc).__name__})"
+                else:
+                    data = response.get("data")
+                    if (
+                        response.get("type") == "validation_open"
+                        and isinstance(data, dict)
+                        and data.get("schema_version") == 1
+                        and isinstance(data.get("capability"), str)
+                        and 16 <= len(data["capability"]) <= 256
+                    ):
+                        capability = data["capability"]
+                    else:
+                        telemetry_error = (
+                            "session telemetry unavailable or authorization refused"
+                        )
+
+            def contains_credential(value):
+                if isinstance(value, str):
+                    return any(
+                        secret and secret in value
+                        for secret in (validation_token, capability)
+                    )
+                if isinstance(value, dict):
+                    return any(
+                        contains_credential(key) or contains_credential(child)
+                        for key, child in value.items()
+                    )
+                if isinstance(value, list):
+                    return any(contains_credential(child) for child in value)
+                return False
 
             def exchange(operation: str, data: dict | None = None) -> dict:
                 nonlocal phase, trace_bytes
@@ -174,11 +234,23 @@ def collect_runtime_evidence(
                 raw = connection.recv(timeout=remaining())
                 if not isinstance(raw, str):
                     raise ValueError("binary response is not the JSON protocol")
+                if len(raw.encode("utf-8")) > MAX_MESSAGE_BYTES:
+                    raise ValueError("response exceeds size bound")
                 trace_bytes += len(raw.encode("utf-8")) + len(
                     request_json.encode("utf-8")
                 )
                 if trace_bytes > MAX_TRACE_BYTES:
                     raise ValueError("trace exceeds total size bound")
+                # Subjects can echo the authorization into arbitrary JSON fields.
+                # Check decoded values as well as raw text (which may be malformed).
+                if contains_credential(raw):
+                    raise ValueError("response contains validation credentials")
+                try:
+                    parsed = json.loads(raw)
+                except (ValueError, RecursionError):
+                    parsed = None
+                if contains_credential(parsed):
+                    raise ValueError("response contains validation credentials")
                 exchanges.append(
                     WireExchange(
                         operation=operation,
@@ -205,6 +277,29 @@ def collect_runtime_evidence(
                     break
                 observation = exchange("step", action)
                 exchange("state")
+            if capability:
+                phase = "validation_read"
+                try:
+                    response = telemetry_request(
+                        phase, {"schema_version": 1, "capability": capability}
+                    )
+                    if response.get("type") != "validation" or not isinstance(
+                        response.get("data"), dict
+                    ):
+                        raise ValueError("invalid telemetry envelope")
+                    if contains_credential(response["data"]):
+                        raise ValueError("telemetry contains validation credentials")
+                    snapshot = json.dumps(
+                        response["data"],
+                        allow_nan=False,
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    )
+                    if len(snapshot.encode("utf-8")) > MAX_TRACE_BYTES:
+                        raise ValueError("telemetry exceeds size bound")
+                    telemetry_json = snapshot
+                except Exception as exc:
+                    telemetry_error = f"session telemetry failed ({type(exc).__name__})"
             complete = True
         finally:
             # Teardown is best effort and cannot replace an in-episode failure
@@ -223,7 +318,10 @@ def collect_runtime_evidence(
             except (Exception, KeyboardInterrupt):
                 _abort_transport(connection)
         return RuntimeEvidence(
-            exchanges=tuple(exchanges), observation_schema_json=schema_json
+            exchanges=tuple(exchanges),
+            observation_schema_json=schema_json,
+            telemetry_json=telemetry_json,
+            telemetry_error=telemetry_error,
         )
     except KeyboardInterrupt:
         raise RuntimeCollectionInterrupted(
@@ -232,6 +330,8 @@ def collect_runtime_evidence(
                 observation_schema_json=schema_json,
                 failure_phase=phase,
                 failure_reason=f"{phase} failed (KeyboardInterrupt)",
+                telemetry_json=telemetry_json,
+                telemetry_error=telemetry_error,
             )
         ) from None
     except Exception as exc:
@@ -241,4 +341,6 @@ def collect_runtime_evidence(
             observation_schema_json=schema_json,
             failure_phase=phase,
             failure_reason=f"{phase} failed ({type(exc).__name__})",
+            telemetry_json=telemetry_json,
+            telemetry_error=telemetry_error,
         )
