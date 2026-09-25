@@ -51,7 +51,11 @@ def subject_with_replays(tmp_path, *, judged=False):
     subject = subject_with(tmp_path)
     count = 20 if judged else 3
     replays = tuple(
-        ReplayEvidence("container" if index == 1 else "session", sample(subject))
+        ReplayEvidence(
+            "container" if index == 1 else "session",
+            sample(subject),
+            cleanup_complete=True if index == 1 else None,
+        )
         for index in range(1, count)
     ) + (ReplayEvidence("seed", sample(subject, seed=43)),)
     if judged:
@@ -193,6 +197,45 @@ def test_fresh_sessions_without_fresh_container_are_incomplete(tmp_path):
     assert result.status is CheckStatus.SKIP
 
 
+@pytest.mark.parametrize("cleanup_complete", [False, None])
+@pytest.mark.parametrize("judged", [False, True])
+@pytest.mark.parametrize("fault", [None, "malformed", "diverged"])
+def test_unconfirmed_container_cleanup_prevents_pass_without_hiding_failures(
+    tmp_path, cleanup_complete, judged, fault
+):
+    subject = subject_with_replays(tmp_path, judged=judged)
+    evidence = subject.runtime_evidence
+    replay = evidence.replays[0]
+    rows = list(replay.evidence.exchanges)
+    if fault == "malformed":
+        rows[2] = replace(rows[2], response_json="{not-json")
+    elif fault == "diverged":
+        rows = mutate_response(
+            rows, 2, lambda value: value["data"]["observation"].update(counter=99)
+        )
+    replay = replace(
+        replay,
+        evidence=replace(replay.evidence, exchanges=tuple(rows)),
+        cleanup_complete=cleanup_complete,
+    )
+    evidence = replace(
+        evidence,
+        replays=(replay,) + evidence.replays[1:],
+        replay_failure_reason="fresh container cleanup failed"
+        if cleanup_complete is False
+        else None,
+    )
+    result = EpisodeDeterminismGrader().run(replace(subject, runtime_evidence=evidence))
+    assert result.status is (CheckStatus.FAIL if fault else CheckStatus.SKIP)
+    if fault is None:
+        assert result.measured["completed_replays"] == (20 if judged else 3)
+        assert result.evidence == ["fresh container cleanup was not confirmed"]
+    elif fault == "diverged":
+        assert "first divergence" in result.evidence[0]
+    else:
+        assert result.evidence == ["malformed replay evidence"]
+
+
 def test_partial_judged_sample_is_incomplete(tmp_path):
     subject = subject_with_replays(tmp_path, judged=True)
     evidence = replace(
@@ -204,16 +247,26 @@ def test_partial_judged_sample_is_incomplete(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "low,bound,status", [(0.5, 0.1, CheckStatus.PASS), (0.0, 0.2, CheckStatus.FAIL)]
+    "low,bound,status,cleanup_complete",
+    [
+        (0.5, 0.1, CheckStatus.PASS, True),
+        (0.5, 0.1, CheckStatus.SKIP, False),
+        (0.0, 0.2, CheckStatus.FAIL, True),
+        (0.0, 0.2, CheckStatus.FAIL, False),
+    ],
 )
 def test_judged_population_variance_uses_reward_squared_units(
-    tmp_path, low, bound, status
+    tmp_path, low, bound, status, cleanup_complete
 ):
     subject = subject_with_replays(tmp_path, judged=True)
     subject.manifest.reward.variance_tolerance = bound
     evidence = subject.runtime_evidence
     replays = tuple(
-        replace(row, evidence=sample(subject, reward=low if index < 10 else 1.0))
+        replace(
+            row,
+            evidence=sample(subject, reward=low if index < 10 else 1.0),
+            cleanup_complete=cleanup_complete if row.scope == "container" else None,
+        )
         for index, row in enumerate(evidence.replays[:-1])
     ) + (evidence.replays[-1],)
     result = EpisodeDeterminismGrader().run(

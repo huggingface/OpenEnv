@@ -473,11 +473,12 @@ def test_bundle_cleanup_includes_failed_replay_teardown(
 @pytest.mark.parametrize(
     "fault,failed_check",
     [
+        (None, None),
         ("invalid_reward", "runtime.reward_well_formed"),
         ("replay_divergence", "runtime.episode_determinism"),
     ],
 )
-def test_replay_cleanup_failure_preserves_independent_runtime_findings(
+def test_replay_cleanup_failure_prevents_pass_and_preserves_runtime_findings(
     package, monkeypatch, tmp_path, fault, failed_check
 ):
     baseline = measured_episode()
@@ -485,7 +486,7 @@ def test_replay_cleanup_failure_preserves_independent_runtime_findings(
     response = json.loads(changed_rows[2].response_json)
     if fault == "invalid_reward":
         response["data"]["reward"] = 2.0
-    else:
+    elif fault == "replay_divergence":
         response["data"]["observation"]["counter"] = 99
     changed_rows[2] = replace(changed_rows[2], response_json=json.dumps(response))
     telemetry = json.loads(baseline.telemetry_json)
@@ -519,7 +520,14 @@ def test_replay_cleanup_failure_preserves_independent_runtime_findings(
     checks = {row.check_id: row for row in report.results}
     assert checks["runtime.startup"].status is CheckStatus.ERROR
     assert "replay subject teardown failed" in checks["runtime.startup"].evidence
-    assert checks[failed_check].status is CheckStatus.FAIL
+    if failed_check:
+        assert checks[failed_check].status is CheckStatus.FAIL
+    else:
+        determinism = checks["runtime.episode_determinism"]
+        assert determinism.status is CheckStatus.SKIP
+        assert determinism.measured["completed_replays"] == 3
+        assert determinism.evidence == ["fresh container cleanup was not confirmed"]
+        assert checks["runtime.reward_well_formed"].status is CheckStatus.PASS
     assert checks["runtime.state_contract"].status is CheckStatus.PASS
     assert report.verdict.value == "fail"
     assert json.loads((bundle / "cleanup.json").read_text())["completed"] is False

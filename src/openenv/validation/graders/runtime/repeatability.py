@@ -290,6 +290,15 @@ class EpisodeDeterminismGrader(_RuntimeGrader):
                         ],
                         measured,
                     )
+        if any(
+            row.scope == "container" and row.cleanup_complete is not True
+            for row in replays
+        ):
+            return (
+                CheckStatus.SKIP,
+                ["fresh container cleanup was not confirmed"],
+                measured,
+            )
         return (
             CheckStatus.PASS,
             ["fresh-session and fresh-container replays agree"],
