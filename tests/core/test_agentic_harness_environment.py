@@ -387,6 +387,55 @@ class TestTransforms:
 
 
 class TestCleanupAndErrorClassification:
+    @pytest.mark.parametrize("stage", ["is_alive", "send_message", "rubric"])
+    @pytest.mark.parametrize("stop_fails", [False, True])
+    async def test_cancelled_turn_cleans_up_resources(
+        self, stage, stop_fails, monkeypatch
+    ):
+        env, adapter = make_env(rubric=SpyRubric())
+        await env.reset_async()
+        entered = asyncio.Event()
+        target = env if stage == "rubric" else adapter
+        method = "_apply_rubric_async" if stage == "rubric" else stage
+        original = getattr(target, method)
+        original_stop = adapter.stop
+
+        async def stall(*args, **kwargs):
+            await original(*args, **kwargs)
+            entered.set()
+            await asyncio.Event().wait()
+
+        async def failing_stop():
+            await original_stop()
+            raise HarnessError("cleanup failed")
+
+        monkeypatch.setattr(target, method, stall)
+        if stop_fails:
+            monkeypatch.setattr(adapter, "stop", failing_stop)
+        turn_task = asyncio.create_task(env.step_async(HarnessAction(message="go")))
+        try:
+            await asyncio.wait_for(entered.wait(), timeout=10.0)
+            turn_task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await turn_task
+
+            assert adapter.alive is False
+            assert adapter.calls[-1] == "stop"
+            assert FakeBridge.instances[0].stopped >= 1
+            with pytest.raises(HarnessNotRunningError):
+                await env.step_async(HarnessAction(message="again"))
+
+            monkeypatch.setattr(target, method, original)
+            monkeypatch.setattr(adapter, "stop", original_stop)
+            await env.reset_async()
+            obs = await env.step_async(HarnessAction(message="fresh turn"))
+            assert obs.metadata["response"] == "default response"
+        finally:
+            if not turn_task.done():
+                turn_task.cancel()
+            await asyncio.gather(turn_task, return_exceptions=True)
+            env.close()
+
     @pytest.mark.parametrize("stage", ["inject_tools", "start", "rubric"])
     async def test_cancelled_reset_cleans_up_resources(self, stage, monkeypatch):
         env, adapter = make_env(rubric=SpyRubric())

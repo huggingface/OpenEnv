@@ -264,54 +264,66 @@ class HarnessEnvironment(MCPEnvironment):
             raise HarnessNotRunningError(
                 "No active episode; call reset() before step()"
             )
-        if not await self.adapter.is_alive():
-            return await self._terminal_error_observation(
-                "harness process is not running",
-                error_type="harness_crashed",
-            )
-
-        timeout = (
-            timeout_s
-            if timeout_s is not None
-            else (self.adapter.config.session_timeout_s)
-        )
         try:
-            harness_response = await asyncio.wait_for(
-                self.adapter.send_message(action.message), timeout
-            )
-        except asyncio.TimeoutError:
-            return await self._terminal_error_observation(
-                f"harness turn exceeded {timeout} seconds",
-                error_type="turn_timeout",
-            )
-        except HarnessTurnTimeoutError as exc:
-            # Must precede HarnessError: an adapter that raises the dedicated
-            # timeout exception means a timeout, not a crash.
-            return await self._terminal_error_observation(
-                str(exc),
-                error_type="turn_timeout",
-            )
-        except HarnessError as exc:
-            return await self._terminal_error_observation(
-                str(exc),
-                error_type="harness_crashed",
-            )
+            if not await self.adapter.is_alive():
+                return await self._terminal_error_observation(
+                    "harness process is not running",
+                    error_type="harness_crashed",
+                )
 
-        self._trajectory.extend(harness_response.events)
-        self._state.step_count += 1
+            timeout = (
+                timeout_s
+                if timeout_s is not None
+                else (self.adapter.config.session_timeout_s)
+            )
+            try:
+                harness_response = await asyncio.wait_for(
+                    self.adapter.send_message(action.message), timeout
+                )
+            except asyncio.TimeoutError:
+                return await self._terminal_error_observation(
+                    f"harness turn exceeded {timeout} seconds",
+                    error_type="turn_timeout",
+                )
+            except HarnessTurnTimeoutError as exc:
+                # Must precede HarnessError: an adapter that raises the dedicated
+                # timeout exception means a timeout, not a crash.
+                return await self._terminal_error_observation(
+                    str(exc),
+                    error_type="turn_timeout",
+                )
+            except HarnessError as exc:
+                return await self._terminal_error_observation(
+                    str(exc),
+                    error_type="harness_crashed",
+                )
 
-        observation = Observation(
-            done=harness_response.done,
-            reward=0.0,
-            metadata={
-                "response": harness_response.response,
-                "turn_events": events_to_metadata(harness_response.events),
-                "turn_number": self._state.step_count,
-            },
-        )
-        if self.rubric is not None:
-            observation.reward = await self._apply_rubric_async(action, observation)
-        return self._apply_transform(observation)
+            self._trajectory.extend(harness_response.events)
+            self._state.step_count += 1
+
+            observation = Observation(
+                done=harness_response.done,
+                reward=0.0,
+                metadata={
+                    "response": harness_response.response,
+                    "turn_events": events_to_metadata(harness_response.events),
+                    "turn_number": self._state.step_count,
+                },
+            )
+            if self.rubric is not None:
+                observation.reward = await self._apply_rubric_async(action, observation)
+            return self._apply_transform(observation)
+        except asyncio.CancelledError:
+            # An interrupted turn cannot safely resume the conversation. Keep
+            # cancellation visible to the caller after releasing resources.
+            self._episode_active = False
+            try:
+                await self.adapter.stop()
+            except Exception:
+                pass
+            finally:
+                await self._stop_bridge()
+            raise
 
     async def _terminal_error_observation(
         self, message: str, error_type: str
