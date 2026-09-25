@@ -175,7 +175,8 @@ def test_divergence_reports_first_path_without_values(tmp_path, field, value):
     evidence = replace(evidence, replays=(replay,) + evidence.replays[1:])
     result = EpisodeDeterminismGrader().run(replace(subject, runtime_evidence=evidence))
     assert result.status is CheckStatus.FAIL
-    assert f"$[2].response.data.{field}" in result.evidence[0]
+    field_index = {"done": 0, "observation": 1, "reward": 2}[field]
+    assert f"$[2].<field:2>.<field:0>.<field:{field_index}>" in result.evidence[0]
     assert "private-value" not in result.model_dump_json()
 
 
@@ -238,7 +239,7 @@ def test_judged_mode_still_checks_observations_and_state(tmp_path):
     evidence = replace(evidence, replays=(replay,) + evidence.replays[1:])
     result = EpisodeDeterminismGrader().run(replace(subject, runtime_evidence=evidence))
     assert result.status is CheckStatus.FAIL
-    assert "$[3].response.data.step_count" in result.evidence[0]
+    assert "$[3].<field:2>.<field:0>.<field:1>" in result.evidence[0]
 
 
 def test_judged_variance_does_not_pool_different_steps(tmp_path):
@@ -363,4 +364,48 @@ def test_incomplete_replay_preserves_observed_failures(tmp_path, judged, fault):
         assert result.measured["completed_replays"] == (19 if judged else 2)
         assert "reward_population_variance" not in result.measured
     elif fault == "diverged":
-        assert "$[2].response.data.observation.counter" in result.evidence[0]
+        assert "$[2].<field:2>.<field:0>.<field:1>.<field:0>" in result.evidence[0]
+
+
+@pytest.mark.parametrize("grader", [EpisodeDeterminismGrader, TrajectoryRecordGrader])
+@pytest.mark.parametrize("mismatch", ["extra_key", "changed_value"])
+def test_public_divergence_paths_never_disclose_subject_keys(
+    tmp_path, grader, mismatch
+):
+    subject = subject_with_replays(tmp_path)
+    evidence = subject.runtime_evidence
+    private_key = "hf_privateSubjectSecret123\nUNTRUSTED\r\tkey"
+    if mismatch == "changed_value":
+        rows = mutate_response(
+            list(evidence.exchanges),
+            2,
+            lambda response: response["data"]["observation"].update({private_key: 0}),
+        )
+        evidence = replace(evidence, exchanges=tuple(rows))
+    if grader is EpisodeDeterminismGrader:
+        replay = evidence.replays[0]
+        rows = mutate_response(
+            list(replay.evidence.exchanges),
+            2,
+            lambda response: response["data"]["observation"].update({private_key: 1}),
+        )
+        replay = replace(
+            replay, evidence=replace(replay.evidence, exchanges=tuple(rows))
+        )
+        evidence = replace(evidence, replays=(replay,) + evidence.replays[1:])
+    else:
+        evidence = alter_telemetry(
+            evidence,
+            lambda value: value["trajectory"]["records"][2]["response"]["data"][
+                "observation"
+            ].update({private_key: 1}),
+        )
+    result = grader().run(replace(subject, runtime_evidence=evidence))
+    assert result.status is CheckStatus.FAIL
+    assert "$[2].<field:2>.<field:0>.<field:1>.<field:1>" in result.evidence[0]
+    assert private_key not in "".join(result.evidence)
+    assert "privateSubjectSecret" not in result.model_dump_json()
+    assert "UNTRUSTED" not in result.model_dump_json()
+    assert "\n" not in result.evidence[0]
+    assert "\r" not in result.evidence[0]
+    assert "\t" not in result.evidence[0]

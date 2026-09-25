@@ -42,12 +42,12 @@ def _trace(evidence):
 
 
 def _difference(expected, observed, path="$"):
-    """First differing JSON path, without disclosing subject-controlled values."""
+    """First differing location, exposing indices and key ordinals only."""
     if type(expected) is not type(observed):
         return path
     if isinstance(expected, dict):
-        for key in sorted(expected.keys() | observed.keys()):
-            child = f"{path}.{key[:80]}"
+        for index, key in enumerate(sorted(expected.keys() | observed.keys())):
+            child = f"{path}.<field:{index}>"
             if key not in expected or key not in observed:
                 return child
             mismatch = _difference(expected[key], observed[key], child)
