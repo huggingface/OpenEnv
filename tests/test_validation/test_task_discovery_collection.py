@@ -6,16 +6,25 @@ import pytest
 from openenv.validation.runtime import discovery
 
 
-def collect(monkeypatch, handler, **kwargs):
+def collect(monkeypatch, handler, *, advertised=None, **kwargs):
     original = httpx.Client
+
+    def respond(request):
+        if request.url.path == "/list_environments":
+            return (
+                advertised
+                if advertised is not None
+                else httpx.Response(200, json=["name?secret"])
+            )
+        return handler(request)
 
     def client(**options):
         assert options == {"trust_env": False, "follow_redirects": False}
-        return original(transport=httpx.MockTransport(handler), **options)
+        return original(transport=httpx.MockTransport(respond), **options)
 
     monkeypatch.setattr(discovery.httpx, "Client", client)
     return discovery.collect_task_evidence(
-        "http://127.0.0.1:8000", "name?secret", deadline=time.monotonic() + 1, **kwargs
+        "http://127.0.0.1:8000", deadline=time.monotonic() + 1, **kwargs
     )
 
 
@@ -39,11 +48,49 @@ def test_task_sampling_uses_true_counts_and_two_bounded_specs(monkeypatch):
     payload, error = collect(monkeypatch, handler)
     assert error is None
     assert json.loads(payload) == {
+        "environments": ["name?secret"],
         "splits": [{"name": "train"}, {"name": "empty"}],
         "counts": {"train": 10**9, "empty": 0},
         "previews": {"train": [["train", 0], ["train", 1]], "empty": []},
     }
     assert len(seen) == 5
+
+
+@pytest.mark.parametrize(
+    "names", [[], {}, "probe", [None], [""], ["a", "b"], ["a", "a"], [".."], ["a/b"]]
+)
+def test_invalid_environment_inventory_is_not_guessed(monkeypatch, names):
+    def handler(request):
+        pytest.fail("invalid environment inventory must not request task routes")
+
+    payload, error = collect(
+        monkeypatch, handler, advertised=httpx.Response(200, json=names)
+    )
+    assert payload is None and error == "task discovery failed (ValueError)"
+
+
+@pytest.mark.parametrize(
+    "fault", ["unsupported", "compressed", "oversized", "long_namespace"]
+)
+def test_environment_inventory_uses_discovery_response_bounds(monkeypatch, fault):
+    def handler(request):
+        pytest.fail("failed environment discovery must not request task routes")
+
+    if fault == "unsupported":
+        response = httpx.Response(501, text="private-error")
+    elif fault == "compressed":
+        response = httpx.Response(
+            200, headers={"Content-Encoding": "br"}, stream=httpx.ByteStream(b"invalid")
+        )
+    elif fault == "long_namespace":
+        response = httpx.Response(200, json=["x" * 65537])
+    else:
+        response = httpx.Response(
+            200, content=b"x" * (discovery.MAX_RESPONSE_BYTES + 1)
+        )
+    payload, error = collect(monkeypatch, handler, advertised=response)
+    assert payload is None and error.startswith("task discovery failed (")
+    assert "private" not in error
 
 
 @pytest.mark.parametrize(

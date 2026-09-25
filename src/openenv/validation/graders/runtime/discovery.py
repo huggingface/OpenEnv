@@ -70,6 +70,9 @@ class ToolDeclarationAccuracyGrader(_EvidenceGrader):
     check_id = "runtime.tool_declaration_accuracy"
     field, error_field, label = "tools_json", "tools_error", "tool discovery"
 
+    def applies_to(self, manifest):
+        return "declared_tools" in manifest.capabilities.model_fields_set
+
     def check(self, subject, payload):
         tools = payload["tools"]
         if not isinstance(tools, list):
@@ -104,8 +107,8 @@ class TaskDeclarationAccuracyGrader(_EvidenceGrader):
     field, error_field, label = "tasks_json", "tasks_error", "task discovery"
 
     def applies_to(self, manifest):
-        return manifest.capabilities.task_api or bool(
-            manifest.capabilities.declared_task_count
+        return manifest.capabilities.task_api or (
+            "declared_task_count" in manifest.capabilities.model_fields_set
         )
 
     def check(self, subject, payload):
@@ -129,7 +132,10 @@ class TaskDeclarationAccuracyGrader(_EvidenceGrader):
             raise ValueError("incomplete split discovery")
         problems = []
         declared = subject.manifest.capabilities.declared_task_count
-        if set(names) != declared.keys():
+        has_counts = (
+            "declared_task_count" in subject.manifest.capabilities.model_fields_set
+        )
+        if has_counts and set(names) != declared.keys():
             problems.append("discovered splits differ from declared task counts")
         for name in names:
             count, preview = counts[name], previews[name]
@@ -143,7 +149,7 @@ class TaskDeclarationAccuracyGrader(_EvidenceGrader):
                 )
             if name in declared and count != declared[name]:
                 problems.append("advertised task count differs from the declaration")
-        return problems, None
+        return problems, None if has_counts else "task counts were not declared"
 
 
 def _rubric_nodes(payload):

@@ -32,8 +32,9 @@ def package(tmp_path):
     path = root / "openenv.yaml"
     document = yaml.safe_load(path.read_text())
     document["validation"]["capabilities"].update(
-        declared_tools=[], rubric_tree=False, task_api=False, declared_task_count={}
+        declared_tools=[], rubric_tree=False, task_api=False
     )
+    document["validation"]["capabilities"].pop("declared_task_count", None)
     path.write_text(yaml.safe_dump(document))
     return root
 
@@ -597,7 +598,7 @@ def test_runner_checks_empty_tools_and_omits_undeclared_optional_capabilities(
     checks = {row.check_id: row for row in result.results}
     assert checks["runtime.tool_declaration_accuracy"].status is CheckStatus.PASS
     assert observed[0]["collect_tools"] is True
-    assert observed[0]["task_env_name"] is None
+    assert observed[0]["collect_tasks"] is False
     for name in (
         "task_declaration_accuracy",
         "rubric_introspectable",
@@ -620,7 +621,7 @@ def test_runner_collects_and_grades_claimed_discovery_and_rubric_evidence(
         discovery_package, max_level=Level.RUNTIME, provider=FakeRuntimeProvider()
     )
     checks = {row.check_id: row for row in result.results}
-    assert observed[0]["task_env_name"] == "validation_probe"
+    assert observed[0]["collect_tasks"] is True
     for name in (
         "tool_declaration_accuracy",
         "task_declaration_accuracy",
@@ -628,6 +629,59 @@ def test_runner_collects_and_grades_claimed_discovery_and_rubric_evidence(
         "reward_attribution",
     ):
         assert checks["runtime." + name].status is CheckStatus.PASS
+
+
+@pytest.mark.parametrize("declared", [False, True])
+@pytest.mark.parametrize("task_api", [False, True])
+def test_parsed_declaration_presence_controls_collection_and_findings(
+    package, monkeypatch, baseline_only, declared, task_api
+):
+    path = package / "openenv.yaml"
+    document = yaml.safe_load(path.read_text())
+    capabilities = document["validation"]["capabilities"]
+    capabilities["task_api"] = task_api
+    for field, empty in (("declared_tools", []), ("declared_task_count", {})):
+        if declared:
+            capabilities[field] = empty
+        else:
+            capabilities.pop(field, None)
+    path.write_text(yaml.safe_dump(document))
+    observed = []
+
+    def collect(*args, **kwargs):
+        observed.append(kwargs)
+        # Omitted counts are unknown even when a working API advertises tasks.
+        return replace(
+            discovery_episode(),
+            tools_json='{"tools":[]}',
+            tasks_json='{"splits":[],"counts":{},"previews":{}}'
+            if declared
+            else discovery_episode().tasks_json,
+        )
+
+    monkeypatch.setattr("openenv.validation.runner.collect_runtime_evidence", collect)
+    result = run_validation(
+        package, max_level=Level.RUNTIME, provider=FakeRuntimeProvider()
+    )
+    parsed = result.manifest.capabilities.model_fields_set
+    assert ("declared_tools" in parsed) is declared
+    assert ("declared_task_count" in parsed) is declared
+    restored = type(result).model_validate_json(result.model_dump_json())
+    restored_fields = restored.manifest.capabilities.model_fields_set
+    assert ("declared_tools" in restored_fields) is declared
+    assert ("declared_task_count" in restored_fields) is declared
+    assert observed[0]["collect_tools"] is declared
+    assert observed[0]["collect_tasks"] is (declared or task_api)
+    checks = {row.check_id: row for row in result.results}
+    assert ("runtime.tool_declaration_accuracy" in checks) is declared
+    assert ("runtime.task_declaration_accuracy" in checks) is (declared or task_api)
+    if declared:
+        assert checks["runtime.tool_declaration_accuracy"].status is CheckStatus.PASS
+        assert checks["runtime.task_declaration_accuracy"].status is CheckStatus.PASS
+    elif task_api:
+        check = checks["runtime.task_declaration_accuracy"]
+        assert check.status is CheckStatus.SKIP
+        assert check.evidence == ["task counts were not declared"]
 
 
 @pytest.mark.parametrize("failed_collection", [False, True])
@@ -700,7 +754,7 @@ def test_task_count_claim_is_checked_even_without_task_api_flag(
     )
     assert task_check.status is CheckStatus.SKIP
     assert "missing prerequisite" in task_check.evidence[0]
-    assert observed[0]["task_env_name"] == "validation_probe"
+    assert observed[0]["collect_tasks"] is True
 
 
 def grader(check_id, depends_on=(), *, status=CheckStatus.PASS, requires=frozenset()):

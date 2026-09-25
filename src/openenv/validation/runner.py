@@ -105,9 +105,9 @@ def _applicable(check_id, manifest):
     if check_id in {"runtime.rubric_introspectable", "runtime.reward_attribution"}:
         return manifest.capabilities.rubric_tree
     if check_id == "runtime.task_declaration_accuracy":
-        return manifest.capabilities.task_api or bool(
-            manifest.capabilities.declared_task_count
-        )
+        return TaskDeclarationAccuracyGrader().applies_to(manifest)
+    if check_id == "runtime.tool_declaration_accuracy":
+        return ToolDeclarationAccuracyGrader().applies_to(manifest)
     return True
 
 
@@ -177,10 +177,8 @@ def _runtime(subject, *, skip_build, provider):
                 manifest.resources.episode_timeout_s, REPLAY_BUDGET_SECONDS
             ),
             validation_token=spec.env_vars["OPENENV_VALIDATION_TOKEN"],
-            collect_tools=True,
-            task_env_name=manifest.name
-            if _applicable("runtime.task_declaration_accuracy", manifest)
-            else None,
+            collect_tools=_applicable("runtime.tool_declaration_accuracy", manifest),
+            collect_tasks=_applicable("runtime.task_declaration_accuracy", manifest),
         )
         # A health endpoint without a functioning protocol isn't a startup success.
         if not evidence.exchanges and evidence.failure_reason:

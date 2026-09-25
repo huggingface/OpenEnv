@@ -36,7 +36,8 @@
       "tests.test_validation.integration.test_runtime_process::test_installed_server_collector_and_graders_over_loopback[bad_task_count-runtime.task_declaration_accuracy]",
       "tests.test_validation.integration.test_runtime_process::test_installed_server_collector_and_graders_over_loopback[missing_rubric_config-runtime.rubric_introspectable]",
       "tests.test_validation.integration.test_runtime_process::test_installed_server_collector_and_graders_over_loopback[bad_attribution-runtime.reward_attribution]",
-      "tests.test_validation.integration.test_runtime_process::test_installed_server_collector_and_graders_over_loopback[empty_tools-None]"
+      "tests.test_validation.integration.test_runtime_process::test_installed_server_collector_and_graders_over_loopback[empty_tools-None]",
+      "tests.test_validation.integration.test_runtime_process::test_installed_server_collector_and_graders_over_loopback[namespace_mismatch-None]"
     ],
     "docker": [
       "tests.test_validation.integration.test_docker_lifecycle::test_docker_lifecycle_effective_limits_and_owned_cleanup",

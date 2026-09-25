@@ -123,6 +123,69 @@ def test_genuinely_empty_tools_pass_but_unsupported_discovery_does_not(tmp_path)
     assert ToolDeclarationAccuracyGrader().run(measured).status is CheckStatus.FAIL
 
 
+@pytest.mark.parametrize("declared", [False, True])
+@pytest.mark.parametrize("tools", [[], [{"name": "echo"}]])
+def test_omitted_tools_are_unknown_but_explicit_empty_tools_are_checked(
+    tmp_path, declared, tools
+):
+    measured = subject(tmp_path, tools_json=json.dumps({"tools": tools}))
+    capabilities = measured.manifest.capabilities
+    data = capabilities.model_dump(exclude={"declared_tools"})
+    if declared:
+        data["declared_tools"] = []
+    measured.manifest.capabilities = type(capabilities).model_validate(data)
+    grader = ToolDeclarationAccuracyGrader()
+    assert grader.applies_to(measured.manifest) is declared
+    assert grader.run(measured).status is (
+        CheckStatus.SKIP
+        if not declared
+        else CheckStatus.FAIL
+        if tools
+        else CheckStatus.PASS
+    )
+
+
+@pytest.mark.parametrize("task_api", [False, True])
+@pytest.mark.parametrize("declared", [False, True])
+@pytest.mark.parametrize("empty", [False, True])
+def test_omitted_task_counts_are_unknown_but_explicit_empty_counts_are_checked(
+    tmp_path, task_api, declared, empty
+):
+    measured = subject(tmp_path)
+    capabilities = measured.manifest.capabilities
+    data = capabilities.model_dump(exclude={"declared_task_count"})
+    data["task_api"] = task_api
+    if declared:
+        data["declared_task_count"] = {}
+    measured.manifest.capabilities = type(capabilities).model_validate(data)
+    if empty:
+        measured.runtime_evidence.tasks_json = json.dumps(
+            {"splits": [], "counts": {}, "previews": {}}
+        )
+    grader = TaskDeclarationAccuracyGrader()
+    assert grader.applies_to(measured.manifest) is (task_api or declared)
+    result = grader.run(measured)
+    assert result.status is (
+        CheckStatus.SKIP
+        if not declared
+        else CheckStatus.PASS
+        if empty
+        else CheckStatus.FAIL
+    )
+    if task_api and not declared:
+        assert result.evidence == ["task counts were not declared"]
+
+
+def test_omitted_counts_do_not_hide_an_invalid_declared_task_api(tmp_path):
+    measured = subject(tmp_path)
+    measured.manifest.capabilities.model_fields_set.discard("declared_task_count")
+    measured.manifest.capabilities.declared_task_count.clear()
+    payload = json.loads(measured.runtime_evidence.tasks_json)
+    payload["counts"]["train"] = True
+    measured.runtime_evidence.tasks_json = json.dumps(payload)
+    assert TaskDeclarationAccuracyGrader().run(measured).status is CheckStatus.FAIL
+
+
 @pytest.mark.parametrize("tools", [[], [{"name": "echo"}]])
 def test_matching_or_partial_first_tool_page_is_explicitly_incomplete(tmp_path, tools):
     result = ToolDeclarationAccuracyGrader().run(
@@ -375,6 +438,7 @@ def test_undeclared_task_and_rubric_capabilities_do_not_run(tmp_path):
     measured = subject(tmp_path)
     measured.manifest.capabilities.task_api = False
     measured.manifest.capabilities.declared_task_count = {}
+    measured.manifest.capabilities.model_fields_set.discard("declared_task_count")
     measured.manifest.capabilities.rubric_tree = False
     for grader in (
         TaskDeclarationAccuracyGrader,

@@ -176,6 +176,7 @@ class ProcessProvider:
         ("missing_rubric_config", "runtime.rubric_introspectable"),
         ("bad_attribution", "runtime.reward_attribution"),
         ("empty_tools", None),
+        ("namespace_mismatch", None),
     ],
 )
 def test_installed_server_collector_and_graders_over_loopback(
@@ -187,14 +188,19 @@ def test_installed_server_collector_and_graders_over_loopback(
         / mode
     )
     target = FIXTURE
-    if mode == "empty_tools":
-        target = tmp_path / "empty-tools"
+    if mode in {"empty_tools", "namespace_mismatch"}:
+        target = tmp_path / mode
         shutil.copytree(FIXTURE, target, ignore=shutil.ignore_patterns("__pycache__"))
         manifest_path = target / "openenv.yaml"
         manifest = yaml.safe_load(manifest_path.read_text())
-        manifest["validation"]["capabilities"]["declared_tools"] = []
+        if mode == "empty_tools":
+            manifest["validation"]["capabilities"]["declared_tools"] = []
+        else:
+            manifest["name"] = "package_metadata_name"
         manifest_path.write_text(yaml.safe_dump(manifest, sort_keys=False))
-    provider = ProcessProvider(artifacts / "subject", mode)
+    provider = ProcessProvider(
+        artifacts / "subject", "good" if mode == "namespace_mismatch" else mode
+    )
     try:
         report = run_validation(
             target,
@@ -229,9 +235,11 @@ def test_installed_server_collector_and_graders_over_loopback(
         manifest = json.loads((artifacts / "report/run-manifest.json").read_text())
         assert manifest["provider"]["isolation"] == "process"
         assert manifest["provider"]["container_build_exercised"] is False
-        _assert_discovery(
-            json.loads((artifacts / "report/discovery.json").read_text()), mode
-        )
+        discovery = json.loads((artifacts / "report/discovery.json").read_text())
+        _assert_discovery(discovery, mode)
+        assert discovery["tasks"]["environments"] == ["validation_probe"]
+        if mode == "namespace_mismatch":
+            assert report.manifest.name == "package_metadata_name"
         telemetry_path = artifacts / "report/session-telemetry.json"
         telemetry = json.loads(telemetry_path.read_text())
         assert telemetry["seed"]["accepted"] is (mode != "ignored_seed")

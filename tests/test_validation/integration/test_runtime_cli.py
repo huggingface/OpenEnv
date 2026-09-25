@@ -272,9 +272,14 @@ def _invoke_cli(
     assert len(checks) == len(report["results"]), "Report contains duplicate check IDs"
     applicable = IMPLEMENTED | PENDING
     capabilities = report["manifest"]["capabilities"]
+    declarations = yaml.safe_load((context / "openenv.yaml").read_text())["validation"][
+        "capabilities"
+    ]
+    if "declared_tools" not in declarations:
+        applicable -= {"runtime.tool_declaration_accuracy"}
     if not capabilities["rubric_tree"]:
         applicable -= {"runtime.rubric_introspectable", "runtime.reward_attribution"}
-    if not capabilities["task_api"] and not capabilities["declared_task_count"]:
+    if not capabilities["task_api"] and "declared_task_count" not in declarations:
         applicable -= {"runtime.task_declaration_accuracy"}
     assert {key for key in checks if key.startswith("runtime.")} == applicable
     assert all(checks[key]["status"] == "skip" for key in PENDING)

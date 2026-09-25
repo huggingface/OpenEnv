@@ -66,6 +66,8 @@ def collect(monkeypatch, connection, *, task_fault=None, **kwargs):
             return httpx.Response(200, json={"observation": {"type": "object"}})
         if task_fault == "unsupported":
             return httpx.Response(501, text="private server details")
+        if request.url.path == "/list_environments":
+            return httpx.Response(200, json=["probe"])
         if request.url.path.endswith("/splits"):
             return httpx.Response(200, json=[{"name": "train"}])
         if request.url.path.endswith("/num_tasks"):
@@ -117,7 +119,7 @@ def test_discovery_stays_on_measured_socket_outside_trajectory(monkeypatch):
         tool_response([{"name": "echo", "inputSchema": {"type": "object"}}])
     )
     evidence, urls = collect(
-        monkeypatch, connection, collect_tools=True, task_env_name="probe"
+        monkeypatch, connection, collect_tools=True, collect_tasks=True
     )
     assert [request["type"] for request in connection.requests] == [
         "validation_open",
@@ -148,6 +150,7 @@ def test_discovery_stays_on_measured_socket_outside_trajectory(monkeypatch):
     assert json.loads(evidence.tasks_json)["counts"] == {"train": 100}
     assert urls == [
         "/schema",
+        "/list_environments",
         "/probe/splits",
         "/probe/num_tasks",
         "/probe/task",
@@ -213,7 +216,7 @@ def test_discovery_credential_echo_is_discarded_even_with_unicode_escapes(
         monkeypatch,
         DiscoveryConnection(response),
         collect_tools=True,
-        task_env_name="probe",
+        collect_tasks=True,
         task_fault=secret,
     )
     assert evidence.tools_json is evidence.tasks_json is None
@@ -227,7 +230,7 @@ def test_task_failure_does_not_poison_successful_tools_or_episode(monkeypatch):
         monkeypatch,
         DiscoveryConnection(),
         collect_tools=True,
-        task_env_name="probe",
+        collect_tasks=True,
         task_fault="unsupported",
     )
     assert json.loads(evidence.tools_json) == {"tools": []}

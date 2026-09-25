@@ -75,7 +75,7 @@ def collect_runtime_evidence(
     request_timeout_s: float = 5.0,
     validation_token: str | None = None,
     collect_tools: bool = False,
-    task_env_name: str | None = None,
+    collect_tasks: bool = False,
 ) -> RuntimeEvidence:
     """
     Preserve schema and reset/step/state responses without model coercion.
@@ -97,8 +97,8 @@ def collect_runtime_evidence(
             Run-scoped telemetry authorization; never retained in evidence.
         collect_tools (`bool`, *optional*, defaults to `False`):
             Discover tools on the measured WebSocket before reset.
-        task_env_name (`str`, *optional*):
-            Sample this environment's task metadata through its HTTP task API.
+        collect_tasks (`bool`, *optional*, defaults to `False`):
+            Discover the server's environment namespace and sample its task metadata.
 
     Returns:
         [`~openenv.validation.runtime.contracts.RuntimeEvidence`]: raw evidence.
@@ -265,12 +265,11 @@ def collect_runtime_evidence(
                 except Exception as exc:
                     tools_error = f"tool discovery failed ({type(exc).__name__})"
 
-            if task_env_name is not None:
+            if collect_tasks:
                 phase = "tasks"
                 try:
                     discovered, tasks_error = collect_task_evidence(
                         base_url,
-                        task_env_name,
                         deadline=deadline,
                         request_timeout_s=request_timeout_s,
                     )

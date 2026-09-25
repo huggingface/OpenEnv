@@ -11,7 +11,7 @@ MAX_RESPONSE_BYTES = 1024 * 1024
 MAX_DISCOVERY_BYTES = 8 * 1024 * 1024
 
 
-def collect_task_evidence(base_url, env_name, *, deadline, request_timeout_s=5.0):
+def collect_task_evidence(base_url, *, deadline, request_timeout_s=5.0):
     """Return raw counts and at most two task specs per split, never a full listing.
 
     ``deadline`` is the collector's absolute monotonic episode deadline. Errors
@@ -27,7 +27,7 @@ def collect_task_evidence(base_url, env_name, *, deadline, request_timeout_s=5.0
         return budget
 
     try:
-        prefix = base_url.rstrip("/") + "/" + quote(env_name, safe="")
+        prefix = base_url.rstrip("/")
         with httpx.Client(trust_env=False, follow_redirects=False) as client:
 
             def request(method, route, payload=None):
@@ -59,6 +59,18 @@ def collect_task_evidence(base_url, env_name, *, deadline, request_timeout_s=5.0
                         body.extend(chunk)
                 return json.loads(body)
 
+            environments = request("GET", "/list_environments")
+            if (
+                not isinstance(environments, list)
+                or len(environments) != 1
+                or not isinstance(environments[0], str)
+                or not environments[0]
+                or environments[0] in {".", ".."}
+                or "/" in environments[0]
+                or "\\" in environments[0]
+            ):
+                raise ValueError("expected one valid task environment namespace")
+            prefix += "/" + quote(environments[0], safe="")
             splits = request("GET", "/splits")
             if not isinstance(splits, list) or len(splits) > MAX_TASK_SPLITS:
                 raise ValueError("invalid or excessive splits")
@@ -76,7 +88,12 @@ def collect_task_evidence(base_url, env_name, *, deadline, request_timeout_s=5.0
                     for index in range(min(2, count))
                 ]
             discovered = json.dumps(
-                {"splits": splits, "counts": counts, "previews": previews},
+                {
+                    "environments": environments,
+                    "splits": splits,
+                    "counts": counts,
+                    "previews": previews,
+                },
                 allow_nan=False,
                 ensure_ascii=False,
                 separators=(",", ":"),
@@ -86,6 +103,7 @@ def collect_task_evidence(base_url, env_name, *, deadline, request_timeout_s=5.0
             return discovered, None
     except (
         httpx.HTTPError,
+        httpx.InvalidURL,
         OSError,
         ValueError,
         TypeError,

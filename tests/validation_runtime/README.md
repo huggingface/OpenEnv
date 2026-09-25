@@ -44,7 +44,7 @@ and two test tasks. Its task listing returns only one preview item; the collecto
 uses `num_tasks` and samples at most two items per split. Empty tool declarations
 are checked through a real empty FastMCP registry. `discovery.json` preserves raw
 results and distinguishes failed discovery from an empty success. The protocol
-suite contains 35 required cases, including real tool calls and discovery/rubric
+suite contains 36 required cases, including real tool calls and discovery/rubric
 faults through the installed-wheel process provider.
 
 Repeatability checks compare the original episode against a fresh session and an
