@@ -386,8 +386,16 @@ class JupyterEnvironment(MCPEnvironment):
         if not self._sandbox:
             return {"passed": 0, "total": 0, "reward": None}
 
-        self._sandbox.run_shell("mkdir -p /home/user/logs/verifier")
-        verify_results = self._run_shell_commands(self._state.verify_commands)
+        # Verification runs as separate sandbox processes, not in the notebook
+        # kernel, so nothing a cell does to the kernel changes how verify
+        # commands run or what they report.
+        self._sandbox.run_command("mkdir -p /home/user/logs/verifier")
+        verify_results = [
+            _command_result_from_cell_result(
+                command, self._sandbox.run_command(command)
+            )
+            for command in self._state.verify_commands
+        ]
         self._state.verify_results = verify_results
 
         passed = sum(1 for result in verify_results if result.success)
@@ -442,7 +450,7 @@ def _command_result_from_cell_result(command: str, result):
 
 
 def _read_reward_override(sandbox) -> Optional[float]:
-    result = sandbox.run_shell(f"cat {REWARD_FILE} 2>/dev/null || true")
+    result = sandbox.run_command(f"cat {REWARD_FILE} 2>/dev/null || true")
     raw = (result.stdout or "").strip()
     if not raw:
         return None
