@@ -16,7 +16,7 @@ import logging
 import os
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import AsyncExitStack
 from typing import (
     Any,
@@ -394,57 +394,197 @@ class HTTPEnvServer:
             self._session_executors[session_id] = executor
             self._sessions[session_id] = None  # placeholder until env is ready
 
+        # Every await from here to registration runs with the slot reserved, so
+        # cancellation has to release it. CancelledError is not an Exception, so
+        # the handlers below never see it, and a surviving reservation is
+        # permanent: capacity counts _sessions, while the idle reaper only scans
+        # sessions that reached _session_info.
+        env: Optional[Environment] = None
+        stack: Optional[AsyncExitStack] = None
+        factory_future: Optional[Future] = None
         try:
-            # Create environment in the executor thread (outside lock)
-            loop = asyncio.get_event_loop()
-            env = await loop.run_in_executor(executor, self._env_factory)
-        except Exception as e:
-            async with self._session_lock:
-                if executor is not self._shared_session_executor:
-                    executor.shutdown(wait=False)
-                self._session_executors.pop(session_id, None)
-                self._sessions.pop(session_id, None)
-            factory_name = getattr(
-                self._env_factory, "__name__", str(self._env_factory)
-            )
-            raise EnvironmentFactoryError(factory_name) from e
+            try:
+                # Create environment in the executor thread (outside lock).
+                # submit() plus wrap_future() is what run_in_executor() does
+                # internally; spelling it out keeps the thread's future, which is
+                # the only handle on an environment still being built when the
+                # await is cancelled.
+                loop = asyncio.get_event_loop()
+                factory_future = executor.submit(self._env_factory)
+                env = await asyncio.wrap_future(factory_future, loop=loop)
+            except Exception as e:
+                async with self._session_lock:
+                    if executor is not self._shared_session_executor:
+                        executor.shutdown(wait=False)
+                    self._session_executors.pop(session_id, None)
+                    self._sessions.pop(session_id, None)
+                factory_name = getattr(
+                    self._env_factory, "__name__", str(self._env_factory)
+                )
+                raise EnvironmentFactoryError(factory_name) from e
 
-        # Hold the MCP session open for the lifetime of this session,
-        # matching the WebSocket path's AsyncExitStack pattern.  This
-        # prevents per-request MCP transport teardown/reconnection and
-        # preserves FastMCP session state (ctx.set_state / ctx.get_state)
-        # across HTTP calls within the same OpenEnv session.
-        stack = AsyncExitStack()
-        try:
-            mcp_session_factory = getattr(env, "mcp_session", None)
-            if callable(mcp_session_factory):
-                mcp_session_cm = cast(AsyncContextManager[Any], mcp_session_factory())
-                await stack.enter_async_context(mcp_session_cm)
-        except Exception:
-            # MCP transport failed to start — clean up the reserved slot,
-            # the env, and the executor so they don't leak permanently
-            # against _max_concurrent_envs.
-            await stack.aclose()  # best-effort
+            # Hold the MCP session open for the lifetime of this session,
+            # matching the WebSocket path's AsyncExitStack pattern.  This
+            # prevents per-request MCP transport teardown/reconnection and
+            # preserves FastMCP session state (ctx.set_state / ctx.get_state)
+            # across HTTP calls within the same OpenEnv session.
+            stack = AsyncExitStack()
+            try:
+                mcp_session_factory = getattr(env, "mcp_session", None)
+                if callable(mcp_session_factory):
+                    mcp_session_cm = cast(
+                        AsyncContextManager[Any], mcp_session_factory()
+                    )
+                    await stack.enter_async_context(mcp_session_cm)
+            except Exception:
+                # MCP transport failed to start — clean up the reserved slot,
+                # the env, and the executor so they don't leak permanently
+                # against _max_concurrent_envs.
+                await stack.aclose()  # best-effort
+                async with self._session_lock:
+                    self._sessions.pop(session_id, None)
+                    self._session_executors.pop(session_id, None)
+                    self._session_info.pop(session_id, None)
+                await self._cleanup_session_resources(env, executor)
+                raise
+
             async with self._session_lock:
-                self._sessions.pop(session_id, None)
-                self._session_executors.pop(session_id, None)
-                self._session_info.pop(session_id, None)
-            await self._cleanup_session_resources(env, executor)
+                self._sessions[session_id] = env
+                self._session_stacks[session_id] = stack
+                now = time.time()
+                self._session_info[session_id] = SessionInfo(
+                    session_id=session_id,
+                    created_at=current_time,
+                    last_activity_at=now,
+                    step_count=0,
+                    environment_type=type(env).__name__,
+                )
+        except asyncio.CancelledError:
+            # Shielded so the release still completes if the loop is tearing
+            # down and delivers another cancellation, matching the shielded
+            # teardown the WebSocket handler already uses.
+            await asyncio.shield(
+                self._discard_reserved_session(
+                    session_id, executor, env, stack, factory_future
+                )
+            )
             raise
 
-        async with self._session_lock:
-            self._sessions[session_id] = env
-            self._session_stacks[session_id] = stack
-            now = time.time()
-            self._session_info[session_id] = SessionInfo(
-                session_id=session_id,
-                created_at=current_time,
-                last_activity_at=now,
-                step_count=0,
-                environment_type=type(env).__name__,
-            )
-
         return session_id, env
+
+    async def _discard_reserved_session(
+        self,
+        session_id: str,
+        executor: ThreadPoolExecutor,
+        env: Optional[Environment] = None,
+        stack: Optional[AsyncExitStack] = None,
+        factory_future: Optional[Future] = None,
+    ) -> None:
+        """
+        Release a session slot reserved by `_create_session` that never opened.
+
+        Drops every mapping the slot may have reached and closes whatever the
+        interrupted creation built, so the slot stops counting against
+        `max_concurrent_envs` and no environment outlives it.
+
+        Args:
+            session_id (`str`):
+                The reserved session ID to release.
+            executor (`ThreadPoolExecutor`):
+                The executor reserved alongside the slot.
+            env (`Environment`, *optional*):
+                The environment, if the factory already returned one.
+            stack (`AsyncExitStack`, *optional*):
+                The MCP session stack, if one was already entered.
+            factory_future (`Future`, *optional*):
+                The factory's thread future, if the factory call was reached.
+                Used to close an environment the thread is still building.
+        """
+        async with self._session_lock:
+            self._sessions.pop(session_id, None)
+            self._session_executors.pop(session_id, None)
+            self._session_stacks.pop(session_id, None)
+            self._session_info.pop(session_id, None)
+
+        if env is None and factory_future is not None:
+            # Cancelling the await cancels the asyncio future, never the thread
+            # running the factory. Whatever that thread builds has to be closed,
+            # or a container-backed environment keeps its container alive after
+            # the server reports the slot as free.
+            if not factory_future.cancel():
+                # Running, or finished while we were looking. Both go through the
+                # same callback: env is None here, so stack is too, and the
+                # callback owns the executor shutdown from this point.
+                self._close_env_when_built(factory_future, executor)
+                return
+            # The factory never started, so nothing was built.
+
+        await self._cleanup_session_resources(env, executor, stack)
+
+    @staticmethod
+    def _factory_result(future: Future) -> Optional[Environment]:
+        """
+        Return a finished factory future's environment, or `None` if it has none.
+
+        Args:
+            future (`Future`):
+                A factory future that has already completed.
+
+        Returns:
+            `Environment` or `None`: The environment the factory built, or `None`
+                if it raised or was cancelled.
+        """
+        try:
+            return future.result()
+        except BaseException:
+            return None
+
+    def _close_env_when_built(
+        self, future: Future, executor: ThreadPoolExecutor
+    ) -> None:
+        """
+        Close the environment a cancelled session creation left behind.
+
+        `add_done_callback` gives no thread guarantee: it runs on whichever thread
+        completes the future, and inline on the calling thread if the future is
+        already done, which for a cancelled creation is the event loop's thread.
+        So the callback never closes the environment itself. It submits `close`
+        back to `executor`, the single-worker pool the environment was created on,
+        which is what `_cleanup_session_resources` requires for thread-sensitive
+        libraries such as Playwright. The executor is shut down once that work is
+        queued, since `shutdown(wait=False)` still drains what is already queued.
+
+        Args:
+            future (`Future`):
+                The factory future, running or already finished.
+            executor (`ThreadPoolExecutor`):
+                The executor reserved alongside the released slot, and the thread
+                the environment was created on.
+        """
+
+        def _close_env(pending_env: Environment) -> None:
+            try:
+                pending_env.close()
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "Failed to close the environment built by a cancelled "
+                    "session creation",
+                    exc_info=True,
+                )
+
+        def _on_factory_done(finished: Future) -> None:
+            pending_env = self._factory_result(finished)
+            if pending_env is not None:
+                try:
+                    executor.submit(_close_env, pending_env)
+                except RuntimeError:
+                    # Executor already shut down, so nothing there will run the
+                    # close. Best effort on this thread rather than leak the env.
+                    _close_env(pending_env)
+            if executor is not self._shared_session_executor:
+                executor.shutdown(wait=False)
+
+        future.add_done_callback(_on_factory_done)
 
     async def _destroy_session(self, session_id: str) -> None:
         """
