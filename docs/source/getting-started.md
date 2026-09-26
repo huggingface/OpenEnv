@@ -163,8 +163,8 @@ runtime can implement it without changing the client/server protocol.
 
 Providers shipped today: `LocalDockerProvider`, `DockerSwarmProvider`,
 `UVProvider`, `DaytonaProvider`, `ACASandboxProvider` (Azure Container Apps
-Sandboxes), `ModalProvider`, and `NovitaSandboxProvider`. A `KubernetesProvider`
-is planned.
+Sandboxes), `ModalProvider`, `NovitaSandboxProvider`, and `KubernetesProvider`
+(`pip install openenv[kubernetes]`).
 
 See the [Runtime Providers guide](guides/runtime-providers.md) for the full list,
 install extras, and how to select a provider, and the
