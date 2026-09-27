@@ -164,10 +164,11 @@ provider = DockerSwarmProvider()
 
 Runs one environment as one Pod and one Service in an existing namespace.
 Install with `pip install openenv[kubernetes]`. The returned URL is the
-in-cluster Service DNS name over `http://`, which is the connectivity choice
-for this provider. `ModalProvider` and `ACASandboxProvider` still require
-`https://`. Use this provider from a trainer in the same cluster; it does not
-create a namespace, Deployment, Ingress, or port-forward.
+in-cluster Service DNS name over `http://{name}.{namespace}:{port}`, which Pod
+DNS search expands under `svc.<cluster-domain>`. `ModalProvider` and
+`ACASandboxProvider` still require `https://`. Use this provider from a trainer
+in the same cluster; it does not create a namespace, Deployment, Ingress, or
+port-forward.
 
 ```python
 from openenv.core.containers.runtime.kubernetes_provider import KubernetesProvider

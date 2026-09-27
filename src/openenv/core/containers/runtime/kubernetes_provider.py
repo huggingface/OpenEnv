@@ -7,11 +7,13 @@ Requires the ``kubernetes`` client: ``pip install openenv[kubernetes]``
 
 One provider instance owns one Pod and one Service, matching
 ``LocalDockerProvider`` owning one container. The returned ``base_url`` is the
-in-cluster Service DNS name over ``http://``. That plaintext URL is the
-in-cluster exception confirmed for this provider: ``ModalProvider`` and
-``ACASandboxProvider`` still refuse non-HTTPS tunnel URLs. This provider never
-returns a URL it did not construct from a validated name, namespace, and port,
-and it does not copy that URL or raw API bodies into errors.
+short in-cluster Service address ``http://{name}.{namespace}:{port}``. Pod DNS
+search completes that to the cluster domain, so the provider does not hardcode
+``.svc.cluster.local``. That plaintext URL is the in-cluster exception
+confirmed for this provider: ``ModalProvider`` and ``ACASandboxProvider`` still
+refuse non-HTTPS tunnel URLs. This provider never returns a URL it did not
+construct from a validated name, namespace, and port, and it does not copy
+that URL or raw API bodies into errors.
 """
 
 from __future__ import annotations
@@ -150,10 +152,30 @@ def _safe_reason(reason: Optional[str]) -> Optional[str]:
     return None
 
 
+class _NamespaceMissing(RuntimeError):
+    """Creating a namespaced object returned 404: the namespace is absent."""
+
+
+class _CreateConflict(RuntimeError):
+    """Creating a namespaced object returned 409: the name is already taken."""
+
+
 def _incluster_base_url(name: str, namespace: str, port: int) -> str:
     # *name* and *namespace* are already DNS-1123 labels and *port* is an int,
     # so this cannot be steered by a status field from the API server.
-    return f"http://{name}.{namespace}.svc.cluster.local:{port}"
+    # ``name.namespace`` is completed by the Pod DNS search list
+    # (``svc.<cluster-domain>``), which works when the cluster domain is not
+    # ``cluster.local``.
+    return f"http://{name}.{namespace}:{port}"
+
+
+def _owned_by_provider(labels: Any, name: str) -> bool:
+    if not isinstance(labels, Mapping):
+        return False
+    return (
+        labels.get("app.kubernetes.io/managed-by") == "openenv"
+        and labels.get("app.kubernetes.io/instance") == name
+    )
 
 
 class _DefaultKubernetesAdapter:
@@ -198,20 +220,16 @@ class _DefaultKubernetesAdapter:
         if missing_ok and status == 404:
             return
         if status == 409:
-            raise RuntimeError(f"Kubernetes {action} name is already in use") from None
+            raise _CreateConflict(
+                f"Kubernetes {action} name is already in use"
+            ) from None
+        if status == 404 and action.startswith("create "):
+            raise _NamespaceMissing(
+                "Kubernetes namespace does not exist. "
+                "KubernetesProvider does not create namespaces."
+            ) from None
         # The API body can echo object contents. Do not chain it into the error.
         raise RuntimeError(f"Failed to {action} Kubernetes resource") from None
-
-    def ensure_namespace(self) -> None:
-        try:
-            self._api.read_namespace(self._namespace)
-        except self._ApiException as exc:
-            if getattr(exc, "status", None) == 404:
-                raise RuntimeError(
-                    "Kubernetes namespace does not exist. "
-                    "KubernetesProvider does not create namespaces."
-                ) from None
-            raise RuntimeError("Failed to read Kubernetes namespace") from None
 
     def create_pod(self, manifest: Mapping[str, Any]) -> None:
         try:
@@ -226,6 +244,32 @@ class _DefaultKubernetesAdapter:
             )
         except self._ApiException as exc:
             self._api_error(exc, "create Service", missing_ok=False)
+
+    def pod_labels(self, name: str) -> Optional[dict[str, str]]:
+        """Return Pod labels, or ``None`` when the Pod does not exist."""
+        return self._resource_labels(name, self._api.read_namespaced_pod, "read Pod")
+
+    def service_labels(self, name: str) -> Optional[dict[str, str]]:
+        """Return Service labels, or ``None`` when the Service does not exist."""
+        return self._resource_labels(
+            name, self._api.read_namespaced_service, "read Service"
+        )
+
+    def _resource_labels(
+        self, name: str, read: Any, action: str
+    ) -> Optional[dict[str, str]]:
+        try:
+            obj = read(name, self._namespace)
+        except self._ApiException as exc:
+            if getattr(exc, "status", None) == 404:
+                return None
+            self._api_error(exc, action, missing_ok=False)
+            raise RuntimeError(f"Failed to {action} Kubernetes resource") from None
+        metadata = getattr(obj, "metadata", None)
+        labels = getattr(metadata, "labels", None) if metadata is not None else None
+        if not isinstance(labels, Mapping):
+            return {}
+        return {str(key): str(value) for key, value in labels.items()}
 
     def delete_pod(self, name: str) -> None:
         try:
@@ -334,10 +378,11 @@ class KubernetesProvider(ContainerProvider):
     """
     Container provider that runs one environment as one Pod and one Service.
 
-    ``start_container`` returns ``http://{name}.{namespace}.svc.cluster.local:{port}``.
-    That URL is reachable only from inside the cluster. It is plaintext on
-    purpose: in-cluster HTTP is the connectivity decision for this provider.
-    Cloud sandbox providers keep their own HTTPS requirement.
+    ``start_container`` returns ``http://{name}.{namespace}:{port}``. That
+    address is reachable only from inside the cluster: Pod DNS search expands
+    it under ``svc.<cluster-domain>``. It is plaintext on purpose: in-cluster
+    HTTP is the connectivity decision for this provider. Cloud sandbox
+    providers keep their own HTTPS requirement.
 
     The namespace must already exist. This provider does not create namespaces,
     Deployments, Ingress objects, or port-forwards.
@@ -444,7 +489,7 @@ class KubernetesProvider(ContainerProvider):
                 ``ValueError``.
 
         Returns:
-            `str`: ``http://{name}.{namespace}.svc.cluster.local:{port}``.
+            `str`: ``http://{name}.{namespace}:{port}``.
         """
         if self._pod_created or self._service_created or self._base_url is not None:
             raise RuntimeError(
@@ -490,7 +535,6 @@ class KubernetesProvider(ContainerProvider):
         self._name = name
         self._service_port = service_port
         try:
-            self._adapter.ensure_namespace()
             self._adapter.create_pod(
                 _pod_manifest(
                     name=name,
@@ -515,16 +559,83 @@ class KubernetesProvider(ContainerProvider):
                 )
             )
             self._service_created = True
-        except Exception:
+        except Exception as exc:
             # A cleanup failure must not mask the original error.
             try:
-                self.stop_container()
+                self._cleanup_after_failed_start(exc)
             except Exception:
                 pass
             raise
 
         self._base_url = _incluster_base_url(name, self._namespace, service_port)
         return self._base_url
+
+    def _cleanup_after_failed_start(self, exc: BaseException) -> None:
+        """Delete objects this start may have created.
+
+        A 409 is someone else's name, and a 404 means the namespace is
+        missing, so those do not probe. Any other create error may mean the
+        API server applied the object and the client lost the response. Those
+        are deleted only when the OpenEnv ownership labels match. If the read
+        or delete cannot be confirmed, the name and flag are kept so
+        ``stop_container()`` can retry.
+        """
+        uncertain = not isinstance(exc, (_CreateConflict, _NamespaceMissing))
+        self._release("pod", uncertain=uncertain)
+        self._release("service", uncertain=uncertain)
+        if not self._pod_created and not self._service_created:
+            self._name = None
+            self._base_url = None
+            self._service_port = None
+
+    def _release(self, kind: str, *, uncertain: bool) -> None:
+        flagged = self._pod_created if kind == "pod" else self._service_created
+        if not flagged and not uncertain:
+            return
+        if not flagged:
+            owned = self._lookup_owned(kind)
+            if owned is None or not owned:
+                return
+        self._delete_kind(kind)
+
+    def _lookup_owned(self, kind: str) -> Optional[bool]:
+        """Return whether *kind* at ``_name`` is ours.
+
+        ``None`` means the read itself failed. The flag is then set so a later
+        ``stop_container()`` retries the delete.
+        """
+        if self._name is None:
+            return False
+        try:
+            if kind == "pod":
+                labels = self._adapter.pod_labels(self._name)
+            else:
+                labels = self._adapter.service_labels(self._name)
+        except Exception:
+            self._set_created(kind, True)
+            return None
+        if labels is None:
+            return False
+        return _owned_by_provider(labels, self._name)
+
+    def _delete_kind(self, kind: str) -> None:
+        if self._name is None:
+            return
+        try:
+            if kind == "pod":
+                self._adapter.delete_pod(self._name)
+            else:
+                self._adapter.delete_service(self._name)
+        except Exception:
+            self._set_created(kind, True)
+            return
+        self._set_created(kind, False)
+
+    def _set_created(self, kind: str, created: bool) -> None:
+        if kind == "pod":
+            self._pod_created = created
+        else:
+            self._service_created = created
 
     def stop_container(self) -> None:
         """Delete the Pod and Service this provider created.

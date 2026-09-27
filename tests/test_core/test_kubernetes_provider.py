@@ -18,7 +18,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from openenv.core.containers.runtime import kubernetes_provider
 from openenv.core.containers.runtime.kubernetes_provider import (
+    _CreateConflict,
     _DefaultKubernetesAdapter,
+    _NamespaceMissing,
     KubernetesProvider,
 )
 from openenv.core.containers.runtime.providers import ContainerProvider
@@ -30,29 +32,36 @@ class _FakeAdapter:
         self.services: list[dict] = []
         self.deleted_pods = 0
         self.deleted_services = 0
-        self.ensured = 0
         self.phase = "Running"
         self.reason = None
-        self.namespace_exists = True
         self.fail_pod: Exception | None = None
         self.fail_service: Exception | None = None
         self.fail_delete_pod: Exception | None = None
-
-    def ensure_namespace(self):
-        self.ensured += 1
-        if not self.namespace_exists:
-            raise RuntimeError(
-                "Kubernetes namespace does not exist. "
-                "KubernetesProvider does not create namespaces."
-            )
+        self.fail_read_pod: Exception | None = None
+        self.fail_read_service: Exception | None = None
+        self.persist_pod_on_failure = False
+        self.persist_service_on_failure = False
+        self.foreign_pod_on_failure = False
 
     def create_pod(self, manifest):
         if self.fail_pod is not None:
+            if self.persist_pod_on_failure:
+                self.pods.append(manifest)
+            elif self.foreign_pod_on_failure:
+                foreign = {
+                    "metadata": {
+                        "name": manifest["metadata"]["name"],
+                        "labels": {"app.kubernetes.io/managed-by": "someone-else"},
+                    }
+                }
+                self.pods.append(foreign)
             raise self.fail_pod
         self.pods.append(manifest)
 
     def create_service(self, manifest):
         if self.fail_service is not None:
+            if self.persist_service_on_failure:
+                self.services.append(manifest)
             raise self.fail_service
         self.services.append(manifest)
 
@@ -63,6 +72,23 @@ class _FakeAdapter:
 
     def delete_service(self, name):
         self.deleted_services += 1
+
+    def pod_labels(self, name):
+        if self.fail_read_pod is not None:
+            raise self.fail_read_pod
+        return self._labels(self.pods, name)
+
+    def service_labels(self, name):
+        if self.fail_read_service is not None:
+            raise self.fail_read_service
+        return self._labels(self.services, name)
+
+    @staticmethod
+    def _labels(items, name):
+        for item in items:
+            if item["metadata"]["name"] == name:
+                return dict(item["metadata"]["labels"])
+        return None
 
     def pod_status(self, name):
         return {"phase": self.phase, "reason": self.reason}
@@ -92,13 +118,14 @@ class TestStartContainer:
     def test_returns_incluster_http_url(self, provider):
         url = provider.start_container("echo-env:latest")
         assert url.startswith("http://openenv-echo-env-")
-        assert url.endswith(".openenv.svc.cluster.local:8000")
+        assert url.endswith(".openenv:8000")
+        assert ".svc." not in url
         assert not url.startswith("https://")
         assert provider.base_url == url
 
     def test_explicit_port_is_service_port_only(self, provider, adapter):
         url = provider.start_container("echo-env:latest", port=9000)
-        assert url.endswith(".openenv.svc.cluster.local:9000")
+        assert url.endswith(".openenv:9000")
         assert adapter.pods[0]["spec"]["containers"][0]["ports"] == [
             {"name": "http", "container_port": 8000}
         ]
@@ -121,7 +148,6 @@ class TestStartContainer:
         with pytest.raises(ValueError, match="valid Kubernetes name"):
             provider.start_container("---:latest")
         assert adapter.pods == []
-        assert adapter.ensured == 0
 
     def test_constructor_image_used_when_start_omits_image(self, adapter):
         provider = KubernetesProvider(
@@ -218,14 +244,18 @@ class TestStartContainer:
     def test_invalid_namespace_rejected_before_api(self, adapter):
         with pytest.raises(ValueError, match="namespace"):
             KubernetesProvider(namespace="Not_A_Namespace", _adapter=adapter)
-        assert adapter.ensured == 0
+        assert adapter.pods == []
 
     def test_missing_namespace_raises_and_creates_nothing(self, provider, adapter):
-        adapter.namespace_exists = False
+        adapter.fail_pod = _NamespaceMissing(
+            "Kubernetes namespace does not exist. "
+            "KubernetesProvider does not create namespaces."
+        )
         with pytest.raises(RuntimeError, match="does not exist"):
             provider.start_container("echo-env:latest")
         assert adapter.pods == []
         assert adapter.deleted_pods == 0
+        assert provider._name is None
 
     def test_rejects_bad_port(self, provider):
         with pytest.raises(ValueError, match="port"):
@@ -300,12 +330,70 @@ class TestCleanup:
         assert provider._pod_created is False
         assert provider._name is None
 
-    def test_pod_create_failure_deletes_nothing(self, provider, adapter):
-        adapter.fail_pod = RuntimeError("Kubernetes create Pod name is already in use")
-        with pytest.raises(RuntimeError, match="already in use"):
+    def test_pod_create_conflict_deletes_nothing(self, provider, adapter):
+        adapter.fail_pod = _CreateConflict(
+            "Kubernetes create Pod name is already in use"
+        )
+        adapter.persist_pod_on_failure = True
+        with pytest.raises(_CreateConflict, match="already in use"):
             provider.start_container("echo-env:latest")
         assert adapter.deleted_pods == 0
         assert adapter.deleted_services == 0
+        assert provider._name is None
+
+    def test_service_conflict_deletes_the_pod_only(self, provider, adapter):
+        adapter.fail_service = _CreateConflict(
+            "Kubernetes create Service name is already in use"
+        )
+        adapter.persist_service_on_failure = True
+        with pytest.raises(_CreateConflict, match="already in use"):
+            provider.start_container("echo-env:latest")
+        assert adapter.deleted_pods == 1
+        assert adapter.deleted_services == 0
+        assert provider._name is None
+
+    def test_lost_pod_create_response_deletes_owned_pod(self, provider, adapter):
+        adapter.fail_pod = RuntimeError("apiserver timeout")
+        adapter.persist_pod_on_failure = True
+        with pytest.raises(RuntimeError, match="apiserver timeout"):
+            provider.start_container("echo-env:latest")
+        assert adapter.deleted_pods == 1
+        assert provider._pod_created is False
+        assert provider._name is None
+
+    def test_lost_service_create_response_deletes_owned_service(
+        self, provider, adapter
+    ):
+        adapter.fail_service = RuntimeError("apiserver timeout")
+        adapter.persist_service_on_failure = True
+        with pytest.raises(RuntimeError, match="apiserver timeout"):
+            provider.start_container("echo-env:latest")
+        assert adapter.deleted_pods == 1
+        assert adapter.deleted_services == 1
+        assert provider._name is None
+
+    def test_lost_create_response_leaves_foreign_object(self, provider, adapter):
+        adapter.fail_pod = RuntimeError("apiserver timeout")
+        adapter.foreign_pod_on_failure = True
+        with pytest.raises(RuntimeError, match="apiserver timeout"):
+            provider.start_container("echo-env:latest")
+        assert adapter.deleted_pods == 0
+        assert provider._name is None
+
+    def test_unconfirmed_cleanup_keeps_name_for_retry(self, provider, adapter):
+        adapter.fail_pod = RuntimeError("apiserver timeout")
+        adapter.fail_read_pod = RuntimeError("read failed secret-body")
+        with pytest.raises(RuntimeError, match="apiserver timeout") as exc_info:
+            provider.start_container("echo-env:latest")
+        assert "secret-body" not in str(exc_info.value)
+        assert provider._pod_created is True
+        assert provider._name is not None
+        adapter.fail_read_pod = None
+        adapter.fail_delete_pod = None
+        provider.stop_container()
+        assert provider._pod_created is False
+        assert provider._name is None
+        assert adapter.deleted_pods == 1
 
     def test_cleanup_failure_does_not_mask_original_error(self, provider, adapter):
         adapter.fail_service = RuntimeError("service failed")
@@ -349,7 +437,7 @@ class TestWaitForReady:
             provider.wait_for_ready(url, timeout_s=30)
         sleep.assert_not_called()
         assert url not in str(exc_info.value)
-        assert "svc.cluster.local" not in str(exc_info.value)
+        assert ".svc." not in str(exc_info.value)
 
     def test_unsafe_reason_is_omitted(self, provider, adapter):
         url = provider.start_container("echo-env:latest")
@@ -377,7 +465,7 @@ class TestWaitForReady:
         ):
             provider.wait_for_ready(url, timeout_s=5)
         assert url not in str(exc_info.value)
-        assert "svc.cluster.local" not in str(exc_info.value)
+        assert ".svc." not in str(exc_info.value)
 
     def test_mismatched_base_url_is_rejected_without_echoing_it(self, provider):
         provider.start_container("echo-env:latest")
@@ -460,6 +548,8 @@ def _install_fake_kubernetes(monkeypatch, *, incluster_fails: bool = False):
             calls["create_pod"].append((namespace, body))
             if calls.get("create_pod_status") == 409:
                 raise ApiException(status=409, body="secret-pod-body")
+            if calls.get("create_pod_status") == 404:
+                raise ApiException(status=404, body="secret-namespace-body")
             return body
 
         def create_namespaced_service(self, namespace, body):
@@ -510,10 +600,9 @@ class TestDefaultAdapter:
         adapter = _DefaultKubernetesAdapter(
             namespace="openenv", kubeconfig=None, context=None
         )
-        adapter.ensure_namespace()
+        assert adapter._namespace == "openenv"
         assert calls["incluster"] == 1
         assert calls["kubeconfig"] == []
-        assert calls["read_namespace"] == ["openenv"]
 
     def test_falls_back_to_kubeconfig_outside_cluster(self, monkeypatch):
         calls = _install_fake_kubernetes(monkeypatch, incluster_fails=True)
@@ -587,14 +676,33 @@ class TestDefaultAdapter:
             adapter.delete_pod("openenv-echo")
         assert "secret-delete-body" not in str(exc_info.value)
 
-    def test_missing_namespace_hides_api_body(self, monkeypatch):
+    def test_create_404_reports_missing_namespace_without_api_body(self, monkeypatch):
         calls = _install_fake_kubernetes(monkeypatch)
-        calls["namespace_status"] = 404
+        calls["create_pod_status"] = 404
         adapter = _DefaultKubernetesAdapter(
             namespace="openenv", kubeconfig=None, context=None
         )
-        with pytest.raises(RuntimeError, match="does not exist") as exc_info:
-            adapter.ensure_namespace()
+        with pytest.raises(_NamespaceMissing, match="does not exist") as exc_info:
+            adapter.create_pod(
+                {
+                    "metadata": {
+                        "name": "openenv-echo",
+                        "namespace": "openenv",
+                        "labels": {},
+                    },
+                    "spec": {
+                        "restart_policy": "Never",
+                        "automount_service_account_token": False,
+                        "containers": [
+                            {
+                                "name": "env",
+                                "image": "echo-env:latest",
+                                "ports": [{"name": "http", "container_port": 8000}],
+                            }
+                        ],
+                    },
+                }
+            )
         assert "secret-namespace-body" not in str(exc_info.value)
 
     def test_pod_status_keeps_reason_code_not_status_message(self, monkeypatch):
