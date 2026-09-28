@@ -193,6 +193,50 @@ class TestReset:
         assert adapter.injected_bridge_url is None
         assert FakeBridge.instances == []
 
+    @pytest.mark.parametrize("async_rubric", [False, True])
+    async def test_rubric_reset_failure_stops_resources_and_allows_retry(
+        self, async_rubric
+    ):
+        failure = RuntimeError("rubric reset failed")
+
+        class FailingRubric(SpyRubric):
+            fail = True
+
+            def reset(self):
+                assert adapter.alive
+                assert FakeBridge.instances[-1].started == 1
+                if self.fail:
+                    raise failure
+                super().reset()
+
+        class AsyncFailingRubric(FailingRubric):
+            async def reset_async(self):
+                self.reset()
+
+        rubric = AsyncFailingRubric() if async_rubric else FailingRubric()
+        env, adapter = make_env(rubric=rubric)
+        with pytest.raises(RuntimeError) as caught:
+            await env.reset_async()
+
+        assert caught.value is failure
+        assert adapter.alive is False
+        assert adapter.calls[-1] == "stop"
+        assert FakeBridge.instances[0].stopped >= 1
+        with pytest.raises(HarnessNotRunningError):
+            await env.step_async(HarnessAction(message="after failed reset"))
+
+        rubric.fail = False
+        try:
+            obs = await env.reset_async()
+            assert obs.done is False
+            assert adapter.alive
+            assert rubric.resets == 1
+            assert len(FakeBridge.instances) == 2
+            obs = await env.step_async(HarnessAction(message="retry"))
+            assert obs.metadata["response"] == "default response"
+        finally:
+            env.close()
+
     async def test_start_failure_leaves_episode_inactive(self):
         env, adapter = make_env()
         adapter.fail_on_start = True

@@ -158,8 +158,17 @@ class HarnessEnvironment(MCPEnvironment):
         try:
             await self.adapter.inject_tools(resolved, bridge_url)
             await self.adapter.start(self.adapter.config.working_directory)
+
+            self._state = State(
+                episode_id=episode_id or str(uuid4()),
+                step_count=0,
+            )
+            self._trajectory = []
+            if self.rubric is not None:
+                await self._reset_rubric_async()
         except Exception:
-            # Best effort: a partially started harness must not outlive reset().
+            # Best effort: no harness or bridge may outlive a failed reset,
+            # including failures initializing episode state or the rubric.
             try:
                 await self.adapter.stop()
             except Exception:
@@ -167,13 +176,6 @@ class HarnessEnvironment(MCPEnvironment):
             await self._stop_bridge()
             raise
 
-        self._state = State(
-            episode_id=episode_id or str(uuid4()),
-            step_count=0,
-        )
-        self._trajectory = []
-        if self.rubric is not None:
-            await self._reset_rubric_async()
         self._episode_active = True
 
         return Observation(
