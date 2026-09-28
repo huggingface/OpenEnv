@@ -81,7 +81,12 @@ def build_opencode_json(config: OpenCodeConfig) -> str:
             "timeout": config.request_timeout_ms,
         },
         "models": {
-            config.model.split("/", 1)[-1]: {"name": "Intercepted Model"},
+            # ``id`` is what opencode sends upstream; without it the stripped
+            # key goes out (``Qwen3.5-4B`` instead of ``Qwen/Qwen3.5-4B``).
+            config.model.split("/", 1)[-1]: {
+                "id": config.model,
+                "name": "Intercepted Model",
+            },
         },
     }
 
