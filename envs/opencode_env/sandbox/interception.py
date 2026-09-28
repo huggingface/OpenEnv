@@ -43,6 +43,7 @@ from contextlib import asynccontextmanager, closing
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 import uvicorn
@@ -216,9 +217,14 @@ def _model_uses_max_completion_tokens(model: str) -> bool:
 
 
 def _resolve_upstream_url(upstream: str) -> str:
-    """Build the fully qualified chat-completions URL from a base URL."""
+    """Build the fully qualified chat-completions URL from a base URL.
+
+    ``/v1`` is only added when the base has no path. A base that already has
+    one (``/v1``, ``/v1beta/openai``, ``/api/paas/v4``) is used as-is, which is
+    the URL opencode itself would call in ``black_box`` mode.
+    """
     base = upstream.rstrip("/")
-    if base.endswith("/v1"):
+    if urlsplit(base).path:
         return f"{base}/chat/completions"
     return f"{base}{CHAT_COMPLETIONS_PATH}"
 
