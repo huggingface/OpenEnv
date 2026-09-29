@@ -9,6 +9,7 @@ import threading
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional
 
+import anyio
 import pytest
 from fastmcp import Client, Context, FastMCP
 from fastmcp.exceptions import ToolError
@@ -106,16 +107,22 @@ class TestBridgeStandalone:
 
 
 class TestBridgeEnvironmentIntegration:
+    @pytest.mark.parametrize("cancellation", ["asyncio", "repeated_asyncio", "anyio"])
     async def test_cancelled_reset_waits_for_bridge_start_before_stopping(
-        self, monkeypatch
+        self, monkeypatch, cancellation
     ):
         entered = threading.Event()
         release = threading.Event()
         finished = threading.Event()
+        stop_entered = asyncio.Event()
+        stop_release = asyncio.Event()
+        stopped = asyncio.Event()
+        bridges = []
         server_threads = []
         original_start = HarnessMCPBridge.start
 
         def delayed_start(bridge):
+            bridges.append(bridge)
             entered.set()
             try:
                 assert release.wait(timeout=10.0)
@@ -127,27 +134,77 @@ class TestBridgeEnvironmentIntegration:
 
         monkeypatch.setattr(HarnessMCPBridge, "start", delayed_start)
         adapter = RecordingAdapter()
+        original_stop = adapter.stop
+        stop_calls = 0
+
+        async def delayed_stop():
+            nonlocal stop_calls
+            stop_calls += 1
+            if stop_calls == 2:
+                stop_entered.set()
+                await stop_release.wait()
+            await original_stop()
+            if stop_calls == 2:
+                stopped.set()
+
+        monkeypatch.setattr(adapter, "stop", delayed_stop)
         env = HarnessEnvironment(adapter=adapter, mcp=make_mcp())
-        reset_task = asyncio.create_task(env.reset_async())
+        cancel_scope = anyio.CancelScope()
+
+        async def reset():
+            with cancel_scope:
+                await env.reset_async()
+
+        reset_task = asyncio.create_task(reset())
         try:
             assert await asyncio.to_thread(entered.wait, 10.0)
-            reset_task.cancel()
+            if cancellation == "anyio":
+                cancel_scope.cancel()
+            else:
+                reset_task.cancel()
             await asyncio.sleep(0)
+            if cancellation == "repeated_asyncio":
+                reset_task.cancel()
+
+            done, _ = await asyncio.wait([reset_task], timeout=0.05)
+            assert not done, "cancelled reset returned before bridge startup finished"
             release.set()
-            with pytest.raises(asyncio.CancelledError):
-                await asyncio.wait_for(reset_task, timeout=15.0)
-            assert await asyncio.to_thread(finished.wait, 10.0)
+            await asyncio.wait_for(stop_entered.wait(), timeout=10.0)
+            if cancellation == "repeated_asyncio":
+                reset_task.cancel()
+            done, _ = await asyncio.wait([reset_task], timeout=0.05)
+            assert not done, "cancelled reset returned before adapter teardown finished"
+            stop_release.set()
+
+            results = await asyncio.wait_for(
+                asyncio.gather(reset_task, return_exceptions=True), timeout=15.0
+            )
+            if cancellation == "anyio":
+                assert cancel_scope.cancelled_caught
+            else:
+                assert isinstance(results[0], asyncio.CancelledError)
+            assert stopped.is_set()
+            assert finished.is_set()
             assert server_threads
             assert not server_threads[0].is_alive()
             assert env._bridge.url is None
             assert adapter.alive is False
+            assert env._episode_active is False
         finally:
             release.set()
+            stop_release.set()
             if not reset_task.done():
                 reset_task.cancel()
-            await asyncio.gather(reset_task, return_exceptions=True)
+            await asyncio.wait_for(
+                asyncio.gather(reset_task, return_exceptions=True), timeout=15.0
+            )
             await asyncio.to_thread(finished.wait, 10.0)
+            # Keep direct references in case a failed reset/close loses the
+            # bridge while its startup worker is still running.
+            for bridge in bridges:
+                await asyncio.to_thread(bridge.stop)
             env.close()
+            assert all(not thread.is_alive() for thread in server_threads)
 
     async def test_reset_passes_live_bridge_url(self):
         adapter = RecordingAdapter()

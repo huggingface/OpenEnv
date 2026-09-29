@@ -431,6 +431,57 @@ class TestTransforms:
 
 
 class TestCleanupAndErrorClassification:
+    @pytest.mark.parametrize(
+        "stage, failure",
+        [
+            ("is_alive", RuntimeError("adapter liveness check failed")),
+            ("send_message", RuntimeError("unexpected adapter failure")),
+            ("send_message", json.JSONDecodeError("invalid harness JSON", "{", 1)),
+            ("rubric", RuntimeError("turn evaluation failed")),
+        ],
+    )
+    @pytest.mark.parametrize("stop_fails", [False, True])
+    async def test_unexpected_turn_failure_stops_resources_and_allows_retry(
+        self, stage, failure, stop_fails, monkeypatch
+    ):
+        env, adapter = make_env(rubric=SpyRubric())
+        await env.reset_async()
+        target = env if stage == "rubric" else adapter
+        method = "_apply_rubric_async" if stage == "rubric" else stage
+        original = getattr(target, method)
+        original_stop = adapter.stop
+
+        async def fail(*args, **kwargs):
+            raise failure
+
+        async def failing_stop():
+            await original_stop()
+            raise RuntimeError("cleanup failed")
+
+        monkeypatch.setattr(target, method, fail)
+        if stop_fails:
+            monkeypatch.setattr(adapter, "stop", failing_stop)
+        try:
+            with pytest.raises(type(failure)) as caught:
+                await env.step_async(HarnessAction(message="go"))
+
+            assert caught.value is failure
+            assert adapter.alive is False
+            assert adapter.calls[-1] == "stop"
+            assert FakeBridge.instances[0].stopped >= 1
+            with pytest.raises(HarnessNotRunningError, match="No active episode"):
+                await env.step_async(HarnessAction(message="again"))
+
+            monkeypatch.setattr(target, method, original)
+            monkeypatch.setattr(adapter, "stop", original_stop)
+            await env.reset_async()
+            assert adapter.alive
+            assert len(FakeBridge.instances) == 2
+            obs = await env.step_async(HarnessAction(message="fresh turn"))
+            assert obs.metadata["response"] == "default response"
+        finally:
+            env.close()
+
     @pytest.mark.parametrize("stage", ["is_alive", "send_message", "rubric"])
     @pytest.mark.parametrize("stop_fails", [False, True])
     async def test_cancelled_turn_cleans_up_resources(
