@@ -6,10 +6,15 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional
 
+import anyio
 import pytest
-from fastmcp import Client, FastMCP
+from fastmcp import Client, Context, FastMCP
+from fastmcp.exceptions import ToolError
+from fastmcp.server.middleware import Middleware
+from mcp.types import CreateMessageResult, TextContent
 from openenv.core.harness import (
     AgenticHarnessAdapter,
     HarnessConfig,
@@ -102,16 +107,22 @@ class TestBridgeStandalone:
 
 
 class TestBridgeEnvironmentIntegration:
+    @pytest.mark.parametrize("cancellation", ["asyncio", "repeated_asyncio", "anyio"])
     async def test_cancelled_reset_waits_for_bridge_start_before_stopping(
-        self, monkeypatch
+        self, monkeypatch, cancellation
     ):
         entered = threading.Event()
         release = threading.Event()
         finished = threading.Event()
+        stop_entered = asyncio.Event()
+        stop_release = asyncio.Event()
+        stopped = asyncio.Event()
+        bridges = []
         server_threads = []
         original_start = HarnessMCPBridge.start
 
         def delayed_start(bridge):
+            bridges.append(bridge)
             entered.set()
             try:
                 assert release.wait(timeout=10.0)
@@ -123,27 +134,77 @@ class TestBridgeEnvironmentIntegration:
 
         monkeypatch.setattr(HarnessMCPBridge, "start", delayed_start)
         adapter = RecordingAdapter()
+        original_stop = adapter.stop
+        stop_calls = 0
+
+        async def delayed_stop():
+            nonlocal stop_calls
+            stop_calls += 1
+            if stop_calls == 2:
+                stop_entered.set()
+                await stop_release.wait()
+            await original_stop()
+            if stop_calls == 2:
+                stopped.set()
+
+        monkeypatch.setattr(adapter, "stop", delayed_stop)
         env = HarnessEnvironment(adapter=adapter, mcp=make_mcp())
-        reset_task = asyncio.create_task(env.reset_async())
+        cancel_scope = anyio.CancelScope()
+
+        async def reset():
+            with cancel_scope:
+                await env.reset_async()
+
+        reset_task = asyncio.create_task(reset())
         try:
             assert await asyncio.to_thread(entered.wait, 10.0)
-            reset_task.cancel()
+            if cancellation == "anyio":
+                cancel_scope.cancel()
+            else:
+                reset_task.cancel()
             await asyncio.sleep(0)
+            if cancellation == "repeated_asyncio":
+                reset_task.cancel()
+
+            done, _ = await asyncio.wait([reset_task], timeout=0.05)
+            assert not done, "cancelled reset returned before bridge startup finished"
             release.set()
-            with pytest.raises(asyncio.CancelledError):
-                await asyncio.wait_for(reset_task, timeout=15.0)
-            assert await asyncio.to_thread(finished.wait, 10.0)
+            await asyncio.wait_for(stop_entered.wait(), timeout=10.0)
+            if cancellation == "repeated_asyncio":
+                reset_task.cancel()
+            done, _ = await asyncio.wait([reset_task], timeout=0.05)
+            assert not done, "cancelled reset returned before adapter teardown finished"
+            stop_release.set()
+
+            results = await asyncio.wait_for(
+                asyncio.gather(reset_task, return_exceptions=True), timeout=15.0
+            )
+            if cancellation == "anyio":
+                assert cancel_scope.cancelled_caught
+            else:
+                assert isinstance(results[0], asyncio.CancelledError)
+            assert stopped.is_set()
+            assert finished.is_set()
             assert server_threads
             assert not server_threads[0].is_alive()
             assert env._bridge.url is None
             assert adapter.alive is False
+            assert env._episode_active is False
         finally:
             release.set()
+            stop_release.set()
             if not reset_task.done():
                 reset_task.cancel()
-            await asyncio.gather(reset_task, return_exceptions=True)
+            await asyncio.wait_for(
+                asyncio.gather(reset_task, return_exceptions=True), timeout=15.0
+            )
             await asyncio.to_thread(finished.wait, 10.0)
+            # Keep direct references in case a failed reset/close loses the
+            # bridge while its startup worker is still running.
+            for bridge in bridges:
+                await asyncio.to_thread(bridge.stop)
             env.close()
+            assert all(not thread.is_alive() for thread in server_threads)
 
     async def test_reset_passes_live_bridge_url(self):
         adapter = RecordingAdapter()
@@ -190,23 +251,148 @@ class TestRenamedToolsAreServed:
 
     async def test_renamed_tool_is_listed_and_callable(self):
         adapter = RecordingAdapter()  # BUILTIN_TOOL_NAMES == {"read_file"}
-        env = HarnessEnvironment(adapter=adapter, mcp=self.make_colliding_mcp())
+        mcp = self.make_colliding_mcp()
+        async with Client(mcp) as client:
+            source_tools = {tool.name: tool for tool in await client.list_tools()}
+        env = HarnessEnvironment(adapter=adapter, mcp=mcp)
         try:
             obs = await env.reset_async()
             assert sorted(obs.metadata["injected_tools"]) == ["add", "env_read_file"]
 
             async with Client(adapter.bridge_url) as client:
-                served = sorted(tool.name for tool in await client.list_tools())
-                assert served == ["add", "env_read_file"]
+                served = {tool.name: tool for tool in await client.list_tools()}
+                assert sorted(served) == ["add", "env_read_file"]
+                for name, source_name in {
+                    "add": "add",
+                    "env_read_file": "read_file",
+                }.items():
+                    assert (
+                        served[name].inputSchema
+                        == source_tools[source_name].inputSchema
+                    )
+                    assert (
+                        served[name].outputSchema
+                        == source_tools[source_name].outputSchema
+                    )
 
                 # The renamed tool must actually resolve, not just be listed.
                 result = await client.call_tool("env_read_file", {"path": "a.py"})
                 assert result.content[0].text == "contents of a.py"
+                with pytest.raises(ToolError, match="Unknown tool"):
+                    await client.call_tool("read_file", {"path": "a.py"})
 
                 # The un-renamed one is untouched.
                 assert (await client.call_tool("add", {"a": 2, "b": 3})).content[
                     0
                 ].text == "5"
+        finally:
+            env.close()
+        async with Client(mcp) as client:
+            assert sorted(tool.name for tool in await client.list_tools()) == [
+                "add",
+                "read_file",
+            ]
+
+    @pytest.mark.parametrize(
+        ("name", "arguments"),
+        [("env_read_file", {"path": "secret"}), ("add", {"a": 2, "b": 3})],
+    )
+    async def test_renamed_bridge_preserves_source_middleware(self, name, arguments):
+        calls = []
+
+        class DenyCalls(Middleware):
+            async def on_call_tool(self, context, call_next):
+                calls.append(context.message.name)
+                raise ToolError("blocked by source middleware")
+
+        mcp = self.make_colliding_mcp()
+        mcp.add_middleware(DenyCalls())
+        adapter = RecordingAdapter()
+        env = HarnessEnvironment(adapter=adapter, mcp=mcp)
+        try:
+            await env.reset_async()
+            async with Client(adapter.bridge_url) as client:
+                with pytest.raises(ToolError, match="blocked by source middleware"):
+                    await client.call_tool(name, arguments)
+            assert calls == ["read_file" if name == "env_read_file" else name]
+        finally:
+            env.close()
+
+    async def test_renamed_bridge_preserves_source_lifespan_context(self):
+        resources = []
+
+        @asynccontextmanager
+        async def lifespan(server):
+            resource = {"open": True, "calls": 0}
+            resources.append(resource)
+            try:
+                yield {"resource": resource}
+            finally:
+                resource["open"] = False
+
+        mcp = FastMCP("domain", lifespan=lifespan)
+
+        @mcp.tool
+        def read_file(ctx: Context) -> int:
+            resource = ctx.lifespan_context["resource"]
+            if not resource["open"]:
+                raise RuntimeError("resource already closed")
+            resource["calls"] += 1
+            return resource["calls"]
+
+        adapter = RecordingAdapter()
+        env = HarnessEnvironment(adapter=adapter, mcp=mcp)
+        try:
+            await env.reset_async()
+            for expected in (1, 2):
+                async with Client(adapter.bridge_url) as client:
+                    result = await client.call_tool("env_read_file", {})
+                    assert result.content[0].text == str(expected)
+                assert resources[-1]["open"]
+            assert sum(resource["calls"] for resource in resources) == 2
+        finally:
+            env.close()
+        assert resources
+        assert all(not resource["open"] for resource in resources)
+
+    async def test_renamed_bridge_forwards_sampling_and_progress(self):
+        sampled = []
+        progress = []
+        mcp = FastMCP("domain")
+
+        @mcp.tool
+        async def read_file(path: str, ctx: Context) -> str:
+            response = await ctx.sample(path)
+            await ctx.report_progress(1, 1, path)
+            return response.text
+
+        async def sample(messages, params, context):
+            text = messages[0].content.text
+            sampled.append(text)
+            return CreateMessageResult(
+                role="assistant",
+                content=TextContent(type="text", text=f"sampled {text}"),
+                model="test",
+            )
+
+        async def record_progress(completed, total, message):
+            progress.append((completed, total, message))
+
+        adapter = RecordingAdapter()
+        env = HarnessEnvironment(adapter=adapter, mcp=mcp)
+        try:
+            await env.reset_async()
+            async with Client(adapter.bridge_url, sampling_handler=sample) as client:
+                for path in ("first", "second"):
+                    result = await client.call_tool(
+                        "env_read_file",
+                        {"path": path},
+                        progress_handler=record_progress,
+                        timeout=5.0,
+                    )
+                    assert result.content[0].text == f"sampled {path}"
+            assert sampled == ["first", "second"]
+            assert progress == [(1, 1, "first"), (1, 1, "second")]
         finally:
             env.close()
 

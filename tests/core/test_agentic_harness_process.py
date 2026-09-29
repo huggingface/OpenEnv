@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import signal
 import sys
 import time
 from pathlib import Path
@@ -112,17 +114,32 @@ class TestStartupFailures:
             await process.start(ready_check=ready)
         assert process.is_running() is False
 
-    async def test_immediate_exit_reports_code_and_stderr(self):
+    async def test_immediate_exit_reports_code_and_retains_diagnostics(self):
         process = make_process("exit-now")
         with pytest.raises(HarnessStartupError) as exc_info:
             await process.start(ready_check=ready)
         assert "exited with code 3" in str(exc_info.value)
-        assert "dying" in str(exc_info.value)
+        assert "dying" in process.drain_stderr()
+        assert "dying" not in str(exc_info.value)
+
+    async def test_startup_error_does_not_expose_stderr(self):
+        process = make_process("exit-with-secret")
+        with pytest.raises(HarnessStartupError) as exc_info:
+            await process.start(ready_check=ready)
+        assert "exited with code 3" in str(exc_info.value)
+        assert "FAKE_HARNESS_SECRET_FOR_TEST" not in str(exc_info.value)
+        assert "stderr tail" not in str(exc_info.value)
+        assert "FAKE_HARNESS_SECRET_FOR_TEST" in process.drain_stderr()
 
     async def test_unspawnable_command(self):
-        process = HarnessProcess(["/nonexistent/definitely-not-a-binary"], cwd=".")
-        with pytest.raises(HarnessStartupError, match="failed to spawn"):
+        process = HarnessProcess(
+            ["/nonexistent/definitely-not-a-binary", "FAKE_HARNESS_SECRET_FOR_TEST"],
+            cwd=".",
+        )
+        with pytest.raises(HarnessStartupError, match="failed to spawn") as exc_info:
             await process.start()
+        assert "FAKE_HARNESS_SECRET_FOR_TEST" not in str(exc_info.value)
+        assert "/nonexistent" not in str(exc_info.value)
 
 
 class TestCrashDetection:
@@ -244,6 +261,43 @@ class TestEOF:
 
 
 class TestTerminateEscalation:
+    @pytest.mark.parametrize("leader_exits_first", [False, True])
+    async def test_stop_kills_descendants_after_leader_exits(self, leader_exits_first):
+        process = make_process("spawn-descendant", terminate_grace_s=0.1)
+        await process.start(ready_check=ready)
+        proc = process._proc
+        readers = list(process._reader_threads)
+        stop_task = None
+        try:
+            descendant_pid = int(await process.read_line(timeout_s=5.0))
+            if leader_exits_first:
+                await process.write_line("exit")
+                assert await asyncio.to_thread(proc.wait, timeout=5.0) == 1
+
+            stop_task = asyncio.create_task(process.stop())
+            done, _ = await asyncio.wait([stop_task], timeout=2.0)
+            assert stop_task in done, "stop() blocked on a surviving descendant's pipes"
+            await stop_task
+            assert all(not reader.is_alive() for reader in readers)
+            assert all(
+                stream.closed for stream in (proc.stdin, proc.stdout, proc.stderr)
+            )
+            assert process._proc is None
+
+            # This child keeps both output pipes open until it exits. EOF
+            # therefore proves teardown without depending on init reaping it.
+            assert descendant_pid != proc.pid
+            assert await process.read_line(timeout_s=1.0) is None
+        finally:
+            # A regression must fail promptly without leaking the sleeping child.
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            if stop_task is not None:
+                await asyncio.wait_for(stop_task, timeout=5.0)
+            await process.stop()
+
     async def test_sigterm_ignorer_is_killed_within_grace(self):
         process = make_process("ignore-sigterm", terminate_grace_s=0.5)
         await process.start(ready_check=ready)

@@ -7,6 +7,7 @@ from __future__ import annotations
 import socket
 import threading
 import time
+from contextlib import asynccontextmanager
 from typing import Any, Optional
 
 from .adapter import HarnessError
@@ -50,8 +51,10 @@ async def build_bridge_server(mcp_server: Any, renames: dict[str, str]) -> Any:
     if not renames:
         return mcp_server
 
-    from fastmcp import FastMCP
-    from fastmcp.tools.tool import Tool as FastMCPTool
+    from fastmcp import Client
+    from fastmcp.server.providers.proxy import FastMCPProxy, StatefulProxyClient
+    from fastmcp.server.transforms import ToolTransform
+    from fastmcp.tools.tool_transform import ToolTransformConfig
 
     source_tools = await _source_tools(mcp_server)
     missing = sorted(set(renames.values()) - set(source_tools))
@@ -61,15 +64,29 @@ async def build_bridge_server(mcp_server: Any, renames: dict[str, str]) -> Any:
             + ", ".join(missing)
         )
 
-    served_name_of = {source: served for served, source in renames.items()}
-    view = FastMCP(f"{getattr(mcp_server, 'name', 'openenv')}-harness-view")
-    for name, tool in source_tools.items():
-        served_name = served_name_of.get(name, name)
-        view.add_tool(
-            tool
-            if served_name == name
-            else FastMCPTool.from_tool(tool, name=served_name)
+    @asynccontextmanager
+    async def lifespan(server):
+        # Preserve source resources across harness MCP reconnects until this
+        # bridge stops, just as when serving the source server directly.
+        async with Client(mcp_server):
+            yield {}
+
+    # Forward callbacks in the current request context. Each harness MCP
+    # connection gets its own source session, closed on disconnect.
+    client = StatefulProxyClient(mcp_server)
+    view = FastMCPProxy(
+        name=f"{getattr(mcp_server, 'name', 'openenv')}-harness-view",
+        client_factory=client.new_stateful,
+        lifespan=lifespan,
+    )
+    view.add_transform(
+        ToolTransform(
+            {
+                source: ToolTransformConfig(name=served)
+                for served, source in renames.items()
+            }
         )
+    )
     return view
 
 

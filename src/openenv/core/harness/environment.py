@@ -182,20 +182,7 @@ class HarnessEnvironment(MCPEnvironment):
             )
             return self._apply_transform(observation)
         except BaseException:
-            self._episode_active = False
-            if bridge_start is not None:
-                # Cancelling to_thread does not stop its worker. Wait for
-                # startup to finish so it cannot race with bridge teardown.
-                try:
-                    await bridge_start
-                except Exception:
-                    pass
-            try:
-                await self.adapter.stop()
-            except Exception:
-                pass
-            finally:
-                await self._stop_bridge()
+            await self._cleanup_episode(bridge_start)
             raise
 
     def reset(
@@ -313,28 +300,54 @@ class HarnessEnvironment(MCPEnvironment):
             if self.rubric is not None:
                 observation.reward = await self._apply_rubric_async(action, observation)
             return self._apply_transform(observation)
-        except asyncio.CancelledError:
-            # An interrupted turn cannot safely resume the conversation. Keep
-            # cancellation visible to the caller after releasing resources.
-            self._episode_active = False
+        except BaseException:
+            # A failed or interrupted turn cannot safely resume. Preserve the
+            # original failure for the caller after releasing resources.
+            await self._cleanup_episode()
+            raise
+
+    async def _cleanup_episode(
+        self, bridge_start: Optional[asyncio.Task[str]] = None
+    ) -> None:
+        """Finish teardown even when the caller is cancelled repeatedly."""
+        self._episode_active = False
+
+        async def cleanup() -> None:
             try:
-                await self.adapter.stop()
-            except Exception:
-                pass
+                if bridge_start is not None:
+                    # Cancelling to_thread does not stop its worker. Startup
+                    # must finish before teardown can safely stop the bridge.
+                    try:
+                        await bridge_start
+                    except Exception:
+                        pass
             finally:
-                await self._stop_bridge()
+                try:
+                    await self.adapter.stop()
+                except Exception:
+                    pass
+                finally:
+                    await self._stop_bridge()
+
+        cleanup_task = asyncio.create_task(cleanup())
+        try:
+            await asyncio.shield(cleanup_task)
+        except asyncio.CancelledError:
+            # ASGI cancel scopes can cancel every await. Keep the cleanup in
+            # its own task and join it before allowing cancellation to escape.
+            while not cleanup_task.done():
+                try:
+                    await asyncio.shield(cleanup_task)
+                except asyncio.CancelledError:
+                    pass
+            cleanup_task.result()
             raise
 
     async def _terminal_error_observation(
         self, message: str, error_type: str
     ) -> Observation:
         """Stop the harness and return a terminal observation for a failed turn."""
-        try:
-            await self.adapter.stop()
-        except Exception:
-            pass
-        await self._stop_bridge()
-        self._episode_active = False
+        await self._cleanup_episode()
         error_event = HarnessEvent(
             type=HarnessEventType.ERROR,
             data={"message": message, "recoverable": False},
