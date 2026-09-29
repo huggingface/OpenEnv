@@ -236,6 +236,10 @@ class SchemaResponse(BaseMessage):
     state: Dict[str, Any] = Field(
         description="JSON schema for environment state objects"
     )
+    reset: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="JSON schema for reset parameters accepted by this environment",
+    )
 
 
 class HealthResponse(BaseMessage):

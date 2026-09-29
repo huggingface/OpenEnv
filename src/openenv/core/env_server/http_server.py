@@ -179,6 +179,7 @@ class HTTPEnvServer:
         concurrency_config: Optional[ConcurrencyConfig] = None,
         env_name: Optional[str] = None,
         state_cls: Type[State] = State,
+        reset_cls: Type[ResetRequest] = ResetRequest,
     ):
         """
         Initialize HTTP server wrapper.
@@ -203,6 +204,10 @@ class HTTPEnvServer:
                 The `State` subclass this environment reports. Used for the `/state`
                 response model and the `state` entry of `/schema`, so that fields
                 declared by the subclass are published and serialized.
+            reset_cls (`Type[ResetRequest]`, *optional*, defaults to `ResetRequest`):
+                The `ResetRequest` subclass describing this environment's reset parameters.
+                Published as the `reset` entry of `/schema`. It is not used to validate
+                reset requests.
 
         Raises:
             `ValueError`: If both `max_concurrent_envs` and `concurrency_config` are provided.
@@ -247,6 +252,7 @@ class HTTPEnvServer:
         self.action_cls = action_cls
         self.observation_cls = observation_cls
         self.state_cls = state_cls
+        self.reset_cls = reset_cls
         self.env_name = env_name or self._default_env_name()
 
         # Session management for WebSocket connections
@@ -1444,12 +1450,13 @@ The structure of the state object is defined by the environment's State model.
             tags=["Schema"],
             summary="Get all JSON schemas",
             description="""
-Get JSON schemas for actions, observations, and state in a single response.
+Get JSON schemas for actions, observations, state, and reset parameters in a single response.
 
 Returns a combined schema object containing:
 - **action**: JSON schema for actions accepted by this environment
 - **observation**: JSON schema for observations returned by this environment
 - **state**: JSON schema for environment state objects
+- **reset**: JSON schema for reset parameters accepted by this environment
 
 This is more efficient than calling individual schema endpoints and provides
 all schema information needed to interact with the environment.
@@ -1472,6 +1479,10 @@ all schema information needed to interact with the environment.
                                     "type": "object",
                                     "properties": {"step_count": {"type": "integer"}},
                                 },
+                                "reset": {
+                                    "type": "object",
+                                    "properties": {"seed": {"type": "integer"}},
+                                },
                             }
                         }
                     },
@@ -1484,6 +1495,7 @@ all schema information needed to interact with the environment.
                 action=self.action_cls.model_json_schema(),
                 observation=self.observation_cls.model_json_schema(),
                 state=self.state_cls.model_json_schema(),
+                reset=self.reset_cls.model_json_schema(),
             )
 
         # Register MCP endpoint for production mode (direct MCP access)
@@ -1781,6 +1793,7 @@ def create_app(
     show_default_tab: bool = True,
     title_override: Optional[str] = None,
     state_cls: Type[State] = State,
+    reset_cls: Type[ResetRequest] = ResetRequest,
 ) -> FastAPI:
     """
     Create a FastAPI application with or without web interface.
@@ -1822,6 +1835,9 @@ def create_app(
         state_cls (`Type[State]`, *optional*, defaults to `State`):
             The `State` subclass this environment reports, used for the `/state`
             response model and the `state` entry of `/schema`.
+        reset_cls (`Type[ResetRequest]`, *optional*, defaults to `ResetRequest`):
+            The `ResetRequest` subclass describing this environment's reset parameters,
+            published as the `reset` entry of `/schema`. Not used for validation.
 
     Returns:
         `FastAPI` application instance with or without web interface and README integration.
@@ -1846,6 +1862,7 @@ def create_app(
             max_concurrent_envs,
             concurrency_config,
             state_cls=state_cls,
+            reset_cls=reset_cls,
             gradio_builder=gradio_builder,
             custom_tab_name=custom_tab_name,
             custom_tab_primary=custom_tab_primary,
@@ -1862,6 +1879,7 @@ def create_app(
             concurrency_config,
             env_name=env_name,
             state_cls=state_cls,
+            reset_cls=reset_cls,
         )
 
 
@@ -1873,6 +1891,7 @@ def create_fastapi_app(
     concurrency_config: Optional[ConcurrencyConfig] = None,
     env_name: Optional[str] = None,
     state_cls: Type[State] = State,
+    reset_cls: Type[ResetRequest] = ResetRequest,
 ) -> FastAPI:
     """
     Create a FastAPI application with comprehensive documentation.
@@ -1895,6 +1914,9 @@ def create_fastapi_app(
         state_cls (`Type[State]`, *optional*, defaults to `State`):
             The `State` subclass this environment reports, used for the `/state`
             response model and the `state` entry of `/schema`.
+        reset_cls (`Type[ResetRequest]`, *optional*, defaults to `ResetRequest`):
+            The `ResetRequest` subclass describing this environment's reset parameters,
+            published as the `reset` entry of `/schema`. Not used for validation.
 
     Returns:
         `FastAPI` application instance.
@@ -1919,7 +1941,7 @@ HTTP API for interacting with OpenEnv environments through a standardized interf
 * **Environment Reset**: Initialize or restart episodes
 * **Action Execution**: Send actions and receive observations
 * **State Inspection**: Query current environment state
-* **Schema Access**: Retrieve JSON schemas for actions and observations
+* **Schema Access**: Retrieve JSON schemas for actions, observations, state, and reset parameters
 
 ## Workflow
 
@@ -1949,7 +1971,7 @@ HTTP API for interacting with OpenEnv environments through a standardized interf
             },
             {
                 "name": "Schema",
-                "description": "JSON Schema endpoints for actions, observations, and state",
+                "description": "JSON Schema endpoints for actions, observations, state, and reset parameters",
             },
             {"name": "Health", "description": "Service health and status checks"},
         ],
@@ -1974,6 +1996,7 @@ HTTP API for interacting with OpenEnv environments through a standardized interf
         concurrency_config=concurrency_config,
         env_name=env_name,
         state_cls=state_cls,
+        reset_cls=reset_cls,
     )
     server.register_routes(app)
     return app
