@@ -435,6 +435,8 @@ def create_web_interface_app(
     show_default_tab: bool = True,
     title_override: Optional[str] = None,
     state_cls: Type[State] = State,
+    *,
+    mode: Optional[Any] = None,
 ) -> FastAPI:
     """
     Create a FastAPI application with web interface for the given environment.
@@ -467,6 +469,9 @@ def create_web_interface_app(
             title instead of the default ``"OpenEnv Agentic Environment: {name}"``.
         state_cls: The State subclass this environment reports. Used for the /state
             response model and the state entry of /schema. Defaults to State.
+        mode: Server mode (``ServerMode`` or string). When ``None``, resolved
+            from the ``OPENENV_MODE`` environment variable, defaulting to
+            simulation.
 
     Returns:
         FastAPI application instance with web interface
@@ -482,6 +487,7 @@ def create_web_interface_app(
         concurrency_config,
         env_name=env_name,
         state_cls=state_cls,
+        mode=mode,
     )
 
     # Load environment metadata
