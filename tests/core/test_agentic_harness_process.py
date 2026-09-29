@@ -52,6 +52,8 @@ class TestLifecycle:
         await process.stop()
         await process.stop()
         assert process.is_running() is False
+        assert process._proc is None
+        assert process._reader_threads == []
 
     async def test_stop_before_start_is_noop(self):
         process = make_process("echo")
@@ -69,6 +71,41 @@ class TestLifecycle:
 
 
 class TestStartupFailures:
+    @pytest.mark.parametrize("cancel", [False, True])
+    async def test_interrupted_readiness_cleans_up_process(self, cancel):
+        process = make_process("echo")
+        checking = asyncio.Event()
+        resources = []
+
+        def check(line):
+            resources.append((process._proc, list(process._reader_threads)))
+            checking.set()
+            if not cancel:
+                raise ValueError("readiness check failed")
+            return False
+
+        start_task = asyncio.create_task(process.start(ready_check=check))
+        try:
+            await asyncio.wait_for(checking.wait(), timeout=10.0)
+            proc, readers = resources[0]
+            if cancel:
+                start_task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await start_task
+            else:
+                with pytest.raises(ValueError, match="readiness check failed"):
+                    await start_task
+
+            assert proc.poll() is not None
+            assert all(s.closed for s in (proc.stdin, proc.stdout, proc.stderr))
+            assert all(not thread.is_alive() for thread in readers)
+            assert process._proc is None
+        finally:
+            if not start_task.done():
+                start_task.cancel()
+            await asyncio.gather(start_task, return_exceptions=True)
+            await process.stop()
+
     async def test_startup_timeout_kills_process(self):
         process = make_process("slow-start", startup_timeout_s=0.5)
         with pytest.raises(HarnessStartupError, match="did not become ready"):
@@ -89,6 +126,40 @@ class TestStartupFailures:
 
 
 class TestCrashDetection:
+    @pytest.mark.parametrize("restart_fails", [False, True])
+    async def test_restart_cleans_up_exited_process(self, restart_fails):
+        process = make_process("crash-after-echo")
+        await process.start(ready_check=ready)
+        old_proc = process._proc
+        old_readers = list(process._reader_threads)
+        try:
+            await process.write_line("old turn")
+            assert await asyncio.to_thread(old_proc.wait, timeout=10.0) == 1
+
+            if restart_fails:
+                process.command = ["/nonexistent/definitely-not-a-binary"]
+                with pytest.raises(HarnessStartupError, match="failed to spawn"):
+                    await process.start()
+            else:
+                await process.start(ready_check=ready)
+
+            assert all(
+                stream.closed
+                for stream in (old_proc.stdin, old_proc.stdout, old_proc.stderr)
+            )
+            assert all(not thread.is_alive() for thread in old_readers)
+
+            if not restart_fails:
+                await process.write_line("new turn")
+                assert await process.read_line(timeout_s=10.0) == "echo:new turn"
+        finally:
+            await process.stop()
+            # Also release the original handles if a regression loses them.
+            for stream in (old_proc.stdin, old_proc.stdout, old_proc.stderr):
+                stream.close()
+            for thread in old_readers:
+                thread.join(timeout=2.0)
+
     async def test_crash_mid_session(self):
         process = make_process("crash-after-echo")
         await process.start(ready_check=ready)

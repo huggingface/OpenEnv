@@ -4,8 +4,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import threading
 from typing import AsyncIterator, Optional
 
+import pytest
 from fastmcp import Client, FastMCP
 from openenv.core.harness import (
     AgenticHarnessAdapter,
@@ -99,6 +102,49 @@ class TestBridgeStandalone:
 
 
 class TestBridgeEnvironmentIntegration:
+    async def test_cancelled_reset_waits_for_bridge_start_before_stopping(
+        self, monkeypatch
+    ):
+        entered = threading.Event()
+        release = threading.Event()
+        finished = threading.Event()
+        server_threads = []
+        original_start = HarnessMCPBridge.start
+
+        def delayed_start(bridge):
+            entered.set()
+            try:
+                assert release.wait(timeout=10.0)
+                url = original_start(bridge)
+                server_threads.append(bridge._thread)
+                return url
+            finally:
+                finished.set()
+
+        monkeypatch.setattr(HarnessMCPBridge, "start", delayed_start)
+        adapter = RecordingAdapter()
+        env = HarnessEnvironment(adapter=adapter, mcp=make_mcp())
+        reset_task = asyncio.create_task(env.reset_async())
+        try:
+            assert await asyncio.to_thread(entered.wait, 10.0)
+            reset_task.cancel()
+            await asyncio.sleep(0)
+            release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(reset_task, timeout=15.0)
+            assert await asyncio.to_thread(finished.wait, 10.0)
+            assert server_threads
+            assert not server_threads[0].is_alive()
+            assert env._bridge.url is None
+            assert adapter.alive is False
+        finally:
+            release.set()
+            if not reset_task.done():
+                reset_task.cancel()
+            await asyncio.gather(reset_task, return_exceptions=True)
+            await asyncio.to_thread(finished.wait, 10.0)
+            env.close()
+
     async def test_reset_passes_live_bridge_url(self):
         adapter = RecordingAdapter()
         env = HarnessEnvironment(adapter=adapter, mcp=make_mcp())

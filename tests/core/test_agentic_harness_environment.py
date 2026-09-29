@@ -361,7 +361,157 @@ class TestSyncFacadeAndClose:
         assert env.SUPPORTS_CONCURRENT_SESSIONS is False
 
 
+class TestTransforms:
+    @pytest.mark.parametrize("sync", [False, True])
+    async def test_reset_and_turn_apply_transform_once_after_rubric(self, sync):
+        seen = []
+
+        def transform(observation):
+            seen.append(observation)
+            return observation.model_copy(
+                update={
+                    "reward": observation.reward + 1.0,
+                    "metadata": {**observation.metadata, "transformed": True},
+                }
+            )
+
+        rubric = SpyRubric()
+        env, adapter = make_env(rubric=rubric, transform=transform)
+        adapter.scripted_turns = [turn_events("first"), turn_events("last", True)]
+        try:
+            reset_obs = env.reset() if sync else await env.reset_async()
+            assert reset_obs.metadata["transformed"] is True
+            assert reset_obs.reward == 1.0
+            assert len(seen) == 1
+
+            for message, done in [("first", False), ("last", True)]:
+                action = HarnessAction(message=message)
+                obs = env.step(action) if sync else await env.step_async(action)
+                assert obs.metadata["transformed"] is True
+                assert obs.metadata["response"] == message
+                assert obs.done is done
+                assert obs.reward == 1.75
+                assert rubric.seen[-1][1] is seen[-1]
+                assert "transformed" not in rubric.seen[-1][1].metadata
+            assert len(seen) == 3
+        finally:
+            env.close()
+
+    @pytest.mark.parametrize(
+        "failure, value, error_type",
+        [
+            ("alive", False, "harness_crashed"),
+            ("fail_on_send", True, "harness_crashed"),
+            ("raise_turn_timeout", True, "turn_timeout"),
+            ("send_delay_s", 5.0, "turn_timeout"),
+        ],
+    )
+    async def test_terminal_errors_apply_transform(self, failure, value, error_type):
+        seen = []
+
+        def transform(observation):
+            seen.append(observation)
+            return observation.model_copy(
+                update={"metadata": {**observation.metadata, "transformed": True}}
+            )
+
+        env, adapter = make_env(transform=transform)
+        try:
+            await env.reset_async()
+            seen.clear()
+            setattr(adapter, failure, value)
+            obs = await env.step_async(HarnessAction(message="go"), timeout_s=0.05)
+            assert obs.done is True
+            assert obs.metadata["error_type"] == error_type
+            assert obs.metadata["transformed"] is True
+            assert len(seen) == 1
+            assert seen[0].metadata["turn_events"] == obs.metadata["turn_events"]
+        finally:
+            env.close()
+
+
 class TestCleanupAndErrorClassification:
+    @pytest.mark.parametrize("stage", ["is_alive", "send_message", "rubric"])
+    @pytest.mark.parametrize("stop_fails", [False, True])
+    async def test_cancelled_turn_cleans_up_resources(
+        self, stage, stop_fails, monkeypatch
+    ):
+        env, adapter = make_env(rubric=SpyRubric())
+        await env.reset_async()
+        entered = asyncio.Event()
+        target = env if stage == "rubric" else adapter
+        method = "_apply_rubric_async" if stage == "rubric" else stage
+        original = getattr(target, method)
+        original_stop = adapter.stop
+
+        async def stall(*args, **kwargs):
+            await original(*args, **kwargs)
+            entered.set()
+            await asyncio.Event().wait()
+
+        async def failing_stop():
+            await original_stop()
+            raise HarnessError("cleanup failed")
+
+        monkeypatch.setattr(target, method, stall)
+        if stop_fails:
+            monkeypatch.setattr(adapter, "stop", failing_stop)
+        turn_task = asyncio.create_task(env.step_async(HarnessAction(message="go")))
+        try:
+            await asyncio.wait_for(entered.wait(), timeout=10.0)
+            turn_task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await turn_task
+
+            assert adapter.alive is False
+            assert adapter.calls[-1] == "stop"
+            assert FakeBridge.instances[0].stopped >= 1
+            with pytest.raises(HarnessNotRunningError):
+                await env.step_async(HarnessAction(message="again"))
+
+            monkeypatch.setattr(target, method, original)
+            monkeypatch.setattr(adapter, "stop", original_stop)
+            await env.reset_async()
+            obs = await env.step_async(HarnessAction(message="fresh turn"))
+            assert obs.metadata["response"] == "default response"
+        finally:
+            if not turn_task.done():
+                turn_task.cancel()
+            await asyncio.gather(turn_task, return_exceptions=True)
+            env.close()
+
+    @pytest.mark.parametrize("stage", ["inject_tools", "start", "rubric"])
+    async def test_cancelled_reset_cleans_up_resources(self, stage, monkeypatch):
+        env, adapter = make_env(rubric=SpyRubric())
+        entered = asyncio.Event()
+        target = env if stage == "rubric" else adapter
+        method = "_reset_rubric_async" if stage == "rubric" else stage
+        original = getattr(target, method)
+
+        async def stall(*args, **kwargs):
+            await original(*args, **kwargs)
+            entered.set()
+            await asyncio.Event().wait()
+
+        monkeypatch.setattr(target, method, stall)
+        reset_task = asyncio.create_task(env.reset_async())
+        try:
+            await asyncio.wait_for(entered.wait(), timeout=10.0)
+            reset_task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await reset_task
+
+            assert adapter.alive is False
+            assert adapter.calls[-1] == "stop"
+            assert FakeBridge.instances[0].stopped >= 1
+            with pytest.raises(HarnessNotRunningError):
+                await env.step_async(HarnessAction(message="go"))
+        finally:
+            if not reset_task.done():
+                reset_task.cancel()
+            await asyncio.gather(reset_task, return_exceptions=True)
+            env.close()
+
     async def test_reset_stops_adapter_even_when_not_alive(self):
         # A harness that died on its own reports is_alive() False while still
         # holding reapable resources; skipping stop() leaked them.

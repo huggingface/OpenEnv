@@ -97,6 +97,10 @@ class HarnessProcess:
         if self.is_running():
             raise HarnessStartupError("harness process is already running")
 
+        # An exited process can still own open pipes and reader threads.
+        # Release them before replacing any of its lifecycle state.
+        await self.stop()
+
         try:
             self._proc = subprocess.Popen(
                 self.command,
@@ -121,42 +125,48 @@ class HarnessProcess:
                 f"failed to spawn harness process {self.command!r}: {exc}"
             ) from exc
 
-        stdout_queue: queue.Queue[Optional[str]] = queue.Queue()
-        self._stdout_queue = stdout_queue
-        self._stderr_tail = deque(maxlen=_STDERR_TAIL_LINES)
-        self._reader_threads = [
-            self._spawn_reader(
-                self._proc.stdout,
-                lambda line: stdout_queue.put(line.rstrip("\n")),
-                on_eof=lambda: stdout_queue.put(None),
-            ),
-            self._spawn_reader(self._proc.stderr, self._stderr_tail.append),
-        ]
+        try:
+            stdout_queue: queue.Queue[Optional[str]] = queue.Queue()
+            self._stdout_queue = stdout_queue
+            self._stderr_tail = deque(maxlen=_STDERR_TAIL_LINES)
+            self._reader_threads = [
+                self._spawn_reader(
+                    self._proc.stdout,
+                    lambda line: stdout_queue.put(line.rstrip("\n")),
+                    on_eof=lambda: stdout_queue.put(None),
+                ),
+                self._spawn_reader(self._proc.stderr, self._stderr_tail.append),
+            ]
 
-        if ready_check is None:
-            return
+            if ready_check is None:
+                return
 
-        deadline = time.monotonic() + self.startup_timeout_s
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                await self.stop()
-                raise HarnessStartupError(
-                    f"harness did not become ready within {self.startup_timeout_s}s; "
-                    f"stderr tail:\n{self.drain_stderr()}"
-                )
-            line = await self.read_line(timeout_s=min(remaining, 0.2))
-            if line is None:
-                if not self.is_running():
-                    exit_code = self._proc.poll()
+            deadline = time.monotonic() + self.startup_timeout_s
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
                     await self.stop()
                     raise HarnessStartupError(
-                        f"harness exited with code {exit_code} during startup; "
+                        f"harness did not become ready within {self.startup_timeout_s}s; "
                         f"stderr tail:\n{self.drain_stderr()}"
                     )
-                continue
-            if ready_check(line):
-                return
+                line = await self.read_line(timeout_s=min(remaining, 0.2))
+                if line is None:
+                    if not self.is_running():
+                        exit_code = self._proc.poll()
+                        await self.stop()
+                        raise HarnessStartupError(
+                            f"harness exited with code {exit_code} during startup; "
+                            f"stderr tail:\n{self.drain_stderr()}"
+                        )
+                    continue
+                if ready_check(line):
+                    return
+        except BaseException:
+            # CancelledError and readiness predicate failures must also reap
+            # the process and close its pipes before propagating to callers.
+            await self.stop()
+            raise
 
     async def stop(self) -> None:
         """
@@ -169,6 +179,7 @@ class HarnessProcess:
         if proc is None:
             return
         await asyncio.to_thread(self._stop_blocking, proc)
+        self._proc = None
 
     def _stop_blocking(self, proc: subprocess.Popen) -> None:
         if proc.poll() is None:

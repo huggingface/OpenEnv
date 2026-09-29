@@ -136,26 +136,30 @@ class HarnessEnvironment(MCPEnvironment):
         # Unconditional: stop() is contractually idempotent, and a harness that
         # died on its own still holds reapable resources (pipes, reader threads,
         # an unwaited process) that is_alive() reports nothing about.
-        await self.adapter.stop()
-        await self._stop_bridge()
-
-        tools = await self._collect_injectable_tools()
-        resolved = resolve_tool_conflicts(tools, self.adapter.BUILTIN_TOOL_NAMES)
-
-        bridge_url: Optional[str] = None
-        if resolved:
-            # The bridge must serve the tools under the names we inject, so a
-            # tool renamed by conflict resolution stays callable.
-            renames = {
-                new.name: old.name
-                for new, old in zip(resolved, tools)
-                if new.name != old.name
-            }
-            served = await build_bridge_server(self._require_mcp_server(), renames)
-            self._bridge = HarnessMCPBridge(served)
-            bridge_url = await asyncio.to_thread(self._bridge.start)
-
+        bridge_start: Optional[asyncio.Task[str]] = None
         try:
+            await self.adapter.stop()
+            await self._stop_bridge()
+
+            tools = await self._collect_injectable_tools()
+            resolved = resolve_tool_conflicts(tools, self.adapter.BUILTIN_TOOL_NAMES)
+
+            bridge_url: Optional[str] = None
+            if resolved:
+                # The bridge must serve the tools under the names we inject, so a
+                # tool renamed by conflict resolution stays callable.
+                renames = {
+                    new.name: old.name
+                    for new, old in zip(resolved, tools)
+                    if new.name != old.name
+                }
+                served = await build_bridge_server(self._require_mcp_server(), renames)
+                self._bridge = HarnessMCPBridge(served)
+                bridge_start = asyncio.create_task(
+                    asyncio.to_thread(self._bridge.start)
+                )
+                bridge_url = await asyncio.shield(bridge_start)
+
             await self.adapter.inject_tools(resolved, bridge_url)
             await self.adapter.start(self.adapter.config.working_directory)
 
@@ -166,26 +170,33 @@ class HarnessEnvironment(MCPEnvironment):
             self._trajectory = []
             if self.rubric is not None:
                 await self._reset_rubric_async()
-        except Exception:
-            # Best effort: no harness or bridge may outlive a failed reset,
-            # including failures initializing episode state or the rubric.
+            self._episode_active = True
+
+            observation = Observation(
+                done=False,
+                reward=0.0,
+                metadata={
+                    "episode_id": self._state.episode_id,
+                    "injected_tools": [tool.name for tool in resolved],
+                },
+            )
+            return self._apply_transform(observation)
+        except BaseException:
+            self._episode_active = False
+            if bridge_start is not None:
+                # Cancelling to_thread does not stop its worker. Wait for
+                # startup to finish so it cannot race with bridge teardown.
+                try:
+                    await bridge_start
+                except Exception:
+                    pass
             try:
                 await self.adapter.stop()
             except Exception:
                 pass
-            await self._stop_bridge()
+            finally:
+                await self._stop_bridge()
             raise
-
-        self._episode_active = True
-
-        return Observation(
-            done=False,
-            reward=0.0,
-            metadata={
-                "episode_id": self._state.episode_id,
-                "injected_tools": [tool.name for tool in resolved],
-            },
-        )
 
     def reset(
         self,
@@ -253,54 +264,66 @@ class HarnessEnvironment(MCPEnvironment):
             raise HarnessNotRunningError(
                 "No active episode; call reset() before step()"
             )
-        if not await self.adapter.is_alive():
-            return await self._terminal_error_observation(
-                "harness process is not running",
-                error_type="harness_crashed",
-            )
-
-        timeout = (
-            timeout_s
-            if timeout_s is not None
-            else (self.adapter.config.session_timeout_s)
-        )
         try:
-            harness_response = await asyncio.wait_for(
-                self.adapter.send_message(action.message), timeout
-            )
-        except asyncio.TimeoutError:
-            return await self._terminal_error_observation(
-                f"harness turn exceeded {timeout} seconds",
-                error_type="turn_timeout",
-            )
-        except HarnessTurnTimeoutError as exc:
-            # Must precede HarnessError: an adapter that raises the dedicated
-            # timeout exception means a timeout, not a crash.
-            return await self._terminal_error_observation(
-                str(exc),
-                error_type="turn_timeout",
-            )
-        except HarnessError as exc:
-            return await self._terminal_error_observation(
-                str(exc),
-                error_type="harness_crashed",
-            )
+            if not await self.adapter.is_alive():
+                return await self._terminal_error_observation(
+                    "harness process is not running",
+                    error_type="harness_crashed",
+                )
 
-        self._trajectory.extend(harness_response.events)
-        self._state.step_count += 1
+            timeout = (
+                timeout_s
+                if timeout_s is not None
+                else (self.adapter.config.session_timeout_s)
+            )
+            try:
+                harness_response = await asyncio.wait_for(
+                    self.adapter.send_message(action.message), timeout
+                )
+            except asyncio.TimeoutError:
+                return await self._terminal_error_observation(
+                    f"harness turn exceeded {timeout} seconds",
+                    error_type="turn_timeout",
+                )
+            except HarnessTurnTimeoutError as exc:
+                # Must precede HarnessError: an adapter that raises the dedicated
+                # timeout exception means a timeout, not a crash.
+                return await self._terminal_error_observation(
+                    str(exc),
+                    error_type="turn_timeout",
+                )
+            except HarnessError as exc:
+                return await self._terminal_error_observation(
+                    str(exc),
+                    error_type="harness_crashed",
+                )
 
-        observation = Observation(
-            done=harness_response.done,
-            reward=0.0,
-            metadata={
-                "response": harness_response.response,
-                "turn_events": events_to_metadata(harness_response.events),
-                "turn_number": self._state.step_count,
-            },
-        )
-        if self.rubric is not None:
-            observation.reward = await self._apply_rubric_async(action, observation)
-        return observation
+            self._trajectory.extend(harness_response.events)
+            self._state.step_count += 1
+
+            observation = Observation(
+                done=harness_response.done,
+                reward=0.0,
+                metadata={
+                    "response": harness_response.response,
+                    "turn_events": events_to_metadata(harness_response.events),
+                    "turn_number": self._state.step_count,
+                },
+            )
+            if self.rubric is not None:
+                observation.reward = await self._apply_rubric_async(action, observation)
+            return self._apply_transform(observation)
+        except asyncio.CancelledError:
+            # An interrupted turn cannot safely resume the conversation. Keep
+            # cancellation visible to the caller after releasing resources.
+            self._episode_active = False
+            try:
+                await self.adapter.stop()
+            except Exception:
+                pass
+            finally:
+                await self._stop_bridge()
+            raise
 
     async def _terminal_error_observation(
         self, message: str, error_type: str
@@ -317,7 +340,7 @@ class HarnessEnvironment(MCPEnvironment):
             data={"message": message, "recoverable": False},
         )
         self._trajectory.append(error_event)
-        return Observation(
+        observation = Observation(
             done=True,
             reward=0.0,
             metadata={
@@ -326,6 +349,7 @@ class HarnessEnvironment(MCPEnvironment):
                 "turn_events": events_to_metadata([error_event]),
             },
         )
+        return self._apply_transform(observation)
 
     async def _collect_injectable_tools(self) -> list[Tool]:
         """
