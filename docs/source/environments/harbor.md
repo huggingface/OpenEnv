@@ -259,8 +259,8 @@ different agents and different backends.
 
 ## CLI reference
 
-Four commands. Every flag below is the complete set, with its type and default. `openenv harbor
-<command> --help` prints the same thing.
+Four commands. Every flag below is the complete set, with its type and default.
+`openenv harbor <command> --help` prints the same thing.
 
 Exit codes:
 
@@ -348,7 +348,6 @@ Start the env server: Task API for discovery, one long-running `run_rollout` MCP
 | `--capture-port` | int | `8100` | Capture proxy port. Faces the sandbox |
 | `--expose` | str | `gradio` | How the sandbox reaches the proxy |
 | `--env-file` | path | `""` | dotenv with provider credentials |
-
 | `--api-key` | str | `$OPENENV_LLM_API_KEY` | Credential for the endpoint, for a hosted provider |
 | `--auth-header` | str | `Authorization` | Header to send it under, e.g. `x-api-key` |
 
