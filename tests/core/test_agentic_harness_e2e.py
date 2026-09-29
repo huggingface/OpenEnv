@@ -127,11 +127,13 @@ def make_mcp() -> FastMCP:
 
 
 @pytest.fixture
-def env_factory(tmp_path_factory):
+def env_factory(tmp_path_factory, request):
+    scripted_mode = getattr(request, "param", "mcp")
+
     def factory() -> HarnessEnvironment:
         config = HarnessConfig(
             name="scripted-cli",
-            command=[sys.executable, "-u", str(SCRIPTED_HARNESS), "mcp"],
+            command=[sys.executable, "-u", str(SCRIPTED_HARNESS), scripted_mode],
             working_directory=".",
             startup_timeout_s=20.0,
             session_timeout_s=60.0,
@@ -237,3 +239,13 @@ class TestProductionEndToEnd:
                 if frame["type"] == "turn_complete":
                     break
             assert frame["data"]["done"] is True
+
+    @pytest.mark.parametrize("env_factory", ["exit-with-secret"], indirect=True)
+    def test_startup_stderr_is_not_sent_to_websocket_client(self, live_server):
+        with ws_connect(f"ws://127.0.0.1:{live_server}/harness") as websocket:
+            frame = json.loads(websocket.recv(timeout=30))
+            assert frame["type"] == "error"
+            assert frame["data"]["code"] == "SESSION_ERROR"
+            assert frame["data"]["message"] == "harness session failed"
+            assert "FAKE_HARNESS_SECRET_FOR_TEST" not in json.dumps(frame)
+            assert "stderr tail" not in json.dumps(frame)

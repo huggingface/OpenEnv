@@ -141,6 +141,47 @@ class TestRouteRegistration:
 
 
 class TestHarnessWebSocket:
+    @pytest.mark.parametrize("phase", ["factory", "startup", "turn"])
+    def test_internal_errors_do_not_expose_credentials(self, phase):
+        secret = "FAKE_HARNESS_SECRET_FOR_TEST"
+        failing = False
+
+        class SensitiveAdapter(FakeAdapter):
+            async def start(self, working_directory):
+                if failing and phase == "startup":
+                    raise RuntimeError(f"Authorization: Bearer {secret}")
+                await super().start(working_directory)
+
+            async def send_message_streaming(self, message):
+                if failing and phase == "turn":
+                    raise RuntimeError(f"Authorization: Bearer {secret}")
+                async for event in super().send_message_streaming(message):
+                    yield event
+
+        def factory():
+            if failing and phase == "factory":
+                raise RuntimeError(f"Authorization: Bearer {secret}")
+            return HarnessEnvironment(adapter=SensitiveAdapter(), mcp=None)
+
+        app, server = make_app(ServerMode.PRODUCTION, env_factory=factory)
+        failing = True
+        with TestClient(app) as client:
+            with client.websocket_connect("/harness") as websocket:
+                if phase == "turn":
+                    assert websocket.receive_json()["type"] == "session_started"
+                    websocket.send_json({"type": "message", "content": "hello"})
+                error = websocket.receive_json()
+                assert error["type"] == "error"
+                assert secret not in json.dumps(error)
+                if phase == "turn":
+                    assert error["data"]["recoverable"] is False
+                else:
+                    assert error["data"]["code"] == (
+                        "FACTORY_ERROR" if phase == "factory" else "SESSION_ERROR"
+                    )
+
+        assert server.active_sessions == 0
+
     def test_session_started_then_streamed_turns(self):
         app, server = make_app(ServerMode.PRODUCTION)
         client = TestClient(app)
@@ -226,7 +267,7 @@ class TestHarnessWebSocket:
             error_event = json.loads(websocket.receive_text())
             assert error_event["type"] == "error"
             assert error_event["data"]["recoverable"] is False
-            assert "adapter blew up" in error_event["data"]["message"]
+            assert error_event["data"]["message"] == "harness turn failed"
 
         assert server.active_sessions == 0
 

@@ -15,6 +15,9 @@ Modes:
   echo             - print ``ready``, then echo each stdin line.
   slow-start       - sleep past any startup timeout before printing ``ready``.
   exit-now         - print to stderr and exit with code 3.
+  exit-with-secret - print a fake credential to stderr, then exit with code 3.
+  spawn-descendant - spawn a SIGTERM-ignoring child with inherited pipes.
+  descendant       - print its PID, ignore SIGTERM, and sleep.
   exit-with-output - print multiple lines, including an unterminated final line.
   close-stdout     - close stdout on request, then wait on stdin without exiting.
   crash-after-echo - ``ready``, echo one line, then exit with code 1.
@@ -28,6 +31,7 @@ import asyncio
 import json
 import os
 import signal
+import subprocess
 import sys
 import time
 
@@ -93,6 +97,24 @@ def mode_exit_now() -> None:
     sys.exit(3)
 
 
+def mode_exit_with_secret() -> None:
+    print("FAKE_HARNESS_SECRET_FOR_TEST", file=sys.stderr, flush=True)
+    sys.exit(3)
+
+
+def mode_spawn_descendant() -> None:
+    print("ready", flush=True)
+    subprocess.Popen([sys.executable, "-u", __file__, "descendant"])
+    sys.stdin.readline()
+    sys.exit(1)
+
+
+def mode_descendant() -> None:
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    print(os.getpid(), flush=True)
+    time.sleep(60)
+
+
 def mode_crash_after_echo() -> None:
     print("ready", flush=True)
     line = sys.stdin.readline()
@@ -125,6 +147,9 @@ MODES = {
     "unicode-echo": mode_unicode_echo,
     "slow-start": mode_slow_start,
     "exit-now": mode_exit_now,
+    "exit-with-secret": mode_exit_with_secret,
+    "spawn-descendant": mode_spawn_descendant,
+    "descendant": mode_descendant,
     "exit-with-output": mode_exit_with_output,
     "close-stdout": mode_close_stdout,
     "crash-after-echo": mode_crash_after_echo,

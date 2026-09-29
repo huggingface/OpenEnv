@@ -785,10 +785,15 @@ class HTTPEnvServer:
                                 f"harness turn exceeded {turn_timeout_s} seconds"
                             )
                             break
-                        except Exception as e:
+                        except HarnessNotRunningError:
+                            await send_harness_error("harness process is not running")
+                            break
+                        except Exception:
                             # Harness state after a crash is undefined; end
                             # the session so a reconnect gets a fresh one.
-                            await send_harness_error(str(e))
+                            # Adapter exceptions can contain credentials or
+                            # subprocess output; do not expose them to clients.
+                            await send_harness_error("harness turn failed")
                             break
 
                         if not completed:
@@ -808,9 +813,11 @@ class HTTPEnvServer:
                 await send_error(str(e), WSErrorCode.CAPACITY_REACHED)
             except EnvironmentFactoryError as e:
                 await send_error(str(e), WSErrorCode.FACTORY_ERROR)
-            except Exception as e:
+            except Exception:
                 try:
-                    await send_error(str(e), WSErrorCode.SESSION_ERROR)
+                    await send_error(
+                        "harness session failed", WSErrorCode.SESSION_ERROR
+                    )
                 except (RuntimeError, WebSocketDisconnect):
                     pass
             finally:

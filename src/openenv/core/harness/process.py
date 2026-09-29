@@ -121,9 +121,7 @@ class HarnessProcess:
             )
         except OSError as exc:
             self._proc = None
-            raise HarnessStartupError(
-                f"failed to spawn harness process {self.command!r}: {exc}"
-            ) from exc
+            raise HarnessStartupError("failed to spawn harness process") from exc
 
         try:
             stdout_queue: queue.Queue[Optional[str]] = queue.Queue()
@@ -147,8 +145,7 @@ class HarnessProcess:
                 if remaining <= 0:
                     await self.stop()
                     raise HarnessStartupError(
-                        f"harness did not become ready within {self.startup_timeout_s}s; "
-                        f"stderr tail:\n{self.drain_stderr()}"
+                        f"harness did not become ready within {self.startup_timeout_s}s"
                     )
                 line = await self.read_line(timeout_s=min(remaining, 0.2))
                 if line is None:
@@ -156,8 +153,7 @@ class HarnessProcess:
                         exit_code = self._proc.poll()
                         await self.stop()
                         raise HarnessStartupError(
-                            f"harness exited with code {exit_code} during startup; "
-                            f"stderr tail:\n{self.drain_stderr()}"
+                            f"harness exited with code {exit_code} during startup"
                         )
                     continue
                 if ready_check(line):
@@ -182,28 +178,39 @@ class HarnessProcess:
         self._proc = None
 
     def _stop_blocking(self, proc: subprocess.Popen) -> None:
-        if proc.poll() is None:
-            self._signal_group(proc, signal.SIGTERM)
+        # start_new_session=True makes proc.pid the process-group ID. The
+        # group can outlive its leader, including after proc.poll() reaps it.
+        self._signal_group(proc, signal.SIGTERM)
+        deadline = time.monotonic() + self.terminate_grace_s
+        while True:
+            proc.poll()
             try:
-                proc.wait(timeout=self.terminate_grace_s)
-            except subprocess.TimeoutExpired:
+                os.killpg(proc.pid, 0)
+            except ProcessLookupError:
+                break
+            if time.monotonic() >= deadline:
                 self._signal_group(proc, signal.SIGKILL)
-                proc.wait()
-        for stream in (proc.stdin, proc.stdout, proc.stderr):
-            if stream is not None:
-                try:
-                    stream.close()
-                except OSError:
-                    pass
+                break
+            time.sleep(0.01)
+        proc.wait()
+
+        # Readers close their own streams after EOF. Closing a TextIOWrapper
+        # from here can block on its reader lock while a descendant owns the
+        # other end of the pipe. Only join readers with a bounded wait.
         for thread in self._reader_threads:
             thread.join(timeout=2.0)
+        if proc.stdin is not None:
+            try:
+                proc.stdin.close()
+            except OSError:
+                pass
         self._reader_threads = []
 
     @staticmethod
     def _signal_group(proc: subprocess.Popen, sig: signal.Signals) -> None:
         """Signal the process group (start_new_session=True) with a fallback."""
         try:
-            os.killpg(os.getpgid(proc.pid), sig)
+            os.killpg(proc.pid, sig)
         except (ProcessLookupError, PermissionError, OSError):
             try:
                 proc.send_signal(sig)
@@ -284,6 +291,8 @@ class HarnessProcess:
                 # errors="replace".
                 pass
             finally:
+                if stream is not None:
+                    stream.close()
                 if on_eof is not None:
                     on_eof()
 
