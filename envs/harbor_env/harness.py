@@ -43,8 +43,9 @@ from openenv.core.harness import (
     VerifyResult,
 )
 from openenv.core.harness.capture.upstream import training_sampling
+from openenv.core.harness.training import TrainingTrace
 from openenv.harbor.client import HarborEnv
-from openenv.harbor.contract import to_trace_entries
+from openenv.harbor.contract import to_trace_entries, to_training_trace
 from openenv.harbor.models import HarborRolloutResult
 
 logger = logging.getLogger(__name__)
@@ -321,6 +322,12 @@ class HarborSession(ResourceSession):
                 tokens,
                 getattr(result, "n_turns", -1),
             )
+
+    def fetch_training_trace(self) -> TrainingTrace:
+        """Return producer-validated tokens and masks after the rollout finishes."""
+        if self.result is None:
+            raise RuntimeError("rollout produced no capture")
+        return to_training_trace(self.result)
 
     def fetch_proxy_trace(self) -> list[dict[str, Any]]:
         """Per-turn captured records, in TRL's `TraceEntry` shape.
