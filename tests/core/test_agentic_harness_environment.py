@@ -182,12 +182,14 @@ class TestReset:
         await env.reset_async()
         bridge = env._bridge
         bridge.fail_on_stop = True
+        stop_count = bridge.stopped
         adapter.calls.clear()
 
         with pytest.raises(HarnessError, match="bridge shutdown timed out"):
             await env.reset_async()
 
         assert env._bridge is bridge
+        assert bridge.stopped == stop_count + 1
         assert FakeBridge.instances == [bridge]
         assert "inject_tools" not in adapter.calls
         assert "start" not in adapter.calls
@@ -199,6 +201,29 @@ class TestReset:
         await env.reset_async()
         assert env._bridge is not bridge
         assert adapter.alive is True
+        env.close()
+
+    async def test_cancelled_bridge_stop_still_cleans_up(self, monkeypatch):
+        env, adapter = make_env()
+        await env.reset_async()
+        bridge = env._bridge
+        stop = bridge.stop
+
+        def cancel_once():
+            stop()
+            if bridge.stopped == 1:
+                raise asyncio.CancelledError()
+
+        monkeypatch.setattr(bridge, "stop", cancel_once)
+        with pytest.raises(asyncio.CancelledError):
+            await env.reset_async()
+
+        assert bridge.stopped == 2
+        assert env._bridge is bridge
+        assert FakeBridge.instances == [bridge]
+        assert adapter.alive is False
+        with pytest.raises(HarnessNotRunningError):
+            await env.step_async(HarnessAction(message="go"))
         env.close()
 
     async def test_reset_clears_trajectory_and_resets_rubric(self):

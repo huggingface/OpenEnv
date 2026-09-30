@@ -137,11 +137,16 @@ class HarnessEnvironment(MCPEnvironment):
         # died on its own still holds reapable resources (pipes, reader threads,
         # an unwaited process) that is_alive() reports nothing about.
         bridge_start: Optional[asyncio.Task[str]] = None
+        bridge_stop_failed = False
         try:
             await self.adapter.stop()
             if self._bridge is not None:
                 # A failed shutdown must not be replaced by another live bridge.
-                await asyncio.to_thread(self._bridge.stop)
+                try:
+                    await asyncio.to_thread(self._bridge.stop)
+                except Exception:
+                    bridge_stop_failed = True
+                    raise
 
             tools = await self._collect_injectable_tools()
             resolved = resolve_tool_conflicts(tools, self.adapter.BUILTIN_TOOL_NAMES)
@@ -184,7 +189,10 @@ class HarnessEnvironment(MCPEnvironment):
             )
             return self._apply_transform(observation)
         except BaseException:
-            await self._cleanup_episode(bridge_start)
+            # The adapter is already stopped when bridge shutdown fails. Keep
+            # the bridge for a later retry without spending its timeout twice.
+            if not bridge_stop_failed:
+                await self._cleanup_episode(bridge_start)
             raise
 
     def reset(
