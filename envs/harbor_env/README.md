@@ -295,7 +295,14 @@ Hugging Face Sandbox on a Space.
 **Runs.** Every run you may see, filterable by status. A run shows what the agent did as a timeline
 (its prompt, thinking, each tool call with its input and output, terminal sessions, the final
 answer), the result and reward, the trace checks, and downloads of the result JSON and, for a
-trainable rollout, the training contract. Tick two to four runs to compare them.
+trainable rollout, the **Training trace** and **Capture audit**. The training trace is the same
+validated `TrainingTrace` returned by `HarborSession.fetch_training_trace()`: selected agent calls,
+engine token IDs, logprobs and explicit loss masks. Load it with
+`TrainingTrace.model_validate_json(Path("run.training_trace.json").read_text())` after importing
+`Path` from `pathlib` and `TrainingTrace` from `openenv.core.harness`. Task rewards and the full
+rollout remain in Result JSON. Capture audit preserves the existing `contract.json` export,
+including excluded turns. Older runs without explicit masks can still download their audit but
+cannot produce the typed training trace. Tick two to four runs to compare them.
 
 **Setup.** The server's endpoint, which sandboxes have working credentials, the deployment settings
 below, the datasets and the agents.
