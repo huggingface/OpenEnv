@@ -149,6 +149,8 @@ class HarnessMCPBridge:
                 If the server fails to start within the timeout.
         """
         if self._thread is not None and self._thread.is_alive():
+            if self._uvicorn_server.should_exit:
+                raise HarnessError("MCP bridge is still stopping")
             assert self._url is not None
             return self._url
 
@@ -202,13 +204,29 @@ class HarnessMCPBridge:
         Args:
             timeout_s (`float`, *optional*, defaults to `5.0`):
                 Maximum time to wait for the server thread to exit.
+
+        Raises:
+            [`~openenv.core.harness.adapter.HarnessError`]:
+                If shutdown times out. The server remains tracked so callers
+                can retry `stop()`; `start()` rejects it while still stopping.
         """
         server = self._uvicorn_server
         thread = self._thread
+        deadline = time.monotonic() + max(timeout_s, 0.0)
         if server is not None:
+            # Cancel lingering HTTP streams before the thread join expires.
+            # Reserve time for ASGI lifespan cleanup and forced shutdown.
+            server.config.timeout_graceful_shutdown = max(timeout_s, 0.0) / 4
             server.should_exit = True
         if thread is not None and thread.is_alive():
-            thread.join(timeout=timeout_s)
+            thread.join(timeout=max(timeout_s, 0.0) / 2)
+            if thread.is_alive() and server is not None:
+                server.force_exit = True
+                thread.join(timeout=max(0.0, deadline - time.monotonic()))
+            if thread.is_alive():
+                # Keep ownership so callers can retry, and start() cannot
+                # replace a server that still holds resources.
+                raise HarnessError(f"MCP bridge did not stop within {timeout_s}s")
         self._teardown()
 
     def _teardown(self) -> None:
