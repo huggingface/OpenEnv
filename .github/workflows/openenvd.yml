@@ -1,0 +1,150 @@
+name: openenvd isolation
+
+on:
+  pull_request:
+    branches: [main, release]
+    paths:
+      - src/openenv/_openenvd_config.py
+      - src/openenv/core/openenvd/**
+      - src/openenv/core/env_client.py
+      - src/openenv/core/env_server/http_server.py
+      - src/openenv/core/harness/**
+      - envs/echo_env/**
+      - tests/core/test_openenvd*.py
+      - tests/core/fixtures/openenvd.Dockerfile
+      - pyproject.toml
+      - .github/workflows/openenvd.yml
+  push:
+    branches: [main]
+    paths:
+      - src/openenv/_openenvd_config.py
+      - src/openenv/core/openenvd/**
+      - envs/echo_env/**
+      - tests/core/test_openenvd*.py
+      - tests/core/fixtures/openenvd.Dockerfile
+      - .github/workflows/openenvd.yml
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  openshell-isolation:
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+
+      - name: Install test dependencies
+        run: python -m pip install -e . -e ./envs/echo_env pytest pytest-asyncio
+
+      - name: Run portable tests
+        run: PYTHONPATH=src:envs python -m pytest tests/core/test_openenvd*.py -q -rs --tb=short
+
+      - name: Require Docker and Landlock support
+        run: |
+          python - <<'PY'
+          import ctypes
+          import json
+          import platform
+          import subprocess
+          from packaging.version import Version
+
+          assert platform.machine() == 'x86_64'
+          version = subprocess.check_output(
+              ['docker', 'version', '--format', '{{json .Server.Version}}'], text=True
+          )
+          assert Version(json.loads(version)) >= Version('28'), version
+          libc = ctypes.CDLL(None, use_errno=True)
+          abi = libc.syscall(444, 0, 0, 1)  # landlock_create_ruleset VERSION, x86_64
+          assert abi >= 3, f'Landlock ABI >=3 required, got {abi}'
+          PY
+
+      - name: Install checksum-verified OpenShell 0.1.2
+        working-directory: ${{ runner.temp }}
+        run: |
+          release=https://github.com/NVIDIA/OpenShell/releases/download/v0.1.2
+          package=openshell_0.1.2-1_amd64.deb
+          curl --fail --location --retry 3 --remote-name "$release/$package"
+          curl --fail --location --retry 3 --remote-name "$release/openshell-checksums-sha256.txt"
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+
+          name = 'openshell_0.1.2-1_amd64.deb'
+          expected = '1f5416ea08f32fdc621f20a2cc0324298e60aba8bbe996459d9e3b44195f23df'
+          checksums = {
+              filename.lstrip('*'): digest
+              for digest, filename in (
+                  line.split() for line in Path('openshell-checksums-sha256.txt').read_text().splitlines()
+                  if line.strip()
+              )
+          }
+          assert checksums[name] == expected, 'release checksum differs from pinned digest'
+          assert hashlib.sha256(Path(name).read_bytes()).hexdigest() == expected
+          PY
+          sudo apt-get update
+          sudo apt-get install -y "./$package" openssh-client
+          openshell --version
+
+      - name: Build the isolated echo environment
+        run: docker build -f tests/core/fixtures/openenvd.Dockerfile -t openenvd-test:ci .
+
+      - name: Start a native Docker gateway
+        run: |
+          cat > "$RUNNER_TEMP/openenvd-gateway.toml" <<'TOML'
+          [openshell]
+          version = 2
+          [openshell.gateway]
+          bind_address = '127.0.0.1:17670'
+          compute_driver = 'docker'
+          disable_tls = true
+          [openshell.drivers.docker]
+          image_pull_policy = 'if_not_present'
+          app_armor_profile = 'Unconfined'
+          TOML
+          nohup openshell-gateway --config "$RUNNER_TEMP/openenvd-gateway.toml" \
+            --health-port 17671 > "$RUNNER_TEMP/openenvd-gateway.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/openenvd-gateway.pid"
+          for attempt in $(seq 1 60); do
+            if ! kill -0 "$(cat "$RUNNER_TEMP/openenvd-gateway.pid")" 2>/dev/null; then
+              cat "$RUNNER_TEMP/openenvd-gateway.log"
+              exit 1
+            fi
+            if curl --fail --silent http://127.0.0.1:17671/readyz > /dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:17671/readyz > /dev/null
+          openshell gateway add http://127.0.0.1:17670 --local --name ci
+          openshell --gateway ci status --output json
+
+      - name: Verify live sandbox isolation and episode reset
+        env:
+          OPENSHELL_TEST_GATEWAY: ci
+          OPENSHELL_TEST_IMAGE: openenvd-test:ci
+          PYTHONPATH: src:envs
+        run: python -m pytest tests/core/test_openenvd_adversarial.py -q -rs --tb=short
+
+      - name: Stop the test gateway
+        if: always()
+        run: |
+          if test -f "$RUNNER_TEMP/openenvd-gateway.pid"; then
+            kill "$(cat "$RUNNER_TEMP/openenvd-gateway.pid")" 2>/dev/null || true
+          fi
+
+      - name: Upload gateway diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: openenvd-gateway-diagnostics
+          path: ${{ runner.temp }}/openenvd-gateway.log
+          if-no-files-found: ignore

@@ -255,3 +255,39 @@ For dataset-backed environments that publish enumerable tasks and splits, see th
 [[autodoc]] openenv.core.containers.runtime.modal_provider.ModalProvider
 
 [[autodoc]] openenv.core.containers.runtime.novita_provider.NovitaSandboxProvider
+
+## openenvd runtime
+
+`openenv.core.openenvd` provides the opt-in RFC 009 runtime: policy-scoped agent,
+grader, orchestrator, and observer surfaces around one isolated environment
+workload. Public entry points include `Principal`, `SurfacePolicy`,
+`OpenShellConfig`, `OpenEnvDConfig`, `Runtime`, and `create_surface_app`. Use
+`GraderClient` for authenticated grader tool calls and `observer_stream` for
+observation events.
+`EnvClient` and `GenericEnvClient` accept optional `headers` for authenticated
+orchestrator WebSocket connections.
+
+Isolation uses NVIDIA OpenShell. The daemon requires the OpenShell CLI
+(`>=0.1.2,<0.2`), OpenSSH, and a configured gateway; it does not require Linux
+root privileges or direct cgroup and network administration. Each episode gets a
+fresh sandbox with the native policy declared under `openenvd.openshell`. The
+image must contain Python, `/bin/tar`, OpenEnv, and the environment. Network
+access is denied by default, and automatic provider attachment is disabled.
+
+Startup uses `python -m openenv.core.openenvd --manifest ...` with explicit
+`--workspace` and `--asset-root` arguments when `openenvd` is enabled. The local
+workspace seeds `/sandbox/workspace` in each sandbox; privileged assets stay on
+the daemon host. Grader reads use bounded workspace snapshots. Oracles run in
+separate OpenShell sandboxes with a workspace snapshot and private grading assets;
+oracle writes are not copied back to the agent. Reset requires
+confirmed deletion of the previous sandbox before starting another episode.
+
+Supported observer streams are `harness_events`, `fs_diff`, and `process`.
+Process events describe worker and sandbox lifecycle, and snapshots are not
+atomic. Network and resource streams are rejected pending OpenShell telemetry
+integration.
+
+`--manifest` is required; if its `openenvd` section is absent or disabled, the CLI
+runs the manifest's original app unchanged. See the
+[openenvd runtime guide](https://github.com/huggingface/OpenEnv/blob/main/src/openenv/core/openenvd/README.md)
+for policies, principal credentials, permissions, and observation limitations.

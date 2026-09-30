@@ -2201,4 +2201,7 @@ HTTP API for interacting with OpenEnv environments through a standardized interf
     if mode is None:
         mode = os.environ.get("OPENENV_MODE", ServerMode.SIMULATION.value)
     server.register_routes(app, mode=mode)
+    # Deployment metadata lets openenvd reuse an existing environment factory
+    # without importing or constructing a client, or changing agent responses.
+    app.state.openenv_spec = (env, action_cls)
     return app

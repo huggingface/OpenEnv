@@ -1,3 +1,6 @@
+import subprocess
+import sys
+
 import pytest
 from conftest import (
     INVALID_MANIFEST_FIXTURES,
@@ -105,3 +108,18 @@ def test_harbor_manifest_signature_is_task_toml():
     data = load_fixture_manifest("harbor_task_min")
     manifest = NormalizedManifest.model_validate(data)
     assert manifest.signature.value == "task.toml"
+
+
+def test_manifest_import_does_not_load_core_runtime():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys\n"
+            "import openenv.validation.manifest\n"
+            "assert not any(name.startswith('openenv.core') for name in sys.modules)\n",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
