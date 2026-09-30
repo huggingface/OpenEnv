@@ -21,7 +21,7 @@ A few integrations ship as optional extras. Install them with
 | Extra | Pulls in |
 |-------|----------|
 | `inspect` | The Inspect AI evaluation harness |
-| `daytona`, `aca`, `modal` | Cloud sandbox providers (see the Core API reference) |
+| `daytona`, `aca`, `modal`, `novita`, `tensorlake` | Cloud sandbox providers (see the Core API reference) |
 
 ## Try an Environment
 
@@ -163,7 +163,7 @@ runtime can implement it without changing the client/server protocol.
 
 Providers shipped today: `LocalDockerProvider`, `DockerSwarmProvider`,
 `UVProvider`, `DaytonaProvider`, `ACASandboxProvider` (Azure Container Apps
-Sandboxes), `ModalProvider`, and `NovitaSandboxProvider`. A `KubernetesProvider`
+Sandboxes), `ModalProvider`, `NovitaSandboxProvider`, and `TensorlakeProvider`. A `KubernetesProvider`
 is planned.
 
 See the [Runtime Providers guide](guides/runtime-providers.md) for the full list,
