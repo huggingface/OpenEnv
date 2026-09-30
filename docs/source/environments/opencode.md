@@ -25,7 +25,12 @@ with a uniform Task shape:
     pytest invocations, score-file writes)
 
 Reward = `passed_verify / total_verify` unless any `verify` command writes
-a float to `/home/user/logs/verifier/reward.txt` (override).
+a float to `/home/user/logs/verifier/reward.txt` (override). The file is deleted
+before the verify commands run, so a value the agent writes during its run
+is discarded. The override must be a finite number; a verify command is
+written by the task author, so negative rewards and values above 1 are
+accepted too. A value that is not a finite number is ignored in favour of the
+pass rate, with the reason in `RolloutResult.reward_override_ignored`.
 
 ## Quick Start
 
