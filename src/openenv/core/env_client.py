@@ -46,7 +46,7 @@ from urllib.parse import urlsplit
 
 from .client_types import StateT, StepResult
 from .containers.runtime import LocalDockerProvider, UVProvider
-from .utils import convert_to_ws_url
+from .utils import convert_to_ws_url, hf_space_subdomain
 
 if TYPE_CHECKING:
     from websockets.asyncio.client import ClientConnection
@@ -826,7 +826,7 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
             # Docker mode: pull from HF registry
             docker_provider = provider or LocalDockerProvider()
             tag = provider_kwargs.pop("tag", "latest")
-            image = f"registry.hf.space/{repo_id.replace('/', '-')}:{tag}"
+            image = f"registry.hf.space/{hf_space_subdomain(repo_id)}:{tag}"
             try:
                 base_url = docker_provider.start_container(
                     image, **start_args, **provider_kwargs
