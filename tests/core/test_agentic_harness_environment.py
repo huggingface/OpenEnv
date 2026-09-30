@@ -100,6 +100,7 @@ class FakeBridge:
         self.mcp_server = mcp_server
         self.started = 0
         self.stopped = 0
+        self.fail_on_stop = False
         FakeBridge.instances.append(self)
 
     def start(self, timeout_s: float = 10.0) -> str:
@@ -108,6 +109,8 @@ class FakeBridge:
 
     def stop(self, timeout_s: float = 5.0) -> None:
         self.stopped += 1
+        if self.fail_on_stop:
+            raise HarnessError("bridge shutdown timed out")
 
 
 @pytest.fixture(autouse=True)
@@ -173,6 +176,30 @@ class TestReset:
         adapter.calls.clear()
         await env.reset_async()
         assert adapter.calls == ["stop", "inject_tools", "start"]
+
+    async def test_reset_does_not_replace_bridge_after_shutdown_failure(self):
+        env, adapter = make_env()
+        await env.reset_async()
+        bridge = env._bridge
+        bridge.fail_on_stop = True
+        adapter.calls.clear()
+
+        with pytest.raises(HarnessError, match="bridge shutdown timed out"):
+            await env.reset_async()
+
+        assert env._bridge is bridge
+        assert FakeBridge.instances == [bridge]
+        assert "inject_tools" not in adapter.calls
+        assert "start" not in adapter.calls
+        assert adapter.alive is False
+        with pytest.raises(HarnessNotRunningError):
+            await env.step_async(HarnessAction(message="go"))
+
+        bridge.fail_on_stop = False
+        await env.reset_async()
+        assert env._bridge is not bridge
+        assert adapter.alive is True
+        env.close()
 
     async def test_reset_clears_trajectory_and_resets_rubric(self):
         rubric = SpyRubric()
@@ -349,6 +376,23 @@ class TestSyncFacadeAndClose:
         stop_count = adapter.calls.count("stop")
         env.close()
         assert adapter.calls.count("stop") == stop_count
+
+    def test_close_retries_bridge_shutdown_after_failure(self):
+        env, _ = make_env()
+        env.reset()
+        bridge = env._bridge
+        bridge.fail_on_stop = True
+
+        env.close()
+
+        assert env._bridge is bridge
+        stop_count = bridge.stopped
+        bridge.fail_on_stop = False
+        env.close()
+        assert bridge.stopped == stop_count + 1
+        assert env._bridge is None
+        env.close()
+        assert bridge.stopped == stop_count + 1
 
     def test_constructor_starts_nothing(self):
         env, adapter = make_env()

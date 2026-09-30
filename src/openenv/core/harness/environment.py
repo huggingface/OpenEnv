@@ -139,7 +139,9 @@ class HarnessEnvironment(MCPEnvironment):
         bridge_start: Optional[asyncio.Task[str]] = None
         try:
             await self.adapter.stop()
-            await self._stop_bridge()
+            if self._bridge is not None:
+                # A failed shutdown must not be replaced by another live bridge.
+                await asyncio.to_thread(self._bridge.stop)
 
             tools = await self._collect_injectable_tools()
             resolved = resolve_tool_conflicts(tools, self.adapter.BUILTIN_TOOL_NAMES)
@@ -403,7 +405,7 @@ class HarnessEnvironment(MCPEnvironment):
 
     def close(self) -> None:
         """Stop the harness process and release environment resources."""
-        if self._closed:
+        if self._closed and self._bridge is None:
             return
         self._closed = True
         self._episode_active = False
@@ -416,7 +418,8 @@ class HarnessEnvironment(MCPEnvironment):
                 self._bridge.stop()
             except Exception:
                 pass
-            self._bridge = None
+            else:
+                self._bridge = None
         super().close()
 
 
