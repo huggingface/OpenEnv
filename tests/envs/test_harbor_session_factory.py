@@ -126,18 +126,26 @@ def test_factory_rejects_an_invalid_training_policy_before_opening_a_client():
         )
 
 
-def test_factory_forwards_purpose_and_provider_to_each_rollout():
+def test_factory_forwards_purpose_to_each_rollout():
     """Without `purpose="train"` a vLLM started without token capture runs every rollout as eval,
     and the trainer gets an empty trace per rollout instead of an error."""
     env = FakeEnv(result())
-    session = factory_with(
-        env, provider="anthropic", purpose="train", sampling={"temperature": 0.8}
-    ).create([{"role": "user", "content": "first task"}])
+    session = factory_with(env, purpose="train", sampling={"temperature": 0.8}).create(
+        [{"role": "user", "content": "first task"}]
+    )
     assert session.wait_for_completion() == 0
     call = env.calls[0]
-    assert call["provider"] == "anthropic"
+    assert call["provider"] == "openai"
     assert call["purpose"] == "train"
     assert call["eval_sampling"] is None
+
+
+def test_factory_forwards_provider_to_each_rollout():
+    env = FakeEnv(result(rollout_type="eval", capture_level="text", turns=[]))
+    factory_with(env, provider="anthropic", purpose="eval").create(
+        [{"role": "user", "content": "first task"}]
+    ).wait_for_completion()
+    assert env.calls[0]["provider"] == "anthropic"
 
 
 def test_factory_forwards_eval_sampling_with_eval_purpose():
