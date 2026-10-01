@@ -116,6 +116,11 @@ This removes the coupling to the kernel; it does not isolate verification from
 the agent. The notebook kernel runs as root in E2B's default code-interpreter
 template, so agent code can still change anything in the sandbox, including the
 files a verify command reads and the startup files of the shell it runs in.
+E2B starts each command as a login shell, so a profile the agent writes decides
+what a verify command reports: an `exit 0` or an `EXIT` trap in
+`/root/.bash_profile` makes a failing command look like a passing one. A test
+pins that behaviour rather than leaving it to be found in a reward curve, and
+#1232 tracks verification outside the agent's sandbox, which is what closes it.
 
 Only a command that ran and exited decides a verify result. If the sandbox
 itself fails, because it cannot be reached, the command cannot be started, or

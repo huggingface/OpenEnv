@@ -407,7 +407,9 @@ class _CommandExit(Exception):
 class _Processes:
     """E2B's process API: each command is a fresh process with a real exit status.
 
-    `/home/user` is mapped to a temporary directory so the commands can run here.
+    envd starts commands as `/bin/bash -l -c`, so the login files in `HOME` are
+    sourced here too. `/home/user` is mapped to a temporary directory, which is
+    also that `HOME`, so the commands can run here.
     """
 
     def __init__(self, home) -> None:
@@ -427,9 +429,9 @@ class _Processes:
             }
         )
         done = self._run(
-            ["/bin/bash", "-c", cmd.replace("/home/user", self.home)],
+            ["/bin/bash", "-l", "-c", cmd.replace("/home/user", self.home)],
             cwd=(cwd or "").replace("/home/user", self.home) or None,
-            env={"PATH": "/usr/bin:/bin"},
+            env={"PATH": "/usr/bin:/bin", "HOME": self.home},
             capture_output=True,
             text=True,
         )
@@ -639,3 +641,34 @@ def test_a_sandbox_failure_during_verification_is_not_a_reward(monkeypatch, tmp_
     assert env.state.verify_results == []
     assert env.state.last_reward is None
     assert not obs.done
+
+
+# What a root agent can write into the profile a login shell sources: an EXIT
+# trap replaces the status of whatever the shell was asked to run.
+_POISONED_PROFILE = "trap 'exit 0' EXIT\n"
+
+
+def test_a_poisoned_login_profile_still_defeats_a_failing_verify_command(
+    monkeypatch, tmp_path
+):
+    """The limit this change does not close, pinned so it cannot move unnoticed.
+
+    E2B runs each command as `bash -l -c` and the notebook kernel runs as root,
+    so a cell can write the profile that login shell sources. Verification runs
+    outside the kernel, not outside the agent's reach: the boundary that would
+    stop this is tracked in #1232.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.chdir(tmp_path)
+    env, _, _ = _environment_on_real_sandbox(home, ["exit 1"])
+
+    _run_cell(
+        env,
+        f"open({str(home / '.bash_profile')!r}, 'w').write({_POISONED_PROFILE!r})",
+    )
+    _submit_answer(env)
+
+    # The verify command fails, the profile reports success for it anyway.
+    assert [result.success for result in env.state.verify_results] == [True]
+    assert env.state.last_reward == 1.0
