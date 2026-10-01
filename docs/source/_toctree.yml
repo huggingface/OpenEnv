@@ -63,6 +63,8 @@
   - sections:
     - local: tutorials/browsergym-harness
       title: Agentic Harness
+    - local: tutorials/claude-code-harness
+      title: Claude Code in an Environment
     - local: tutorials/opencode-agent-grpo
       title: OpenCode (deprecated)
     - local: tutorials/pi-agent-grpo

@@ -225,3 +225,4 @@ That is not the model OpenEnv uses.
 - [Getting Started Tutorials](../tutorials/index)
 - [RFC 002: Environment Spec](https://github.com/huggingface/OpenEnv/blob/main/rfcs/002-env-spec.md)
 - [RFC 005: Agentic Harnesses](https://github.com/huggingface/OpenEnv/blob/main/rfcs/005-agentic-harnesses.md)
+- [Evaluate Claude Code in an Environment](../tutorials/claude-code-harness): a harness served in both modes
