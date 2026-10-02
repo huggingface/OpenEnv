@@ -13,6 +13,7 @@ from typing import Protocol, runtime_checkable
 from ..manifest import CapabilitiesSpec, NormalizedManifest
 from ..providers import RunningSubject
 from ..report import CheckResult
+from ..runtime.contracts import RuntimeEvidence
 from ..types import Level, ProviderCapability
 
 ENTRY_POINT_GROUP = "openenv.validation.graders"
@@ -42,6 +43,7 @@ class Subject:
     image_ref: str | None
     running: RunningSubject | None
     outputs_dir: Path
+    runtime_evidence: RuntimeEvidence | None = None
 
 
 @runtime_checkable

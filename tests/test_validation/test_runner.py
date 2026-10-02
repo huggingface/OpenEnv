@@ -1,4 +1,5 @@
 import hashlib
+import os
 import shutil
 
 import pytest
@@ -87,3 +88,64 @@ def test_source_digest_uses_portable_relative_paths(tmp_path):
 
     expected = hashlib.sha256(b"nested/file.txt\0contents\0").hexdigest()
     assert source_digest(package_root) == expected
+
+
+@pytest.mark.parametrize("flag", ["O_NONBLOCK", "O_NOFOLLOW"])
+def test_source_digest_does_not_require_platform_open_flags(
+    tmp_path, monkeypatch, flag
+):
+    (tmp_path / "file.txt").write_bytes(b"contents")
+    monkeypatch.delattr(os, flag, raising=False)
+
+    assert len(source_digest(tmp_path)) == 64
+
+
+@pytest.mark.parametrize("failure", [ValueError, OSError])
+def test_initial_source_digest_failure_is_reported(monkeypatch, failure):
+    def fail_digest(*args):
+        raise failure("private-source-path")
+
+    def fail_parse(*args):
+        raise AssertionError("rejected source must not be parsed")
+
+    monkeypatch.setattr("openenv.validation.runner.source_digest", fail_digest)
+    monkeypatch.setattr(
+        "openenv.validation.parsers.openenv_yaml.OpenEnvYamlParser.parse", fail_parse
+    )
+    report = run_validation(FIXTURES / "served_min_pass", max_level=Level.STATIC)
+
+    (result,) = report.results
+    assert report.source_digest == ""
+    assert result.status is CheckStatus.ERROR
+    assert (
+        result.evidence[-1] == "package source could not be verified before validation"
+    )
+    assert report.verdict is Verdict.FAIL
+    assert "private-source-path" not in report.model_dump_json()
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="platform has no named pipes")
+def test_source_digest_rejects_named_pipes(tmp_path):
+    os.mkfifo(tmp_path / "pipe")
+    with pytest.raises(ValueError, match="regular files"):
+        source_digest(tmp_path)
+
+
+def test_source_digest_rejects_swapped_file_without_nofollow(tmp_path, monkeypatch):
+    package = tmp_path / "package"
+    package.mkdir()
+    source = package / "source.txt"
+    source.write_text("public source")
+    private = tmp_path / "private.txt"
+    private.write_text("private content")
+    original_open = os.open
+
+    def swap_before_open(path, flags):
+        source.unlink()
+        source.symlink_to(private)
+        return original_open(path, flags)
+
+    monkeypatch.delattr(os, "O_NOFOLLOW", raising=False)
+    monkeypatch.setattr(os, "open", swap_before_open)
+    with pytest.raises(ValueError, match="changed before"):
+        source_digest(package)

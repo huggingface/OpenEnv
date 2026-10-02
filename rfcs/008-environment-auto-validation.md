@@ -518,12 +518,24 @@ privileged oracle inputs nor host callbacks may be substituted for public action
 One collector owns reset, ordered actions until termination, and state reads on
 **one** WebSocket session. It records immutable raw request/response strings before
 client defaults or Pydantic coercion can hide malformed responses. Graders consume
-that evidence and cannot mutate the measured episode. The advertised observation
-schema is recorded alongside the transcript; reconstruct observation plus the
-separate reward/done envelope before validating it. Reset reward may be null; every
-step reward must be a finite JSON number, excluding booleans, within the declared
-range. State must retain the requested episode identity, reset its step count to
-zero and advance it coherently for successful steps.
+that evidence and cannot mutate the measured episode. `/schema.observation`
+describes step observations. The additive `/schema.reset_observation` field
+describes reset observations; core servers publish it from an explicit optional
+`reset_observation_cls`, defaulting to `observation_cls`. Environments whose reset
+returns a distinct model must declare it. For legacy servers that omit the field,
+the validator applies the step schema to reset as well. An explicitly malformed
+reset schema is a failure, never a reason to fall back. Both schemas are recorded
+alongside the transcript; reconstruct observation plus the separate reward/done
+envelope before validating against the operation's schema. Neither schema may
+retrieve non-local references.
+
+Reset reward may be null. A step with `done: false` may have null reward to denote
+that no score was emitted. A terminal step must emit a finite JSON number within
+the declared range. Every numeric reset or step reward is checked against that
+range; booleans are invalid under this Level Two profile. This does not narrow the
+core Observation model's backward-compatible reward type. State must retain the
+requested episode identity, reset its step count to zero and advance it coherently
+for successful steps.
 
 ### Startup, policy and provider supervision
 
