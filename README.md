@@ -361,6 +361,9 @@ See the [Oumi example](https://github.com/oumi-ai/oumi/blob/main/notebooks/Oumi%
 ### Miles
 See the [Terminal-Bench-2 GRPO example](https://github.com/radixark/miles/tree/main/examples/experimental/openenv) on how to train on OpenEnv environments with Miles.
 
+### AgileRL
+See the [AgileRL docs](https://docs.agilerl.com/en/latest/llm_finetuning/environments.html) on how to train on OpenEnv environments with AgileRL.
+
 ## Example Environments
 
 | Environment | Description |
@@ -379,7 +382,7 @@ OpenEnv is governed by a technical committee that coordinates project direction,
 
 The project is also supported by a broader community of organizations. If you would like to add your project or organization here, please open a pull request for maintainer review.
 
-Supporters include: [Meta-PyTorch](https://github.com/meta-pytorch), [Hugging Face](https://huggingface.co), [Scaler AI Labs](https://scalerailabs.com), [Patronus AI](https://patronus.ai), [Surge AI](https://surgehq.ai), [LastMile AI](https://www.lastmileai.dev), [Unsloth](https://unsloth.ai), [Reflection](https://reflection.ai), [vLLM](https://vllm.ai), [SkyRL](https://skyrl.readthedocs.io) (UC-Berkeley), [Lightning AI](https://lightning.ai), [Axolotl AI](https://github.com/axolotl-ai-cloud/axolotl), [Stanford Scaling Intelligence Lab](https://scalingintelligence.stanford.edu/), [Mithril](https://mithril.ai), [OpenMined](https://openmined.org/), [Fleet AI](https://fleetai.com), [Halluminate](https://halluminate.ai/), [Turing](https://www.turing.com/), [Scale AI](https://scale.com/), [Scorecard](https://www.scorecard.io/), [Snorkel AI](https://snorkel.ai/), [SGLang](https://github.com/sgl-project/sglang), [Miles](https://github.com/radixark/miles), [Nebius](https://nebius.com)
+Supporters include: [Meta-PyTorch](https://github.com/meta-pytorch), [Hugging Face](https://huggingface.co), [Scaler AI Labs](https://scalerailabs.com), [Patronus AI](https://patronus.ai), [Surge AI](https://surgehq.ai), [LastMile AI](https://www.lastmileai.dev), [Unsloth](https://unsloth.ai), [Reflection](https://reflection.ai), [vLLM](https://vllm.ai), [SkyRL](https://skyrl.readthedocs.io) (UC-Berkeley), [Lightning AI](https://lightning.ai), [Axolotl AI](https://github.com/axolotl-ai-cloud/axolotl), [Stanford Scaling Intelligence Lab](https://scalingintelligence.stanford.edu/), [Mithril](https://mithril.ai), [OpenMined](https://openmined.org/), [Fleet AI](https://fleetai.com), [Halluminate](https://halluminate.ai/), [Turing](https://www.turing.com/), [Scale AI](https://scale.com/), [Scorecard](https://www.scorecard.io/), [Snorkel AI](https://snorkel.ai/), [SGLang](https://github.com/sgl-project/sglang), [Miles](https://github.com/radixark/miles), [Nebius](https://nebius.com), [AgileRL](https://github.com/AgileRL/AgileRL)
 
 And we'd also like to acknowledge the team at Farama Foundation as the OpenEnv API was heavily inspired by the work you all have done on Gymnasium. Cheers!
 
