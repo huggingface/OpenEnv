@@ -245,6 +245,19 @@ def test_opencode_task_coerce_rejects_unknown_type() -> None:
         OpenCodeTask.coerce(42)  # type: ignore[arg-type]
 
 
+def test_opencode_json_sends_full_model_id_upstream() -> None:
+    """opencode must send ``config.model`` as-is, matching the proxy's model override."""
+    import json
+
+    from opencode_env.config import OpenCodeConfig
+    from opencode_env.opencode_runtime import build_opencode_json
+
+    config = OpenCodeConfig(base_url="https://example.test/v1", model="Qwen/Qwen3.5-4B")
+    doc = json.loads(build_opencode_json(config))
+    provider_id, model_key = doc["model"].split("/", 1)
+    assert doc["provider"][provider_id]["models"][model_key]["id"] == "Qwen/Qwen3.5-4B"
+
+
 def test_start_proxy_keeps_upstream_key_out_of_command() -> None:
     """The proxy API key must be passed via env, not shell argv."""
     from opencode_env import OpenCodeConfig, OpenCodeSessionFactory
