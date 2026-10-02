@@ -9,10 +9,13 @@
 from __future__ import annotations
 
 import os
+import random
 import subprocess
 import sys
+import threading
 import urllib.request
-from typing import Any, Dict, Iterable, List, Optional
+from contextlib import contextmanager
+from typing import Any, Dict, Iterable, Iterator, List, Optional
 from uuid import uuid4
 
 from openenv.core.env_server.interfaces import Environment
@@ -40,6 +43,12 @@ except ImportError:
 _TEXTARENA_MODULE: Any | None = None
 _TEXTARENA_IMPORT_ERROR: Exception | None = None
 _NLTK_DOWNLOADED: bool = False
+
+# TextArena seeds and draws from the process-global ``random`` module, so one
+# session's reset or step is visible to every other session in the process.
+# Every wrapped call that can draw runs under this lock, and a seeded session
+# swaps its own RNG state in for the duration of the call (see ``_session_rng``).
+_RNG_LOCK = threading.Lock()
 
 
 def _ensure_nltk_data() -> None:
@@ -162,10 +171,14 @@ class TextArenaEnvironment(Environment):
         self._reward_providers: List[RewardProvider] = build_reward_providers(env_id)
         self._last_reward_signals: Dict[str, float] = {}
 
+        # ``random`` state of this session's seeded stream, or ``None`` when the
+        # current episode is unseeded and draws from the process-global RNG.
+        self._rng_state: Optional[tuple] = None
+
         # Initialize environment state - TextArena envs require reset() to be called
         # before step() can be used, as the internal state object isn't created until reset.
         # This ensures the environment is always in a valid state after construction.
-        self._ta_env.reset(num_players=self.num_players)
+        self._reset_ta_env()
 
     # ------------------------------------------------------------------
     # Environment interface
@@ -188,7 +201,7 @@ class TextArenaEnvironment(Environment):
         if hasattr(env, "full_observations"):
             env.full_observations = {}
 
-        self._ta_env.reset(num_players=self.num_players)
+        self._reset_ta_env(seed)
 
         for provider in self._reward_providers:
             provider.reset()
@@ -211,7 +224,9 @@ class TextArenaEnvironment(Environment):
         if not isinstance(action, TextArenaAction):
             raise TypeError(f"Expected TextArenaAction, received {type(action)!r}")
 
-        done, info = self._ta_env.step(action.message)
+        # Games such as Bandit draw from the global RNG during step as well.
+        with self._session_rng():
+            done, info = self._ta_env.step(action.message)
 
         self._state.step_count += 1
         self._state.turn = getattr(self._ta_env.state, "turn", self._state.turn + 1)
@@ -247,6 +262,50 @@ class TextArenaEnvironment(Environment):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+    def _reset_ta_env(self, seed: Optional[int] = None) -> None:
+        """Reset the wrapped game without disturbing other sessions.
+
+        TextArena implements ``reset(seed=...)`` by calling ``random.seed`` on the
+        process-global RNG and then drawing the episode from it. The lock keeps
+        seed and draw atomic across concurrent sessions. A seeded reset keeps the
+        RNG state it produced on the session, so later ``step`` calls continue the
+        same stream, and restores the prior process state so a seeded reset does
+        not make unseeded sessions predictable.
+        """
+        with _RNG_LOCK:
+            self._rng_state = None
+            if seed is None:
+                self._ta_env.reset(num_players=self.num_players)
+                return
+            process_state = random.getstate()
+            try:
+                self._ta_env.reset(num_players=self.num_players, seed=seed)
+                self._rng_state = random.getstate()
+            finally:
+                random.setstate(process_state)
+
+    @contextmanager
+    def _session_rng(self) -> Iterator[None]:
+        """Run a wrapped call under this session's RNG stream.
+
+        Unseeded sessions draw from the process-global RNG as before. A seeded
+        session swaps its saved state in, runs the call, saves the advanced
+        state back, and restores the process state on exit, including when the
+        call raises, so equal seeds and equal actions give equal trajectories
+        regardless of what other sessions do in between.
+        """
+        with _RNG_LOCK:
+            if self._rng_state is None:
+                yield
+                return
+            process_state = random.getstate()
+            random.setstate(self._rng_state)
+            try:
+                yield
+            finally:
+                self._rng_state = random.getstate()
+                random.setstate(process_state)
+
     def _build_observation(self) -> TextArenaObservation:
         player_id, messages = self._ta_env.get_observation()
 
