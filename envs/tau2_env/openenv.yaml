@@ -1,0 +1,6 @@
+spec_version: 1
+name: tau2_env
+type: space
+runtime: fastapi
+app: tau2_env.server.app:app
+port: 8000

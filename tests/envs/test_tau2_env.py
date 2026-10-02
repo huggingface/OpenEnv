@@ -1,0 +1,171 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+"""Offline tests for the τ²-bench environment.
+
+The simulated user is scripted by replacing τ²-bench's LLM call with litellm's
+`mock_response`, so these run without a network or an API key. The tools, the
+airline database and τ²-bench's evaluator are the real ones.
+"""
+
+import importlib
+import threading
+
+import pytest
+
+pytest.importorskip("tau2", reason="τ²-bench is not installed")
+
+import litellm
+import tau2.evaluator.evaluator_nl_assertions as nl_assertions
+import tau2.utils.llm_utils as llm_utils
+from openenv.core.env_server.mcp_types import (
+    CallToolAction,
+    CallToolObservation,
+    ListToolsAction,
+)
+from tau2_env.server.tau2_environment import llm_config, Tau2Environment
+
+
+@pytest.fixture
+def scripted_user(monkeypatch):
+    """Make the simulated user say each of `replies` in turn."""
+    replies: list[str] = []
+
+    def completion(**kwargs):
+        return litellm.completion(
+            model="openai/scripted",
+            messages=kwargs["messages"],
+            mock_response=replies.pop(0),
+        )
+
+    monkeypatch.setattr(llm_utils, "completion", completion)
+    return replies
+
+
+@pytest.fixture
+def env(monkeypatch):
+    monkeypatch.setenv("HF_TOKEN", "hf_test")
+    return Tau2Environment(domain="airline", split="test")
+
+
+def test_tools_are_the_domain_tools_plus_user_and_done(env):
+    tools = {t.name: t for t in env.step(ListToolsAction()).tools}
+    assert {"get_user_details", "book_reservation", "respond_to_user", "done"} <= set(
+        tools
+    )
+    assert tools["get_user_details"].input_schema["required"] == ["user_id"]
+    assert tools["respond_to_user"].input_schema["required"] == ["message"]
+
+
+def test_episode_runs_until_the_user_stops(env, scripted_user):
+    scripted_user += [
+        "Hi, my user id is noah_muller_9847.",
+        "That's all, thanks. ###STOP###",
+    ]
+
+    observation = env.reset(task_id="2")
+    assert observation.metadata["user_message"] == "Hi, my user id is noah_muller_9847."
+    assert "airline" in observation.metadata["policy"].lower()
+
+    details = env.step(
+        CallToolAction(
+            tool_name="get_user_details", arguments={"user_id": "noah_muller_9847"}
+        )
+    )
+    assert '"user_id": "noah_muller_9847"' in details.result.content[0].text
+    assert not details.done
+
+    final = env.step(
+        CallToolAction(
+            tool_name="respond_to_user", arguments={"message": "Anything else?"}
+        )
+    )
+    assert isinstance(final, CallToolObservation)
+    assert final.result.content[0].text == "That's all, thanks. ###STOP###"
+    assert final.done and env.state.done
+    assert final.reward == env.state.reward
+    assert final.metadata["reward_info"]["reward_basis"] == ["DB", "COMMUNICATE"]
+    assert env.state.step_count == 2
+
+
+def test_tools_need_a_reset_first(env):
+    observation = env.step(
+        CallToolAction(tool_name="get_user_details", arguments={"user_id": "x"})
+    )
+    assert observation.error is not None
+
+
+def test_providers(monkeypatch):
+    monkeypatch.setenv("HF_TOKEN", "hf_test")
+    model, args = llm_config("hf")
+    assert model == "openai/deepseek-ai/DeepSeek-V4.1-Flash"
+    assert args["api_base"] == "https://router.huggingface.co/v1"
+    assert args["api_key"] == "hf_test"
+    assert llm_config("openai", "gpt-4.1")[0] == "openai/gpt-4.1"
+    assert llm_config("anthropic")[0].startswith("anthropic/")
+    with pytest.raises(ValueError):
+        llm_config("azure")
+
+
+def test_reset_needs_hf_token(monkeypatch):
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    env = Tau2Environment(domain="airline")  # starts without it
+    with pytest.raises(ValueError, match="HF_TOKEN"):
+        env.reset(task_id="0")
+
+
+def test_each_conversation_has_its_own_judge(monkeypatch):
+    """Two conversations judged at the same time each use their own token."""
+    judged = {}
+    monkeypatch.setattr(
+        "tau2_env.server.tau2_environment.generate",
+        lambda **kwargs: judged.setdefault(threading.current_thread().name, kwargs),
+    )
+    both_stepping = threading.Barrier(2)
+
+    class JudgingGym:  # τ²-bench judges the conversation inside its last step
+        def step(self, action):
+            both_stepping.wait()
+            nl_assertions.generate(model="default", messages=[], call_name="judge")
+            return "user: bye", 1.0, True, False, {"reward_info": "{}"}
+
+    def converse(token):
+        env = Tau2Environment(domain="airline", hf_token=token)
+        env._gym = JudgingGym()
+        env.act("Goodbye")
+
+    threads = [
+        threading.Thread(target=converse, args=(t,), name=t) for t in ("hf_a", "hf_b")
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert {name: kwargs["api_key"] for name, kwargs in judged.items()} == {
+        "hf_a": "hf_a",
+        "hf_b": "hf_b",
+    }
+
+
+def test_server_and_ui_start_without_credentials(monkeypatch):
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.setenv("ENABLE_WEB_INTERFACE", "true")
+    import tau2_env.server.app as server
+    from fastapi.testclient import TestClient
+
+    client = TestClient(importlib.reload(server).app)
+    assert client.get("/health").status_code == 200
+    assert client.get("/web/").status_code == 200
+    # The sign-in routes Gradio expects at the root forward to the UI under /web.
+    login = client.get("/login/huggingface?_target_url=/", follow_redirects=False)
+    assert login.headers["location"] == "/web/login/huggingface?_target_url=/"
+
+
+def test_done_ends_the_conversation(env, scripted_user):
+    scripted_user.append("Hi, I'd like to change my flight.")
+    env.reset(task_id="2")
+    observation = env.step(CallToolAction(tool_name="done", arguments={}))
+    assert observation.done and env.state.done
