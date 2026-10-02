@@ -389,8 +389,11 @@ class KubernetesProvider(ContainerProvider):
 
     Only one Pod is active per provider. Calling ``start_container`` again
     before ``stop_container()`` / ``close()`` raises ``RuntimeError`` rather
-    than orphaning the running Pod. A failed start deletes only the objects
-    this instance created. ``stop_container`` is safe to call more than once.
+    than orphaning the running Pod. A failed start deletes a resource only
+    after its OpenEnv ownership labels match. When a create response is lost
+    and that read fails, the resource stays unconfirmed: ``stop_container``
+    reads the labels again and deletes only on a match. ``stop_container`` is
+    safe to call more than once.
 
     The Pod does not mount a service-account token unless
     ``automount_service_account_token=True`` is passed to ``start_container``.
@@ -443,6 +446,8 @@ class KubernetesProvider(ContainerProvider):
         self._service_port: int | None = None
         self._pod_created = False
         self._service_created = False
+        self._pod_unconfirmed = False
+        self._service_unconfirmed = False
 
         if _adapter is None:
             self._adapter: Any = _DefaultKubernetesAdapter(
@@ -491,7 +496,7 @@ class KubernetesProvider(ContainerProvider):
         Returns:
             `str`: ``http://{name}.{namespace}:{port}``.
         """
-        if self._pod_created or self._service_created or self._base_url is not None:
+        if self._has_tracked_resources() or self._base_url is not None:
             raise RuntimeError(
                 "KubernetesProvider already has an active Pod. Call "
                 "stop_container() (or close()) before starting another — a "
@@ -575,34 +580,42 @@ class KubernetesProvider(ContainerProvider):
 
         A 409 is someone else's name, and a 404 means the namespace is
         missing, so those do not probe. Any other create error may mean the
-        API server applied the object and the client lost the response. Those
-        are deleted only when the OpenEnv ownership labels match. If the read
-        or delete cannot be confirmed, the name and flag are kept so
-        ``stop_container()`` can retry.
+        API server applied the object and the client lost the response. Only
+        the resource whose create was attempted is checked. It is deleted only
+        when the OpenEnv ownership labels match. A failed read is recorded as
+        unconfirmed, which is not the same as a successful create: a later
+        ``stop_container()`` reads the labels again before deleting.
         """
         uncertain = not isinstance(exc, (_CreateConflict, _NamespaceMissing))
+        # Service create runs only after Pod create has succeeded.
+        service_was_attempted = self._pod_created
         self._release("pod", uncertain=uncertain)
-        self._release("service", uncertain=uncertain)
-        if not self._pod_created and not self._service_created:
+        self._release("service", uncertain=uncertain and service_was_attempted)
+        if not self._has_tracked_resources():
             self._name = None
             self._base_url = None
             self._service_port = None
 
     def _release(self, kind: str, *, uncertain: bool) -> None:
-        flagged = self._pod_created if kind == "pod" else self._service_created
-        if not flagged and not uncertain:
+        if self._created(kind):
+            self._delete_tracked(kind)
             return
-        if not flagged:
-            owned = self._lookup_owned(kind)
-            if owned is None or not owned:
-                return
-        self._delete_kind(kind)
+        if not uncertain:
+            return
+        owned = self._lookup_owned(kind)
+        if owned is None:
+            self._set_unconfirmed(kind, True)
+            return
+        if not owned:
+            return
+        self._set_created(kind, True)
+        self._delete_tracked(kind)
 
     def _lookup_owned(self, kind: str) -> Optional[bool]:
         """Return whether *kind* at ``_name`` is ours.
 
-        ``None`` means the read itself failed. The flag is then set so a later
-        ``stop_container()`` retries the delete.
+        ``None`` means the read itself failed. Callers record that as
+        unconfirmed. They do not treat it as a confirmed create.
         """
         if self._name is None:
             return False
@@ -612,13 +625,16 @@ class KubernetesProvider(ContainerProvider):
             else:
                 labels = self._adapter.service_labels(self._name)
         except Exception:
-            self._set_created(kind, True)
             return None
         if labels is None:
             return False
         return _owned_by_provider(labels, self._name)
 
-    def _delete_kind(self, kind: str) -> None:
+    def _delete_tracked(self, kind: str) -> None:
+        """Delete a resource already known to be ours.
+
+        A failed delete stays confirmed so ``stop_container()`` can retry it.
+        """
         if self._name is None:
             return
         try:
@@ -631,38 +647,54 @@ class KubernetesProvider(ContainerProvider):
             return
         self._set_created(kind, False)
 
+    def _created(self, kind: str) -> bool:
+        if kind == "pod":
+            return self._pod_created
+        return self._service_created
+
     def _set_created(self, kind: str, created: bool) -> None:
         if kind == "pod":
             self._pod_created = created
         else:
             self._service_created = created
 
+    def _unconfirmed(self, kind: str) -> bool:
+        if kind == "pod":
+            return self._pod_unconfirmed
+        return self._service_unconfirmed
+
+    def _set_unconfirmed(self, kind: str, unconfirmed: bool) -> None:
+        if kind == "pod":
+            self._pod_unconfirmed = unconfirmed
+        else:
+            self._service_unconfirmed = unconfirmed
+
+    def _has_tracked_resources(self) -> bool:
+        return (
+            self._pod_created
+            or self._service_created
+            or self._pod_unconfirmed
+            or self._service_unconfirmed
+        )
+
     def stop_container(self) -> None:
         """Delete the Pod and Service this provider created.
 
         Safe when nothing was started and safe to call twice. A 404 from the
-        API is treated as already deleted. Objects this instance did not
-        create are left in place, including a name that was already taken.
+        API is treated as already deleted. A confirmed resource is deleted by
+        name. An unconfirmed one is deleted only after a fresh ownership-label
+        match. If that read fails, the unconfirmed state is kept for another
+        retry. Objects this instance does not own are left in place, including
+        a name that was already taken.
         """
-        if self._name is None and not self._pod_created and not self._service_created:
+        if self._name is None and not self._has_tracked_resources():
             self._base_url = None
             self._service_port = None
             return
 
-        name = self._name
         errors: list[str] = []
-        if self._pod_created and name is not None:
-            try:
-                self._adapter.delete_pod(name)
-                self._pod_created = False
-            except Exception:
-                errors.append("pod")
-        if self._service_created and name is not None:
-            try:
-                self._adapter.delete_service(name)
-                self._service_created = False
-            except Exception:
-                errors.append("service")
+        self._stop_kind("pod", errors)
+        self._stop_kind("service", errors)
         if errors:
             raise RuntimeError(
                 "Failed to delete Kubernetes resources created by this provider. "
@@ -671,6 +703,30 @@ class KubernetesProvider(ContainerProvider):
         self._name = None
         self._base_url = None
         self._service_port = None
+
+    def _stop_kind(self, kind: str, errors: list[str]) -> None:
+        if self._name is None:
+            return
+        if self._unconfirmed(kind):
+            owned = self._lookup_owned(kind)
+            if owned is None:
+                errors.append(kind)
+                return
+            self._set_unconfirmed(kind, False)
+            if not owned:
+                return
+            self._set_created(kind, True)
+        if not self._created(kind):
+            return
+        try:
+            if kind == "pod":
+                self._adapter.delete_pod(self._name)
+            else:
+                self._adapter.delete_service(self._name)
+        except Exception:
+            errors.append(kind)
+            return
+        self._set_created(kind, False)
 
     def close(self) -> None:
         """Stop the active Pod and Service.

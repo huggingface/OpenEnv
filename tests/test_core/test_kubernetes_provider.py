@@ -380,20 +380,90 @@ class TestCleanup:
         assert adapter.deleted_pods == 0
         assert provider._name is None
 
-    def test_unconfirmed_cleanup_keeps_name_for_retry(self, provider, adapter):
+    def test_unconfirmed_pod_is_not_treated_as_created(self, provider, adapter):
         adapter.fail_pod = RuntimeError("apiserver timeout")
+        adapter.persist_pod_on_failure = True
         adapter.fail_read_pod = RuntimeError("read failed secret-body")
+        adapter.fail_read_service = RuntimeError("service read failed")
         with pytest.raises(RuntimeError, match="apiserver timeout") as exc_info:
             provider.start_container("echo-env:latest")
         assert "secret-body" not in str(exc_info.value)
-        assert provider._pod_created is True
+        assert provider._pod_created is False
+        assert provider._pod_unconfirmed is True
+        assert provider._service_created is False
+        assert provider._service_unconfirmed is False
         assert provider._name is not None
+        assert adapter.deleted_pods == 0
+        assert adapter.deleted_services == 0
+
+    def test_unconfirmed_stop_rechecks_labels_before_delete(self, provider, adapter):
+        adapter.fail_pod = RuntimeError("apiserver timeout")
+        adapter.persist_pod_on_failure = True
+        adapter.fail_read_pod = RuntimeError("read failed")
+        with pytest.raises(RuntimeError, match="apiserver timeout"):
+            provider.start_container("echo-env:latest")
         adapter.fail_read_pod = None
-        adapter.fail_delete_pod = None
         provider.stop_container()
+        assert adapter.deleted_pods == 1
+        assert provider._pod_unconfirmed is False
         assert provider._pod_created is False
         assert provider._name is None
+
+    def test_unconfirmed_stop_leaves_foreign_object(self, provider, adapter):
+        adapter.fail_pod = RuntimeError("apiserver timeout")
+        adapter.foreign_pod_on_failure = True
+        adapter.fail_read_pod = RuntimeError("read failed")
+        with pytest.raises(RuntimeError, match="apiserver timeout"):
+            provider.start_container("echo-env:latest")
+        adapter.fail_read_pod = None
+        provider.stop_container()
+        assert adapter.deleted_pods == 0
+        assert provider._pod_unconfirmed is False
+        assert provider._name is None
+
+    def test_unconfirmed_read_failure_on_stop_keeps_state(self, provider, adapter):
+        adapter.fail_pod = RuntimeError("apiserver timeout")
+        adapter.fail_read_pod = RuntimeError("read failed secret-body")
+        with pytest.raises(RuntimeError, match="apiserver timeout"):
+            provider.start_container("echo-env:latest")
+        with pytest.raises(RuntimeError, match="retry") as exc_info:
+            provider.stop_container()
+        assert "secret-body" not in str(exc_info.value)
+        assert adapter.deleted_pods == 0
+        assert provider._pod_unconfirmed is True
+        assert provider._pod_created is False
+        assert provider._name is not None
+
+    def test_second_start_is_blocked_while_unconfirmed(self, provider, adapter):
+        adapter.fail_pod = RuntimeError("apiserver timeout")
+        adapter.fail_read_pod = RuntimeError("read failed")
+        with pytest.raises(RuntimeError, match="apiserver timeout"):
+            provider.start_container("echo-env:latest")
+        with pytest.raises(RuntimeError, match="already has an active Pod"):
+            provider.start_container("echo-env:latest")
+        assert adapter.deleted_pods == 0
+
+    def test_unconfirmed_service_retries_without_deleting_early(
+        self, provider, adapter
+    ):
+        adapter.fail_service = RuntimeError("apiserver timeout")
+        adapter.persist_service_on_failure = True
+        adapter.fail_read_service = RuntimeError("read failed secret-body")
+        with pytest.raises(RuntimeError, match="apiserver timeout") as exc_info:
+            provider.start_container("echo-env:latest")
+        assert "secret-body" not in str(exc_info.value)
         assert adapter.deleted_pods == 1
+        assert adapter.deleted_services == 0
+        assert provider._pod_created is False
+        assert provider._pod_unconfirmed is False
+        assert provider._service_created is False
+        assert provider._service_unconfirmed is True
+        assert provider._name is not None
+        adapter.fail_read_service = None
+        provider.stop_container()
+        assert adapter.deleted_services == 1
+        assert provider._service_unconfirmed is False
+        assert provider._name is None
 
     def test_cleanup_failure_does_not_mask_original_error(self, provider, adapter):
         adapter.fail_service = RuntimeError("service failed")
