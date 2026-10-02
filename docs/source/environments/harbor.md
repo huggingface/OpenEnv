@@ -259,6 +259,23 @@ with HarborEnv(base_url="http://localhost:8000") as env:
 `harness` and `sandbox` are per call, so consecutive rollouts against the same server can use
 different agents and different backends.
 
+## Training with TRL
+
+TRL trains a policy on these rollouts with `AsyncGRPOTrainer` (on TRL `main` for now): a
+`HarnessRolloutWorker` builds a `HarborSessionFactory` with its sampling policy, opens one session
+per rollout and trains on each session's validated `TrainingTrace`.
+
+- [`examples/async_grpo_harbor`](https://github.com/huggingface/trl/tree/main/examples/async_grpo_harbor):
+  a complete training script, with local setup and a Hugging Face Jobs launcher.
+- [TRL's OpenEnv guide](https://huggingface.co/docs/trl/openenv): how the worker, the reward and the
+  capture fit together.
+- [The ultimate guide to multi-harness RL](https://huggingface.co/spaces/AdithyaSK/multi-harness-rl):
+  one policy trained across OpenCode, Claude Code, Codex and Mini-SWE-Agent through this
+  environment. Its runnable code is the
+  [FineEnvs multi-harness tutorial](https://github.com/adithya-s-k/FineEnvs/tree/main/05-multi-harness-rl),
+  and its [models, datasets and environments](https://huggingface.co/collections/FineEnvs/smoldataenv-multi-harness-rl)
+  are in one collection.
+
 ## The web UI
 
 `serve` (and a Space made with `push`) serves a UI at `/web`, in four tabs.
