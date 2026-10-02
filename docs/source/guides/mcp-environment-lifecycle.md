@@ -91,7 +91,8 @@ These are helpers, not a separate environment lifecycle.
 
 `MCPToolClient` and its base `MCPClientBase` only support `mode="production"`; construction raises `ValueError` for other modes. For direct in-process training or eval code, instantiate the environment class and call `env.step(CallToolAction(...))` instead of using `MCPToolClient`.
 
-- `list_tools()` wraps `step(ListToolsAction())` and returns the `list[Tool]` directly.
+- `list_tools()` and `call_tool()` go to the HTTP `/mcp` JSON-RPC endpoint, so they don't run through `step()`: no reward, no step count, no `done`.
+- `list_tools()` returns a `list[Tool]`, and an empty list if the request fails.
 - `call_tool(name, **kwargs)` returns the **unwrapped tool return value** directly — not the `CallToolObservation`, and not the runtime result object you would get from `obs.result`.
 - `call_tool()` raises `RuntimeError` on any tool error. Use `step(CallToolAction(...))` when you need to inspect `ToolError.error_type` or continue after a failed tool call.
 
@@ -99,9 +100,9 @@ Remote `step(CallToolAction(...))` calls return a `StepResult`; the full observa
 
 ### Direct MCP behavior
 
-When production MCP access is explicitly enabled on the client, the same convenience methods use the HTTP `/mcp` JSON-RPC endpoint directly.
+The `/mcp` path is for tool-serving behavior, not the training loop. It bypasses reward computation, step counts, trajectory tracking, and `done` handling. For training, send tool calls as `step(CallToolAction(...))`.
 
-That path is for tool-serving behavior, not the training loop. It bypasses reward computation, step counts, trajectory tracking, and `done` handling.
+Tool calls sent through `step()` time out after 30 seconds by default (`MCP_TOOL_CALL_TIMEOUT`). `MCPEnvironment.step()` takes a `timeout_s`, so an environment whose tools wait on slow work, such as an LLM call, can pass a larger default from its own `step()`.
 
 ## Which Pattern Should You Use?
 
@@ -113,12 +114,12 @@ Use `step(CallToolAction(...))` when you need the full `CallToolObservation`:
 - `obs.result`, a runtime result object typed as `Any`; FastMCP commonly returns `fastmcp.client.client.CallToolResult` with `.data`, `.content`, and `.structured_content`, but serialized clients or custom envs may surface a dict or plain value
 - trajectory-compatible behavior
 
-Use `await env.call_tool(name, **kwargs)` when you only want the tool's raw return value and do not need to inspect the full observation. It is async and unwraps the result for you.
+Use `await env.call_tool(name, **kwargs)` when you only want the tool's raw return value and do not need rewards or the full observation. It is async, unwraps the result for you, and goes through `/mcp` rather than `step()`.
 
 In other words:
 
 - `step(...)` is the canonical simulation pattern
-- `call_tool()` is an async convenience wrapper that returns the unwrapped tool output
+- `call_tool()` is an async convenience wrapper over `/mcp` that returns the unwrapped tool output
 
 ## Concrete Examples
 
@@ -151,7 +152,7 @@ If an MCP environment "doesn't call step", check these first:
 
 1. Are you using an async client path that triggers `step_async()`?
 2. Did you instrument both `step()` and `step_async()`?
-3. Are you using `call_tool()` and assuming it bypasses the step loop?
+3. Are you using `call_tool()`? It goes through `/mcp`, so it never reaches `step()`. Use `step(CallToolAction(...))` instead.
 4. Are you expecting the MCP tool layer to behave like a separate environment lifecycle?
 
 Usually the action is flowing correctly, but through the async WebSocket path rather than the synchronous method you were watching.
