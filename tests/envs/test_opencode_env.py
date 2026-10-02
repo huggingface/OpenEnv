@@ -346,6 +346,27 @@ def test_interception_cli_reads_upstream_key_from_env(
     assert captured["cfg"].upstream_api_key == "sk-from-env"
 
 
+def test_interception_keeps_upstream_base_path() -> None:
+    from opencode_env.sandbox.interception import _resolve_upstream_url
+
+    assert (
+        _resolve_upstream_url("https://api.openai.com/v1/")
+        == "https://api.openai.com/v1/chat/completions"
+    )
+    assert (
+        _resolve_upstream_url("http://localhost:8000")
+        == "http://localhost:8000/v1/chat/completions"
+    )
+    assert (
+        _resolve_upstream_url("https://generativelanguage.googleapis.com/v1beta/openai")
+        == "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+    )
+    assert (
+        _resolve_upstream_url("https://api.z.ai/api/paas/v4")
+        == "https://api.z.ai/api/paas/v4/chat/completions"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Integration — only runs when E2B + endpoint creds are present and the
 # user explicitly opts in via ``pytest -m integration``.
