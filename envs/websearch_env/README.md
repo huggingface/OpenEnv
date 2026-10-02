@@ -156,7 +156,7 @@ The deployed space includes:
 ### Action
 **WebSearchAction**: Contains a single field
 - `query` (str) - The query to search for
-- `temp_api_key` (str) - Temporary Serper.dev API key if not set in envrionment variables.
+- `temp_api_key` (str) - Temporary Serper.dev API key if not set in environment variables.
 
 ### Observation
 **WebSearchObservation**: Contains the echo response and metadata
