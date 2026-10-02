@@ -10,6 +10,8 @@ the `reset`/`step` protocol, while the environment owns all browser-specific
 behavior. The example does not include an agent, so the OpenEnv parts stay in
 focus.
 
+![illustrated](https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/helium_demo.png)
+
 ## How browser agents work
 
 A natively multimodal browser agent operates in a loop:
