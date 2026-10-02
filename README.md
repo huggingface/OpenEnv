@@ -362,7 +362,7 @@ See the [Oumi example](https://github.com/oumi-ai/oumi/blob/main/notebooks/Oumi%
 See the [Terminal-Bench-2 GRPO example](https://github.com/radixark/miles/tree/main/examples/experimental/openenv) on how to train on OpenEnv environments with Miles.
 
 ### AgileRL
-See the [AgileRL docs](https://docs.agilerl.com/en/latest/llm_finetuning/environments.html) on how to train on OpenEnv environments with AgileRL.
+See the [AgileRL docs](https://docs.agilerl.com/en/latest/llm_finetuning/environments.html) on how to train on OpenEnv environments with AgileRL, including the [remote environment server tutorial](https://docs.agilerl.com/en/latest/tutorials/llm_finetuning/remote_env_server.html) and the [multi-turn fine-tuning tutorial](https://docs.agilerl.com/en/latest/tutorials/llm_finetuning/env_grpo_ppo.html).
 
 ## Example Environments
 
