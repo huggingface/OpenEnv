@@ -5,7 +5,7 @@ from fastapi.responses import HTMLResponse
 from openenv.core.env_server.http_server import create_app
 from openenv.core.env_server.web_interface import load_environment_metadata
 
-from ..models import WildfireAction, WildfireObservation
+from ..models import WildfireAction, WildfireObservation, WildfireState
 from .wildfire_environment import WildfireEnvironment
 from .wildfire_web_interface import get_wildfire_web_interface_html
 
@@ -29,6 +29,7 @@ app = create_app(
     WildfireAction,
     WildfireObservation,
     env_name="wildfire_env",
+    state_cls=WildfireState,
 )
 
 # Override the default /web route with our custom wildfire interface
