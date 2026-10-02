@@ -26,6 +26,7 @@ from . import ExecResult, ProviderError, StartupError, UnsupportedCapability
 
 
 _LABEL = "org.openenv.validation.run"
+_IMAGE_LABEL = "org.openenv.validation.image-owner"
 _MAX_OUTPUT = 65536
 _EXCLUDED = {
     ".git",
@@ -65,6 +66,12 @@ def _safe_text(value: str, secrets: tuple[str, ...] = ()) -> str:
         .encode("utf-8")[-_MAX_OUTPUT:]
         .decode("utf-8", "ignore")
     )
+
+
+def _image_tag(owner: str) -> str:
+    if not re.fullmatch(r"validation-[a-f0-9]{32}", owner):
+        raise ProviderError("Invalid validation image owner")
+    return f"openenv-validation:{owner}"
 
 
 def _command(
@@ -226,7 +233,23 @@ class DockerValidationProvider:
         self.build_timeout_s = build_timeout_s
         self.max_context_bytes = max_context_bytes
 
-    def build(self, root: Path, execution: ExecutionDeclaration) -> str:
+    def build(
+        self,
+        root: Path,
+        execution: ExecutionDeclaration,
+        *,
+        image_owner: str | None = None,
+    ) -> str:
+        image_args = (
+            [
+                "--tag",
+                _image_tag(image_owner),
+                "--label",
+                f"{_IMAGE_LABEL}={image_owner}",
+            ]
+            if image_owner is not None
+            else []
+        )
         deadline = time.monotonic() + self.build_timeout_s
         try:
             root = root.resolve(strict=True)
@@ -255,6 +278,7 @@ class DockerValidationProvider:
                     str(iidfile),
                     "--file",
                     str(dockerfile),
+                    *image_args,
                     str(context),
                 ],
                 deadline - time.monotonic(),
@@ -262,9 +286,77 @@ class DockerValidationProvider:
             if code != 0:
                 raise StartupError("Image build failed: " + _safe_text(stderr[-4096:]))
             image = iidfile.read_text().strip() if iidfile.exists() else ""
+            if image_owner is not None:
+                # A tagged BuildKit export's iidfile can differ from the immutable
+                # image ID addressable by the Docker daemon.
+                code, image, _ = _command(
+                    [
+                        "docker",
+                        "image",
+                        "inspect",
+                        "--format",
+                        "{{.Id}}",
+                        _image_tag(image_owner),
+                    ],
+                    min(10, deadline - time.monotonic()),
+                )
+                if code:
+                    raise ProviderError("Docker did not publish the owned image")
+                image = image.strip()
             if not re.fullmatch(r"sha256:[a-f0-9]{64}", image):
                 raise ProviderError("Docker did not return an immutable image ID")
             return image
+
+    def cleanup_image(self, owner: str, expected_id: str | None = None) -> dict:
+        """Release only this build's tag, preserving other tags and parent images."""
+        tag = _image_tag(owner)
+        evidence = {"owner": owner, "tag": tag, "required": True, "completed": False}
+        code, output, stderr = _command(
+            [
+                "docker",
+                "image",
+                "inspect",
+                "--format",
+                f'{{{{.Id}}}} {{{{index .Config.Labels "{_IMAGE_LABEL}"}}}}',
+                tag,
+            ],
+            10,
+        )
+        if code:
+            if "No such image" in stderr or "No such object" in stderr:
+                return {**evidence, "completed": True, "reason": "owned tag absent"}
+            raise ProviderError("Could not verify image ownership for cleanup")
+        fields = output.split()
+        if (
+            len(fields) != 2
+            or not re.fullmatch(r"sha256:[a-f0-9]{64}", fields[0])
+            or fields[1] != owner
+            or expected_id is not None
+            and fields[0] != expected_id
+        ):
+            raise ProviderError(
+                "Refusing cleanup of an image with another identity or owner"
+            )
+        image_id = fields[0]
+        code, _, _ = _command(["docker", "image", "rm", "--no-prune", tag], 10)
+        if code:
+            raise ProviderError("Could not remove validation image tag")
+        code, _, stderr = _command(
+            ["docker", "image", "inspect", "--format", "{{.Id}}", tag], 10
+        )
+        if not code or not ("No such image" in stderr or "No such object" in stderr):
+            raise ProviderError("Image tag removal could not be independently verified")
+        code, _, stderr = _command(
+            ["docker", "image", "inspect", "--format", "{{.Id}}", image_id], 10
+        )
+        if code and not ("No such image" in stderr or "No such object" in stderr):
+            raise ProviderError("Image removal could not be independently verified")
+        return {
+            **evidence,
+            "image_id": image_id,
+            "completed": True,
+            "image_removed": bool(code),
+        }
 
     def start(self, spec: LaunchSpec) -> "DockerRunningSubject":
         if spec.network.mode not in self.supported_network_modes:

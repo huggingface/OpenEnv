@@ -329,6 +329,7 @@ def test_build_uses_filtered_snapshot_and_returns_immutable_image(
 
     def build(argv, timeout_s):
         assert timeout_s <= 600
+        assert "--tag" not in argv and "--label" not in argv
         context = Path(argv[-1])
         assert set(path.name for path in context.iterdir()) == {
             "Dockerfile",
@@ -349,6 +350,74 @@ def test_build_uses_filtered_snapshot_and_returns_immutable_image(
         docker.DockerValidationProvider().build(tmp_path, ExecutionDeclaration())
         == IMAGE
     )
+
+
+def test_opt_in_image_build_has_supervisor_owned_tag_and_label(tmp_path, monkeypatch):
+    (tmp_path / "Dockerfile").write_text("FROM scratch\n")
+    owner = "validation-" + "b" * 32
+
+    def build(argv, timeout_s):
+        if argv[1:3] == ["image", "inspect"]:
+            assert 0 < timeout_s <= 3
+            assert argv[-1] == f"openenv-validation:{owner}"
+            return 0, IMAGE, ""
+        assert argv[argv.index("--tag") + 1] == f"openenv-validation:{owner}"
+        assert argv[argv.index("--label") + 1] == f"{docker._IMAGE_LABEL}={owner}"
+        Path(argv[argv.index("--iidfile") + 1]).write_text("sha256:" + "d" * 64)
+        return 0, "", ""
+
+    monkeypatch.setattr(docker, "_command", build)
+    assert (
+        docker.DockerValidationProvider(build_timeout_s=3).build(
+            tmp_path, ExecutionDeclaration(), image_owner=owner
+        )
+        == IMAGE
+    )
+
+
+@pytest.mark.parametrize("shared", [False, True])
+def test_image_cleanup_releases_only_owned_tag_and_is_idempotent(monkeypatch, shared):
+    owner = "validation-" + "b" * 32
+    tag = f"openenv-validation:{owner}"
+    calls = []
+    removed = False
+
+    def command(argv, timeout_s):
+        nonlocal removed
+        calls.append(argv)
+        if argv[2] == "rm":
+            assert argv == ["docker", "image", "rm", "--no-prune", tag]
+            removed = True
+            return 0, "", ""
+        if argv[-1] == IMAGE and shared:
+            return 0, IMAGE, ""
+        if removed:
+            return 1, "", "No such image"
+        return 0, f"{IMAGE} {owner}", ""
+
+    monkeypatch.setattr(docker, "_command", command)
+    provider = docker.DockerValidationProvider()
+    result = provider.cleanup_image(owner, IMAGE)
+    assert result["completed"] and result["image_removed"] is not shared
+    assert result["image_id"] == IMAGE
+    assert provider.cleanup_image(owner, IMAGE)["completed"]
+    assert sum(argv[2] == "rm" for argv in calls) == 1
+
+
+@pytest.mark.parametrize("wrong_field", ["owner", "identity"])
+def test_image_cleanup_refuses_changed_identity_or_owner(monkeypatch, wrong_field):
+    owner = "validation-" + "b" * 32
+    calls = []
+
+    def command(argv, timeout_s):
+        calls.append(argv)
+        return 0, f"{IMAGE} {'other' if wrong_field == 'owner' else owner}", ""
+
+    monkeypatch.setattr(docker, "_command", command)
+    expected = "sha256:" + "c" * 64 if wrong_field == "identity" else IMAGE
+    with pytest.raises(ProviderError, match="another identity or owner"):
+        docker.DockerValidationProvider().cleanup_image(owner, expected)
+    assert len(calls) == 1 and calls[0][2] == "inspect"
 
 
 def test_build_rejects_symlink_escape_without_invoking_docker(tmp_path, commands):
