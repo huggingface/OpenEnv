@@ -41,7 +41,7 @@ from .models import (
 from .task import PiTask
 
 warnings.warn(
-    "pi_env is deprecated and will be removed in OpenEnv 0.8.0. "
+    "pi_env is deprecated and will be removed in OpenEnv 0.9.0. "
     "Run pi through harbor_env instead: "
     "`HarborSessionFactory(server_url, harness='pi')` against "
     "`openenv harbor serve`. "

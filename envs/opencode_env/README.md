@@ -15,7 +15,7 @@ short_description: OpenCode coding agent in an E2B sandbox with logprob capture
 # OpenCode Environment for OpenEnv
 
 > [!WARNING]
-> **Deprecated, will be removed in OpenEnv 0.8.0.** OpenCode now runs through
+> **Deprecated, will be removed in OpenEnv 0.9.0.** OpenCode now runs through
 > [`harbor_env`](https://huggingface.co/docs/openenv/environments/harbor) as one of Harbor's harnesses, with the same token-level
 > capture for training. Serve a Harbor task dataset and pick `opencode` as the harness:
 >
