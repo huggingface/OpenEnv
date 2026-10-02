@@ -176,7 +176,7 @@ Manage container deployment:
 - `LocalDockerProvider`: Run containers on local Docker daemon
 - `DockerSwarmProvider`: Deploy to Docker Swarm clusters
 - `UVProvider`, `DaytonaProvider`, `ACASandboxProvider`: Additional runtime providers
-- `KubernetesProvider`: Deploy to Kubernetes clusters (planned)
+- `KubernetesProvider`: Deploy to Kubernetes clusters (`pip install openenv[kubernetes]`)
 
 #### 5. Models
 Type-safe data structures:
