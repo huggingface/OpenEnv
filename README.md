@@ -343,6 +343,9 @@ See the [TRL example](https://huggingface.co/docs/trl/openenv) on how to integra
 ### torchforge
 See GRPO BlackJack training example: [`examples/grpo_blackjack/`](examples/grpo_blackjack/)
 
+### TorchTitan-RL (TitanRL)
+Use any OpenEnv environment as a TorchTitan-RL (`torchtitan/rl`) `MessageEnv` for GRPO/DAPO training. See [`examples/titanrl_openenv/`](examples/titanrl_openenv/): a framework-agnostic bridge plus a runnable Muse Glimmer 30B recipe that trains on this repo's own [`envs/chess_env`](envs/chess_env/), with a standalone CPU demo and tests.
+
 ### Unsloth
 See the 2048 game example based on gpt-oss: [Colab notebook](https://colab.research.google.com/github/unslothai/notebooks/blob/main/nb/OpenEnv_gpt_oss_(20B)_Reinforcement_Learning_2048_Game.ipynb)
 
