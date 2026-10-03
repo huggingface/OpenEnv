@@ -1,6 +1,6 @@
 # RFC: Design Principles and Broad Roadmap
 
-**Status**: In Review
+**Status**: Implemented
 **Created**: 10/17/2025
 **Amended**: November 12, 2025
 **Authors**: @Darktex, @pankit-eng, @jspisak, @zkwentz
