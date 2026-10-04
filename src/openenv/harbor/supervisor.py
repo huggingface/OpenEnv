@@ -111,6 +111,9 @@ class SandboxSupervisor:
         self._previous: dict[int, Any] = {}
         self._handling = False
         self._cleanup: asyncio.Future | None = None
+        # Set by `aclose` under `_lock`. A start that has not registered yet must not open a sandbox
+        # cleanup will never see, so it fails instead.
+        self._closing = False
 
     @property
     def owned(self) -> int:
@@ -139,7 +142,15 @@ class SandboxSupervisor:
             if self._limit is not None:
                 await self._limit.acquire()
             with self._lock:
-                self._owned.add(box)
+                closing = self._closing
+                if not closing:
+                    self._owned.add(box)
+            if closing:
+                if self._limit is not None:
+                    self._limit.release()
+                raise RuntimeError(
+                    "sandbox supervisor is shutting down; not starting a new sandbox"
+                )
             # Shielded: a caller cancelled mid-start gets its CancelledError, but the start itself
             # runs to completion so that `stop()` has a whole sandbox to delete, not half of one.
             box.start_task = asyncio.ensure_future(real_start(force_build=force_build))
@@ -173,11 +184,17 @@ class SandboxSupervisor:
     async def aclose(self, timeout: float = _CLEANUP_TIMEOUT_S) -> None:
         """Stop every sandbox this supervisor owns. Safe to call more than once, and concurrently.
 
+        From the first call on, new starts are refused, so a rollout still queued for a creation
+        permit cannot open a sandbox while cleanup is running.
+
         Each stop runs on the loop that started the sandbox, since backends hold loop-bound handles
         (docker's are asyncio subprocesses). A sandbox whose loop has already closed cannot be
         reached from here and is left alone.
         """
         with self._lock:
+            # Same lock as the registration in `start`, so every sandbox is either in this snapshot
+            # or refused: none can be created after cleanup has looked.
+            self._closing = True
             boxes = list(self._owned)
         here = asyncio.get_running_loop()
         pending = []

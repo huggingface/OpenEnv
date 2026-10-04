@@ -85,6 +85,28 @@ async def test_cleanup_is_safe_to_call_more_than_once():
     assert stops(log) == [("env", "stop", False)]
 
 
+async def test_no_new_sandbox_starts_once_cleanup_begins():
+    log: list = []
+    sup = SandboxSupervisor(max_starts=1)
+    first, queued = FakeEnv(log, "first", start_s=0.05), FakeEnv(log, "queued")
+    sup.adopt(make_trial(first))
+    sup.adopt(make_trial(queued))
+
+    first_start = asyncio.ensure_future(first.start(force_build=False))
+    await asyncio.sleep(0)  # `first` holds the only permit
+    queued_start = asyncio.ensure_future(queued.start(force_build=False))
+    await asyncio.sleep(0)  # `queued` is waiting for it
+
+    await sup.aclose()
+    await first_start
+    with pytest.raises(RuntimeError, match="shutting down"):
+        await queued_start
+
+    assert ("queued", "start") not in log
+    assert stops(log) == [("first", "stop", True)]
+    assert sup.owned == 0
+
+
 async def test_adopting_twice_wraps_once():
     log: list = []
     sup = SandboxSupervisor(max_starts=1)
