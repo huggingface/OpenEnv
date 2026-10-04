@@ -1,0 +1,273 @@
+"""The sandbox supervisor: ownership, idempotent cleanup, the creation limit and signal chaining.
+
+Fake environments stand in for Harbor's; the real docker backend is exercised in
+`test_harbor_supervisor_docker.py`.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import signal
+import threading
+import time
+from types import SimpleNamespace
+
+import pytest
+
+supervisor_mod = pytest.importorskip("openenv.harbor.supervisor")
+SandboxSupervisor = supervisor_mod.SandboxSupervisor
+
+
+@pytest.fixture(autouse=True)
+def restore_signal_handlers():
+    """Starting a sandbox installs handlers in this (main) thread; keep them out of other tests."""
+    saved = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
+    yield
+    for sig, handler in saved.items():
+        signal.signal(sig, handler)
+
+
+class FakeEnv:
+    def __init__(self, log: list, name: str = "env", start_s: float = 0.0):
+        self.log = log
+        self.name = name
+        self.start_s = start_s
+
+    async def start(self, force_build: bool) -> None:
+        self.log.append((self.name, "start"))
+        await asyncio.sleep(self.start_s)
+        self.log.append((self.name, "started"))
+
+    async def stop(self, delete: bool) -> None:
+        self.log.append((self.name, "stop", delete))
+
+
+def make_trial(env, delete: bool = True):
+    return SimpleNamespace(
+        agent_environment=env,
+        config=SimpleNamespace(environment=SimpleNamespace(delete=delete)),
+    )
+
+
+def stops(log):
+    return [entry for entry in log if entry[1] == "stop"]
+
+
+async def test_cleanup_only_touches_sandboxes_this_supervisor_started():
+    log: list = []
+    mine, theirs = SandboxSupervisor(), SandboxSupervisor()
+    a, b, never_started = FakeEnv(log, "a"), FakeEnv(log, "b"), FakeEnv(log, "c")
+    mine.adopt(make_trial(a))
+    mine.adopt(make_trial(never_started))
+    theirs.adopt(make_trial(b))
+    await a.start(force_build=False)
+    await b.start(force_build=False)
+
+    await mine.aclose()
+
+    assert stops(log) == [("a", "stop", True)]
+    assert mine.owned == 0
+    assert theirs.owned == 1
+
+
+async def test_cleanup_is_safe_to_call_more_than_once():
+    log: list = []
+    sup = SandboxSupervisor()
+    env = FakeEnv(log)
+    sup.adopt(make_trial(env, delete=False))
+    await env.start(force_build=False)
+
+    # Signal cleanup and Harbor's own `_finalize` reaching stop at the same time.
+    await asyncio.gather(sup.aclose(), sup.aclose(), env.stop(delete=False))
+    await sup.aclose()
+    await env.stop(delete=False)
+
+    assert stops(log) == [("env", "stop", False)]
+
+
+async def test_adopting_twice_wraps_once():
+    log: list = []
+    sup = SandboxSupervisor(max_starts=1)
+    trial = make_trial(FakeEnv(log))
+    sup.adopt(trial)
+    sup.adopt(trial)
+    await trial.agent_environment.start(force_build=False)
+    await trial.agent_environment.stop(delete=True)
+    assert log == [("env", "start"), ("env", "started"), ("env", "stop", True)]
+
+
+async def test_creation_limit_does_not_limit_rollouts():
+    sup = SandboxSupervisor(max_starts=2)
+    starting = peak_starting = live = peak_live = 0
+
+    class CountingEnv:
+        async def start(self, force_build: bool) -> None:
+            nonlocal starting, peak_starting
+            starting += 1
+            peak_starting = max(peak_starting, starting)
+            await asyncio.sleep(0.02)
+            starting -= 1
+
+        async def stop(self, delete: bool) -> None:
+            pass
+
+    async def rollout():
+        nonlocal live, peak_live
+        env = CountingEnv()
+        sup.adopt(make_trial(env))
+        await env.start(force_build=False)
+        live += 1
+        peak_live = max(peak_live, live)
+        await asyncio.sleep(
+            0.2
+        )  # the agent runs; its sandbox no longer holds a creation slot
+        live -= 1
+        await env.stop(delete=True)
+
+    await asyncio.gather(*(rollout() for _ in range(6)))
+
+    assert peak_starting == 2
+    assert peak_live == 6
+
+
+async def test_cancel_during_start_stops_only_after_the_start_finishes():
+    log: list = []
+    sup = SandboxSupervisor(max_starts=1)
+    env = FakeEnv(log, start_s=0.2)
+    sup.adopt(make_trial(env))
+
+    starting = asyncio.ensure_future(env.start(force_build=False))
+    await asyncio.sleep(0.05)
+    starting.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await starting
+    # What Harbor's `Trial.run` does next: `_finalize` -> shielded `stop`.
+    await env.stop(delete=True)
+
+    assert log == [("env", "start"), ("env", "started"), ("env", "stop", True)]
+    assert sup.owned == 0
+    # The permit came back once the abandoned start actually finished.
+    nxt = FakeEnv(log, "next")
+    sup.adopt(make_trial(nxt))
+    await asyncio.wait_for(nxt.start(force_build=False), 1)
+
+
+async def test_cancel_while_waiting_for_a_permit_owns_nothing():
+    log: list = []
+    sup = SandboxSupervisor(max_starts=1)
+    first, queued = FakeEnv(log, "first", start_s=0.2), FakeEnv(log, "queued")
+    sup.adopt(make_trial(first))
+    sup.adopt(make_trial(queued))
+
+    running = asyncio.ensure_future(first.start(force_build=False))
+    await asyncio.sleep(0.01)
+    waiting = asyncio.ensure_future(queued.start(force_build=False))
+    await asyncio.sleep(0.01)
+    waiting.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiting
+    await running
+
+    assert ("queued", "start") not in log
+    assert sup.owned == 1
+    third = FakeEnv(log, "third")
+    sup.adopt(make_trial(third))
+    await asyncio.wait_for(third.start(force_build=False), 1)
+
+
+def test_creation_limit_holds_across_event_loops():
+    sup = SandboxSupervisor(max_starts=1)
+    windows: list[tuple[float, float]] = []
+
+    class TimedEnv:
+        async def start(self, force_build: bool) -> None:
+            began = time.monotonic()
+            await asyncio.sleep(0.1)
+            windows.append((began, time.monotonic()))
+
+        async def stop(self, delete: bool) -> None:
+            pass
+
+    def worker():
+        env = TimedEnv()
+        sup.adopt(make_trial(env))
+        asyncio.run(env.start(force_build=False))
+
+    threads = [threading.Thread(target=worker) for _ in range(3)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(5)
+
+    windows.sort()
+    assert len(windows) == 3
+    assert all(prev[1] <= nxt[0] for prev, nxt in zip(windows, windows[1:]))
+
+
+async def _until(predicate, timeout: float = 2.0) -> None:
+    deadline = time.monotonic() + timeout
+    while not predicate():
+        assert time.monotonic() < deadline
+        await asyncio.sleep(0.01)
+
+
+async def test_signal_stops_sandboxes_then_reaches_the_previous_handler():
+    log: list = []
+    seen: list[int] = []
+
+    def previous(sig, frame):
+        log.append(("previous", "called"))
+        seen.append(sig)
+
+    signal.signal(signal.SIGTERM, previous)
+    sup = SandboxSupervisor()
+    env = FakeEnv(log)
+    sup.adopt(make_trial(env))
+    await env.start(force_build=False)  # installs the handler on top of `previous`
+    assert signal.getsignal(signal.SIGTERM) == sup._on_signal
+
+    signal.raise_signal(signal.SIGTERM)
+    await _until(lambda: seen)
+
+    assert log[-2:] == [("env", "stop", True), ("previous", "called")]
+    assert seen == [signal.SIGTERM]
+    assert signal.getsignal(signal.SIGTERM) is previous
+
+
+async def test_second_signal_skips_the_wait():
+    seen: list[int] = []
+    release = asyncio.Event()
+
+    class HangingEnv:
+        async def start(self, force_build: bool) -> None:
+            pass
+
+        async def stop(self, delete: bool) -> None:
+            await release.wait()
+
+    signal.signal(signal.SIGTERM, lambda sig, frame: seen.append(sig))
+    sup = SandboxSupervisor()
+    env = HangingEnv()
+    sup.adopt(make_trial(env))
+    await env.start(force_build=False)
+
+    signal.raise_signal(signal.SIGTERM)
+    await asyncio.sleep(0.05)
+    assert seen == []  # still cleaning up
+    signal.raise_signal(signal.SIGTERM)
+    await _until(lambda: seen)
+    release.set()
+    await asyncio.sleep(0.05)
+
+    assert seen == [signal.SIGTERM]  # chained once, not again when cleanup finished
+
+
+def test_max_starts_comes_from_the_environment(monkeypatch):
+    monkeypatch.setattr(supervisor_mod, "_supervisor", None)
+    monkeypatch.setenv("OPENENV_HARBOR_MAX_SANDBOX_STARTS", "lots")
+    with pytest.raises(ValueError, match="OPENENV_HARBOR_MAX_SANDBOX_STARTS"):
+        supervisor_mod.get_supervisor()
+
+    monkeypatch.setenv("OPENENV_HARBOR_MAX_SANDBOX_STARTS", "3")
+    assert supervisor_mod.get_supervisor()._limit._limit == 3
+    assert supervisor_mod.get_supervisor() is supervisor_mod.get_supervisor()
