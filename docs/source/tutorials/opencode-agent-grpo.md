@@ -1,5 +1,12 @@
 # Coding Agent Training with TRL (OpenCode)
 
+> [!WARNING]
+> **Deprecated.** This tutorial uses `opencode_env`, which will be removed in
+> OpenEnv 0.8.0. OpenCode now runs through [`harbor_env`](https://huggingface.co/docs/openenv/environments/harbor) as one of Harbor's
+> harnesses (`--harness opencode`), with the same token-level capture for
+> training. The TRL links below are pinned to v1.14.1, the last release
+> with this recipe.
+
 This tutorial covers the black-box training path: training the actual
 [`opencode`](https://opencode.ai) coding agent, with its own planner, tools,
 context management, and stop condition, using TRL's experimental
@@ -38,7 +45,7 @@ agent process. Three small functions adapt the recipe to your task:
 receive gradient), and `agent_turn_fn` (which trace entries are real agent
 turns rather than auxiliary calls like title generation). All three are
 documented in
-[TRL's harness training guide](https://huggingface.co/docs/trl/openenv#training-on-harnesses-training-a-real-coding-agent-opencode).
+[TRL's harness training guide](https://huggingface.co/docs/trl/v1.14.1/en/openenv#training-on-harnesses-training-a-real-coding-agent-opencode).
 
 ## Full Recipe
 
@@ -53,12 +60,12 @@ remote Hugging Face sandbox instead of a local subprocess.
 Installation, the exact vLLM serving flags, and the run commands live next to
 the recipe in TRL:
 
-- [Training on harnesses](https://huggingface.co/docs/trl/openenv#training-on-harnesses-training-a-real-coding-agent-opencode)
+- [Training on harnesses](https://huggingface.co/docs/trl/v1.14.1/en/openenv#training-on-harnesses-training-a-real-coding-agent-opencode)
   in TRL's OpenEnv docs: rollout semantics, the reward path, turn selection,
   and the trace contract.
-- [`examples/async_grpo_opencode/async_grpo_opencode.py`](https://github.com/huggingface/trl/blob/main/examples/async_grpo_opencode/async_grpo_opencode.py)
+- [`examples/async_grpo_opencode/async_grpo_opencode.py`](https://github.com/huggingface/trl/blob/v1.14.1/examples/async_grpo_opencode/async_grpo_opencode.py)
   in TRL: the complete, runnable script.
-- [`examples/async_grpo_opencode/opencode_hf_sandbox.py`](https://github.com/huggingface/trl/blob/main/examples/async_grpo_opencode/opencode_hf_sandbox.py)
+- [`examples/async_grpo_opencode/opencode_hf_sandbox.py`](https://github.com/huggingface/trl/blob/v1.14.1/examples/async_grpo_opencode/opencode_hf_sandbox.py)
   in TRL: the same recipe, but each rollout runs in its own remote Hugging Face
   sandbox, so rollouts scale out beyond one node.
 - [`envs/opencode_env`](https://github.com/huggingface/OpenEnv/tree/main/envs/opencode_env):

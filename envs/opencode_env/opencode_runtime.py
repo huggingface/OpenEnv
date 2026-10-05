@@ -102,18 +102,20 @@ def build_opencode_json(config: OpenCodeConfig) -> str:
 def build_install_cmd(config: OpenCodeConfig) -> str:
     """Return the shell command that installs OpenCode + ensures PATH.
 
-    The upstream installer honors ``OPENCODE_VERSION=x.y.z`` for pinning;
-    leaving it unset tracks ``latest``.
+    The upstream installer takes ``--version x.y.z`` for pinning (which skips
+    the api.github.com "latest" lookup); leaving it unset tracks ``latest``.
+    An env-var prefix on ``curl`` would not reach the ``bash`` side of the
+    pipe, so the version is passed as an installer argument instead.
     """
 
-    version_env = ""
+    version_args = ""
     if config.opencode_version and config.opencode_version != "latest":
-        version_env = f"OPENCODE_VERSION={config.opencode_version} "
+        version_args = f" -s -- --version {config.opencode_version}"
     home = config.sandbox_home
     return (
         "set -e && "
         f"mkdir -p {home}/.config/opencode {home}/logs/agent {home}/logs/verifier {home}/task {home}/workdir && "
-        f"{version_env}curl -fsSL https://opencode.ai/install | bash && "
+        f"curl -fsSL https://opencode.ai/install | bash{version_args} && "
         'export PATH="$HOME/.opencode/bin:$PATH" && '
         "opencode --version"
     )
