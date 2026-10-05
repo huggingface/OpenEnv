@@ -74,6 +74,23 @@ def _image_tag(owner: str) -> str:
     return f"openenv-validation:{owner}"
 
 
+def _image_ids(reference: str | None = None) -> set[str]:
+    """List immutable IDs without inferring absence from engine-specific errors."""
+    argv = ["docker", "image", "ls", "--all", "--no-trunc", "--quiet"]
+    if reference is not None:
+        argv.append(reference)
+    code, output, _ = _command(argv, 10)
+    if code or len(output.encode("utf-8")) >= _MAX_OUTPUT:
+        raise ProviderError("Could not obtain a complete image inventory")
+    images = set()
+    for line in output.splitlines():
+        digest = line.removeprefix("sha256:")
+        if not re.fullmatch(r"[a-f0-9]{64}", digest):
+            raise ProviderError("Could not verify image inventory")
+        images.add("sha256:" + digest)
+    return images
+
+
 def _command(
     argv: list[str], timeout_s: float, max_bytes: int = _MAX_OUTPUT
 ) -> tuple[int, str, str]:
@@ -311,7 +328,7 @@ class DockerValidationProvider:
         """Release only this build's tag, preserving other tags and parent images."""
         tag = _image_tag(owner)
         evidence = {"owner": owner, "tag": tag, "required": True, "completed": False}
-        code, output, stderr = _command(
+        code, output, _ = _command(
             [
                 "docker",
                 "image",
@@ -323,7 +340,7 @@ class DockerValidationProvider:
             10,
         )
         if code:
-            if "No such image" in stderr or "No such object" in stderr:
+            if not _image_ids(tag):
                 return {**evidence, "completed": True, "reason": "owned tag absent"}
             raise ProviderError("Could not verify image ownership for cleanup")
         fields = output.split()
@@ -339,23 +356,15 @@ class DockerValidationProvider:
             )
         image_id = fields[0]
         code, _, _ = _command(["docker", "image", "rm", "--no-prune", tag], 10)
-        if code:
-            raise ProviderError("Could not remove validation image tag")
-        code, _, stderr = _command(
-            ["docker", "image", "inspect", "--format", "{{.Id}}", tag], 10
-        )
-        if not code or not ("No such image" in stderr or "No such object" in stderr):
+        if _image_ids(tag):
+            if code:
+                raise ProviderError("Could not remove validation image tag")
             raise ProviderError("Image tag removal could not be independently verified")
-        code, _, stderr = _command(
-            ["docker", "image", "inspect", "--format", "{{.Id}}", image_id], 10
-        )
-        if code and not ("No such image" in stderr or "No such object" in stderr):
-            raise ProviderError("Image removal could not be independently verified")
         return {
             **evidence,
             "image_id": image_id,
             "completed": True,
-            "image_removed": bool(code),
+            "image_removed": image_id not in _image_ids(),
         }
 
     def start(self, spec: LaunchSpec) -> "DockerRunningSubject":
