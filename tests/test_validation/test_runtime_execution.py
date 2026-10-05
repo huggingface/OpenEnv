@@ -822,7 +822,10 @@ def test_all_claimed_discovery_checks_name_the_missing_startup_dependency(
     ):
         check = checks["runtime." + name]
         assert check.status is CheckStatus.SKIP
-        assert check.evidence == ["unmet dependency: runtime.startup"]
+        dependencies = "runtime.startup"
+        if name == "reward_attribution":
+            dependencies += ", runtime.rubric_introspectable"
+        assert check.evidence == [f"unmet dependency: {dependencies}"]
 
 
 def test_task_count_claim_is_checked_even_without_task_api_flag(
