@@ -188,6 +188,13 @@ class WireFault:
                         ]["counter"] = 999
                     elif self.mode == "bad_attribution":
                         data["data"]["attribution"][0]["rubric"][1]["score"] = 0.25
+                    elif self.mode == "changed_rubric_config":
+                        snapshot = data["data"]
+                        for tree in [snapshot["rubric"]] + [
+                            record["rubric"] for record in snapshot["attribution"]
+                        ]:
+                            tree[1]["config"]["option"] = True
+                        snapshot["attribution"][0]["rubric"][1]["config"]["option"] = 1
                 message = {**message, "text": json.dumps(data)}
             await send(message)
 
@@ -219,6 +226,7 @@ def make_app(mode="good"):
         "bad_task_count",
         "missing_rubric_config",
         "bad_attribution",
+        "changed_rubric_config",
         "slow_step",
     }:
         raise ValueError(f"Unknown fixture mode: {mode}")

@@ -163,7 +163,7 @@ def test_real_echo_reset_schema_and_unscored_rewards(legacy_schema, monkeypatch)
         runtime_evidence=evidence,
         manifest=SimpleNamespace(reward=SimpleNamespace(range=(0, 1))),
     )
-    assert RewardWellFormedGrader().run(subject).status.value == "pass"
+    assert RewardWellFormedGrader().run(subject).status.value == "fail"
     assert StateContractGrader().run(subject).status.value == "pass"
     assert ObservationSchemaGrader().run(subject).status.value == (
         "fail" if legacy_schema else "pass"

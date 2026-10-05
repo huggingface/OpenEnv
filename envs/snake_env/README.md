@@ -72,7 +72,7 @@ client.close()
 
 ```bash
 # Install dependencies
-cd src/envs/snake_env
+cd envs/snake_env
 pip install -e .
 
 # Run server
@@ -252,7 +252,7 @@ pip install git+https://github.com/kc-ml2/marlenv.git
 Make sure you're in the correct directory when running the server:
 
 ```bash
-cd src/envs/snake_env
+cd envs/snake_env
 uv run --project . server
 ```
 

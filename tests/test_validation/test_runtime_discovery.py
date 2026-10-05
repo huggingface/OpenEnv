@@ -427,6 +427,29 @@ def test_incorrect_or_stale_attribution_fails(tmp_path, change):
     )
 
 
+@pytest.mark.parametrize("before,after", [(True, 1), (False, 0), (1, 1.0)])
+def test_attribution_detects_rubric_configuration_type_changes(tmp_path, before, after):
+    payload = telemetry()
+    payload["rubric"][1]["config"] = {"nested": [{"value": after}]}
+    payload["attribution"][0]["rubric"][1]["config"] = {"nested": [{"value": before}]}
+    result = RewardAttributionGrader().run(subject(tmp_path, snapshot=payload))
+    assert result.status is CheckStatus.FAIL
+    assert result.evidence == ["step 0: rubric configuration changed"]
+
+
+def test_attribution_ignores_rubric_configuration_key_order(tmp_path):
+    payload = telemetry()
+    payload["rubric"][1]["config"] = {"enabled": True, "threshold": 1}
+    payload["attribution"][0]["rubric"][1]["config"] = {
+        "threshold": 1,
+        "enabled": True,
+    }
+    assert (
+        RewardAttributionGrader().run(subject(tmp_path, snapshot=payload)).status
+        is CheckStatus.PASS
+    )
+
+
 @pytest.mark.parametrize("aggregation", ["leaf", "gate", "sequential", "weighted_sum"])
 def test_stock_aggregation_rules_and_sequential_short_circuit(tmp_path, aggregation):
     if aggregation == "leaf":

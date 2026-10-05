@@ -44,7 +44,7 @@ and two test tasks. Its task listing returns only one preview item; the collecto
 uses `num_tasks` and samples at most two items per split. Empty tool declarations
 are checked through a real empty FastMCP registry. `discovery.json` preserves raw
 results and distinguishes failed discovery from an empty success. The protocol
-suite contains 40 required cases, including real tool calls and discovery/rubric
+suite contains 41 required cases, including real tool calls and discovery/rubric
 faults through the installed-wheel process provider.
 
 Repeatability checks replay the original plan in a fresh session, with a different
@@ -55,8 +55,8 @@ telemetry, container identity and cleanup outcome. A process-only provider expli
 skips fresh-container determinism. Subject-emitted records are compared with the
 independently collected wire trace.
 
-The Docker suite contains 29 required cases: five provider lifecycle tests,
-23 CLI fault/control cases, and one real `echo_env` canary. The slow-step case
+The Docker suite contains 30 required cases: five provider lifecycle tests,
+24 CLI fault/control cases, and one real `echo_env` canary. The slow-step case
 completes a tool call taking more than five seconds within the declared episode
 budget. The hung-step case
 checks the episode deadline; the interruption case sends SIGINT only after a
@@ -70,10 +70,11 @@ The Echo canary copies the actual `envs/echo_env` sources unchanged and records
 their hashes. A test overlay adds only the execution declaration, replay plan and
 pinned offline image recipe. It runs `echo_message` and `echo_with_length` in one
 session and verifies episode identity and state counts 0, 1, 2. Echo advertises a
-separate reset-observation schema and emits null rewards on nonterminal steps,
-which the Level 2 profile permits. The canary expects reward/schema **PASS**
-findings and CLI exit 0; the remaining unimplemented checks still make the result
-**WARN**, not complete Level 2 validation. Inspect
+separate reset-observation schema and emits null rewards on nonterminal steps.
+Those rewards remain valid under the core API but fail Level Two's stricter
+numeric-step-reward requirement. The canary expects schema **PASS**, reward
+**FAIL**, report **FAIL** and CLI exit 1. This demonstrates the certification
+boundary without changing Echo or coercing its rewards. Inspect
 `cli/echo_canary/compatibility-findings.json` for the actual results.
 
 Evidence is written to `outputs/validation-runtime/<run-id>/`, including source,

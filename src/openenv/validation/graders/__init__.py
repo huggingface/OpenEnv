@@ -136,6 +136,10 @@ class GraderRegistry:
             loaded += 1
         return loaded
 
+    def get(self, check_id: str) -> Grader | None:
+        """Return the registered implementation, or `None` for a reserved check."""
+        return self._graders.get(check_id)
+
     def select(self, manifest: NormalizedManifest, max_level: Level) -> list[Grader]:
         """
         Select the graders that apply to a manifest, up to a level ceiling.

@@ -398,6 +398,94 @@ def test_unsupported_capability_is_refused_before_build(package, change):
     )
 
 
+@pytest.mark.parametrize("default_provider", [False, True])
+def test_declared_credentials_skip_before_provider_access(
+    package, monkeypatch, default_provider
+):
+    import yaml
+
+    source = package / "openenv.yaml"
+    data = yaml.safe_load(source.read_text())
+    data["validation"]["execution"]["requires_credentials"] = True
+    source.write_text(yaml.safe_dump(data))
+    monkeypatch.setenv("OPENAI_API_KEY", "host-credential-must-not-be-used")
+    provider = FakeRuntimeProvider()
+
+    def unexpected_provider():
+        raise AssertionError("credential deferral must precede provider creation")
+
+    monkeypatch.setattr(
+        "openenv.validation.providers.docker.DockerValidationProvider",
+        unexpected_provider,
+    )
+    report = run_validation(
+        package,
+        max_level=Level.RUNTIME,
+        provider=None if default_provider else provider,
+    )
+
+    assert not provider.builds and not provider.launches
+    assert report.verdict.value == "warn"
+    assert report.levels_run == [Level.STATIC]
+    runtime_results = {
+        r.check_id: r for r in report.results if r.check_id.startswith("runtime.")
+    }
+    assert all(r.status is CheckStatus.SKIP for r in runtime_results.values())
+    assert runtime_results["runtime.startup"].evidence == [
+        "credential_delivery is deferred for this release"
+    ]
+    for name in ("reward_well_formed", "observation_schema", "state_contract"):
+        assert "runtime.startup" in runtime_results[f"runtime.{name}"].evidence[0]
+    assert "host-credential-must-not-be-used" not in report.model_dump_json()
+
+
+def test_credential_deferral_does_not_hide_invalid_runtime_plan(package):
+    import yaml
+
+    source = package / "openenv.yaml"
+    data = yaml.safe_load(source.read_text())
+    data["validation"]["execution"]["requires_credentials"] = True
+    source.write_text(yaml.safe_dump(data))
+    (package / "validation/runtime.json").write_text('{"actions": []}')
+    provider = FakeRuntimeProvider()
+
+    report = run_validation(package, max_level=Level.RUNTIME, provider=provider)
+
+    assert report.verdict.value == "fail"
+    result = next(r for r in report.results if r.check_id == "runtime.startup")
+    assert result.status is CheckStatus.FAIL
+    assert "runtime plan schema validation failed" in result.evidence[0]
+    assert not provider.builds and not provider.launches
+
+
+@pytest.mark.parametrize("declare_no_credentials", [False, True])
+def test_llm_judge_without_credentials_can_run(
+    package, monkeypatch, declare_no_credentials
+):
+    import yaml
+
+    source = package / "openenv.yaml"
+    data = yaml.safe_load(source.read_text())
+    data["validation"]["capabilities"]["llm_judged"] = True
+    data["validation"]["reward"]["variance_tolerance"] = 0.1
+    data["validation"]["judge"] = {"model": "offline-judge", "version": "1"}
+    if declare_no_credentials:
+        data["validation"]["execution"]["requires_credentials"] = False
+    source.write_text(yaml.safe_dump(data))
+    provider = FakeRuntimeProvider()
+    monkeypatch.setattr(
+        "openenv.validation.runner.collect_runtime_evidence",
+        lambda *args, **kwargs: measured_episode(),
+    )
+
+    report = run_validation(package, max_level=Level.RUNTIME, provider=provider)
+
+    assert len(provider.builds) == len(provider.launches) == 1
+    result = next(r for r in report.results if r.check_id == "runtime.startup")
+    assert result.status is CheckStatus.PASS
+    assert provider.subject.stopped
+
+
 def test_explicit_v1_rejected_before_runtime(package):
     provider = FakeRuntimeProvider()
     with pytest.raises(PolicyError, match="policy v2"):
@@ -882,7 +970,10 @@ def test_all_claimed_discovery_checks_name_the_missing_startup_dependency(
     ):
         check = checks["runtime." + name]
         assert check.status is CheckStatus.SKIP
-        assert check.evidence == ["unmet dependency: runtime.startup"]
+        dependencies = "runtime.startup"
+        if name == "reward_attribution":
+            dependencies += ", runtime.rubric_introspectable"
+        assert check.evidence == [f"unmet dependency: {dependencies}"]
 
 
 def test_task_count_claim_is_checked_even_without_task_api_flag(

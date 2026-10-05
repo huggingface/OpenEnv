@@ -12,7 +12,7 @@ from .basic import _RuntimeGrader
 JUDGED_REPLAYS = 20
 
 
-def _trace(evidence):
+def _trace(evidence, *, operation=None):
     trace = [
         {
             "operation": row.operation,
@@ -20,6 +20,7 @@ def _trace(evidence):
             "response": json.loads(row.response_json),
         }
         for row in evidence.exchanges
+        if operation is None or row.operation == operation
     ]
     for row in trace:
         json.dumps(row, allow_nan=False)
@@ -75,8 +76,11 @@ def _telemetry(evidence):
 
 
 def _missing_telemetry(grader, evidence):
+    if evidence is not None and evidence.failure_reason:
+        # The shared runtime dependency reports incomplete primary collection.
+        return None
     if evidence is not None and evidence.telemetry_json is None:
-        failure = evidence.failure_reason or evidence.telemetry_error
+        failure = evidence.telemetry_error
         return CheckResult(
             check_id=grader.check_id,
             status=CheckStatus.FAIL if failure else CheckStatus.SKIP,
@@ -95,13 +99,28 @@ class SeedControlGrader(_RuntimeGrader):
         evidence = subject.runtime_evidence
         result = _missing_telemetry(self, evidence) or super().run(subject)
         if result.status is CheckStatus.PASS:
-            if not any(replay.scope == "seed" for replay in evidence.replays):
+            seed_replays = [
+                replay.evidence for replay in evidence.replays if replay.scope == "seed"
+            ]
+            if not seed_replays:
                 return result.model_copy(
                     update={
                         "status": CheckStatus.SKIP,
                         "evidence": [
                             evidence.replay_failure_reason
                             or "different-seed reset experiment is unavailable"
+                        ],
+                    }
+                )
+            if any(
+                sample.failure_reason and sample.telemetry_json is None
+                for sample in seed_replays
+            ):
+                return result.model_copy(
+                    update={
+                        "status": CheckStatus.SKIP,
+                        "evidence": [
+                            "different-seed reset experiment did not produce seed telemetry"
                         ],
                     }
                 )
@@ -114,13 +133,17 @@ class SeedControlGrader(_RuntimeGrader):
             [evidence]
             + [replay.evidence for replay in evidence.replays if replay.scope == "seed"]
         ):
-            if sample.failure_reason or sample.telemetry_error:
-                problems.append(f"replay {index}: reset or telemetry collection failed")
+            if sample.telemetry_error:
+                problems.append(f"replay {index}: telemetry collection failed")
                 continue
-            if sample.telemetry_json is None:
-                problems.append(f"replay {index}: seed telemetry unavailable")
-                continue
+            incomplete = sample.failure_reason and sample.telemetry_json is None
+            if incomplete:
+                # Failed later actions leave seed forwarding unproven; an
+                # observed reset rejection remains a seed experiment failure.
+                _trace(sample, operation="reset")
             resets = [row for row in sample.exchanges if row.operation == "reset"]
+            if incomplete and not resets:
+                continue
             if len(resets) != 1:
                 problems.append(f"replay {index}: expected one measured reset")
                 continue
@@ -132,6 +155,11 @@ class SeedControlGrader(_RuntimeGrader):
                 original_seed = seed
             elif seed == original_seed:
                 problems.append(f"replay {index}: scheduled seed was not changed")
+            if incomplete:
+                continue
+            if sample.telemetry_json is None:
+                problems.append(f"replay {index}: seed telemetry unavailable")
+                continue
             observed = _telemetry(sample).get("seed")
             if (
                 not isinstance(observed, dict)

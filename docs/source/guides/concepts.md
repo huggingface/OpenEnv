@@ -65,13 +65,13 @@ provides both async and sync clients.
 ```python
 from openenv import AutoEnv
 
-env = AutoEnv.from_env("coding")
-
-async with env as client:
+# Async
+async with AutoEnv.from_env("coding") as client:
     result = await client.reset()
     result = await client.step(action)
 
-with env.sync() as client:
+# Sync, with its own client (a client is locked to the mode it is first used in)
+with AutoEnv.from_env("coding").sync() as client:
     result = client.reset()
     result = client.step(action)
 ```
@@ -106,39 +106,39 @@ Every OpenEnv environment consists of:
 
 ```
 my_env/
-├── openenv.yaml          # Manifest file
-├── my_env/
-│   ├── __init__.py
-│   ├── client.py         # Client classes
-│   ├── server.py         # Server/Environment
-│   └── models.py         # Pydantic models
-├── Dockerfile            # Container definition
-├── pyproject.toml        # Package metadata
-└── README.md             # Documentation
+├── openenv.yaml               # Manifest file
+├── __init__.py                # Exports the client and models
+├── client.py                  # Client class
+├── models.py                  # Action and Observation types
+├── pyproject.toml             # Package metadata
+├── README.md                  # Documentation (and the Space card)
+└── server/
+    ├── app.py                 # FastAPI app built with create_app
+    ├── my_env_environment.py  # The Environment: reset() and step()
+    └── Dockerfile             # Container definition
 ```
+
+`openenv init my_env` generates this layout.
 
 ### The Manifest (openenv.yaml)
 
 ```yaml
+spec_version: 1
 name: my_env
 version: 0.1.0
-description: My custom environment
-
-client:
-  class_name: MyEnvClient
-  module: my_env.client
-
-action:
-  class_name: MyAction
-  module: my_env.models
-
-observation:
-  class_name: MyObservation
-  module: my_env.models
-
-default_image: my-env:latest
-spec_version: 1
+type: space
+runtime: fastapi
+app: server.app:app
+port: 8000
+validation:
+  reward:
+    range: [0.0, 1.0]
+  capabilities:
+    verifier:
+      kind: reward_channel
 ```
+
+`openenv init` writes the full manifest, including the resource limits checked by `openenv validate`. The client, action and observation classes are found by naming convention (`MyEnv`, `MyAction`, `MyObservation`), so the manifest doesn't list them.
 
 ### Models (Pydantic)
 

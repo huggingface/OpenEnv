@@ -16,7 +16,8 @@ is a one-line change.
 | `ACASandboxProvider` | Azure Container Apps Sandboxes | `pip install openenv[aca]` | ✅ |
 | `ModalProvider` | Modal sandboxes | `pip install openenv[modal]` | ✅ |
 | `NovitaSandboxProvider` | Novita AI sandboxes | `pip install openenv[novita]` | ✅ |
-| `KubernetesProvider` | Kubernetes cluster | core | 🚧 planned |
+
+A `KubernetesProvider` is planned but not available yet.
 
 Cloud-provider SDKs are optional extras, imported lazily, so installing core
 OpenEnv pulls in no cloud SDK. The core providers (`LocalDockerProvider`,
@@ -92,14 +93,14 @@ concurrently with `asyncio.gather`, wrapping the blocking provider calls in
 `asyncio.to_thread` since most cloud SDKs are synchronous:
 
 ```python
-async def run_one(env_id: int, image) -> str:
+async def run_one(env_id: int, image) -> dict:
     provider = DaytonaProvider()
     base_url = await asyncio.to_thread(provider.start_container, image)
     try:
         await asyncio.to_thread(provider.wait_for_ready, base_url, 300)
         async with MyEnv(base_url=base_url, provider=provider) as env:
             result = await env.reset()
-            return result.observation.text
+            return result.observation.metadata
     finally:
         await asyncio.to_thread(provider.stop_container)
 

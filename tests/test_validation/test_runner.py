@@ -4,11 +4,87 @@ import shutil
 
 import pytest
 from conftest import FIXTURES
+from openenv.validation import runner
 from openenv.validation.policy import load_policy
-from openenv.validation.report import ValidationReport
+from openenv.validation.report import CheckResult, ValidationReport
 from openenv.validation.runner import run_validation, source_digest
 from openenv.validation.signature import SignatureError
 from openenv.validation.types import CheckStatus, Lane, Level, Verdict
+from support.runtime import evidence, FakeRuntimeProvider
+
+
+@pytest.mark.parametrize(
+    "mode", ["run", "skip-build", "source-change", "capability", "applies-to"]
+)
+def test_registered_runtime_graders_use_metadata_throughout_run(
+    tmp_path, monkeypatch, mode
+):
+    package = tmp_path / "subject"
+    shutil.copytree(FIXTURES / "runtime" / "served_probe", package)
+    policy = load_policy("v2")
+    registry = runner.default_grader_registry(policy)
+    calls = []
+
+    class Probe:
+        level = Level.RUNTIME
+        requires_provider = frozenset()
+        requires_capabilities = (
+            frozenset({"set_state"}) if mode == "capability" else frozenset()
+        )
+
+        def __init__(self, check_id, dependency):
+            self.check_id = check_id
+            self.depends_on = (dependency,)
+
+        def applies_to(self, manifest):
+            return mode != "applies-to"
+
+        def run(self, subject):
+            calls.append(self.check_id)
+            return CheckResult(
+                check_id=self.check_id, status=CheckStatus.PASS, duration_s=0
+            )
+
+    # Register test implementations against existing policy IDs. The runner must
+    # discover them without adding their IDs to execution or dependency lists.
+    probes = [
+        Probe("runtime.network_policy", "runtime.startup"),
+        Probe("runtime.host_containment", "runtime.network_policy"),
+    ]
+    for probe in probes:
+        registry.register(probe)
+    monkeypatch.setattr(runner, "default_grader_registry", lambda policy: registry)
+
+    def collect(*args, **kwargs):
+        if mode == "source-change":
+            (package / "changed.txt").write_text("changed during collection")
+        return evidence()
+
+    monkeypatch.setattr(runner, "collect_runtime_evidence", collect)
+    report = run_validation(
+        package,
+        max_level=Level.RUNTIME,
+        provider=FakeRuntimeProvider(),
+        skip_build=mode == "skip-build",
+        policy=policy,
+    )
+    results = {result.check_id: result for result in report.results}
+    if mode in {"capability", "applies-to"}:
+        assert calls == []
+        assert all(probe.check_id not in results for probe in probes)
+        return
+    assert calls == ([] if mode == "skip-build" else [p.check_id for p in probes])
+    for probe in probes:
+        result = results[probe.check_id]
+        assert result.status is (
+            CheckStatus.PASS if mode == "run" else CheckStatus.SKIP
+        )
+        if mode == "skip-build":
+            assert result.evidence == ["unmet dependency: " + probe.depends_on[0]]
+        elif mode == "source-change":
+            assert result.evidence == [
+                "unmet dependency: runtime.startup (package source changed during validation)"
+            ]
 
 
 def test_valid_package_passes_static_level():
