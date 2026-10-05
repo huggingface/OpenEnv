@@ -6,6 +6,7 @@ from dataclasses import replace
 
 import pytest
 from conftest import load_fixture_manifest
+from openenv.core.env_server.types import Observation
 from openenv.validation.graders import Subject
 from openenv.validation.graders.runtime import (
     basic,
@@ -122,16 +123,39 @@ def test_step_rewards_are_checked_without_coercion(tmp_path, reward, done):
     assert any("reward" in message for message in result.evidence)
 
 
-@pytest.mark.parametrize("done", [False, True, None, 0])
-def test_null_step_reward_requires_explicit_nonterminal_observation(tmp_path, done):
+@pytest.mark.parametrize("reward", [None, True, False])
+@pytest.mark.parametrize("done", [False, True])
+def test_core_reward_types_do_not_imply_level_two_certification(tmp_path, reward, done):
+    # Core compatibility does not weaken the stricter certification contract.
+    assert Observation(reward=reward, done=done).reward is reward
     rows = mutate_response(
-        good_rows(), 2, lambda response: response["data"].update(reward=None, done=done)
+        good_rows(),
+        2,
+        lambda response: response["data"].update(reward=reward, done=done),
     )
     result = RewardWellFormedGrader().run(subject_with(tmp_path, rows))
-    assert result.status is (CheckStatus.PASS if done is False else CheckStatus.FAIL)
+    assert result.status is CheckStatus.FAIL
+    assert any("exchange 2: reward" in message for message in result.evidence)
+    assert json.loads(rows[2].response_json)["data"]["reward"] is reward
 
 
-def test_explicit_reset_schema_is_independent_of_step_schema(tmp_path):
+def test_null_reset_reward_remains_unscored(tmp_path):
+    rows = good_rows()
+    assert json.loads(rows[0].response_json)["data"]["reward"] is None
+    assert (
+        RewardWellFormedGrader().run(subject_with(tmp_path, rows)).status
+        is CheckStatus.PASS
+    )
+    assert json.loads(rows[0].response_json)["data"]["reward"] is None
+
+
+@pytest.mark.parametrize(
+    "invalid_index,invalid_observation",
+    [(0, {"ready": "yes"}), (2, {"counter": "not-an-integer"})],
+)
+def test_explicit_reset_schema_is_independent_of_step_schema(
+    tmp_path, invalid_index, invalid_observation
+):
     rows = mutate_response(
         good_rows(),
         0,
@@ -155,13 +179,17 @@ def test_explicit_reset_schema_is_independent_of_step_schema(tmp_path):
     )
     assert ObservationSchemaGrader().run(subject).status is CheckStatus.PASS
     malformed = mutate_response(
-        rows, 0, lambda response: response["data"].update(observation={"ready": "yes"})
+        rows,
+        invalid_index,
+        lambda response: response["data"].update(observation=invalid_observation),
     )
     subject = replace(
         subject,
         runtime_evidence=replace(subject.runtime_evidence, exchanges=tuple(malformed)),
     )
-    assert ObservationSchemaGrader().run(subject).status is CheckStatus.FAIL
+    result = ObservationSchemaGrader().run(subject)
+    assert result.status is CheckStatus.FAIL
+    assert all(f"exchange {invalid_index}:" in message for message in result.evidence)
 
 
 @pytest.mark.parametrize(

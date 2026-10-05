@@ -73,19 +73,27 @@ runtime and cost. Missing replay samples cannot pass determinism. Primary episod
 collection failures appear under `runtime.startup`, with dependent contract checks
 skipped and the completed trace retained.
 
-Validation does not inherit host credentials, and the CLI currently has no secret
-injection mechanism. Environments requiring a judge API key can therefore fail at
-session creation.
+Credential delivery is deferred for this release. Set
+`validation.execution.requires_credentials: true` when the environment needs an
+externally supplied credential, such as a judge API key. This boolean declaration
+causes a named `credential_delivery` SKIP before build or launch; dependent runtime
+checks also SKIP. The resulting WARN does not establish complete Level 2 coverage.
+The declaration accepts no secret values and defaults to false. Validation never
+inherits host credentials or forwards API keys. Self-contained LLM judges can run
+without this requirement; `llm_judged` alone does not imply a need for credentials.
+An undeclared startup or reset failure still fails validation.
 
 Observation validation uses the `reset_observation` field from `/schema` for resets
 and `observation` for steps. Servers can declare `reset_observation_cls` when
 reset returns a different observation type; it defaults to the step observation
-class. Older servers without a reset schema use the step schema for both.
-The Level 2 profile permits null rewards on reset and nonterminal steps. Terminal
-steps require numeric rewards, and every numeric reward must be finite and within
-the declared range; boolean rewards are invalid. Judged reward variance and rubric
-attribution need scored steps: entirely unscored episodes produce `SKIP` for those
-checks.
+class. Older servers without a reset schema use the step schema for both. Reset
+validation is always required; the validator does not silently substitute a base
+schema. These are output schemas, separate from any reset input declaration.
+The Level 2 profile permits null rewards only on reset. Every step, including a
+nonterminal step, requires a finite numeric reward within the declared range;
+boolean rewards are invalid. This certification requirement is stricter than the
+backward-compatible core `Observation.reward` type. Emit zero only when the intended
+reward is zero; the validator never converts missing or null step rewards to zero.
 
 Cleanup removes run-owned containers. Built images remain in Docker's local cache
 for reuse; the report records their immutable image IDs. Remove an unwanted image

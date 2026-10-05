@@ -68,10 +68,11 @@ The Echo canary copies the actual `envs/echo_env` sources unchanged and records
 their hashes. A test overlay adds only the execution declaration, replay plan and
 pinned offline image recipe. It runs `echo_message` and `echo_with_length` in one
 session and verifies episode identity and state counts 0, 1, 2. Echo advertises a
-separate reset-observation schema and emits null rewards on nonterminal steps,
-which the Level 2 profile permits. The canary expects reward/schema **PASS**
-findings and CLI exit 0; the remaining unimplemented checks still make the result
-**WARN**, not complete Level 2 validation. Inspect
+separate reset-observation schema and emits null rewards on nonterminal steps.
+Those rewards remain valid under the core API but fail Level Two's stricter
+numeric-step-reward requirement. The canary expects schema **PASS**, reward
+**FAIL**, report **FAIL** and CLI exit 1. This demonstrates the certification
+boundary without changing Echo or coercing its rewards. Inspect
 `cli/echo_canary/compatibility-findings.json` for the actual results.
 
 Evidence is written to `outputs/validation-runtime/<run-id>/`, including source,
