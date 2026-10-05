@@ -11,8 +11,9 @@ the subject COPY and entrypoint. The validator never imports Echo on the host.
 The acceptance test requires real tool responses and a continuing episode with
 state counts 0, 1 and 2. Echo explicitly advertises its base reset observation
 separately from CallToolObservation step responses. Its null rewards denote
-unscored, nonterminal tool calls, permitted by the Level Two reward profile.
-Startup, state, reward and observation schema checks must pass. Unimplemented
-checks still produce SKIP and the report remains WARN; this does not certify Echo
-or complete Level 2 validation. Terminal null rewards, malformed reset observations
-and legacy single-schema mismatches remain failures in dedicated regressions.
+unscored, nonterminal tool calls permitted by the core API but rejected by Level
+Two's stricter numeric-step-reward requirement. Startup, state and observation
+schema checks must pass; reward must FAIL, making the report FAIL with CLI exit 1.
+This is an expected certification finding, not a broken canary or a reason to
+coerce null to zero. Malformed reset observations and legacy single-schema
+mismatches remain failures in dedicated regressions.

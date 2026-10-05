@@ -138,6 +138,10 @@ def _runtime(subject, graders, *, skip_build, provider):
                 "missing validation.execution declaration and runtime plan"
             )
         plan = load_runtime_plan(subject.root, manifest.execution)
+        if manifest.execution.requires_credentials:
+            raise UnsupportedCapability(
+                "credential_delivery is deferred for this release"
+            )
         if provider is None:
             from .providers.docker import DockerValidationProvider
 
