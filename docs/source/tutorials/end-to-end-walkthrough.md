@@ -264,7 +264,7 @@ Open the Trackio Space linked in the trainer logs to follow the run live. A heal
 - **`reward`** climbs from your baseline toward `1.0` over the first ~100 steps. A flat line near 0 means the task is too hard for the base model; a flat line near 1 means it's too easy — adjust `DATASET_CONFIG` in either case.
 - **`reward_std`** starts moderate and *drops* as the policy converges (most rollouts succeed). Persistent zero means every rollout in the group gives the same score → no advantage signal → no learning. Bump `num_generations` or task difficulty.
 - **`frac_reward_zero_std`** is the fraction of groups where every rollout has the same reward — when it climbs toward 1.0 you've saturated.
-- **`entropy`** stays low while the model is learning. Once `reward` saturates, `entropy` typically rises again because the policy gradient is zero and only the KL penalty against the reference model is active — at that point further training is net-negative. Stop with a kernel interrupt or trust `max_steps`.
+- **`entropy`** stays low while the model is learning. Once `reward` saturates, `entropy` typically rises again: most groups have zero advantage, so the remaining updates come from the few groups that still differ and from optimizer momentum — at that point further training is net-negative. Stop with a kernel interrupt or trust `max_steps`.
 - **`grad_norm`** decays toward zero as gradients become uninformative; same saturation signal.
 
 Once training finishes, the model in the running process has been fine-tuned in place.
@@ -306,7 +306,7 @@ A delta of **+10 to +30 pp** is what you should expect at this difficulty; outsi
 
 - **Δ ≈ 0 pp, initial already high (≥90%)** — `DATASET_CONFIG` is too easy; the model already solves it before training. Bump `min_terms` / `min_digits`.
 - **Δ ≈ 0 pp, initial very low (≤20%)** — task is too hard for the base model to ever stumble onto a correct answer, so GRPO has no positive rollouts to learn from. Lower `min_terms` / `min_digits`. If the reward stays near zero even at minimum difficulty, the bottleneck is likely **format compliance** rather than task difficulty — the model never produces a valid `<tool_call>` so the env cannot score it. See the [SFT warm-up tutorial](sft-warmup) for how to fix this before returning to GRPO.
-- **Δ negative** — you trained past saturation: once `reward` plateaus, the KL penalty starts pulling the policy back toward the reference. Reduce `max_steps` so training stops while it's still net-improving.
+- **Δ negative** — you trained past saturation: once `reward` plateaus, the few groups that still carry signal move the policy without improving it. Reduce `max_steps` so training stops while it's still net-improving.
 
 > [!NOTE]
 > This delta is measured *during training* — same prompt format, same env, same procedural distribution that produced each rollout. It's the most direct way to ask "did the policy improve over the run?". A more rigorous protocol — generating completions on a held-out split with a separate evaluation harness — is what frameworks like [Inspect AI](https://inspect.aisi.org.uk/) are designed for; that's a follow-up rather than part of this walkthrough.
