@@ -74,11 +74,13 @@ def _image_tag(owner: str) -> str:
     return f"openenv-validation:{owner}"
 
 
-def _image_ids(reference: str | None = None) -> set[str]:
+def _image_ids(reference: str | None = None, *, owner: str | None = None) -> set[str]:
     """List immutable IDs without inferring absence from engine-specific errors."""
     argv = ["docker", "image", "ls", "--all", "--no-trunc", "--quiet"]
     if reference is not None:
         argv.append(reference)
+    if owner is not None:
+        argv.extend(["--filter", f"label={_IMAGE_LABEL}={owner}"])
     code, output, _ = _command(argv, 10)
     if code or len(output.encode("utf-8")) >= _MAX_OUTPUT:
         raise ProviderError("Could not obtain a complete image inventory")
@@ -364,7 +366,9 @@ class DockerValidationProvider:
             **evidence,
             "image_id": image_id,
             "completed": True,
-            "image_removed": image_id not in _image_ids(),
+            # Retagging preserves this immutable label; unrelated caches cannot
+            # exhaust the inventory budget used to verify this run's image.
+            "image_removed": image_id not in _image_ids(owner=owner),
         }
 
     def start(self, spec: LaunchSpec) -> "DockerRunningSubject":

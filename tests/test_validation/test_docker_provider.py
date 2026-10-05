@@ -517,6 +517,7 @@ def test_image_cleanup_absent_tag_uses_inventory_not_inspect_error(
             return 125, "", "image not known"
         assert argv[2] == "ls"
         assert argv[-1] == f"openenv-validation:{owner}"
+        assert "--filter" not in argv
         return 0, IMAGE + "\n" if present else "", ""
 
     monkeypatch.setattr(docker, "_command", command)
@@ -529,7 +530,7 @@ def test_image_cleanup_absent_tag_uses_inventory_not_inspect_error(
     assert not any(argv[2] == "rm" for argv in calls)
 
 
-@pytest.mark.parametrize("phase", ["before", "after"])
+@pytest.mark.parametrize("phase", ["before", "after", "image"])
 @pytest.mark.parametrize(
     "inventory",
     [
@@ -549,6 +550,8 @@ def test_image_cleanup_cannot_verify_absence_from_failed_or_incomplete_inventory
         nonlocal removed
         calls.append(argv)
         if argv[2] == "ls":
+            if phase == "image" and argv[-1] == f"openenv-validation:{owner}":
+                return 0, "", ""
             return inventory
         if argv[2] == "rm":
             removed = True
@@ -560,7 +563,38 @@ def test_image_cleanup_cannot_verify_absence_from_failed_or_incomplete_inventory
     monkeypatch.setattr(docker, "_command", command)
     with pytest.raises(ProviderError):
         docker.DockerValidationProvider().cleanup_image(owner, IMAGE)
-    assert any(argv[2] == "rm" for argv in calls) is (phase == "after")
+    assert any(argv[2] == "rm" for argv in calls) is (phase != "before")
+    if phase == "image":
+        assert calls[-1][-2:] == ["--filter", f"label={docker._IMAGE_LABEL}={owner}"]
+
+
+@pytest.mark.parametrize("shared", [False, True])
+def test_image_cleanup_ignores_unrelated_image_cache(monkeypatch, shared):
+    owner = "validation-" + "b" * 32
+    tag = f"openenv-validation:{owner}"
+    queries = []
+
+    def command(argv, timeout_s):
+        if argv[2] == "inspect":
+            return 0, f"{IMAGE} {owner}", ""
+        if argv[2] == "rm":
+            return 0, "", ""
+        assert argv[2] == "ls"
+        queries.append(argv)
+        if argv[-1] == tag:
+            # Tag presence must remain visible even if another owner retags it.
+            assert "--filter" not in argv
+            return 0, "", ""
+        if argv[-2:] == ["--filter", f"label={docker._IMAGE_LABEL}={owner}"]:
+            return 0, IMAGE + "\n" if shared else "", ""
+        # An unfiltered query would overflow with unrelated cache entries.
+        return 0, ("sha256:" + "c" * 64 + "\n") * 2000, ""
+
+    monkeypatch.setattr(docker, "_command", command)
+    result = docker.DockerValidationProvider().cleanup_image(owner, IMAGE)
+    assert result["completed"] and result["image_removed"] is not shared
+    assert len(queries) == 2
+    assert queries[-1][-2:] == ["--filter", f"label={docker._IMAGE_LABEL}={owner}"]
 
 
 @pytest.mark.parametrize("remove_code", [0, 1])
