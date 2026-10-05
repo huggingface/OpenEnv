@@ -1,5 +1,11 @@
 # Coding Agent Training with TRL (Pi)
 
+> [!WARNING]
+> **Deprecated.** This tutorial uses `pi_env`, which will be removed in
+> OpenEnv 0.8.0. Pi now runs through [`harbor_env`](https://huggingface.co/docs/openenv/environments/harbor) as one of Harbor's
+> harnesses (`--harness pi`), with the same token-level capture for
+> training.
+
 This tutorial covers the black-box training path: training the actual
 [`pi`](https://github.com/badlogic/pi-mono) coding agent, with its own planner,
 tools, context management, and stop condition, using TRL's experimental
@@ -47,8 +53,8 @@ is self-contained, runs the agent in a local subprocess sandbox (no container
 setup needed), needs two GPUs (one serving the policy with vLLM, one
 training).
 
-- [`examples/scripts/openenv/pi.py`](https://github.com/huggingface/trl/blob/main/examples/scripts/openenv/pi.py)
-  in TRL: the complete, runnable script.
+- The TRL script for this recipe was never merged. To train Pi, use
+  [`harbor_env`](https://huggingface.co/docs/openenv/environments/harbor) with `--harness pi`.
 - [`envs/pi_env`](https://github.com/huggingface/OpenEnv/tree/main/envs/pi_env):
   the OpenEnv side, including the session factory, sandbox backends, and the
   transparent interception proxy.
