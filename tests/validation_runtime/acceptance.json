@@ -40,6 +40,7 @@
       "tests.test_validation.integration.test_runtime_process::test_installed_server_collector_and_graders_over_loopback[bad_task_count-runtime.task_declaration_accuracy]",
       "tests.test_validation.integration.test_runtime_process::test_installed_server_collector_and_graders_over_loopback[missing_rubric_config-runtime.rubric_introspectable]",
       "tests.test_validation.integration.test_runtime_process::test_installed_server_collector_and_graders_over_loopback[bad_attribution-runtime.reward_attribution]",
+      "tests.test_validation.integration.test_runtime_process::test_installed_server_collector_and_graders_over_loopback[changed_rubric_config-runtime.reward_attribution]",
       "tests.test_validation.integration.test_runtime_process::test_installed_server_collector_and_graders_over_loopback[empty_tools-None]",
       "tests.test_validation.integration.test_runtime_process::test_installed_server_collector_and_graders_over_loopback[namespace_mismatch-None]"
     ],
@@ -70,6 +71,7 @@
       "tests.test_validation.integration.test_runtime_cli::test_cli_runtime_contract_findings[bad_task_count-runtime.task_declaration_accuracy]",
       "tests.test_validation.integration.test_runtime_cli::test_cli_runtime_contract_findings[missing_rubric_config-runtime.rubric_introspectable]",
       "tests.test_validation.integration.test_runtime_cli::test_cli_runtime_contract_findings[bad_attribution-runtime.reward_attribution]",
+      "tests.test_validation.integration.test_runtime_cli::test_cli_runtime_contract_findings[changed_rubric_config-runtime.reward_attribution]",
       "tests.test_validation.integration.test_runtime_cli::test_cli_runtime_contract_findings[empty_tools-None]"
     ]
   }

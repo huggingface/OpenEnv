@@ -44,7 +44,7 @@ and two test tasks. Its task listing returns only one preview item; the collecto
 uses `num_tasks` and samples at most two items per split. Empty tool declarations
 are checked through a real empty FastMCP registry. `discovery.json` preserves raw
 results and distinguishes failed discovery from an empty success. The protocol
-suite contains 40 required cases, including real tool calls and discovery/rubric
+suite contains 41 required cases, including real tool calls and discovery/rubric
 faults through the installed-wheel process provider.
 
 Repeatability checks replay the original plan in a fresh session, with a different
@@ -55,8 +55,8 @@ telemetry, container identity and cleanup outcome. A process-only provider expli
 skips fresh-container determinism. Subject-emitted records are compared with the
 independently collected wire trace.
 
-The Docker suite contains 27 required cases: three provider lifecycle tests,
-23 CLI fault/control cases, and one real `echo_env` canary. The slow-step case
+The Docker suite contains 28 required cases: three provider lifecycle tests,
+24 CLI fault/control cases, and one real `echo_env` canary. The slow-step case
 completes a tool call taking more than five seconds within the declared episode
 budget. The hung-step case
 checks the episode deadline; the interruption case sends SIGINT only after a
