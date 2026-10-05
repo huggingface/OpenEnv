@@ -532,7 +532,10 @@ def _run_head(rec: dict[str, Any], token: str) -> str:
         )
     if trainable:
         actions.append(
-            f'<button type="button" class="hb-btn sm" data-dl="contract" data-grant="{_e(token)}">{icon("download", 14)}Training contract</button>'
+            f'<button type="button" class="hb-btn sm" data-dl="contract" data-grant="{_e(token)}">{icon("download", 14)}Capture audit</button>'
+        )
+        actions.append(
+            f'<button type="button" class="hb-btn sm" data-dl="training_trace" data-grant="{_e(token)}">{icon("download", 14)}Training trace</button>'
         )
     title = rec.get("task_title") or rec.get("task_name")
     return (

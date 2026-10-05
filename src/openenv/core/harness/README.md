@@ -108,3 +108,57 @@ HF Dataset Viewer renders `results.jsonl` as `split=train`.
 - **Filtering** — `should_keep` is a `Callable[[EpisodeRecord], bool]`. Defaults
   to keeping everything. The CLI filters `reward >= 0` unless `--keep-losses`
   is set.
+
+## Training captures
+
+A loop-owning session can implement `TrainableSession.fetch_training_trace()` to
+return a `TrainingTrace`. Harbor and native OpenCode implement this API. Raw
+`fetch_proxy_trace()` remains available for diagnostics and older consumers.
+
+```python
+from openenv.core.harness import TrainingTrace, TrainingTurn
+
+trace = TrainingTrace(turns=[TrainingTurn(
+    node_id="call-0",
+    prompt_token_ids=[10, 11],
+    completion_token_ids=[20, 21, 22],
+    per_token_logps=[-0.2, -0.4, -0.1],
+    loss_mask=[0, 0, 1, 0, 1],
+)])
+restored = TrainingTrace.model_validate_json(trace.model_dump_json())
+```
+
+The mask covers prompt plus completion. Prompt positions are zero; completion
+positions select the sampled tokens that receive loss. A zero-masked turn stays
+available as context. Tokens, masks and finite nonpositive logprobs are validated
+when the object is built or deserialized. Missing masks and duplicate call IDs
+are errors. Tokens are never reconstructed from text.
+
+The environment selects agent calls and excludes auxiliary calls and discarded
+retries before returning this object. Shared graph nodes appear once. Selection
+uses the existing capture classifier; its tool-manifest and retry heuristics are
+not a substitute for explicit harness evidence. The raw graph remains available
+for auditing. Changing a task's supervision means changing its producer mask,
+not adding a turn-selection callback in the trainer.
+
+`verify()` remains the source of the task reward. `None` is ungraded and `0` is an
+incorrect answer. A single-call rollout produces a diagnostic warning, not a
+capture failure. Masks do not alter the verifier score. Trainers own advantages,
+loss weighting, packing and weight updates. Graph identity does not by itself
+normalize a rollout that expands into multiple training rows.
+
+For training, construct the session factory with the trainer's `sampling` policy.
+Harbor and native OpenCode apply it before inference. The trainer need not compare
+sampling metadata after generation. Native OpenCode requires `transparent_proxy`
+mode and an engine returning prompt IDs and sampled-token logprobs; its standalone
+proxy retains choice token IDs across streaming, with `token_id:N` as a fallback.
+Training export uses the same token/logprob pairing check as Harbor when logprob
+entries identify their tokens. A disagreement on an agent turn rejects the training
+trace; raw capture stays available for inspection. Plain token text is not
+re-tokenized to infer an ID.
+
+Migration from TRL selection hooks: use `fetch_training_trace()` instead of a raw
+trace, move whole-turn exclusions into the producer's `loss_mask`, and keep final
+answers eligible unless your task explicitly masks them. The old Harbor export
+continues to read legacy captures; the strict API requires explicit masks and
+node IDs. Evaluation-only captures cannot be used for training.

@@ -19,6 +19,8 @@ Two layers in this package:
    See ``client.py`` and ``server/``.
 """
 
+import warnings
+
 from openenv.core.env_server.mcp_types import CallToolAction, ListToolsAction
 
 from .client import OpenCodeEnv
@@ -32,6 +34,16 @@ from .models import (
 )
 from .sandbox import E2BSandboxBackend, SandboxBackend, SandboxHandle
 from .task import OpenCodeTask
+
+warnings.warn(
+    "opencode_env is deprecated and will be removed in OpenEnv 0.8.0. "
+    "Run opencode through harbor_env instead: "
+    "`HarborSessionFactory(server_url, harness='opencode')` against "
+    "`openenv harbor serve`. "
+    "See https://huggingface.co/docs/openenv/environments/harbor",
+    FutureWarning,
+    stacklevel=2,
+)
 
 __all__ = [
     # Deployed-env client
