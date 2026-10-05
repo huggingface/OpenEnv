@@ -77,7 +77,7 @@ class _RuntimeGrader:
 
 
 class RewardWellFormedGrader(_RuntimeGrader):
-    """Allow unscored nonterminal steps; bound every emitted numeric reward."""
+    """Require numeric step rewards for Level Two, beyond the core API contract."""
 
     check_id = "runtime.reward_well_formed"
 
@@ -97,9 +97,7 @@ class RewardWellFormedGrader(_RuntimeGrader):
                 problems.append(f"exchange {index}: missing reward")
                 continue
             reward = data["reward"]
-            if reward is None and (
-                exchange.operation == "reset" or data.get("done") is False
-            ):
+            if reward is None and exchange.operation == "reset":
                 continue
             if (
                 type(reward) not in (int, float)

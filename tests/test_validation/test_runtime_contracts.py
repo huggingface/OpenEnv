@@ -61,6 +61,29 @@ def test_execution_paths_reject_nonportable_or_escaped_locations(field, path):
         ExecutionDeclaration(**{field: path})
 
 
+def test_execution_defaults_to_no_credential_requirement():
+    assert ExecutionDeclaration().requires_credentials is False
+
+
+@pytest.mark.parametrize("required", [False, True])
+def test_execution_accepts_explicit_credential_requirement(required):
+    assert (
+        ExecutionDeclaration(requires_credentials=required).requires_credentials
+        is required
+    )
+
+
+@pytest.mark.parametrize("required", ["true", "false", 0, 1, None, [], {}])
+def test_execution_credential_requirement_requires_boolean(required):
+    with pytest.raises(ValidationError, match="valid boolean"):
+        ExecutionDeclaration(requires_credentials=required)
+
+
+@pytest.mark.parametrize("model", [NormalizedManifest, ValidationReport])
+def test_credential_declaration_does_not_change_schema_one(model):
+    assert "requires_credentials" not in json.dumps(model.model_json_schema())
+
+
 def test_plan_symlink_cannot_escape_package(tmp_path):
     package = tmp_path / "package"
     package.mkdir()

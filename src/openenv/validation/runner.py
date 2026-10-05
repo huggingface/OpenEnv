@@ -31,7 +31,7 @@ from .runtime.artifacts import write_runtime_bundle
 from .runtime.collector import collect_runtime_evidence, RuntimeCollectionInterrupted
 from .runtime.contracts import LaunchSpec, load_runtime_plan, RuntimePlanError
 from .runtime.replay import collect_replays, REPLAY_BUDGET_SECONDS
-from .runtime.scheduler import execute_graders
+from .runtime.scheduler import execute_graders, order_graders
 from .signature import detect_signature
 from .types import CheckStatus, Lane, Level, ProviderCapability
 
@@ -91,6 +91,19 @@ def default_parser_registry() -> ParserRegistry:
     return registry
 
 
+def default_grader_registry(policy: SeverityPolicy) -> GraderRegistry:
+    """The graders shipped in this build, including their selection metadata."""
+    registry = GraderRegistry()
+    registry.register(StaticManifestGrader(policy.bounds))
+    registry.register(RewardWellFormedGrader())
+    registry.register(ObservationSchemaGrader())
+    registry.register(StateContractGrader())
+    registry.register(SeedControlGrader())
+    registry.register(EpisodeDeterminismGrader())
+    registry.register(TrajectoryRecordGrader())
+    return registry
+
+
 def _outcome(check_id, status, reason, *, started=None, measured=None):
     return CheckResult(
         check_id=check_id,
@@ -113,7 +126,7 @@ def _applicable(check_id, manifest):
     return True
 
 
-def _runtime(subject, *, skip_build, provider):
+def _runtime(subject, graders, *, skip_build, provider):
     """Own build/start/collection/stop and retain failure evidence through teardown."""
     manifest = subject.manifest
     plan = None
@@ -135,6 +148,10 @@ def _runtime(subject, *, skip_build, provider):
                 "missing validation.execution declaration and runtime plan"
             )
         plan = load_runtime_plan(subject.root, manifest.execution)
+        if manifest.execution.requires_credentials:
+            raise UnsupportedCapability(
+                "credential_delivery is deferred for this release"
+            )
         if provider is None:
             from .providers.docker import DockerValidationProvider
 
@@ -201,14 +218,7 @@ def _runtime(subject, *, skip_build, provider):
             subject, image_ref=image_ref, running=running, runtime_evidence=evidence
         )
         checks = execute_graders(
-            [
-                RewardWellFormedGrader(),
-                ObservationSchemaGrader(),
-                StateContractGrader(),
-                SeedControlGrader(),
-                EpisodeDeterminismGrader(),
-                TrajectoryRecordGrader(),
-            ],
+            graders,
             subject,
             provider_capabilities=provider.capabilities,
             prior=[result],
@@ -329,8 +339,10 @@ def run_validation(
         digest_before = ""
 
     parser = default_parser_registry().parser_for(signature)
+    graders = default_grader_registry(policy)
     manifest: NormalizedManifest | None = None
     results: list[CheckResult] = []
+    selected = {}
 
     parse_started = time.monotonic()
     if not digest_before:
@@ -362,8 +374,9 @@ def run_validation(
     inspection = {}
     cleanup = {"required": False, "completed": True}
     if manifest is not None:
-        graders = GraderRegistry()
-        graders.register(StaticManifestGrader(policy.bounds))
+        selected = {
+            grader.check_id: grader for grader in graders.select(manifest, max_level)
+        }
         subject = Subject(
             root=target,
             manifest=manifest,
@@ -371,10 +384,26 @@ def run_validation(
             running=None,
             outputs_dir=target / "outputs",
         )
-        results.extend(execute_graders(graders.select(manifest, Level.STATIC), subject))
+        results.extend(
+            execute_graders(
+                [
+                    grader
+                    for grader in selected.values()
+                    if grader.level is Level.STATIC
+                ],
+                subject,
+            )
+        )
         if wants_runtime:
             runtime_results, attempted, plan, evidence, inspection, cleanup = _runtime(
-                subject, skip_build=skip_build, provider=provider
+                subject,
+                [
+                    grader
+                    for grader in selected.values()
+                    if grader.level is Level.RUNTIME
+                ],
+                skip_build=skip_build,
+                provider=provider,
             )
             results.extend(runtime_results)
             if attempted:
@@ -385,24 +414,23 @@ def run_validation(
         # incomplete surface explicit throughout the staged implementation.
         present = {result.check_id for result in results}
         for entry in policy.entries_for_lane(Lane.LOCAL).values():
+            grader = graders.get(entry.check_id)
+            applicable = (
+                manifest is None
+                or entry.check_id in selected
+                or (grader is None and _applicable(entry.check_id, manifest))
+            )
             if (
                 entry.level in {Level.RUNTIME, Level.SEMANTIC}
                 and entry.level <= max_level
                 and entry.check_id not in present
-                and _applicable(entry.check_id, manifest)
+                and applicable
             ):
                 reason = "grader not implemented in this build"
                 if manifest is None:
                     reason = "unmet dependency: valid manifest"
-                elif entry.check_id in {
-                    "runtime.reward_well_formed",
-                    "runtime.observation_schema",
-                    "runtime.state_contract",
-                    "runtime.seed_control",
-                    "runtime.episode_determinism",
-                    "runtime.trajectory_record",
-                }:
-                    reason = "unmet dependency: runtime.startup"
+                elif grader is not None and grader.depends_on:
+                    reason = "unmet dependency: " + ", ".join(grader.depends_on)
                 results.append(_outcome(entry.check_id, CheckStatus.SKIP, reason))
         source_problem = None
         if not digest_before:
@@ -419,21 +447,17 @@ def run_validation(
                     else "package source could not be verified after validation"
                 )
         if source_problem is not None:
+            invalidated = {"runtime.startup"}
+            for grader in order_graders(list(selected.values())):
+                if invalidated.intersection(grader.depends_on):
+                    invalidated.add(grader.check_id)
             results = [
                 _outcome(
                     r.check_id,
                     CheckStatus.SKIP,
                     f"unmet dependency: runtime.startup ({source_problem})",
                 )
-                if r.check_id
-                in {
-                    "runtime.reward_well_formed",
-                    "runtime.observation_schema",
-                    "runtime.state_contract",
-                    "runtime.seed_control",
-                    "runtime.episode_determinism",
-                    "runtime.trajectory_record",
-                }
+                if r.check_id in invalidated
                 else r
                 for r in results
                 if r.check_id != "runtime.startup"

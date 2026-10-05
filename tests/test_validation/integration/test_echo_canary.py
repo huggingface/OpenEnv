@@ -34,7 +34,7 @@ def test_reference_echo_validates_reset_and_unscored_steps(tmp_path):
     expected = {
         "runtime.startup": "pass",
         "runtime.state_contract": "pass",
-        "runtime.reward_well_formed": "pass",
+        "runtime.reward_well_formed": "fail",
         "runtime.observation_schema": "pass",
     }
     (evidence_root / "cli/echo_canary/compatibility-findings.json").write_text(
@@ -51,7 +51,7 @@ def test_reference_echo_validates_reset_and_unscored_steps(tmp_path):
                     }
                     for check_id in expected
                 },
-                "interpretation": "Implemented runtime checks pass; skipped checks keep Echo uncertified.",
+                "interpretation": "Echo is valid under the core API, but null step rewards fail Level Two validation.",
             },
             indent=2,
             sort_keys=True,
@@ -94,9 +94,9 @@ def test_reference_echo_validates_reset_and_unscored_steps(tmp_path):
         assert step["reward"] is None
         assert step["done"] is False
 
-    assert result.returncode == 0
-    assert report["verdict"] == "warn"
-    assert checks["runtime.reward_well_formed"]["status"] == "pass"
+    assert result.returncode == 1
+    assert report["verdict"] == "fail"
+    assert checks["runtime.reward_well_formed"]["status"] == "fail"
     assert checks["runtime.observation_schema"]["status"] == "pass"
     assert "tool_name" not in trace[0]["response_json"]["data"]["observation"]
     metadata = artifacts["collector-evidence.json"]
