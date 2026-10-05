@@ -380,10 +380,15 @@ def test_malformed_telemetry_is_a_finding(tmp_path, grader):
 
 
 @pytest.mark.parametrize("grader", GRADERS)
-def test_truncated_primary_evidence_never_passes(tmp_path, grader):
+@pytest.mark.parametrize("telemetry_available", [True, False])
+def test_truncated_primary_evidence_never_passes(tmp_path, grader, telemetry_available):
     subject = subject_with_replays(tmp_path)
     evidence = replace(
-        subject.runtime_evidence, failure_reason="step failed (TimeoutError)"
+        subject.runtime_evidence,
+        failure_reason="step failed (TimeoutError)",
+        telemetry_json=subject.runtime_evidence.telemetry_json
+        if telemetry_available
+        else None,
     )
     result = grader().run(replace(subject, runtime_evidence=evidence))
     assert result.status is CheckStatus.SKIP
@@ -429,6 +434,84 @@ def test_changed_seed_rejection_still_fails_seed_control(tmp_path):
         SeedControlGrader().run(replace(subject, runtime_evidence=evidence)).status
         is CheckStatus.FAIL
     )
+
+
+@pytest.mark.parametrize(
+    "original_accepted,telemetry_error",
+    [(True, None), (False, None), (True, "session telemetry failed (ValueError)")],
+)
+@pytest.mark.parametrize("step_error", [False, True])
+def test_incomplete_changed_seed_probe_does_not_claim_a_seed_violation(
+    tmp_path, original_accepted, telemetry_error, step_error
+):
+    subject = subject_with_replays(tmp_path)
+    evidence = alter_telemetry(
+        subject.runtime_evidence,
+        lambda value: value["seed"].update(accepted=original_accepted),
+    )
+    changed = evidence.replays[-1]
+    rows = changed.evidence.exchanges[:2]
+    if step_error:
+        rows += (
+            replace(
+                changed.evidence.exchanges[2],
+                response_json=json.dumps(
+                    {"type": "error", "data": {"code": "STEP_ERROR"}}
+                ),
+            ),
+        )
+    changed = replace(
+        changed,
+        evidence=replace(
+            changed.evidence,
+            exchanges=rows,
+            failure_phase="step",
+            failure_reason="step failed (STEP_ERROR)"
+            if step_error
+            else "step failed (TimeoutError)",
+            telemetry_json=None,
+            telemetry_error=telemetry_error,
+        ),
+    )
+    evidence = replace(evidence, replays=evidence.replays[:-1] + (changed,))
+    result = SeedControlGrader().run(replace(subject, runtime_evidence=evidence))
+    assert result.status is (
+        CheckStatus.SKIP
+        if original_accepted and telemetry_error is None
+        else CheckStatus.FAIL
+    )
+    if telemetry_error is not None:
+        assert "telemetry collection failed" in result.evidence[0]
+    elif original_accepted:
+        assert result.evidence == [
+            "different-seed reset experiment did not produce seed telemetry"
+        ]
+    else:
+        assert "seed was not observed as forwarded" in result.evidence[0]
+
+
+def test_rejected_reset_is_still_a_seed_failure_without_telemetry(tmp_path):
+    subject = subject_with_replays(tmp_path)
+    evidence = subject.runtime_evidence
+    changed = evidence.replays[-1]
+    rejected = replace(
+        changed.evidence.exchanges[0],
+        response_json=json.dumps({"type": "error", "data": {"code": "RESET_ERROR"}}),
+    )
+    changed = replace(
+        changed,
+        evidence=replace(
+            changed.evidence,
+            exchanges=(rejected,),
+            failure_phase="reset",
+            failure_reason="reset failed (RESET_ERROR)",
+            telemetry_json=None,
+        ),
+    )
+    evidence = replace(evidence, replays=evidence.replays[:-1] + (changed,))
+    result = SeedControlGrader().run(replace(subject, runtime_evidence=evidence))
+    assert result.status is CheckStatus.FAIL
+    assert result.evidence == ["malformed runtime evidence"]
 
 
 @pytest.mark.parametrize("judged", [False, True])
