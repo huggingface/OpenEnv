@@ -283,7 +283,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 model_name = "sergiopaniego/wordle-grpo-Qwen3-1.7B"  # Replace with your HF username or organization
 
-fine_tuned_model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype="float32", device_map="auto")
+fine_tuned_model = AutoModelForCausalLM.from_pretrained(model_name, dtype="float32", device_map="auto")
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 ```
 

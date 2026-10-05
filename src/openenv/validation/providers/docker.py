@@ -281,6 +281,10 @@ class DockerValidationProvider:
             name,
             "--label",
             f"{_LABEL}={spec.run_id}",
+            # Forced removal must not wait for a graceful stop. Docker kills at
+            # once; Podman honours this per-container timeout before SIGKILL.
+            "--stop-timeout",
+            "0",
             "--init",
             "--user",
             "65532:65532",
@@ -470,41 +474,64 @@ class DockerRunningSubject:
             time.monotonic() - started,
         )
 
-    def stop(self) -> None:
-        if self._stopped:
-            return
-        # Ask Docker for only the owner label: arbitrary image ENV/labels can
-        # exceed the bounded full-inspection output and must not block cleanup.
-        code, output, stderr = _command(
+    def _owner(self) -> str | None:
+        """Return the owner label of this subject's container, or `None` if absent.
+
+        A listing reports a missing container as an empty result on every engine,
+        whereas inspect errors are engine-specific text. Only the name and owner
+        label are requested, so arbitrary image ENV/labels cannot exceed the
+        bounded output and block cleanup.
+        """
+        code, output, _ = _command(
             [
                 "docker",
-                "inspect",
+                "ps",
+                "--all",
+                "--no-trunc",
+                "--filter",
+                f"name={self.name}",
                 "--format",
-                f'{{{{index .Config.Labels "{_LABEL}"}}}}',
-                self.name,
+                f'{{{{.Names}}}}\t{{{{.Label "{_LABEL}"}}}}',
             ],
             10,
         )
         if code:
-            if "No such object" in stderr or "No such container" in stderr:
-                self._stopped = True
-                return
-            raise ProviderError("Could not verify container ownership for cleanup")
-        if output.strip() != self.run_id:
+            raise ProviderError("Docker could not list containers")
+        # The name filter matches substrings; only an exact name is this subject.
+        for line in output.splitlines():
+            name, _, owner = line.partition("\t")
+            if name == self.name:
+                return owner
+        return None
+
+    def stop(self) -> None:
+        if self._stopped:
+            return
+        try:
+            owner = self._owner()
+        except ProviderError:
+            raise ProviderError(
+                "Could not verify container ownership for cleanup"
+            ) from None
+        if owner is None:
+            self._stopped = True
+            return
+        if owner != self.run_id:
             raise ProviderError("Refusing cleanup of a container with another owner")
         code, _, stderr = _command(
             ["docker", "rm", "--force", "--volumes", self.name], 10
         )
-        if code and "No such container" not in stderr:
+        try:
+            remaining = self._owner()
+        except ProviderError:
             raise ProviderError(
-                "Could not remove validation container: "
-                + _safe_text(stderr[-4096:], self._secrets)
-            )
-        code, _, stderr = _command(
-            ["docker", "inspect", "--format", "{{.Id}}", self.name], 10
-        )
-        if not code or not (
-            "No such object" in stderr or "No such container" in stderr
-        ):
+                "Container removal could not be independently verified"
+            ) from None
+        if remaining is not None:
+            if code:
+                raise ProviderError(
+                    "Could not remove validation container: "
+                    + _safe_text(stderr[-4096:], self._secrets)
+                )
             raise ProviderError("Container removal could not be independently verified")
         self._stopped = True

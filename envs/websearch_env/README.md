@@ -51,15 +51,14 @@ This environment requires a Serper.dev API key to function.
 
 ## Quick Start
 
-The simplest way to use the Web Search environment is through the `WebSearchEnvironment` class:
+The simplest way to use the Web Search environment is through the `WebSearchEnv` client:
 
 ```python
-from envs.websearch_env.server.websearch_env_environment import WebSearchEnvironment
-from envs.websearch_env import WebSearchAction
+from envs.websearch_env import WebSearchAction, WebSearchEnv
 
 try:
     # Create environment from Docker image
-    web_search_env = WebSearchEnvironment.from_docker_image("web_search-env:latest")
+    web_search_env = WebSearchEnv.from_docker_image("web_search-env:latest")
 
     # Reset
     result = web_search_env.reset()
@@ -77,7 +76,7 @@ finally:
     web_search_env.close()
 ```
 
-That's it! The `WebSearchEnvironment.from_docker_image()` method handles:
+That's it! The `WebSearchEnv.from_docker_image()` method handles:
 - Starting the Docker container
 - Waiting for the server to be ready
 - Connecting to the environment
@@ -102,7 +101,7 @@ You can easily deploy your OpenEnv environment to Hugging Face Spaces using the 
 openenv push
 
 # Or specify options
-openenv push --namespace my-org --private
+openenv push --repo-id my-org/my-env --private
 ```
 
 The `openenv push` command will:
@@ -116,7 +115,7 @@ The `openenv push` command will:
 
 ### Options
 
-- `--directory`, `-d`: Directory containing the OpenEnv environment (defaults to current directory)
+- `DIRECTORY` (positional): Directory containing the OpenEnv environment (defaults to current directory)
 - `--repo-id`, `-r`: Repository ID in format 'username/repo-name' (defaults to 'username/env-name' from openenv.yaml)
 - `--base-image`, `-b`: Base Docker image to use (overrides Dockerfile FROM)
 - `--private`: Deploy the space as private (default: public)
@@ -176,10 +175,10 @@ The reward is undefined here.
 If you already have a Web Search environment server running, you can connect directly:
 
 ```python
-from envs.websearch_env import WebSearchEnvironment
+from envs.websearch_env import WebSearchAction, WebSearchEnv
 
 # Connect to existing server
-web_search_env = WebSearchEnvironment(base_url="<ENV_HTTP_URL_HERE>")
+web_search_env = WebSearchEnv(base_url="<ENV_HTTP_URL_HERE>")
 
 # Use as normal
 result = web_search_env.reset()

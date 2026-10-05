@@ -110,7 +110,7 @@ You can easily deploy your OpenEnv environment to Hugging Face Spaces using the 
 openenv push
 
 # Or specify options
-openenv push --namespace my-org --private
+openenv push --repo-id my-org/my-env --private
 ```
 
 The `openenv push` command will:
@@ -124,7 +124,7 @@ The `openenv push` command will:
 
 ### Options
 
-- `--directory`, `-d`: Directory containing the OpenEnv environment (defaults to current directory)
+- `DIRECTORY` (positional): Directory containing the OpenEnv environment (defaults to current directory)
 - `--repo-id`, `-r`: Repository ID in format 'username/repo-name' (defaults to 'username/env-name' from openenv.yaml)
 - `--base-image`, `-b`: Base Docker image to use (overrides Dockerfile FROM)
 - `--private`: Deploy the space as private (default: public)
