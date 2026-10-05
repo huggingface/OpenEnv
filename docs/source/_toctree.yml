@@ -111,6 +111,8 @@
     title: Web Search
   - local: environments/browsergym
     title: BrowserGym
+  - local: environments/helium_browser
+    title: Helium Browser
   - local: environments/repl
     title: REPL
   - local: environments/calendar
