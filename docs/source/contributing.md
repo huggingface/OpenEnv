@@ -53,7 +53,7 @@ Documentation improvements are always welcome:
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/my-feature`
 3. Make your changes
-4. Run tests: `pytest`
+4. Run tests: `PYTHONPATH=src:envs uv run pytest tests/`
 5. Submit a pull request
 
 ## Development Setup
@@ -63,14 +63,15 @@ Documentation improvements are always welcome:
 git clone https://github.com/YOUR_USERNAME/OpenEnv.git
 cd OpenEnv
 
-# Install in development mode
-pip install -e ".[dev]"
+# Install in development mode, with the dev tools
+uv sync
 
 # Run tests
-pytest
+PYTHONPATH=src:envs uv run pytest tests/
 
 # Run linting
-ruff check .
+uv run ruff check src/ tests/
+uv run ruff format --check src/ tests/
 ```
 
 ## Code Style

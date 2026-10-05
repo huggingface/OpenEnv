@@ -15,7 +15,7 @@ Already familiar with OpenEnv? Here's the 8-step process at a glance:
 |------|------------------|-------------|
 | 1 | `openenv init my_env` | Scaffold new environment |
 | 2 | Edit `models.py` | Define Action & Observation dataclasses |
-| 3 | Edit `server/my_environment.py` | Implement `reset()` and `step()` methods |
+| 3 | Edit `server/my_env_environment.py` | Implement `reset()` and `step()` methods |
 | 4 | Edit `client.py` | Implement `_step_payload()`, `_parse_result()`, `_parse_state()` |
 | 5 | `uv run --project . server` | Start local dev server for testing |
 | 6 | `openenv validate --level static --skip-build` | Validate the declared manifest contract |
@@ -58,7 +58,7 @@ A typical workflow looks like:
 
 - Python 3.11+ and [`uv`](https://github.com/astral-sh/uv) for dependency locking
 - Docker Desktop / Docker Engine
-- The OpenEnv library installed: `pip install https://github.com/huggingface/OpenEnv.git`
+- The OpenEnv library installed: `pip install openenv`
 
 ## Step-by-Step Guide
 
@@ -90,7 +90,7 @@ my_env/
 └── server/
     ├── __init__.py
     ├── app.py
-    ├── my_environment.py
+    ├── my_env_environment.py
     ├── requirements.txt
     └── Dockerfile
 ```
@@ -127,10 +127,10 @@ class MyObservation(Observation):
 
 ### 3. Implement Environment Logic
 
-Customize `server/my_environment.py` by extending `Environment`:
+Customize `server/my_env_environment.py` by extending `Environment`:
 
 ```python
-# server/my_environment.py
+# server/my_env_environment.py
 from uuid import uuid4
 from openenv.core.env_server.interfaces import Environment
 from openenv.core.env_server.types import State
@@ -165,7 +165,7 @@ class MyEnvironment(Environment):
 # server/app.py
 from openenv.core.env_server import create_app
 from ..models import MyAction, MyObservation
-from .my_environment import MyEnvironment
+from .my_env_environment import MyEnvironment
 
 # Pass the class (factory) - each WebSocket session gets its own instance
 app = create_app(MyEnvironment, MyAction, MyObservation, env_name="my_env")
@@ -178,7 +178,7 @@ For environments with constructor arguments, create a factory function:
 import os
 from openenv.core.env_server import create_app
 from ..models import MyAction, MyObservation
-from .my_environment import MyEnvironment
+from .my_env_environment import MyEnvironment
 
 # Read config from environment variables
 api_key = os.getenv("MY_API_KEY")
@@ -236,78 +236,7 @@ The CLI template ships with `pyproject.toml` and `server/Dockerfile`. You should
 
 Keep building from the `openenv-base` image so shared tooling stays available:
 
-<details>
-<summary>Dockerfile</summary>
-
-```dockerfile
-# SPDX-License-Identifier: BSD-3-Clause
-
-# Multi-stage build using openenv-base
-# This Dockerfile is flexible and works for both:
-# - In-repo environments (with local src/core)
-# - Standalone environments (with openenv from pip)
-# The build script (openenv build) handles context detection and sets appropriate build args.
-
-ARG BASE_IMAGE=openenv-base:latest
-FROM ${BASE_IMAGE} AS builder
-
-WORKDIR /app
-
-# Build argument to control whether we're building standalone or in-repo
-ARG BUILD_MODE=in-repo
-ARG ENV_NAME=__ENV_NAME__
-
-# Copy environment code (always at root of build context)
-COPY . /app/env
-
-# For in-repo builds, openenv is already in the pyproject.toml dependencies
-# For standalone builds, openenv will be installed from pip via pyproject.toml
-WORKDIR /app/env
-
-# Install dependencies using uv sync
-# If uv.lock exists, use it; otherwise resolve on the fly
-RUN --mount=type=cache,target=/root/.cache/uv \
-    if [ -f uv.lock ]; then \
-        uv sync --frozen --no-install-project --no-editable; \
-    else \
-        uv sync --no-install-project --no-editable; \
-    fi
-
-RUN --mount=type=cache,target=/root/.cache/uv \
-    if [ -f uv.lock ]; then \
-        uv sync --frozen --no-editable; \
-    else \
-        uv sync --no-editable; \
-    fi
-
-# Final runtime stage
-FROM ${BASE_IMAGE}
-
-WORKDIR /app
-
-# Copy the virtual environment from builder
-COPY --from=builder /app/env/.venv /app/.venv
-
-# Copy the environment code
-COPY --from=builder /app/env /app/env
-
-# Set PATH to use the virtual environment
-ENV PATH="/app/.venv/bin:$PATH"
-
-# Set PYTHONPATH so imports work correctly
-ENV PYTHONPATH="/app/env:$PYTHONPATH"
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
-
-# Run the FastAPI server
-# The module path is constructed to work with the /app/env structure
-CMD ["sh", "-c", "cd /app/env && uvicorn server.app:app --host 0.0.0.0 --port 8000"]
-
-```
-
-</details>
+The template's [`server/Dockerfile`](https://github.com/huggingface/OpenEnv/blob/main/src/openenv/cli/templates/openenv_env/server/Dockerfile) is a multi-stage build on `ghcr.io/huggingface/openenv-base` that installs your dependencies with `uv sync` and serves `server.app:app` on port 8000. `openenv build` works out whether you're building in the repo or standalone and sets its build arguments.
 
 If you introduced extra dependencies in the Dockerfile, you should install them in the Dockerfile before removing temp files.
 
@@ -347,7 +276,7 @@ openenv push
 openenv push --repo-id my-org/my-env
 
 # Push to Docker/ghcr (interface disabled by default)
-openenv push --registry ghcr.io/my-org --tag my-env:latest
+openenv push --registry ghcr.io/my-org
 
 # Customize image base or visibility
 openenv push --base-image ghcr.io/huggingface/openenv-base:latest --private
@@ -358,7 +287,7 @@ openenv push -e OPENSPIEL_GAME=tic_tac_toe --secret OPENAI_API_KEY=sk-...
 
 Key options:
 
-- `--directory`: path to the environment (defaults to `cwd`)
+- `DIRECTORY` (positional): path to the environment (defaults to the current directory)
 - `--repo-id`: explicit Hugging Face space name
 - `--registry`: push to Docker Hub, GHCR, etc.
 - `--interface/--no-interface`: toggle the optional web UI
@@ -366,6 +295,7 @@ Key options:
 - `--private`: mark the space as private
 - `--env-var/-e KEY=VALUE`: set a public Space variable (repeatable); overrides matching keys from `variables:` in `openenv.yaml`
 - `--secret KEY=VALUE`: set a private Space secret (repeatable); value is never logged
+- `--hardware/-H`, `--count/-n`, `--create-pr`, `--exclude`: Space hardware, number of Space instances, open a PR instead of pushing, and an ignore file with globs to leave out of the upload
 
 The command validates your `openenv.yaml`, injects Hugging Face frontmatter when needed, and uploads the prepared bundle.
 Space variables and secrets are only applied on direct Hugging Face Space pushes;
@@ -409,7 +339,7 @@ strategy:
 Here is a simple example of using your environment:
 
 ```python
-from envs.my_env import MyAction, MyEnv
+from my_env import MyAction, MyEnv
 
 # Create environment from Docker image (starts a container)
 client = MyEnv.from_docker_image("my-env:latest").sync()
@@ -454,7 +384,7 @@ The equivalent async usage is:
 ```python
 import asyncio
 
-from envs.my_env import MyAction, MyEnv
+from my_env import MyAction, MyEnv
 
 
 async def main():
