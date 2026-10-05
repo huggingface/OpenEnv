@@ -106,13 +106,13 @@ Focus on experiments, use OpenEnvironments, and build agents that go beyond Cart
 
 ### Hands-On Demo
 
-- [Part 6: Interactive Demo 🎮](#part-6-using-real-openspiel)
+- [Part 6: Using Real OpenSpiel 🎮](#part-6-using-real-openspiel)
 - [Part 7: Four Policies 🤖](#part-7-four-policies)
 - [Part 8: Policy Competition! 🏆](#part-8-policy-competition)
 
 ### Advanced
 
-- [Part 9: Using Real OpenSpiel 🎮](#part-9-switching-to-other-games)
+- [Part 9: Switching to Other Games 🎮](#part-9-switching-to-other-games)
 - [Part 10: Create Your Own Integration 🛠️](#part-10-create-your-own-integration)
 
 ### Wrap Up
@@ -1212,7 +1212,8 @@ OpenEnv includes 3 complete examples:
 
 ---
 
-(summary-your-journey)=
+<a id="summary-your-journey"></a>
+
 ## 🎓 Summary: Your Journey
 
 ### What You Learned

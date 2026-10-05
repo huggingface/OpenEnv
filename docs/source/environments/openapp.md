@@ -68,7 +68,7 @@ openapp_env/
 
 **Key Components:**
 
-- **client.py**: `OpenAppEnv` class that extends `HTTPEnvClient` for remote environment interaction
+- **client.py**: `OpenAppEnv` class that extends `EnvClient` for remote environment interaction
 - **models.py**: `OpenAppAction` and `OpenAppObservation` dataclasses with validation
 - **server/openapp_environment.py**: `OpenAppEnvironment` class that wraps BrowserGym and OpenApps
 - **server/app.py**: FastAPI server that exposes the environment via HTTP endpoints

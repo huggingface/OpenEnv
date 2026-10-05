@@ -1,10 +1,10 @@
 # Custom Web UI
 
-When `ENABLE_WEB_INTERFACE=true`, the server serves a default Gradio app at `/web` with Reset/Step/Get state, Quick Start, and README. Environment authors can **add** a custom tab by providing a custom Gradio builder.
+The web UI is off by default. When `ENABLE_WEB_INTERFACE=true` (which `openenv push` sets for Spaces), the server serves a default Gradio app at `/web` with Reset/Step/Get state, Quick Start, and README. Environment authors can **add** a custom tab by providing a custom Gradio builder.
 
 ## Extension point: `gradio_builder`
 
-`create_app()` accepts an optional **`gradio_builder`** callable. When set, the UI at `/web` is built with [Gradio’s TabbedInterface](https://www.gradio.app/4.44.1/docs/gradio/tabbedinterface): the **first tab (“Playground”)** is the default OpenEnv UI, and the **second tab (“Custom”)** is the `gr.Blocks` returned by your builder. Users can switch between the default Playground and your custom interface without losing either. The same `/web/reset`, `/web/step`, `/web/state`, and `/web/metadata` API routes remain available; your custom tab can use the provided `web_manager` in-process or call those endpoints.
+`create_app()` accepts an optional **`gradio_builder`** callable. When set, the UI at `/web` is built with [Gradio’s TabbedInterface](https://www.gradio.app/docs/gradio/tabbedinterface): by default the **first tab (“Playground”)** is the default OpenEnv UI, and the **second tab (“Custom”)** is the `gr.Blocks` returned by your builder (see [Naming and ordering the tabs](#naming-and-ordering-the-tabs) to change this). Users can switch between the default Playground and your custom interface without losing either. The same `/web/reset`, `/web/step`, `/web/state`, and `/web/metadata` API routes remain available; your custom tab can use the provided `web_manager` in-process or call those endpoints.
 
 ### Builder signature
 
@@ -20,7 +20,18 @@ def my_gradio_builder(
     ...
 ```
 
-Return a `gr.Blocks` instance. It is shown in the **“Custom”** tab of a tabbed interface; the **“Playground”** tab always shows the default OpenEnv UI. Core applies the same theme/css when mounting.
+Return a `gr.Blocks` instance. By default it is shown in the **“Custom”** tab, next to the **“Playground”** tab with the default OpenEnv UI. Core applies the same theme/css when mounting.
+
+### Naming and ordering the tabs
+
+`create_app()` takes a few options for the custom UI:
+
+| Option | Default | Effect |
+|---|---|---|
+| `custom_tab_name` | `"Custom"` | Label of your tab |
+| `custom_tab_primary` | `False` | Show your tab first, before Playground |
+| `show_default_tab` | `True` | When `False`, mount only your builder's UI, with no Playground and no tabs |
+| `title_override` | `None` | App and browser-tab title, instead of `"OpenEnv Agentic Environment: {name}"` |
 
 ---
 
@@ -69,7 +80,7 @@ So you can influence the default UI by ensuring `metadata` and README are correc
 
 Environments that currently override `/web` with custom HTML (e.g. by removing the default route and adding a GET `/web` that returns HTML) should migrate to a **gradio_builder** that returns a `gr.Blocks` app. The custom UI then appears in the **“Custom”** tab alongside the default **“Playground”** tab. Benefits:
 
-- Single, supported extension point using [TabbedInterface](https://www.gradio.app/4.44.1/docs/gradio/tabbedinterface).
+- Single, supported extension point using [TabbedInterface](https://www.gradio.app/docs/gradio/tabbedinterface).
 - No need to remove or override routes; the default UI stays in the first tab.
 - Same `/web` path; both tabs can use `web_manager` or `/web/reset`, `/web/step`, `/web/state`.
 
