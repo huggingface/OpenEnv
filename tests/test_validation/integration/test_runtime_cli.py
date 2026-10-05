@@ -351,6 +351,7 @@ def _assert_fresh_replays(artifacts, identical_samples=3):
         ("bad_task_count", "runtime.task_declaration_accuracy"),
         ("missing_rubric_config", "runtime.rubric_introspectable"),
         ("bad_attribution", "runtime.reward_attribution"),
+        ("changed_rubric_config", "runtime.reward_attribution"),
         ("empty_tools", None),
     ],
 )

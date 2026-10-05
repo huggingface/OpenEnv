@@ -7,6 +7,7 @@ import time
 from ...report import CheckResult
 from ...types import CheckStatus
 from .basic import _RuntimeGrader
+from .repeatability import _difference
 
 
 def _finite(value):
@@ -278,7 +279,7 @@ class RewardAttributionGrader(RubricIntrospectableGrader):
                     f"step {index}: attribution identity differs from the wire"
                 )
             nodes = _rubric_nodes(record["rubric"])
-            if definition(nodes) != definition(baseline):
+            if _difference(definition(nodes), definition(baseline)):
                 problems.append(f"step {index}: rubric configuration changed")
             data = json.loads(step.response_json)["data"]
             reward = data["reward"]
