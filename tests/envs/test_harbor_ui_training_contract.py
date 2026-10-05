@@ -6,7 +6,7 @@ import pytest
 from harbor_env.harness import to_trace_entries
 from openenv.harbor.contract import export_training_contract
 from openenv.harbor.models import HarborRolloutResult, HarborTurn
-from openenv.harbor.ui import _contract
+from openenv.harbor.ui import _contract, _training_trace
 
 
 def rollout():
@@ -67,6 +67,73 @@ def test_invalid_mask_cannot_be_hidden_by_the_download_path():
     result.turns[0].loss_mask = [0, 1]
     with pytest.raises(ValueError):
         _contract(result.model_dump())
+
+
+def test_typed_download_matches_session_capture_and_keeps_audit_separate():
+    from unittest.mock import MagicMock
+
+    from harbor_env.harness import HarborSession
+    from openenv.core.harness import TrainingTrace
+
+    result = rollout()
+    result.turns += [
+        result.turns[0].model_copy(
+            update={"turn": 1, "node_id": "aux", "role": "auxiliary"}
+        ),
+        result.turns[0].model_copy(
+            update={"turn": 2, "node_id": "retry", "discarded": True}
+        ),
+        result.turns[0].model_copy(
+            update={
+                "turn": 3,
+                "node_id": "context",
+                "loss_mask": [0, 0, 0, 0],
+                "trainable": False,
+            }
+        ),
+    ]
+    session = HarborSession(
+        env=MagicMock(),
+        split="test",
+        task_index=0,
+        instruction="task",
+        harness="opencode",
+        sandbox="docker",
+        llm_url="http://unused",
+        model="test",
+    )
+    session.result = result
+    download = TrainingTrace.model_validate_json(
+        json.dumps(_training_trace(result.model_dump()))
+    )
+    assert download == session.fetch_training_trace()
+    assert [t.node_id for t in download.turns] == ["agent", "context"]
+    assert [t.loss_mask for t in download.turns] == [[0, 0, 1, 0], [0, 0, 0, 0]]
+    assert _contract(result.model_dump()) == export_training_contract(result)
+
+
+def test_typed_download_rejects_legacy_masks_and_eval_capture():
+    result = rollout()
+    result.turns[0].loss_mask = None
+    with pytest.raises(ValueError, match="explicit loss_mask"):
+        _training_trace(result.model_dump())
+    assert _contract(result.model_dump()) is not None
+    result.rollout_type = "eval"
+    assert _training_trace(result.model_dump()) is None
+
+
+def test_run_page_keeps_downloads_behind_the_same_grant():
+    from openenv.harbor import ui_pages
+
+    result = rollout().model_dump()
+    rec = {"id": "typed-download-test", "status": "completed", "result": result}
+    page = ui_pages.run_html(rec)
+    token = ui_pages.grant(rec["id"])
+    for kind in ["result", "contract", "training_trace"]:
+        assert f'data-dl="{kind}" data-grant="{token}"' in page
+    assert ui_pages.granted(token) == rec["id"]
+    result["rollout_type"] = "eval"
+    assert 'data-dl="training_trace"' not in ui_pages.run_html(rec)
 
 
 def test_ui_validation_keeps_the_qualified_acp_profile(tmp_path, monkeypatch):

@@ -14,6 +14,26 @@ short_description: Pi coding agent in a Hugging Face sandbox with logprob captur
 
 # Pi Environment for OpenEnv
 
+> [!WARNING]
+> **Deprecated, will be removed in OpenEnv 0.8.0.** Pi now runs through
+> [`harbor_env`](https://huggingface.co/docs/openenv/environments/harbor) as one of Harbor's harnesses, with the same token-level
+> capture for training. Serve a Harbor task dataset and pick `pi` as the harness:
+>
+> ```bash
+> openenv harbor serve --dataset <hf-dataset>
+> ```
+>
+> ```python
+> from harbor_env.harness import HarborSessionFactory
+>
+> factory = HarborSessionFactory(
+>     "http://localhost:8000", split="<hf-dataset>", harness="pi", llm_url=vllm_url, model=model
+> )
+> ```
+>
+> Tasks become Harbor task directories (instruction, environment and verifier)
+> instead of `PiTask`.
+
 `pi_env` runs the [Pi](https://github.com/badlogic/pi-mono) coding agent
 inside an isolated [Hugging Face sandbox](https://huggingface.co/docs/huggingface_hub/package_reference/sandbox)
 against any OpenAI-compatible LLM endpoint, optionally capturing per-token

@@ -38,8 +38,10 @@ from openenv.core.harness import (
     ResourceSession,
     ResourceSessionFactory,
     ToolResult,
+    TrainingTrace,
     VerifyResult,
 )
+from openenv.core.harness.capture.upstream import normalize_response, training_sampling
 
 from .config import OpenCodeConfig
 from .opencode_runtime import (
@@ -175,6 +177,66 @@ class OpenCodeSession(ResourceSession):
         """Return the raw ``opencode run`` log (JSON-lines when ``run_format=json``)."""
         return self.sandbox.read_text(agent_log_path(self.config))
 
+    def fetch_training_trace(self) -> TrainingTrace:
+        """Select agent calls in OpenEnv and export their exact captured tokens."""
+        from types import SimpleNamespace
+
+        from openenv.core.harness.capture.contract import to_training_trace
+        from openenv.core.harness.capture.export import export_session
+        from openenv.core.harness.capture.graph import RolloutGraph, TurnNode
+
+        if self._proxy_trace_path is None:
+            raise ValueError("training requires transparent_proxy capture")
+        records = self.fetch_proxy_trace()
+        if not records:
+            raise RuntimeError("rollout produced no capture")
+        graph = RolloutGraph()
+        for entry in records:
+            request = entry["request"]
+            response = normalize_response(entry["response"])
+            if (
+                response.get("upstream_status", 200) >= 400
+                or response.get("upstream_error")
+                or response.get("error")
+            ):
+                if entry.get("completion_token_ids"):
+                    raise ValueError("failed upstream call contains sampled tokens")
+                continue
+            choices = response.get("choices") or []
+            if not choices:
+                raise ValueError("successful capture has no response choices")
+            choice = choices[0]
+            graph.add_turn(
+                TurnNode(
+                    node_id=str(entry["turn"]),
+                    prompt_ids=entry["prompt_token_ids"],
+                    sampled_ids=entry["completion_token_ids"],
+                    sampled_logprobs=(
+                        entry["per_token_logps"]
+                        if choice.get("logprobs", {}) is not None
+                        else None
+                    ),
+                    request_messages=request.get("messages", []),
+                    request_tools=request.get("tools"),
+                    n_tools=len(request.get("tools") or []),
+                    response_message=choice.get("message", {}),
+                    finish_reason=entry.get("finish_reason"),
+                )
+            )
+        if not graph.nodes():
+            raise RuntimeError("rollout produced no successful model calls")
+        document = export_session(
+            SimpleNamespace(
+                graph=graph,
+                session_id="opencode",
+                metadata={},
+                findings=[],
+                purpose="train",
+            ),
+            include_messages=True,
+        )
+        return to_training_trace(graph, document)
+
     def fetch_proxy_trace(self) -> list[dict[str, Any]]:
         """Return per-turn proxy-captured records (Mode B only).
 
@@ -211,6 +273,7 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
         config: OpenCodeConfig,
         sandbox_backend: SandboxBackend,
         mode: Literal["black_box", "transparent_proxy"] = "black_box",
+        sampling: dict[str, Any] | None = None,
         verifier: Verifier | None = None,
         install_timeout_s: int = 240,
         setup_timeout_s: int = 300,
@@ -219,6 +282,9 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
     ) -> None:
         if mode not in {"black_box", "transparent_proxy"}:
             raise ValueError(f"Unknown mode: {mode!r}")
+        self.sampling = training_sampling(sampling) if sampling is not None else None
+        if self.sampling is not None and mode != "transparent_proxy":
+            raise ValueError("training sampling requires transparent_proxy mode")
         self._config = config
         self._backend = sandbox_backend
         self._mode = mode
@@ -262,7 +328,10 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
                     backoff = self._create_backoff_s * (2**i)
                     _log.warning(
                         "factory.create attempt %d/%d failed (%r); retrying in %.1fs",
-                        i + 1, self._create_attempts, exc, backoff,
+                        i + 1,
+                        self._create_attempts,
+                        exc,
+                        backoff,
                     )
                     time.sleep(backoff)
         raise last_exc
@@ -275,6 +344,7 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
         start_agent: bool = True,
     ) -> OpenCodeSession:
         import logging
+
         _log = logging.getLogger(__name__)
 
         oc_task = OpenCodeTask.coerce(task)
@@ -282,15 +352,15 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
 
         _log.info(
             "factory.create: creating sandbox timeout=%ds mode=%s",
-            sandbox_timeout, self._mode,
+            sandbox_timeout,
+            self._mode,
         )
         sandbox = self._backend.create(
             timeout_s=sandbox_timeout,
             metadata={"episode_id": episode_id} if episode_id else None,
         )
-        sid = (
-            getattr(sandbox, "sandbox_id", None)
-            or getattr(getattr(sandbox, "raw", None), "sandbox_id", "?")
+        sid = getattr(sandbox, "sandbox_id", None) or getattr(
+            getattr(sandbox, "raw", None), "sandbox_id", "?"
         )
         _log.info("factory.create: sandbox=%s — bootstrapping…", sid)
         # Any failure past here (bootstrap/proxy/agent) must tear the sandbox down.
@@ -303,7 +373,8 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
             if self._mode == "transparent_proxy":
                 _log.info(
                     "factory.create: starting interception proxy on :%d → %s",
-                    _PROXY_PORT, self._config.base_url,
+                    _PROXY_PORT,
+                    self._config.base_url,
                 )
                 proxy_bg_job, base_url_override, proxy_trace_path = self._start_proxy(
                     sandbox
@@ -343,7 +414,9 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
             try:
                 sandbox.kill()  # best-effort: don't let a cleanup failure mask the root cause
             except Exception:
-                _log.exception("factory.create: sandbox.kill() during cleanup also failed")
+                _log.exception(
+                    "factory.create: sandbox.kill() during cleanup also failed"
+                )
             raise
 
     # ------------------------------------------------------------------
@@ -533,6 +606,11 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
             )
             sandbox.write_text(f"{proxy_dir(self._config)}/__init__.py", "")
 
+        if self.sampling is not None:
+            sandbox.write_text(
+                proxy_source_path(self._config), _PROXY_SOURCE_PATH.read_text()
+            )
+
         proxy_args = [
             "python",
             "interception.py",
@@ -545,6 +623,8 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
             "--top-logprobs",
             str(self._config.proxy_top_logprobs),
         ]
+        if self.sampling is not None:
+            proxy_args.extend(["--sampling", json.dumps(self.sampling)])
         if self._config.proxy_max_tokens_cap is not None:
             proxy_args.extend(
                 ["--max-tokens-cap", str(self._config.proxy_max_tokens_cap)]

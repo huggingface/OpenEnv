@@ -56,9 +56,11 @@ from .rollout import (  # noqa: F401  (_resolve_env_reward: private back-compat 
     ToolResult,
     ToolTraceEntry,
     TraceEntry,
+    TrainableSession,
     VerifyResult,
 )
 from .tools import resolve_tool_conflicts
+from .training import TrainingTrace, TrainingTurn
 
 __all__ = [
     # Trainer-side rollout API (openenv.core.harness.rollout)
@@ -80,6 +82,9 @@ __all__ = [
     "ToolResult",
     "ToolTraceEntry",
     "TraceEntry",
+    "TrainableSession",
+    "TrainingTrace",
+    "TrainingTurn",
     "VerifyResult",
     "build_harness_rollout_func",
     # Turn-based agentic harness API (RFC 005)

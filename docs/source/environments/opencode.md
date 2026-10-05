@@ -1,6 +1,26 @@
 <!-- openenv-source: opencode_env -->
 # OpenCode Environment for OpenEnv
 
+> [!WARNING]
+> **Deprecated, will be removed in OpenEnv 0.8.0.** OpenCode now runs through
+> [`harbor_env`](https://huggingface.co/docs/openenv/environments/harbor) as one of Harbor's harnesses, with the same token-level
+> capture for training. Serve a Harbor task dataset and pick `opencode` as the harness:
+>
+> ```bash
+> openenv harbor serve --dataset <hf-dataset>
+> ```
+>
+> ```python
+> from harbor_env.harness import HarborSessionFactory
+>
+> factory = HarborSessionFactory(
+>     "http://localhost:8000", split="<hf-dataset>", harness="opencode", llm_url=vllm_url, model=model
+> )
+> ```
+>
+> Tasks become Harbor task directories (instruction, environment and verifier)
+> instead of `OpenCodeTask`.
+
 `opencode_env` runs the [OpenCode](https://opencode.ai) coding agent inside
 an isolated [E2B](https://e2b.dev) sandbox against any OpenAI-compatible
 LLM endpoint, optionally capturing per-token logprobs for GRPO training.

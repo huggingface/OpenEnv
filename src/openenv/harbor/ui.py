@@ -194,19 +194,9 @@ from .ui_trace import (  # noqa: F401 - re-exported: tests and callers read them
 
 
 def _contract(r: dict[str, Any]) -> dict[str, Any] | None:
-    """The training contract of a rollout: exactly what a trainer consumes, nothing else.
+    """Keep the legacy audit export, including excluded turns and task rewards.
 
-    Per turn, `(prompt_token_ids, completion_token_ids, per_token_logps)` plus the reward. The
-    logprobs are the load-bearing part and the reason this is a separate download: they are the
-    behaviour policy's, recorded at sampling time, and cannot be recovered afterwards by re-running
-    the prompt. Discarded turns are kept but flagged, because they were generated and billed and a
-    trainer must be able to see them in order to exclude them deliberately.
-
-    `None` for an eval rollout: a download named `contract.json` whose every `prompt_token_ids` is
-    `[]` would look like a contract and contain none.
-
-    Raises:
-        `ValueError`: when the result has FATAL findings or an invalid mask; the exporter refuses it.
+    Eval rollouts return None; malformed captures raise ValueError.
     """
     turns = r.get("turns") or []
     if not turns or r.get("rollout_type", "train") == "eval":
@@ -215,6 +205,18 @@ def _contract(r: dict[str, Any]) -> dict[str, Any] | None:
     from .models import HarborRolloutResult
 
     return export_training_contract(HarborRolloutResult.model_validate(r))
+
+
+def _training_trace(r: dict[str, Any]) -> dict[str, Any] | None:
+    """Download the same validated token objects returned by HarborSession."""
+    if not r.get("turns") or r.get("rollout_type", "train") == "eval":
+        return None
+    from .contract import to_training_trace
+    from .models import HarborRolloutResult
+
+    return to_training_trace(HarborRolloutResult.model_validate(r)).model_dump(
+        mode="json"
+    )
 
 
 # ── the page's own pieces ─────────────────────────────────────────────────────────────────────────
@@ -941,9 +943,13 @@ def harbor_gradio_builder(
         if not result:
             return {"error": "This link has expired. Open the run again."}
         name = re.sub(r"[^A-Za-z0-9_.-]", "_", str(rec.get("id") or "rollout"))
-        if kind == "contract":
+        if kind in {"contract", "training_trace"}:
             try:
-                contract = _contract(result)
+                contract = (
+                    _training_trace(result)
+                    if kind == "training_trace"
+                    else _contract(result)
+                )
             except (
                 ValueError
             ) as exc:  # the exporter refuses a rollout with FATAL findings
@@ -953,7 +959,7 @@ def harbor_gradio_builder(
                     "error": "An eval rollout has nothing to train on, so it has no contract."
                 }
             return {
-                "name": f"{name}.contract.json",
+                "name": f"{name}.{kind}.json",
                 "text": json.dumps(contract, indent=2),
             }
         return {
