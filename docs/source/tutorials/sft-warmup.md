@@ -427,7 +427,7 @@ MODEL_NAME = "Qwen/Qwen3-1.7B"
 MODEL_NAME = f"{YOUR_HF_USERNAME}/reasoning-gym-chain-sum-Qwen3-1.7B-sft"
 ```
 
-With format compliance already near 100%, GRPO's `reward_std` will be non-zero from the very first
+With most completions already in the right format, GRPO's `reward_std` will be non-zero from the very first
 batch and the reward curve will climb immediately — no cold-start stall.
 
 **Other directions:**

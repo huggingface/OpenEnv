@@ -11,7 +11,7 @@ The auto-discovery system provides two main classes:
 
 Both classes work with:
 
-- **Local packages**: Installed via `pip install openenv-<env-name>`
+- **Local packages**: Environment packages installed from the repo (`pip install -e envs/<name>`) or from their Space (`pip install git+https://huggingface.co/spaces/<owner>/<space>`)
 - **HuggingFace Hub**: Environments hosted on HuggingFace Spaces
 
 ## Quick Start
@@ -166,7 +166,7 @@ Alias for `from_env()` for backward compatibility.
 ```python
 from openenv import AutoAction
 
-CodeAction = AutoAction.from_env("coding")
+CodeAction = AutoAction.from_hub("coding")
 action = CodeAction(code="x = 5 + 3")
 ```
 
@@ -382,8 +382,8 @@ The auto-discovery system works by:
 Environments are distributed as installable Python packages:
 
 ```bash
-# Install an environment
-pip install openenv-coding-env
+# Install an environment from the repo
+pip install -e envs/coding_env
 
 # Now it's automatically discoverable
 python -c "from openenv import AutoEnv; AutoEnv.list_environments()"
@@ -398,27 +398,14 @@ Each environment package includes:
 
 ### Manifest Format
 
-Each environment includes an `openenv.yaml` file:
+Each environment includes an `openenv.yaml` file. The client, action and observation classes are found by naming convention (`coding_env` → `CodingEnv`, `CodingAction`, `CodingObservation`). When an environment's classes don't follow it, the manifest names them:
 
 ```yaml
 name: coding_env
-version: 0.1.0
-description: Coding environment for OpenEnv
-
-client:
-  class_name: CodingEnv
-  module: coding_env.client
-
-action:
-  class_name: CodeAction
-  module: coding_env.client
-
-observation:
-  class_name: CodeObservation
-  module: coding_env.client
-
-default_image: coding-env:latest
-spec_version: 1
+version: "0.1.0"
+description: "Coding environment for OpenEnv"
+action: CodeAction
+observation: CodeObservation
 ```
 
 ## Benefits
