@@ -1169,6 +1169,12 @@ class HTTPEnvServer:
                 if method == McpMethod.TOOLS_LIST:
                     if hasattr(_env, "_async_handle_list_tools"):
                         obs = await _env._async_handle_list_tools()
+                        if obs.metadata and "error" in obs.metadata:
+                            return JsonRpcResponse.error_response(
+                                JsonRpcErrorCode.INTERNAL_ERROR,
+                                obs.metadata["error"],
+                                request_id=request_id,
+                            )
                         tools = [
                             {
                                 "name": t.name,

@@ -25,7 +25,11 @@ from fastapi.testclient import TestClient
 from fastmcp import FastMCP
 from openenv.core.env_server.http_server import HTTPEnvServer
 from openenv.core.env_server.mcp_environment import MCPEnvironment
-from openenv.core.env_server.mcp_types import CallToolAction, CallToolObservation
+from openenv.core.env_server.mcp_types import (
+    CallToolAction,
+    CallToolObservation,
+    ListToolsObservation,
+)
 from openenv.core.env_server.types import Action, Observation, State
 from openenv.core.mcp_client import MCPToolClient
 
@@ -486,3 +490,36 @@ class TestModeAwareMCPRouting:
                 "belongs to mode 'production', not 'simulation'"
                 in data["data"]["message"]
             )
+
+    def test_tools_list_propagates_handler_failure(self):
+        """When _async_handle_list_tools fails, the /mcp JSON-RPC response returns an error instead of an empty list."""
+
+        class FailingListToolsEnv(ModeAwareTestEnvironment):
+            async def _async_handle_list_tools(self):
+                return ListToolsObservation(
+                    tools=[],
+                    metadata={
+                        "error": "FastMCP client connection failed",
+                        "error_type": "list_tools_failed",
+                    },
+                )
+
+        app = FastAPI()
+        server = HTTPEnvServer(
+            env=FailingListToolsEnv,
+            action_cls=CallToolAction,
+            observation_cls=CallToolObservation,
+        )
+        server.register_routes(app, mode="production")
+        client = TestClient(app)
+
+        resp = client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 10},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "error" in data
+        assert data["error"]["code"] == -32603
+        assert "FastMCP client connection failed" in data["error"]["message"]
+        assert "result" not in data
