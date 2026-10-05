@@ -462,7 +462,7 @@ This approach:
 docker build -t openenv-base:latest -f src/openenv/core/containers/images/Dockerfile .
 
 # Build wildfire environment using the script
-cd src/envs/wildfire_env/server
+cd envs/wildfire_env/server
 ./build_docker.sh
 
 # Run container
@@ -1029,7 +1029,7 @@ docker build -t wildfire-env:latest -f envs/wildfire_env/server/Dockerfile .
 
 - **Main Repository**: [OpenEnv GitHub](https://github.com/openenv)
 - **Documentation**: See `rfcs/` directory for design documents
-- **Other Environments**: See `src/envs/` for more environment examples
+- **Other Environments**: See `envs/` for more environment examples
 
 ### Related Tools
 
