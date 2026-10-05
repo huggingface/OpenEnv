@@ -64,9 +64,9 @@
     - local: tutorials/browsergym-harness
       title: Agentic Harness
     - local: tutorials/opencode-agent-grpo
-      title: OpenCode
+      title: OpenCode (deprecated)
     - local: tutorials/pi-agent-grpo
-      title: Pi
+      title: Pi (deprecated)
     title: Harnesses
   - sections:
     - local: tutorials/evaluation-inspect
@@ -111,6 +111,8 @@
     title: Web Search
   - local: environments/browsergym
     title: BrowserGym
+  - local: environments/helium_browser
+    title: Helium Browser
   - local: environments/repl
     title: REPL
   - local: environments/calendar
@@ -150,11 +152,11 @@
   - local: environments/agent_world_model
     title: Agent World Model
   - local: environments/opencode
-    title: OpenCode
+    title: OpenCode (deprecated)
   - local: environments/pelican_svg
     title: Pelican SVG
   - local: environments/pi
-    title: Pi
+    title: Pi (deprecated)
   - local: environments/sophistry_bench_sprint
     title: Sophistry Bench Sprint
   title: Environments

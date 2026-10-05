@@ -42,7 +42,7 @@ async def main():
     async with EchoEnv(base_url="https://openenv-echo-env.hf.space") as client:
         # Reset the environment
         result = await client.reset()
-        print(result.observation.echoed_message)  # "Echo environment ready!"
+        print(result.observation.metadata["message"])  # "Echo environment ready!"
 
         # Send messages
         result = await client.step(
@@ -174,9 +174,8 @@ Base class for environment communication:
 #### 4. Container Providers
 Manage container deployment:
 - `LocalDockerProvider`: Run containers on local Docker daemon
-- `DockerSwarmProvider`: Deploy to Docker Swarm clusters
-- `UVProvider`, `DaytonaProvider`, `ACASandboxProvider`: Additional runtime providers
-- `KubernetesProvider`: Deploy to Kubernetes clusters (planned)
+- `UVProvider`: Run an environment's server from its project directory, without Docker
+- Docker Swarm, Daytona, Modal, Novita, Azure Container Apps and Hugging Face sandboxes: see [Runtime Providers](https://huggingface.co/docs/openenv/guides/runtime-providers)
 
 #### 5. Models
 Type-safe data structures:
@@ -270,10 +269,13 @@ The OpenEnv CLI provides commands to manage environments:
 - **`openenv init <env_name>`** - Initialize a new environment from template
 - **`openenv import <source> --name <env_name> --output-dir <dir>`** - Wrap a supported third-party source environment, including ORS/OpenReward and Verifiers, as OpenEnv
 - **`openenv push [--repo-id <repo>] [--private]`** - Deploy environment to Hugging Face Spaces
-- **`openenv serve`** - Serve an environment locally with optional auto-reload
 - **`openenv build`** - Build the Docker image for an environment
 - **`openenv fork <space-id>`** - Fork a Space from HF Hub to your account
 - **`openenv validate`** - Validate an environment configuration
+- **`openenv harbor`** - Serve and run Harbor tasks with token-level capture (`info`, `rollout`, `serve`, `push`)
+- **`openenv collect`** - Collect rollouts from a deployed environment
+- **`openenv catalog`** / **`openenv discover`** - Build and search environment catalogs
+- **`openenv skills`** - Manage OpenEnv skills for AI assistants
 
 ### Quick Start
 
@@ -318,7 +320,7 @@ uv pip install pytest
 PYTHONPATH=src:envs uv run pytest tests/ -v --tb=short
 
 # Run a specific test file
-PYTHONPATH=src:envs uv run pytest tests/envs/test_echo_environment.py -v
+PYTHONPATH=src:envs uv run pytest tests/envs/test_chess_environment.py -v
 ```
 
 **To run environment-specific tests**, install that environment's dependencies:

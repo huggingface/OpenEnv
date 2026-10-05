@@ -1,6 +1,26 @@
 <!-- openenv-source: pi_env -->
 # Pi Environment for OpenEnv
 
+> [!WARNING]
+> **Deprecated, will be removed in OpenEnv 0.8.0.** Pi now runs through
+> [`harbor_env`](https://huggingface.co/docs/openenv/environments/harbor) as one of Harbor's harnesses, with the same token-level
+> capture for training. Serve a Harbor task dataset and pick `pi` as the harness:
+>
+> ```bash
+> openenv harbor serve --dataset <hf-dataset>
+> ```
+>
+> ```python
+> from harbor_env.harness import HarborSessionFactory
+>
+> factory = HarborSessionFactory(
+>     "http://localhost:8000", split="<hf-dataset>", harness="pi", llm_url=vllm_url, model=model
+> )
+> ```
+>
+> Tasks become Harbor task directories (instruction, environment and verifier)
+> instead of `PiTask`.
+
 `pi_env` runs the [Pi](https://github.com/badlogic/pi-mono) coding agent
 inside an isolated [Hugging Face sandbox](https://huggingface.co/docs/huggingface_hub/package_reference/sandbox)
 against any OpenAI-compatible LLM endpoint, optionally capturing per-token
@@ -22,7 +42,12 @@ with a uniform Task shape:
     pytest invocations, score-file writes)
 
 Reward = `passed_verify / total_verify` unless any `verify` command writes
-a float to `/root/logs/verifier/reward.txt` (override).
+a float to `/root/logs/verifier/reward.txt` (override). The file is deleted
+before the verify commands run, so a value the agent writes during its run
+is discarded. The override must be a finite number; a verify command is
+written by the task author, so negative rewards and values above 1 are
+accepted too. A value that is not a finite number is ignored in favour of the
+pass rate, with the reason in `RolloutResult.reward_override_ignored`.
 
 ## In-process primitive (no HTTP)
 

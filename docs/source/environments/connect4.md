@@ -11,9 +11,9 @@ from connect4_env import Connect4Action, Connect4Env
 
 async def main():
     async with Connect4Env(base_url="http://localhost:8000") as client:
-        obs = await client.reset()
-        print(f"Board: {obs.board}")
-        print(f"Legal moves: {obs.legal_actions}")
+        result = await client.reset()
+        print(f"Board: {result.observation.board}")
+        print(f"Legal moves: {result.observation.legal_actions}")
 
         # Drop a piece in column 3
         result = await client.step(Connect4Action(column=3))

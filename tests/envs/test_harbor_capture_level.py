@@ -362,9 +362,7 @@ def test_an_eval_rollout_is_recorded_without_fatal_findings(monkeypatch):
     """`check_turn`'s FATALs (`no_prompt_ids`, `no_logprobs`) are the expected condition here.
     Letting them fire would mark every eval turn unusable and teach everyone to ignore findings.
 
-    Two calls, not one: `degenerate_rollout` is FATAL for a single-call agentic rollout and stays
-    that way on this path, because an agent that made one call and stopped did not attempt the task
-    whether or not its tokens were captured.
+    Two calls exercise the multi-turn capture contract without the single-call warning.
     """
     replies = [reply(), reply()]
 

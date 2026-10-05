@@ -57,6 +57,8 @@ class RolloutResult(BaseModel):
 
     # Scalars
     reward: float | None = None
+    # Why reward.txt was present but not used; None when it was used or absent
+    reward_override_ignored: str | None = None
     agent_exit_code: int | None = None
     wall_s: float = 0.0
     mode: str = "transparent_proxy"

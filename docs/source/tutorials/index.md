@@ -4,7 +4,7 @@ Choose a learning path from the sidebar:
 
 - **Basics:** start with [Hello World](openenv-tutorial) and build [Your First Environment](../guides/first-environment).
 - **Training:** train a [reasoning model](end-to-end-walkthrough), use [TRL](wordle-grpo) or [Unsloth](rl-training-2048), or collect rollouts for [SFT](sft-warmup).
-- **Harnesses:** run an [agentic harness](browsergym-harness) or train coding agents with [OpenCode](opencode-agent-grpo) and [Pi](pi-agent-grpo).
+- **Harnesses:** run an [agentic harness](browsergym-harness) or train coding agents through [Harbor](https://huggingface.co/docs/openenv/environments/harbor). The [OpenCode](opencode-agent-grpo) and [Pi](pi-agent-grpo) tutorials are deprecated.
 - **Evals:** follow [Evaluating with Environments](evaluation-inspect).
 
 For [MCP environments](mcp-environment) and [rubrics](rubrics), see Concepts in the sidebar.
@@ -35,6 +35,6 @@ Already familiar with the basics? These tutorials cover specific workflows in de
 | [RL Training with 2048](rl-training-2048) | Train a language model to play 2048 using GRPO. Covers game-state representation and reward shaping. | Yes | — |
 | [Evaluating with Environments](evaluation-inspect) | Wrap an OpenEnv environment in an Inspect AI `Task`, run it via `InspectAIHarness`, and get a structured `EvalResult`. | No | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/huggingface/OpenEnv/blob/main/examples/evaluation_inspect.ipynb) |
 | [BrowserGym Harness Rollouts](browsergym-harness) | Drive BrowserGym through the OpenEnv harness runtime when a trainer needs token sampling, logprobs, and reward assignment inside the training loop. | Yes | — |
-| [Training a Real Coding Agent](opencode-agent-grpo) | Train the actual OpenCode agent (black-box, loop-owning) with TRL's `AsyncGRPOTrainer`: a transparent proxy captures each turn's token ids and logprobs while the agent runs its own tool loop. | Yes | — |
+| [Training a Real Coding Agent (deprecated)](opencode-agent-grpo) | Deprecated, removed in OpenEnv 0.8.0: use [Harbor](https://huggingface.co/docs/openenv/environments/harbor) with `harness="opencode"`. Train the actual OpenCode agent (black-box, loop-owning) with TRL's `AsyncGRPOTrainer`: a transparent proxy captures each turn's token ids and logprobs while the agent runs its own tool loop. | Yes | — |
 | [Collecting rollouts for supervised training](sft-warmup) | Run a teacher model to collect reward-labeled rollouts, filter them, and fine-tune a student with TRL's `SFTTrainer` as a warm-start for GRPO. | Yes | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/huggingface/OpenEnv/blob/main/examples/sft_warmup.ipynb) |
-| [Training a Real Coding Agent (Pi)](pi-agent-grpo) | Train the actual Pi agent (black-box, loop-owning) with TRL's AsyncGRPOTrainer: a transparent proxy captures each turn's token ids and logprobs while the agent runs its own tool loop. | Yes | — |
+| [Training a Real Coding Agent (Pi, deprecated)](pi-agent-grpo) | Deprecated, removed in OpenEnv 0.8.0: use [Harbor](https://huggingface.co/docs/openenv/environments/harbor) with `harness="pi"`. Train the actual Pi agent (black-box, loop-owning) with TRL's AsyncGRPOTrainer: a transparent proxy captures each turn's token ids and logprobs while the agent runs its own tool loop. | Yes | — |
