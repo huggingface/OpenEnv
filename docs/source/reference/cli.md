@@ -45,17 +45,11 @@ openenv validate ./my_env --level runtime --local --output report.json
 Runtime validation requires Docker and a `validation.execution` declaration in
 `openenv.yaml`. The declaration points to a bounded JSON replay plan containing
 one reset and a sequence of actions. The validator builds an immutable image,
-collects the original episode, repeats the plan in a fresh WebSocket session and
-with a different seed, then replays it in a fresh container when the provider
-supports that capability. Docker validation uses two containers concurrently
-during the fresh-container replay. Both use the same immutable image and are
-removed even if a check fails.
+opens one WebSocket session, measures reward values, observation schemas and
+state continuity, and removes the container even if a check fails.
 
-The 11 implemented runtime checks cover startup, rewards, observation schemas,
-state continuity, seed control, determinism, emitted trajectory records, tool and
-task discovery, rubric introspection and reward attribution. Five checks remain
-unimplemented: network policy, host containment, resource bounds, episode isolation
-and oracle containment. Applicable unimplemented checks appear as `SKIP`; they make
+This first runtime slice implements startup, reward, observation and state
+checks. Other applicable Level 2 checks appear explicitly as `SKIP`; they make
 the result `WARN`, which exits zero and does not mean Level 2 is complete.
 `FAIL` exits 1, unsupported package formats exit 2, and internal or policy errors
 exit 3. `--level semantic`
@@ -64,14 +58,9 @@ includes the available lower-level checks but does not claim semantic execution.
 The Docker provider currently supports CPU workloads and `public` network mode;
 unsupported network or GPU requirements skip runtime before building.
 `--local` explicitly selects this default package mode and rejects a remote URL.
-The declared `episode_timeout_s` bounds each episode; a reset or judged step may use
-its remaining budget. Original and replay collection share a 300-second deadline
-and a 32 MiB evidence budget. `llm_judged` requests 20 identical-input episodes,
-including the original, plus the different-seed episode. Validation repeats the
-actions and any external service calls they make, so budget for the additional
-runtime and cost. Missing replay samples cannot pass determinism. Primary episode
-collection failures appear under `runtime.startup`, with dependent contract checks
-skipped and the completed trace retained.
+The declared `episode_timeout_s` bounds collection; a reset or judged step may use
+its remaining budget. Collection failures appear once under `runtime.startup`,
+with dependent contract checks skipped and the completed trace retained.
 
 Credential delivery is deferred for this release. Set
 `validation.execution.requires_credentials: true` when the environment needs an
@@ -98,13 +87,6 @@ reward is zero; the validator never converts missing or null step rewards to zer
 Cleanup removes run-owned containers. Built images remain in Docker's local cache
 for reuse; the report records their immutable image IDs. Remove an unwanted image
 with `docker image rm <image-id>` after its validation runs have finished.
-Use `--cleanup-images` to remove the current run's image automatically after all
-original and replay containers finish, including failure or interruption. Opt-in
-builds receive a unique ownership tag and label; cleanup never forces removal or
-prunes parent images or build caches. If another tag refers to the image, that
-image is preserved. The artifact bundle's `cleanup.json` records image cleanup
-separately, including whether the image itself was removed. This option applies
-only to local Docker validation and has no effect when no build is attempted.
 
 Runtime reports use schema version 2 and severity policy v2. Static reports for
 v1 manifests retain schema version 1 and policy v1. An explicit v1 policy with a

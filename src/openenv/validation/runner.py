@@ -2,7 +2,6 @@
 
 import hashlib
 import os
-import secrets
 import stat
 import time
 import uuid
@@ -15,17 +14,6 @@ from .graders.runtime import (
     RewardWellFormedGrader,
     StateContractGrader,
 )
-from .graders.runtime.discovery import (
-    RewardAttributionGrader,
-    RubricIntrospectableGrader,
-    TaskDeclarationAccuracyGrader,
-    ToolDeclarationAccuracyGrader,
-)
-from .graders.runtime.repeatability import (
-    EpisodeDeterminismGrader,
-    SeedControlGrader,
-    TrajectoryRecordGrader,
-)
 from .graders.static import StaticManifestGrader
 from .manifest import ManifestError, NormalizedManifest, NormalizedManifestV2
 from .parsers import ParserRegistry
@@ -36,7 +24,6 @@ from .report import CheckResult, ValidationReport, ValidationReportV2
 from .runtime.artifacts import write_runtime_bundle
 from .runtime.collector import collect_runtime_evidence, RuntimeCollectionInterrupted
 from .runtime.contracts import LaunchSpec, load_runtime_plan, RuntimePlanError
-from .runtime.replay import collect_replays, REPLAY_BUDGET_SECONDS
 from .runtime.scheduler import execute_graders, order_graders
 from .signature import detect_signature
 from .types import CheckStatus, Lane, Level, ProviderCapability
@@ -104,13 +91,6 @@ def default_grader_registry(policy: SeverityPolicy) -> GraderRegistry:
     registry.register(RewardWellFormedGrader())
     registry.register(ObservationSchemaGrader())
     registry.register(StateContractGrader())
-    registry.register(SeedControlGrader())
-    registry.register(EpisodeDeterminismGrader())
-    registry.register(TrajectoryRecordGrader())
-    registry.register(ToolDeclarationAccuracyGrader())
-    registry.register(TaskDeclarationAccuracyGrader())
-    registry.register(RubricIntrospectableGrader())
-    registry.register(RewardAttributionGrader())
     return registry
 
 
@@ -130,19 +110,18 @@ def _applicable(check_id, manifest):
     if check_id in {"runtime.rubric_introspectable", "runtime.reward_attribution"}:
         return manifest.capabilities.rubric_tree
     if check_id == "runtime.task_declaration_accuracy":
-        return TaskDeclarationAccuracyGrader().applies_to(manifest)
-    if check_id == "runtime.tool_declaration_accuracy":
-        return ToolDeclarationAccuracyGrader().applies_to(manifest)
+        return manifest.capabilities.task_api or bool(
+            manifest.capabilities.declared_task_count
+        )
     return True
 
 
-def _runtime(subject, graders, *, skip_build, provider, cleanup_images=False):
+def _runtime(subject, graders, *, skip_build, provider):
     """Own build/start/collection/stop and retain failure evidence through teardown."""
     manifest = subject.manifest
     plan = None
     evidence = None
     running = None
-    image_owner = image_ref = None
     inspection = {}
     cleanup = {"required": False, "completed": True}
     started = time.monotonic()
@@ -163,15 +142,10 @@ def _runtime(subject, graders, *, skip_build, provider, cleanup_images=False):
             raise UnsupportedCapability(
                 "credential_delivery is deferred for this release"
             )
-        if provider is None or cleanup_images:
+        if provider is None:
             from .providers.docker import DockerValidationProvider
 
-            if provider is None:
-                provider = DockerValidationProvider()
-            if cleanup_images and not isinstance(provider, DockerValidationProvider):
-                raise UnsupportedCapability(
-                    "--cleanup-images requires the Docker provider"
-                )
+            provider = DockerValidationProvider()
         if manifest.network.mode not in provider.supported_network_modes:
             raise UnsupportedCapability(
                 f"provider cannot enforce network mode {manifest.network.mode}"
@@ -189,21 +163,12 @@ def _runtime(subject, graders, *, skip_build, provider, cleanup_images=False):
             resources=manifest.resources,
             network=manifest.network,
             run_id="validation-" + uuid.uuid4().hex,
-            env_vars={"OPENENV_VALIDATION_TOKEN": secrets.token_urlsafe(32)},
         )
         attempted = True
-        if cleanup_images:
-            # Register ownership before build: cancellation can occur after Docker
-            # publishes a tag but before the client returns its immutable ID.
-            image_owner = spec.run_id
-            cleanup["required"] = True
-            image_ref = provider.build(
-                subject.root, manifest.execution, image_owner=image_owner
-            )
-        else:
-            image_ref = provider.build(subject.root, manifest.execution)
-        spec = LaunchSpec.model_validate({**spec.model_dump(), "image_ref": image_ref})
-        running = provider.start(spec)
+        image_ref = provider.build(subject.root, manifest.execution)
+        running = provider.start(
+            LaunchSpec.model_validate({**spec.model_dump(), "image_ref": image_ref})
+        )
         cleanup = {"required": True, "completed": False}
         inspection = running.inspect()
         result = _outcome(
@@ -213,16 +178,10 @@ def _runtime(subject, graders, *, skip_build, provider, cleanup_images=False):
             started=started,
             measured={"provider": provider.name, "image_ref": image_ref},
         )
-        replay_deadline = time.monotonic() + REPLAY_BUDGET_SECONDS
         evidence = collect_runtime_evidence(
             running.base_url,
             plan,
-            episode_timeout_s=min(
-                manifest.resources.episode_timeout_s, REPLAY_BUDGET_SECONDS
-            ),
-            validation_token=spec.env_vars["OPENENV_VALIDATION_TOKEN"],
-            collect_tools=_applicable("runtime.tool_declaration_accuracy", manifest),
-            collect_tasks=_applicable("runtime.task_declaration_accuracy", manifest),
+            episode_timeout_s=manifest.resources.episode_timeout_s,
         )
         # Protocol collection must finish before its dependent contract checks run.
         if evidence.failure_reason:
@@ -232,15 +191,6 @@ def _runtime(subject, graders, *, skip_build, provider, cleanup_images=False):
                 evidence.failure_reason,
                 started=started,
             )
-        evidence = collect_replays(
-            provider,
-            running,
-            spec,
-            plan,
-            evidence,
-            capabilities=manifest.capabilities,
-            deadline=replay_deadline,
-        )
         subject = replace(
             subject, image_ref=image_ref, running=running, runtime_evidence=evidence
         )
@@ -250,11 +200,6 @@ def _runtime(subject, graders, *, skip_build, provider, cleanup_images=False):
             provider_capabilities=provider.capabilities,
             prior=[result],
         )
-        # Cleanup failure cannot invalidate evidence already collected from a
-        # healthy subject. Preserve its findings before failing the run closed.
-        if any(replay.cleanup_complete is False for replay in evidence.replays):
-            result.status = CheckStatus.ERROR
-            result.evidence.append("replay subject teardown failed")
     except UnsupportedCapability as exc:
         result = _outcome(
             "runtime.startup", CheckStatus.SKIP, str(exc), started=started
@@ -293,12 +238,7 @@ def _runtime(subject, graders, *, skip_build, provider, cleanup_images=False):
         if running is not None:
             try:
                 running.stop()
-                cleanup["completed"] = not (
-                    evidence
-                    and any(
-                        replay.cleanup_complete is False for replay in evidence.replays
-                    )
-                )
+                cleanup["completed"] = True
             except (Exception, KeyboardInterrupt) as exc:
                 cleanup["completed"] = False
                 cleanup["reason"] = f"subject teardown failed ({type(exc).__name__})"
@@ -313,26 +253,6 @@ def _runtime(subject, graders, *, skip_build, provider, cleanup_images=False):
                     result.status = CheckStatus.ERROR
                     result.evidence.append("subject teardown failed")
                     result.duration_s = time.monotonic() - started
-        if image_owner is not None:
-            try:
-                cleanup["image"] = provider.cleanup_image(image_owner, image_ref)
-            except (Exception, KeyboardInterrupt) as exc:
-                reason = f"image cleanup failed ({type(exc).__name__})"
-                cleanup["image"] = {
-                    "required": True,
-                    "completed": False,
-                    "owner": image_owner,
-                    "reason": reason,
-                }
-                cleanup["completed"] = False
-                if result is None:
-                    result = _outcome(
-                        "runtime.startup", CheckStatus.ERROR, reason, started=started
-                    )
-                else:
-                    result.status = CheckStatus.ERROR
-                    result.evidence.append(reason)
-                    result.duration_s = time.monotonic() - started
     return [result, *checks], attempted, plan, evidence, inspection, cleanup
 
 
@@ -341,7 +261,6 @@ def run_validation(
     *,
     max_level: Level = Level.SEMANTIC,
     skip_build: bool = False,
-    cleanup_images: bool = False,
     policy: SeverityPolicy | None = None,
     provider=None,
     artifacts_dir: Path | None = None,
@@ -363,9 +282,6 @@ def run_validation(
             Level ceiling; graders above it are not selected.
         skip_build (`bool`, *optional*, defaults to `False`):
             Skip the image build; build-dependent checks SKIP with a reason.
-        cleanup_images (`bool`, *optional*, defaults to `False`):
-            Remove this run's Docker image after its original and replay containers.
-            Other image tags, parent images and build caches are preserved.
         policy ([`~openenv.validation.policy.SeverityPolicy`], *optional*):
             `None` chooses v1 for static and v2 for runtime/semantic ceilings.
         provider ([`~openenv.validation.providers.ValidationProvider`], *optional*):
@@ -455,7 +371,6 @@ def run_validation(
                 ],
                 skip_build=skip_build,
                 provider=provider,
-                cleanup_images=cleanup_images,
             )
             results.extend(runtime_results)
             if attempted:

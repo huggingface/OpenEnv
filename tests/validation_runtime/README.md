@@ -17,13 +17,6 @@ failure. The reference job uses Linux x86-64; Docker Desktop arm64 uses the same
 recipe but records its different platform. No host Python code from the subject
 is imported by the validator.
 
-The protocol suite also exercises the installed wheel over real loopback HTTP
-and WebSocket connections using a test-only process provider. It verifies
-authorized session telemetry, full collection/grading/reporting, and process
-cleanup on CPU-only Hugging Face Jobs. Its evidence explicitly records process
-isolation; it does not qualify Docker, resource or network isolation. No Hub or
-GitHub credentials are needed by those tests.
-
 The Docker suite snapshots the current source, builds its exact OpenEnv wheel,
 and installs that wheel into this dedicated non-editable test environment. It
 downloads only binary dependencies selected from the committed lock for the
@@ -33,38 +26,18 @@ with networking disabled. A cold cache is supported. The tests run outside the
 checkout with `PYTHONPATH` removed, exercising installed package data and the
 production OpenEnv `/ws` endpoint. Each launch uses a fresh subject.
 
-The image includes controlled faults for malformed observations/rewards/state,
-startup and timeout failures, ignored seeds, session drift, missing/mismatched
-records, tool/task declarations, rubric configuration and child attribution.
-`judged_stable` and `judged_noisy` exercise the bounded judge procedure. All fault
-switches and wire corruption remain inside test assets with one public runtime plan.
+The image supports controlled `VALIDATION_FAULT` modes: `good`, `bad_reward`,
+`bad_observation`, `missing_done`, `bad_state`, `hung_step`, `slow_step`, and `startup_failure`. All fault
+switches and wire corruption remain inside test assets. They share one fixture
+and one public runtime plan, so a defect changes one property at a time.
 
-The fixture registers two real MCP tools and declares task counts of four train
-and two test tasks. Its task listing returns only one preview item; the collector
-uses `num_tasks` and samples at most two items per split. Empty tool declarations
-are checked through a real empty FastMCP registry. `discovery.json` preserves raw
-results and distinguishes failed discovery from an empty success. The protocol
-suite contains 41 required cases, including real tool calls and discovery/rubric
-faults through the installed-wheel process provider.
-
-Repeatability checks replay the original plan in a fresh session, with a different
-seed, and in an independently inspected fresh container. Controlled
-judge fixtures use exactly 20 identical-input samples and per-step population
-variance; they make no inference calls. `replays.json` retains each trace, subject
-telemetry, container identity and cleanup outcome. A process-only provider explicitly
-skips fresh-container determinism. Subject-emitted records are compared with the
-independently collected wire trace.
-
-The Docker suite contains 30 required cases: five provider lifecycle tests,
-24 CLI fault/control cases, and one real `echo_env` canary. The slow-step case
-completes a tool call taking more than five seconds within the declared episode
-budget. The hung-step case
+The Docker suite contains 14 required cases: three provider lifecycle tests,
+ten CLI fault/control cases, and one real `echo_env` canary. The slow-step case completes a tool call taking more than five seconds within
+the declared episode budget. The hung-step case
 checks the episode deadline; the interruption case sends SIGINT only after a
 container log confirms the second step has begun. Both must retain the completed
 reset/state/step/state prefix and remove their own containers. Each CLI case uses
-a unique image label for independent cleanup verification. Image lifecycle cases
-also verify opt-in removal after image consumers exit, idempotent cleanup,
-and preservation of preexisting base images and independently added user tags.
+a unique image label for independent cleanup verification.
 
 The Echo canary copies the actual `envs/echo_env` sources unchanged and records
 their hashes. A test overlay adds only the execution declaration, replay plan and

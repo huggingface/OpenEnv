@@ -18,10 +18,7 @@ validation:
   capabilities:
     verifier:
       kind: reward_channel
-    declared_tools: [increment, read_counter]
-    rubric_tree: true
-    task_api: true
-    declared_task_count: {train: 4, test: 2}
+    declared_tools: []
   types:
     tags: [demo]
   execution:

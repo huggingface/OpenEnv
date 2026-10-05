@@ -118,13 +118,6 @@ def validate(
             help="Skip the image build; build-dependent checks are SKIPped with a reason",
         ),
     ] = False,
-    cleanup_images: Annotated[
-        bool,
-        typer.Option(
-            "--cleanup-images",
-            help="Remove this run's Docker images after validation; preserve shared caches",
-        ),
-    ] = False,
     local: Annotated[
         bool,
         typer.Option(
@@ -204,11 +197,6 @@ def validate(
         runtime_target = target
 
     if runtime_target is not None:
-        if cleanup_images:
-            typer.echo(
-                "Error: --cleanup-images requires local package validation", err=True
-            )
-            raise typer.Exit(EXIT_FAIL)
         if local:
             typer.echo("Error: --local cannot be combined with a running URL", err=True)
             raise typer.Exit(EXIT_FAIL)
@@ -251,7 +239,6 @@ def validate(
             package_root,
             max_level=_LEVELS[level],
             skip_build=skip_build,
-            cleanup_images=cleanup_images,
             policy=load_policy(policy_version) if policy_version else None,
             artifacts_dir=(
                 output.parent / (output.stem + ".artifacts") if output else None

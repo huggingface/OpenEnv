@@ -6,11 +6,9 @@ import os
 from typing import Any
 
 import uvicorn
-from fastmcp import FastMCP
 from openenv.core.env_server.http_server import create_app
 from openenv.core.env_server.interfaces import Environment
 from openenv.core.env_server.types import Action, Observation, State
-from openenv.core.rubrics import Rubric, WeightedSum
 from pydantic import Field
 
 
@@ -22,118 +20,31 @@ class ProbeObservation(Observation):
     counter: int = Field(strict=True)
 
 
-class CounterRubric(Rubric):
-    def __init__(self, public_config=True):
-        super().__init__()
-        self.public_config = public_config
-
-    def forward(self, action, observation):
-        return float(observation.counter >= 2)
-
-    def validation_config(self):
-        return {"threshold": 2} if self.public_config else None
-
-
-class ControlledJudge(Rubric):
-    """A fixed public test judge; this fixture performs no model inference."""
-
-    def __init__(self, score):
-        super().__init__()
-        self.score = score
-
-    def forward(self, action, observation):
-        return self.score
-
-    def validation_config(self):
-        return {"judge": "controlled-test-v1", "score": self.score}
-
-
 class ProbeEnvironment(Environment):
     SUPPORTS_CONCURRENT_SESSIONS = True
-    _reset_ordinal = 0
 
-    def __init__(self, mode="good"):
+    def __init__(self):
         super().__init__()
-        self.mode = mode
-        self.ordinal = 0
         self._state = State(episode_id="uninitialized", step_count=0)
         self.counter = 0
-        public_config = mode != "missing_rubric_config"
-        self.rubric = WeightedSum(
-            [CounterRubric(public_config), CounterRubric(public_config)], [0.5, 0.5]
-        )
-        self.mcp_server = FastMCP("validation_probe")
-        if mode != "empty_tools":
-            self.mcp_server.tool(self.increment)
-            if mode != "missing_tool":
-                self.mcp_server.tool(self.read_counter)
-        if mode == "extra_tool":
-            self.mcp_server.tool(name="unexpected")(self.read_counter)
-        if mode == "tool_discovery_error":
-            self.mcp_server = None
-
-    def increment(self, amount: int = 1) -> dict:
-        """Advance the probe using its ordinary step implementation."""
-        return self.step(ProbeAction(increment=amount)).model_dump(mode="json")
-
-    def read_counter(self) -> int:
-        """Read the session's current counter without changing it."""
-        return self.counter
-
-    def list_splits(self):
-        return ["train", "test"]
-
-    def num_tasks(self, split):
-        counts = {"train": 4, "test": 2}
-        return counts[split] + int(self.mode == "bad_task_count" and split == "train")
-
-    def get_task(self, split, index):
-        if not 0 <= index < {"train": 4, "test": 2}[split]:
-            raise IndexError(index)
-        return {"id": f"{split}-{index}", "index": index, "split": split}
-
-    def list_tasks(self, split):
-        # Deliberately bounded: listing length is never the authoritative count.
-        return [self.get_task(split, 0)]
 
     def reset(self, seed=None, episode_id=None, **kwargs):
         self.counter = 0
         self._state = State(episode_id=episode_id or "probe", step_count=0)
-        observation = ProbeObservation(counter=0, reward=0.0, done=False)
-        if self.mode in {
-            "nondeterministic",
-            "judged_stable",
-            "judged_noisy",
-        }:
-            ProbeEnvironment._reset_ordinal += 1
-            self.ordinal = ProbeEnvironment._reset_ordinal
-        if self.mode == "nondeterministic":
-            observation.metadata["session_ordinal"] = self.ordinal
-        if self.mode in {"judged_stable", "judged_noisy"}:
-            score = 0.5 if self.mode == "judged_stable" else float(self.ordinal % 2)
-            self.rubric = ControlledJudge(score)
-        return observation
+        return ProbeObservation(counter=0, reward=0.0, done=False)
 
     def step(self, action, timeout_s=None, **kwargs):
         self.counter += action.increment
         self._state.step_count += 1
-        observation = ProbeObservation(
+        return ProbeObservation(
             counter=self.counter,
             reward=float(self.counter >= 2),
             done=self._state.step_count >= 2,
         )
-        observation.reward = self.rubric(action, observation)
-        return observation
 
     @property
     def state(self):
         return self._state
-
-
-class IgnoredSeedEnvironment(ProbeEnvironment):
-    # Deliberately exclude seed and **kwargs so framework filtering is observable.
-    def reset(self, episode_id=None):
-        return super().reset(episode_id=episode_id)
 
 
 class WireFault:
@@ -179,22 +90,6 @@ class WireFault:
                         payload.pop("done", None)
                 elif data.get("type") == "state" and self.mode == "bad_state":
                     data["data"]["episode_id"] = "wrong-episode"
-                elif data.get("type") == "validation":
-                    if self.mode == "missing_record":
-                        data["data"].pop("trajectory", None)
-                    elif self.mode == "trace_mismatch":
-                        data["data"]["trajectory"]["records"][0]["response"]["data"][
-                            "observation"
-                        ]["counter"] = 999
-                    elif self.mode == "bad_attribution":
-                        data["data"]["attribution"][0]["rubric"][1]["score"] = 0.25
-                    elif self.mode == "changed_rubric_config":
-                        snapshot = data["data"]
-                        for tree in [snapshot["rubric"]] + [
-                            record["rubric"] for record in snapshot["attribution"]
-                        ]:
-                            tree[1]["config"]["option"] = True
-                        snapshot["attribution"][0]["rubric"][1]["config"]["option"] = 1
                 message = {**message, "text": json.dumps(data)}
             await send(message)
 
@@ -213,27 +108,12 @@ def make_app(mode="good"):
         "missing_done",
         "bad_state",
         "hung_step",
-        "ignored_seed",
-        "nondeterministic",
-        "missing_record",
-        "trace_mismatch",
-        "judged_stable",
-        "judged_noisy",
-        "missing_tool",
-        "extra_tool",
-        "empty_tools",
-        "tool_discovery_error",
-        "bad_task_count",
-        "missing_rubric_config",
-        "bad_attribution",
-        "changed_rubric_config",
         "slow_step",
     }:
         raise ValueError(f"Unknown fixture mode: {mode}")
-    environment = IgnoredSeedEnvironment if mode == "ignored_seed" else ProbeEnvironment
     return WireFault(
         create_app(
-            lambda: environment(mode),
+            ProbeEnvironment,
             ProbeAction,
             ProbeObservation,
             env_name="validation_probe",
