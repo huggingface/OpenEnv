@@ -14,6 +14,26 @@ short_description: OpenCode coding agent in an E2B sandbox with logprob capture
 
 # OpenCode Environment for OpenEnv
 
+> [!WARNING]
+> **Deprecated, will be removed in OpenEnv 0.8.0.** OpenCode now runs through
+> [`harbor_env`](https://huggingface.co/docs/openenv/environments/harbor) as one of Harbor's harnesses, with the same token-level
+> capture for training. Serve a Harbor task dataset and pick `opencode` as the harness:
+>
+> ```bash
+> openenv harbor serve --dataset <hf-dataset>
+> ```
+>
+> ```python
+> from harbor_env.harness import HarborSessionFactory
+>
+> factory = HarborSessionFactory(
+>     "http://localhost:8000", split="<hf-dataset>", harness="opencode", llm_url=vllm_url, model=model
+> )
+> ```
+>
+> Tasks become Harbor task directories (instruction, environment and verifier)
+> instead of `OpenCodeTask`.
+
 `opencode_env` runs the [OpenCode](https://opencode.ai) coding agent inside
 an isolated [E2B](https://e2b.dev) sandbox against any OpenAI-compatible
 LLM endpoint, optionally capturing per-token logprobs for GRPO training.
@@ -38,7 +58,12 @@ with a uniform Task shape:
     pytest invocations, score-file writes)
 
 Reward = `passed_verify / total_verify` unless any `verify` command writes
-a float to `/home/user/logs/verifier/reward.txt` (override).
+a float to `/home/user/logs/verifier/reward.txt` (override). The file is deleted
+before the verify commands run, so a value the agent writes during its run
+is discarded. The override must be a finite number; a verify command is
+written by the task author, so negative rewards and values above 1 are
+accepted too. A value that is not a finite number is ignored in favour of the
+pass rate, with the reason in `RolloutResult.reward_override_ignored`.
 
 ## Quick Start
 

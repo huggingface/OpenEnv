@@ -38,7 +38,7 @@ OpenEnv is in active development, and the scope is expanding from environments t
 | **License** | BSD-3-Clause; contributions accepted under the same terms. |
 | **Repository** | Hosted at huggingface/OpenEnv, with 2,300+ GitHub stars |
 | **Environments on the Hub** | 4,200+ environments published to the Hugging Face OpenEnv Hub, spanning coding REPLs, browser control, and games such as Wordle and Sudoku. |
-| **In flight** | [RFC 005](https://github.com/huggingface/OpenEnv/blob/main/rfcs/005-agentic-harnesses.md) (agentic harnesses)<br>[RFC 006](https://github.com/huggingface/OpenEnv/issues/623) (multi-component rewards)<br>[RFC 007](https://github.com/huggingface/OpenEnv/pull/727) (environment datasets)<br>[RFC 008](https://github.com/huggingface/OpenEnv/issues/778) (environment auto-validation) |
+| **In flight** | [RFC 005](https://github.com/huggingface/OpenEnv/blob/main/rfcs/005-agentic-harnesses.md) (agentic harnesses)<br>[RFC 006](https://github.com/huggingface/OpenEnv/blob/main/rfcs/006-agentic-rl-harness-interception.md) (agentic RL through harness interception)<br>[RFC 007](https://github.com/huggingface/OpenEnv/pull/727) (environment datasets)<br>[RFC 008](https://github.com/huggingface/OpenEnv/issues/778) (environment auto-validation) |
 
 The project is now pivoting from making environments easy to publish and share toward making them validated and trainable, which is what RFCs 005-008 addresses.
 
@@ -69,7 +69,7 @@ In short, “Built for OpenEnv” becomes the default expectation for new enviro
 | **Model authors / labs** *e.g. Meta, Reflection, and others* | Train and judge models on diverse, realistic tasks without bespoke integration per environment or harness. | •  Standardize on the interface •  Contribute realistic environments •  Report what the spec is missing |
 | **Trainer & RL-framework builders** *e.g. TitanRL, TRL, prime-rl, SkyRL, Unsloth* | A stable contract for environments and trajectories so they do not re-implement adapters per source. | •  Ship first-class OpenEnv support •  Co-design the interface via RFCs |
 | **Harness & agent builders** *e.g. OpenClaw, Hermes, Claude Code, Goose* | Wrap a harness once and have it work for training, evaluation, and production, with a standard trajectory format. | •  Adopt the harness wrapping pattern (RFC 005) •  Emit the standard trajectory and event schema •  Keep their control loop, gain portability |
-| **Reward & eval library authors** *e.g. verifiers, Archipelago, APEX, τ-bench* | Define rewards and rubrics once and have them inspectable and comparable across environments. | •  Keep reward logic in their libraries •  Adopt the multi-component reward schema (RFC 006) •  Build evals on top of OpenEnv |
+| **Reward & eval library authors** *e.g. verifiers, Archipelago, APEX, τ-bench* | Define rewards and rubrics once and have them inspectable and comparable across environments. | •  Keep reward logic in their libraries •  Expose reward components through the rubric tree (RFC 004) •  Build evals on top of OpenEnv |
 | **Infra & compute providers** *e.g. Modal, neoclouds* | A predictable, container-native deployment and serving target. | •  Support the packaging and transports •  Host environments and agents at scale |
 | **Researchers** *e.g. Stanford, UC Berkeley* | Low-friction access to many environments and reproducible baselines. | •  Use and cite OpenEnv •  Contribute environments and feedback |
 
@@ -100,7 +100,7 @@ The current RFC slate (numbers and owners evolve in the open):
 | [003](https://github.com/huggingface/OpenEnv/blob/main/rfcs/003-mcp-support.md) | MCP support | Shipped |
 | [004](https://github.com/huggingface/OpenEnv/blob/main/rfcs/004-rubrics.md) | Rubric system (rewards stay in the environment) | Shipped |
 | [005](https://github.com/huggingface/OpenEnv/blob/main/rfcs/005-agentic-harnesses.md) | Agentic harness integration (OpenClaw first) | In PR |
-| [006](https://github.com/huggingface/OpenEnv/issues/623) | Multi-component rewards, scalar-compatible | In PR |
+| [006](https://github.com/huggingface/OpenEnv/blob/main/rfcs/006-agentic-rl-harness-interception.md) | Agentic RL through harness interception: the token capture contract | In review |
 | [007](https://github.com/huggingface/OpenEnv/pull/727) | Environment datasets | In PR |
 | [008](https://github.com/huggingface/OpenEnv/issues/778) | Environment auto-validation and trainability bar | In review |
 

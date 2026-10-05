@@ -21,6 +21,8 @@ The sandbox backend and interception proxy are shared with ``opencode_env``
 (to be consolidated into ``openenv.core``).
 """
 
+import warnings
+
 from opencode_env.sandbox import (
     HFSandboxBackend,
     SandboxBackend,
@@ -37,6 +39,16 @@ from .models import (
     RolloutTurn,
 )
 from .task import PiTask
+
+warnings.warn(
+    "pi_env is deprecated and will be removed in OpenEnv 0.8.0. "
+    "Run pi through harbor_env instead: "
+    "`HarborSessionFactory(server_url, harness='pi')` against "
+    "`openenv harbor serve`. "
+    "See https://huggingface.co/docs/openenv/environments/harbor",
+    FutureWarning,
+    stacklevel=2,
+)
 
 __all__ = [
     # Deployed-env client

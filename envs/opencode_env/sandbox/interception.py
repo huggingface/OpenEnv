@@ -63,6 +63,7 @@ class ProxyConfig:
     trace_path: str = "/tmp/opencode-proxy-trace.jsonl"
     host: str = "127.0.0.1"
     port: int = 7000
+    sampling: dict[str, Any] | None = None
     top_logprobs: int = 5
     request_timeout_s: float = 600.0
     # Cap ``max_tokens`` before forwarding. OpenCode historically asks for very
@@ -89,6 +90,7 @@ class TurnRecord:
     request: dict[str, Any]
     response: dict[str, Any]
     logprobs: list[dict[str, Any]] | None
+    prompt_token_ids: list[int]
     completion_tokens: list[str]
     completion_token_ids: list[int]
     per_token_logps: list[float]
@@ -130,9 +132,7 @@ def _build_app(cfg: ProxyConfig) -> FastAPI:
         try:
             body = json.loads(raw_body)
         except json.JSONDecodeError:
-            return JSONResponse(
-                status_code=400, content={"error": "invalid json body"}
-            )
+            return JSONResponse(status_code=400, content={"error": "invalid json body"})
 
         forwarded_body = _prepare_forwarded_body(body, cfg)
         headers = {
@@ -178,6 +178,11 @@ def _prepare_forwarded_body(body: dict[str, Any], cfg: ProxyConfig) -> dict[str,
       ``max_completion_tokens``.
     """
     forwarded = copy.deepcopy(body)
+    if cfg.sampling is not None:
+        forwarded.update(cfg.sampling)
+        forwarded["logprobs"] = True
+        forwarded["return_tokens_as_token_ids"] = True
+        forwarded["return_token_ids"] = True
     forwarded.setdefault("logprobs", True)
     forwarded.setdefault("top_logprobs", cfg.top_logprobs)
 
@@ -252,7 +257,11 @@ async def _proxy_unary(
     record = _build_turn_record(
         turn_idx=turn_idx,
         request_body=forwarded_body,
-        response_json=response_json,
+        response_json=(
+            {**response_json, "upstream_status": upstream_response.status_code}
+            if upstream_response.status_code >= 400
+            else response_json
+        ),
         latency_s=latency,
     )
     trace_file.write(record.to_json() + "\n")
@@ -338,7 +347,7 @@ async def _proxy_streaming(
                 yield line + "\n"
                 if not line.startswith("data:"):
                     continue
-                data = line[len("data:"):].strip()
+                data = line[len("data:") :].strip()
                 if data == "[DONE]":
                     continue
                 try:
@@ -364,8 +373,16 @@ async def _proxy_streaming(
 
 
 def _accumulate_stream_chunk(chunk: dict[str, Any], acc: dict[str, Any]) -> None:
+    if chunk.get("prompt_token_ids") is not None:
+        acc["prompt_token_ids"] = chunk["prompt_token_ids"]
     for choice in chunk.get("choices", []) or []:
         idx = choice.get("index", 0)
+        if choice.get("prompt_token_ids") is not None:
+            acc["prompt_token_ids"] = choice["prompt_token_ids"]
+        if choice.get("token_ids") is not None:
+            acc.setdefault("token_ids_by_idx", {}).setdefault(idx, []).extend(
+                choice["token_ids"]
+            )
         delta = choice.get("delta") or {}
         content = delta.get("content")
         if content:
@@ -381,7 +398,11 @@ def _accumulate_stream_chunk(chunk: dict[str, Any], acc: dict[str, Any]) -> None
             tc_idx = tc.get("index", 0)
             bucket = acc["tool_calls_by_idx"].setdefault(
                 (idx, tc_idx),
-                {"id": None, "type": "function", "function": {"name": "", "arguments": ""}},
+                {
+                    "id": None,
+                    "type": "function",
+                    "function": {"name": "", "arguments": ""},
+                },
             )
             if tc.get("id"):
                 bucket["id"] = tc["id"]
@@ -406,6 +427,7 @@ def _assemble_streamed_response(
         | set(acc["finish_by_idx"])
         | {k[0] for k in acc["tool_calls_by_idx"]}
         | set(acc["logprobs_by_idx"])
+        | set(acc.get("token_ids_by_idx", {}))
         | {0}
     )
     choices: list[dict[str, Any]] = []
@@ -431,6 +453,8 @@ def _assemble_streamed_response(
         }
         if acc["logprobs_by_idx"].get(idx):
             choice["logprobs"] = {"content": acc["logprobs_by_idx"][idx]}
+        if idx in acc.get("token_ids_by_idx", {}):
+            choice["token_ids"] = acc["token_ids_by_idx"][idx]
         choices.append(choice)
     return {
         "id": last_chunk.get("id", ""),
@@ -438,6 +462,7 @@ def _assemble_streamed_response(
         "model": last_chunk.get("model", ""),
         "choices": choices,
         "usage": last_chunk.get("usage"),
+        "prompt_token_ids": acc.get("prompt_token_ids", []),
     }
 
 
@@ -455,14 +480,16 @@ def _build_turn_record(
     content_lp = logprobs_field.get("content") or []
 
     tokens: list[str] = []
-    token_ids: list[int] = []
+    token_ids: list[int] = list(choice.get("token_ids") or [])
     per_token_logps: list[float] = []
     for entry in content_lp:
         tokens.append(entry.get("token", ""))
-        # OpenAI returns no raw token ids; vLLM returns them as ``token_id``.
-        token_id = entry.get("token_id")
-        if token_id is not None:
-            token_ids.append(int(token_id))
+        if not choice.get("token_ids"):
+            token_id = entry.get("token_id")
+            if token_id is None and str(entry.get("token", "")).startswith("token_id:"):
+                token_id = int(entry["token"].removeprefix("token_id:"))
+            if token_id is not None:
+                token_ids.append(int(token_id))
         lp = entry.get("logprob")
         if lp is not None:
             per_token_logps.append(float(lp))
@@ -472,6 +499,9 @@ def _build_turn_record(
         request=request_body,
         response=response_json,
         logprobs=content_lp,
+        prompt_token_ids=response_json.get("prompt_token_ids")
+        or choice.get("prompt_token_ids")
+        or [],
         completion_tokens=tokens,
         completion_token_ids=token_ids,
         per_token_logps=per_token_logps,
@@ -487,8 +517,7 @@ def _strip_logprobs(response_json: dict[str, Any]) -> dict[str, Any]:
     choices = out.get("choices")
     if isinstance(choices, list):
         out["choices"] = [
-            {k: v for k, v in (ch or {}).items() if k != "logprobs"}
-            for ch in choices
+            {k: v for k, v in (ch or {}).items() if k != "logprobs"} for ch in choices
         ]
     return out
 
@@ -537,9 +566,7 @@ class InterceptionProxy:
             lifespan="on",
         )
         self._server = uvicorn.Server(config)
-        self._thread = threading.Thread(
-            target=self._run_server, daemon=True
-        )
+        self._thread = threading.Thread(target=self._run_server, daemon=True)
         self._thread.start()
         # Wait for the server to accept connections.
         deadline = time.time() + 10
@@ -617,6 +644,7 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=7000)
     parser.add_argument("--top-logprobs", type=int, default=5)
+    parser.add_argument("--sampling", type=json.loads, default=None)
     parser.add_argument("--request-timeout", type=float, default=600.0)
     parser.add_argument(
         "--max-tokens-cap",
@@ -649,6 +677,7 @@ def main() -> None:
         host=args.host,
         port=args.port,
         top_logprobs=args.top_logprobs,
+        sampling=args.sampling,
         request_timeout_s=args.request_timeout,
         max_tokens_cap=args.max_tokens_cap,
         disable_thinking=args.disable_thinking,

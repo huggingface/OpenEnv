@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import time
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional
 
@@ -19,6 +20,7 @@ from openenv.core.harness import (
     AgenticHarnessAdapter,
     HarnessConfig,
     HarnessEnvironment,
+    HarnessError,
     HarnessEvent,
     HarnessEventType,
     HarnessMCPBridge,
@@ -61,6 +63,72 @@ class RecordingAdapter(AgenticHarnessAdapter):
 
 
 class TestBridgeStandalone:
+    async def test_stop_closes_active_http_stream(self):
+        from types import SimpleNamespace
+
+        import httpx
+        from starlette.applications import Starlette
+        from starlette.responses import StreamingResponse
+        from starlette.routing import Route
+
+        finished = threading.Event()
+
+        async def stream(request):
+            async def chunks():
+                try:
+                    yield b"ready\n"
+                    await asyncio.Event().wait()
+                finally:
+                    finished.set()
+
+            return StreamingResponse(chunks())
+
+        app = Starlette(routes=[Route("/mcp", stream)])
+        bridge = HarnessMCPBridge(SimpleNamespace(http_app=lambda: app))
+        url = bridge.start()
+        thread = bridge._thread
+        try:
+            async with httpx.AsyncClient() as client:
+                async with client.stream("GET", url) as response:
+                    assert await anext(response.aiter_lines()) == "ready"
+                    started = time.monotonic()
+                    await asyncio.to_thread(bridge.stop, 2.0)
+                    assert time.monotonic() - started < 3.0
+                    assert not thread.is_alive()
+                    assert finished.is_set()
+                    assert bridge.url is None
+            bridge.start()
+            assert bridge._thread is not thread
+        finally:
+            await asyncio.to_thread(bridge.stop)
+
+    def test_failed_stop_keeps_server_until_thread_exits(self):
+        from types import SimpleNamespace
+
+        release = threading.Event()
+        thread = threading.Thread(target=release.wait, daemon=True)
+        server = SimpleNamespace(
+            should_exit=False, force_exit=False, config=SimpleNamespace()
+        )
+        bridge = HarnessMCPBridge(make_mcp())
+        bridge._thread = thread
+        bridge._uvicorn_server = server
+        bridge._url = "http://127.0.0.1:9/mcp"
+        thread.start()
+        try:
+            with pytest.raises(HarnessError, match="stop"):
+                bridge.stop(timeout_s=0.05)
+            assert bridge._thread is thread
+            assert bridge._uvicorn_server is server
+            assert server.force_exit
+            with pytest.raises(HarnessError, match="stopping"):
+                bridge.start()
+        finally:
+            release.set()
+            thread.join(timeout=1.0)
+            bridge.stop()
+        assert bridge.url is None
+
     async def test_serves_tools_over_http(self):
         bridge = HarnessMCPBridge(make_mcp())
         url = bridge.start()
