@@ -491,6 +491,126 @@ class TestModeAwareMCPRouting:
                 in data["data"]["message"]
             )
 
+    def test_cross_app_session_close_rejected(self):
+        """A session created in one mode cannot be closed from the other mode.
+
+        Rejected cross-mode close requests do not destroy the session, and
+        same-mode close requests succeed.
+        """
+        server = HTTPEnvServer(
+            env=ModeAwareTestEnvironment,
+            action_cls=CallToolAction,
+            observation_cls=CallToolObservation,
+            max_concurrent_envs=4,
+        )
+        prod_app, sim_app = FastAPI(), FastAPI()
+        server.register_routes(prod_app, mode="production")
+        server.register_routes(sim_app, mode="simulation")
+        prod_client, sim_client = TestClient(prod_app), TestClient(sim_app)
+
+        # 1. Production session cannot be closed from simulation mode
+        prod_sid = prod_client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "method": "openenv/session/create", "id": 1},
+        ).json()["result"]["session_id"]
+
+        sim_close = sim_client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "openenv/session/close",
+                "params": {"session_id": prod_sid},
+                "id": 2,
+            },
+        )
+        assert sim_close.json()["error"]["code"] == -32602
+        assert (
+            "belongs to mode 'production', not 'simulation'"
+            in sim_close.json()["error"]["message"]
+        )
+
+        # Verify production session was not destroyed and still works
+        call_prod = prod_client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "tools/call",
+                "params": {
+                    "name": "search_live",
+                    "arguments": {"query": "test"},
+                    "session_id": prod_sid,
+                },
+                "id": 3,
+            },
+        )
+        assert call_prod.json()["result"]["data"] == "LIVE: test"
+
+        # 2. Simulation session cannot be closed from production mode
+        sim_sid = sim_client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "method": "openenv/session/create", "id": 4},
+        ).json()["result"]["session_id"]
+
+        prod_close = prod_client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "openenv/session/close",
+                "params": {"session_id": sim_sid},
+                "id": 5,
+            },
+        )
+        assert prod_close.json()["error"]["code"] == -32602
+        assert (
+            "belongs to mode 'simulation', not 'production'"
+            in prod_close.json()["error"]["message"]
+        )
+
+        # Verify simulation session was not destroyed and still works
+        call_sim = sim_client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "tools/call",
+                "params": {
+                    "name": "search_mock",
+                    "arguments": {"query": "test"},
+                    "session_id": sim_sid,
+                },
+                "id": 6,
+            },
+        )
+        assert call_sim.json()["result"]["data"] == "MOCK: test"
+
+        # 3. Same-mode session close still succeeds
+        prod_ok = prod_client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "openenv/session/close",
+                "params": {"session_id": prod_sid},
+                "id": 7,
+            },
+        )
+        assert prod_ok.json()["result"] == {
+            "session_id": prod_sid,
+            "closed": True,
+        }
+
+        sim_ok = sim_client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "openenv/session/close",
+                "params": {"session_id": sim_sid},
+                "id": 8,
+            },
+        )
+        assert sim_ok.json()["result"] == {
+            "session_id": sim_sid,
+            "closed": True,
+        }
+
     def test_tools_list_propagates_handler_failure(self):
         """When _async_handle_list_tools fails, the /mcp JSON-RPC response returns an error instead of an empty list."""
 

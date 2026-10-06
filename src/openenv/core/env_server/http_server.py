@@ -1047,6 +1047,21 @@ class HTTPEnvServer:
                     )
 
                 async with self._session_lock:
+                    session_mode = self._session_modes.get(target_session_id)
+                    if (
+                        (
+                            target_session_id in self._sessions
+                            or target_session_id in self._session_websocket_attachments
+                        )
+                        and session_mode is not None
+                        and session_mode != mode.value
+                    ):
+                        return JsonRpcResponse.error_response(
+                            JsonRpcErrorCode.INVALID_PARAMS,
+                            f"Session '{target_session_id}' belongs to mode '{session_mode}', not '{mode.value}'",
+                            request_id=request_id,
+                        )
+
                     if target_session_id in self._session_websocket_attachments:
                         env = _MISSING
                         attached = True
