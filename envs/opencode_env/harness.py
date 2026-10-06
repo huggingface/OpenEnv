@@ -38,8 +38,10 @@ from openenv.core.harness import (
     ResourceSession,
     ResourceSessionFactory,
     ToolResult,
+    TrainingTrace,
     VerifyResult,
 )
+from openenv.core.harness.capture.upstream import normalize_response, training_sampling
 
 from .config import OpenCodeConfig
 from .opencode_runtime import (
@@ -60,6 +62,10 @@ from .opencode_runtime import (
 from .sandbox.base import BgJob, SandboxBackend, SandboxHandle
 from .task import OpenCodeTask
 
+# The upstream installer resolves "latest" via api.github.com and prints this
+# to stdout (with an empty stderr) when the lookup fails, e.g. on rate limit.
+_INSTALL_VERSION_FETCH_ERROR = "Failed to fetch version information"
+
 
 # Mode B proxy port. In-sandbox paths derive from config.sandbox_home (opencode_runtime).
 _PROXY_PORT = 7000
@@ -69,6 +75,10 @@ _PROXY_SOURCE_PATH = Path(__file__).parent / "sandbox" / "interception.py"
 
 
 Verifier = Callable[[SandboxHandle, OpenCodeTask], VerifyResult]
+
+
+class _NonRetryableBootstrapError(RuntimeError):
+    """Bootstrap failure that provisioning another sandbox cannot fix."""
 
 
 class OpenCodeSession(ResourceSession):
@@ -167,6 +177,66 @@ class OpenCodeSession(ResourceSession):
         """Return the raw ``opencode run`` log (JSON-lines when ``run_format=json``)."""
         return self.sandbox.read_text(agent_log_path(self.config))
 
+    def fetch_training_trace(self) -> TrainingTrace:
+        """Select agent calls in OpenEnv and export their exact captured tokens."""
+        from types import SimpleNamespace
+
+        from openenv.core.harness.capture.contract import to_training_trace
+        from openenv.core.harness.capture.export import export_session
+        from openenv.core.harness.capture.graph import RolloutGraph, TurnNode
+
+        if self._proxy_trace_path is None:
+            raise ValueError("training requires transparent_proxy capture")
+        records = self.fetch_proxy_trace()
+        if not records:
+            raise RuntimeError("rollout produced no capture")
+        graph = RolloutGraph()
+        for entry in records:
+            request = entry["request"]
+            response = normalize_response(entry["response"])
+            if (
+                response.get("upstream_status", 200) >= 400
+                or response.get("upstream_error")
+                or response.get("error")
+            ):
+                if entry.get("completion_token_ids"):
+                    raise ValueError("failed upstream call contains sampled tokens")
+                continue
+            choices = response.get("choices") or []
+            if not choices:
+                raise ValueError("successful capture has no response choices")
+            choice = choices[0]
+            graph.add_turn(
+                TurnNode(
+                    node_id=str(entry["turn"]),
+                    prompt_ids=entry["prompt_token_ids"],
+                    sampled_ids=entry["completion_token_ids"],
+                    sampled_logprobs=(
+                        entry["per_token_logps"]
+                        if choice.get("logprobs", {}) is not None
+                        else None
+                    ),
+                    request_messages=request.get("messages", []),
+                    request_tools=request.get("tools"),
+                    n_tools=len(request.get("tools") or []),
+                    response_message=choice.get("message", {}),
+                    finish_reason=entry.get("finish_reason"),
+                )
+            )
+        if not graph.nodes():
+            raise RuntimeError("rollout produced no successful model calls")
+        document = export_session(
+            SimpleNamespace(
+                graph=graph,
+                session_id="opencode",
+                metadata={},
+                findings=[],
+                purpose="train",
+            ),
+            include_messages=True,
+        )
+        return to_training_trace(graph, document)
+
     def fetch_proxy_trace(self) -> list[dict[str, Any]]:
         """Return per-turn proxy-captured records (Mode B only).
 
@@ -203,6 +273,7 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
         config: OpenCodeConfig,
         sandbox_backend: SandboxBackend,
         mode: Literal["black_box", "transparent_proxy"] = "black_box",
+        sampling: dict[str, Any] | None = None,
         verifier: Verifier | None = None,
         install_timeout_s: int = 240,
         setup_timeout_s: int = 300,
@@ -211,6 +282,9 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
     ) -> None:
         if mode not in {"black_box", "transparent_proxy"}:
             raise ValueError(f"Unknown mode: {mode!r}")
+        self.sampling = training_sampling(sampling) if sampling is not None else None
+        if self.sampling is not None and mode != "transparent_proxy":
+            raise ValueError("training sampling requires transparent_proxy mode")
         self._config = config
         self._backend = sandbox_backend
         self._mode = mode
@@ -246,13 +320,18 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
                 return self._create_once(
                     task, seed=seed, episode_id=episode_id, start_agent=start_agent
                 )
+            except _NonRetryableBootstrapError:
+                raise
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc
                 if i + 1 < self._create_attempts:
                     backoff = self._create_backoff_s * (2**i)
                     _log.warning(
                         "factory.create attempt %d/%d failed (%r); retrying in %.1fs",
-                        i + 1, self._create_attempts, exc, backoff,
+                        i + 1,
+                        self._create_attempts,
+                        exc,
+                        backoff,
                     )
                     time.sleep(backoff)
         raise last_exc
@@ -265,6 +344,7 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
         start_agent: bool = True,
     ) -> OpenCodeSession:
         import logging
+
         _log = logging.getLogger(__name__)
 
         oc_task = OpenCodeTask.coerce(task)
@@ -272,15 +352,15 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
 
         _log.info(
             "factory.create: creating sandbox timeout=%ds mode=%s",
-            sandbox_timeout, self._mode,
+            sandbox_timeout,
+            self._mode,
         )
         sandbox = self._backend.create(
             timeout_s=sandbox_timeout,
             metadata={"episode_id": episode_id} if episode_id else None,
         )
-        sid = (
-            getattr(sandbox, "sandbox_id", None)
-            or getattr(getattr(sandbox, "raw", None), "sandbox_id", "?")
+        sid = getattr(sandbox, "sandbox_id", None) or getattr(
+            getattr(sandbox, "raw", None), "sandbox_id", "?"
         )
         _log.info("factory.create: sandbox=%s — bootstrapping…", sid)
         # Any failure past here (bootstrap/proxy/agent) must tear the sandbox down.
@@ -293,7 +373,8 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
             if self._mode == "transparent_proxy":
                 _log.info(
                     "factory.create: starting interception proxy on :%d → %s",
-                    _PROXY_PORT, self._config.base_url,
+                    _PROXY_PORT,
+                    self._config.base_url,
                 )
                 proxy_bg_job, base_url_override, proxy_trace_path = self._start_proxy(
                     sandbox
@@ -333,7 +414,9 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
             try:
                 sandbox.kill()  # best-effort: don't let a cleanup failure mask the root cause
             except Exception:
-                _log.exception("factory.create: sandbox.kill() during cleanup also failed")
+                _log.exception(
+                    "factory.create: sandbox.kill() during cleanup also failed"
+                )
             raise
 
     # ------------------------------------------------------------------
@@ -377,12 +460,15 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
         attempts: int = 3,
         backoff_s: float = 3.0,
         label: str = "cmd",
+        fatal_markers: tuple[str, ...] = (),
     ):
         """Run ``sandbox.exec`` with exponential backoff on transient failure.
 
         Transient = ``exit_code != 0`` AND empty stderr (SIGKILL / network
-        blip signature) OR an exception during exec. Final failure is raised
-        as ``RuntimeError`` carrying the last exit code + stderr.
+        blip signature) OR an exception during exec. A failure whose stdout
+        contains one of ``fatal_markers`` is deterministic and not retried,
+        even if stderr is empty. Final failure is raised as ``RuntimeError``
+        carrying the last exit code + stderr.
         """
         import time
 
@@ -398,6 +484,8 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
                 last_stderr = r.stderr or ""
                 last_exit = r.exit_code
                 if last_stderr.strip():
+                    break
+                if any(marker in last_stdout for marker in fatal_markers):
                     break
             except Exception as exc:  # noqa: BLE001
                 last_stderr = f"{type(exc).__name__}: {exc}"
@@ -437,14 +525,24 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
         # Stage 2: install opencode (skipped if a prebaked template already
         # has it). curl|bash is flaky — retry with backoff.
         if not self._opencode_already_installed(sandbox):
-            self._exec_with_retry(
-                sandbox,
-                build_install_cmd(self._config),
-                timeout=self._install_timeout_s,
-                attempts=3,
-                backoff_s=3.0,
-                label="opencode install",
-            )
+            try:
+                self._exec_with_retry(
+                    sandbox,
+                    build_install_cmd(self._config),
+                    timeout=self._install_timeout_s,
+                    attempts=3,
+                    backoff_s=3.0,
+                    label="opencode install",
+                    fatal_markers=(_INSTALL_VERSION_FETCH_ERROR,),
+                )
+            except RuntimeError as exc:
+                if _INSTALL_VERSION_FETCH_ERROR in str(exc):
+                    raise _NonRetryableBootstrapError(
+                        "opencode install could not resolve 'latest' from the "
+                        "GitHub API (rate limited?). Pin opencode_version to a "
+                        "release tag to install without touching the API."
+                    ) from exc
+                raise
 
         sandbox.write_text(
             opencode_config_path(self._config),
@@ -508,6 +606,11 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
             )
             sandbox.write_text(f"{proxy_dir(self._config)}/__init__.py", "")
 
+        if self.sampling is not None:
+            sandbox.write_text(
+                proxy_source_path(self._config), _PROXY_SOURCE_PATH.read_text()
+            )
+
         proxy_args = [
             "python",
             "interception.py",
@@ -520,6 +623,8 @@ class OpenCodeSessionFactory(ResourceSessionFactory[OpenCodeSession]):
             "--top-logprobs",
             str(self._config.proxy_top_logprobs),
         ]
+        if self.sampling is not None:
+            proxy_args.extend(["--sampling", json.dumps(self.sampling)])
         if self._config.proxy_max_tokens_cap is not None:
             proxy_args.extend(
                 ["--max-tokens-cap", str(self._config.proxy_max_tokens_cap)]

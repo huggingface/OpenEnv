@@ -43,7 +43,7 @@ That is the only MCP-specific piece. Everything around it — how the trainer ge
 
 ### Framework-agnostic rollout loop
 
-If you drive the rollout yourself (a custom loop, [torchforge](https://github.com/pytorch-labs/torchforge), an external agent server), you own the full generation path and call `env.step()` directly:
+If you drive the rollout yourself (a custom loop, [torchforge](https://github.com/meta-pytorch/torchforge), an external agent server), you own the full generation path and call `env.step()` directly:
 
 ```python
 obs = env.reset()

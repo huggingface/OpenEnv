@@ -92,14 +92,14 @@ concurrently with `asyncio.gather`, wrapping the blocking provider calls in
 `asyncio.to_thread` since most cloud SDKs are synchronous:
 
 ```python
-async def run_one(env_id: int, image) -> str:
+async def run_one(env_id: int, image) -> dict:
     provider = DaytonaProvider()
     base_url = await asyncio.to_thread(provider.start_container, image)
     try:
         await asyncio.to_thread(provider.wait_for_ready, base_url, 300)
         async with MyEnv(base_url=base_url, provider=provider) as env:
             result = await env.reset()
-            return result.observation.text
+            return result.observation.metadata
     finally:
         await asyncio.to_thread(provider.stop_container)
 
