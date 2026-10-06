@@ -35,6 +35,71 @@ openenv import path/to/source --name my_env --output-dir ./envs --env-class MyEn
 
 ## `openenv validate`
 
+Run static declaration checks without Docker, or build and probe a package locally:
+
+```bash
+openenv validate ./my_env --level static
+openenv validate ./my_env --level runtime --local --output report.json
+```
+
+Runtime validation requires Docker and a `validation.execution` declaration in
+`openenv.yaml`. The declaration points to a bounded JSON replay plan containing
+one reset and a sequence of actions. The validator builds an immutable image,
+opens one WebSocket session, measures reward values, observation schemas and
+state continuity, and removes the container even if a check fails.
+
+This first runtime slice implements startup, reward, observation and state
+checks. Other applicable Level 2 checks appear explicitly as `SKIP`; they make
+the result `WARN`, which exits zero and does not mean Level 2 is complete.
+`FAIL` exits 1, unsupported package formats exit 2, and internal or policy errors
+exit 3. `--level semantic`
+includes the available lower-level checks but does not claim semantic execution.
+`--skip-build` runs declaration checks and skips runtime execution entirely.
+The Docker provider currently supports CPU workloads and `public` network mode;
+unsupported network or GPU requirements skip runtime before building.
+`--local` explicitly selects this default package mode and rejects a remote URL.
+The declared `episode_timeout_s` bounds collection; a reset or judged step may use
+its remaining budget. Collection failures appear once under `runtime.startup`,
+with dependent contract checks skipped and the completed trace retained.
+
+Credential delivery is deferred for this release. Set
+`validation.execution.requires_credentials: true` when the environment needs an
+externally supplied credential, such as a judge API key. This boolean declaration
+causes a named `credential_delivery` SKIP before build or launch; dependent runtime
+checks also SKIP. The resulting WARN does not establish complete Level 2 coverage.
+The declaration accepts no secret values and defaults to false. Validation never
+inherits host credentials or forwards API keys. Self-contained LLM judges can run
+without this requirement; `llm_judged` alone does not imply a need for credentials.
+An undeclared startup or reset failure still fails validation.
+
+Observation validation uses the `reset_observation` field from `/schema` for resets
+and `observation` for steps. Servers can declare `reset_observation_cls` when
+reset returns a different observation type; it defaults to the step observation
+class. Older servers without a reset schema use the step schema for both. Reset
+validation is always required; the validator does not silently substitute a base
+schema. These are output schemas, separate from any reset input declaration.
+The Level 2 profile permits null rewards only on reset. Every step, including a
+nonterminal step, requires a finite numeric reward within the declared range;
+boolean rewards are invalid. This certification requirement is stricter than the
+backward-compatible core `Observation.reward` type. Emit zero only when the intended
+reward is zero; the validator never converts missing or null step rewards to zero.
+
+Cleanup removes run-owned containers. Built images remain in Docker's local cache
+for reuse; the report records their immutable image IDs. Remove an unwanted image
+with `docker image rm <image-id>` after its validation runs have finished.
+
+Runtime reports use schema version 2 and severity policy v2. Static reports for
+v1 manifests retain schema version 1 and policy v1. An explicit v1 policy with a
+runtime ceiling is rejected. With `--output report.json`, a sibling
+`report.artifacts/` directory contains the replay plan, bounded redacted evidence,
+coverage inventory, provider settings, cleanup outcome and checksums. Treat these
+as author-validation evidence; this command does not issue certification.
+
+For a pinned, installed-wheel reproduction of the shared fixture and its fault
+cases, follow [the runtime lab](../../../tests/validation_runtime/README.md).
+The implementation and remaining check inventory are tracked in
+[the Level 2 umbrella](https://github.com/huggingface/OpenEnv/issues/1177).
+
 [[autodoc]] openenv.cli.commands.validate.validate
 
 ## `openenv push`

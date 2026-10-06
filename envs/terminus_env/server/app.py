@@ -13,6 +13,7 @@ from pathlib import Path
 
 from openenv.core.env_server.http_server import create_app
 from openenv.core.env_server.mcp_types import CallToolAction, CallToolObservation
+from openenv.core.env_server.types import Observation
 
 try:
     from .gradio_ui import terminus_ui_builder
@@ -45,6 +46,7 @@ app = create_app(
     CallToolAction,
     CallToolObservation,
     env_name="terminus_env",
+    reset_observation_cls=Observation,
     max_concurrent_envs=int(os.getenv("MAX_CONCURRENT_ENVS", "4")),
     gradio_builder=terminus_ui_builder,
 )

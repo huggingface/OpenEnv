@@ -437,6 +437,7 @@ def create_web_interface_app(
     state_cls: Type[State] = State,
     *,
     mode: Optional[Any] = None,
+    reset_observation_cls: Optional[Type[Observation]] = None,
 ) -> FastAPI:
     """
     Create a FastAPI application with web interface for the given environment.
@@ -444,7 +445,9 @@ def create_web_interface_app(
     Args:
         env: The Environment instance to serve
         action_cls: The Action subclass this environment expects
-        observation_cls: The Observation subclass this environment returns
+        observation_cls: The Observation subclass returned by step
+        reset_observation_cls: The reset observation model published in /schema.
+            Defaults to observation_cls.
         env_name: Optional environment name for README loading
         max_concurrent_envs: Maximum concurrent WebSocket sessions
         concurrency_config: Optional ConcurrencyConfig for advanced concurrency settings
@@ -487,6 +490,7 @@ def create_web_interface_app(
         concurrency_config,
         env_name=env_name,
         state_cls=state_cls,
+        reset_observation_cls=reset_observation_cls,
         mode=mode,
     )
 
