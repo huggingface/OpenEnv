@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 import types
@@ -40,6 +41,42 @@ class _FakeGymEnv:
 
     def close(self) -> None:
         self.closed = True
+
+
+def _make_browsergym_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> BrowserGymEnvironment:
+    monkeypatch.setattr(
+        browsergym_environment.importlib,
+        "import_module",
+        lambda _name: object(),
+    )
+    monkeypatch.setattr(
+        browsergym_environment.gym,
+        "make",
+        lambda env_id, **_kwargs: _FakeGymEnv(env_id),
+    )
+    return BrowserGymEnvironment(benchmark="miniwob", task_name="click-test")
+
+
+def test_reset_preserves_requested_episode_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env = _make_browsergym_environment(monkeypatch)
+
+    env.reset(episode_id="requested-episode")
+
+    assert env.state.episode_id == "requested-episode"
+
+
+def test_reset_async_preserves_requested_episode_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env = _make_browsergym_environment(monkeypatch)
+
+    asyncio.run(env.reset_async(episode_id="requested-async-episode"))
+
+    assert env.state.episode_id == "requested-async-episode"
 
 
 def test_reset_rebuilds_browsergym_env_when_task_changes(
