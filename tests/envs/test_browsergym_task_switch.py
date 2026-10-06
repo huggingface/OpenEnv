@@ -79,6 +79,26 @@ def test_reset_async_preserves_requested_episode_id(
     assert env.state.episode_id == "requested-async-episode"
 
 
+def test_reset_preserves_positional_task_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env = _make_browsergym_environment(monkeypatch)
+
+    env.reset(None, "enter-text")
+
+    assert env.state.task_name == "enter-text"
+
+
+def test_reset_preserves_empty_episode_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env = _make_browsergym_environment(monkeypatch)
+
+    env.reset(episode_id="")
+
+    assert env.state.episode_id == ""
+
+
 def test_reset_rebuilds_browsergym_env_when_task_changes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
