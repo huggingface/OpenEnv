@@ -14,6 +14,7 @@ from typing import Any, Dict
 
 from openenv.core.env_server.http_server import create_app
 from openenv.core.env_server.mcp_types import CallToolAction, CallToolObservation
+from openenv.core.env_server.types import Observation
 from pydantic import field_validator
 
 from .finqa_environment import FinQAEnvironment
@@ -44,7 +45,11 @@ class FinQACallToolAction(CallToolAction):
 
 
 app = create_app(
-    _env_factory, FinQACallToolAction, CallToolObservation, env_name="finqa_env"
+    _env_factory,
+    FinQACallToolAction,
+    CallToolObservation,
+    reset_observation_cls=Observation,
+    env_name="finqa_env",
 )
 
 
