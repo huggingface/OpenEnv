@@ -13,12 +13,15 @@ from pathlib import Path
 
 from openenv.core.env_server.http_server import create_app
 from openenv.core.env_server.mcp_types import CallToolAction, CallToolObservation
+from openenv.core.env_server.types import Observation
 
 try:
     from .coding_tools_env_environment import CodingToolsEnvironment
     from .gradio_ui import coding_tools_ui_builder
 except ImportError:  # pragma: no cover
-    from server.coding_tools_env_environment import CodingToolsEnvironment  # type: ignore
+    from server.coding_tools_env_environment import (  # type: ignore
+        CodingToolsEnvironment,
+    )
     from server.gradio_ui import coding_tools_ui_builder  # type: ignore
 
 
@@ -44,6 +47,7 @@ app = create_app(
     CodingToolsEnvironment,
     CallToolAction,
     CallToolObservation,
+    reset_observation_cls=Observation,
     env_name="coding_tools_env",
     max_concurrent_envs=int(os.getenv("MAX_CONCURRENT_ENVS", "4")),
     gradio_builder=coding_tools_ui_builder,
