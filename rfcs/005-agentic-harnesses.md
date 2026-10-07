@@ -12,23 +12,11 @@ This RFC defines how OpenEnv integrates with external **agentic harnesses**—sy
 
 We propose a **wrapping pattern**: OpenEnv's container provides the filesystem and sandbox, the harness runs inside it, and any additional environment MCP tools are injected into the harness before the session starts. In production mode, OpenEnv gets out of the way and lets clients talk directly to the harness with streaming events. In simulation mode, the training loop retains episode control—each `step()` is one conversational turn, and the harness maintains context across turns within an episode.
 
-OpenClaw was planned as the first concrete integration. The first end-to-end example is a Claude Code evaluation recipe instead ([#1291](https://github.com/huggingface/OpenEnv/pull/1291)), and no adapter ships in core yet.
+Concrete adapters live outside core; see [Implementation Status](#implementation-status).
 
 ### What changed in this revision
 
-The runtime this RFC proposed is on `main` (`src/openenv/core/harness/`). Building it settled several details differently from the original text. This revision updates the text to match the code, and lists what the implementation left open in [Open Questions](#open-questions).
-
-| | Original text | Implementation |
-|---|---|---|
-| Adapter base class | `HarnessAdapter` | `AgenticHarnessAdapter`, because `HarnessAdapter` already names the trainer-side rollout layer in the same package ([#1097](https://github.com/huggingface/OpenEnv/pull/1097)) |
-| Tool injection | `inject_tools(tools)` with `ToolDefinition` | `inject_tools(tools, bridge_url)` with `Tool`, called with the conflict-resolved tools |
-| Tool bridge | a separate `openenv-mcp-bridge` process | `HarnessMCPBridge`, a streamable HTTP MCP server on `127.0.0.1` inside the environment's process, started on `reset()` |
-| `send_message()` | abstract | concrete: drains `send_message_streaming()`, whose last event is `TURN_COMPLETE` with `response` and optionally `done` |
-| `session_timeout_s` | "a single session/episode" in one place, "a single turn" in another | one turn |
-| `turn_events` | `HarnessEvent` objects | JSON dicts (`events_to_metadata`), so observations survive the wire |
-| Failed turns | not specified | terminal observations with `error_type` `harness_crashed` or `turn_timeout` |
-| Production route | raw text frames, sketched on `HTTPEnvServer` | JSON frames, a `session_started` frame, recoverable `protocol_error` frames, a per-turn timeout and session capacity, through `create_fastapi_app(..., mode="production")` |
-| Module path | `openenv.harnesses` | `openenv.core.harness` |
+The runtime this RFC proposed is on `main` (`src/openenv/core/harness/`). This revision updates the text to match the code, and [Open Questions](#open-questions) lists what the implementation left open.
 
 ---
 
@@ -207,7 +195,7 @@ class HarnessTransport(str, Enum):
     MCP = "mcp"               # Native MCP server
 
 class HarnessConfig(BaseModel):
-    """Configuration for an external agentic harness. Unknown fields are rejected."""
+    """Configuration for an external agentic harness."""
 
     # Identity
     name: str                          # e.g., "openclaw", "claude-code"
@@ -640,8 +628,7 @@ This is entirely opt-in:
 ```python
 from openenv.core.harness import HarnessAction, HarnessConfig, HarnessEnvironment
 
-# Illustrative: no OpenClaw adapter ships in core yet. Any AgenticHarnessAdapter works.
-from my_adapters import OpenClawAdapter
+from my_adapters import OpenClawAdapter  # illustrative adapter
 
 # Configure the harness
 config = HarnessConfig(
@@ -747,19 +734,17 @@ app = create_fastapi_app(
 
 3. **Multi-turn episodes**: Each `step()` is one conversational turn. The harness maintains context across turns. Multiple `step()` calls form a conversation. The harness can signal `done` but the orchestrator controls episode boundaries via `reset()`. This matches how humans interact with harnesses and enables multi-turn training.
 
-4. **Timeouts**: `session_timeout_s` bounds one turn, in simulation and production alike. There is no episode-wide limit.
-
 ## Open Questions
 
 The implementation left these open. Each is a decision for this RFC.
 
 1. **The environment's own step after a turn.** The rubric runs as soon as the harness answers. An environment that adds its own step between turns, such as a simulated user replying to the harness, has no hook for it. It has to override the private `_run_turn`, run that step and apply the rubric again ([#1291](https://github.com/huggingface/OpenEnv/pull/1291) does this for τ²-bench's simulated customer). A public async hook called inside `_run_turn`, before the rubric, would remove the override and run the rubric once.
-2. **Turn logic in production.** `/harness` calls the adapter directly, so rubrics, the trajectory and any turn logic of a subclass do not run in production. If production should keep them, the route needs to go through the environment, for example through the hook above.
-3. **`/ws` and `/mcp` in production.** The original text says production has no step or reset API. On a harness environment in production mode, `/ws` still accepts `reset` and `step` messages, and `/mcp` lets clients call the domain tools without the harness. Either production should not register them for harness environments, or this RFC should allow them.
-4. **Network isolation.** The Harness Security Boundary section requires that the harness cannot reach the orchestration port. Core does not enforce it (the bridge and the server share the loopback interface), and nothing in core restricts the harness's egress. Possible ways forward: run the harness under a separate network namespace, or rely on providers such as `ACASandboxProvider.deny_all_egress()` and document it.
+2. **Turn logic in production.** Should production turns go through the environment, so rubrics, the trajectory and a subclass's turn logic run there too (for example through the hook above)?
+3. **`/ws` and `/mcp` in production.** Should production stop registering them for harness environments, so clients cannot reset, step or call domain tools around the harness, or should this RFC allow them?
+4. **Network isolation.** How should the Harness Security Boundary be enforced: a separate network namespace for the harness, or sandbox providers such as `ACASandboxProvider.deny_all_egress()`?
 5. **A client for `/harness`.** There is no `HarnessEnvClient`, so clients speak the WebSocket protocol by hand, and `env.trajectory` is not reachable remotely.
 6. **Token capture.** `LLM_REQUEST` and `LLM_RESPONSE` events are defined but nothing captures tokens through this path, so it is an evaluation path. Training a harness's policy goes through the capture layer of [RFC 006](./006-agentic-rl-harness-interception.md).
-7. **Naming.** The trainer-side rollout layer owns `HarnessAdapter`. [#1097](https://github.com/huggingface/OpenEnv/pull/1097) proposed renaming that layer (e.g., `RolloutDriver`) so this RFC's adapter could take the plain name. Until then it stays `AgenticHarnessAdapter`.
+7. **Naming.** Should the rollout layer be renamed (e.g., `RolloutDriver`, as [#1097](https://github.com/huggingface/OpenEnv/pull/1097) proposed), so this adapter can take the plain name `HarnessAdapter`?
 
 ## Future Work (Out of Scope)
 
@@ -775,7 +760,7 @@ The implementation left these open. Each is a decision for this RFC.
 | PR 1: this RFC | [#387](https://github.com/huggingface/OpenEnv/pull/387), merged |
 | PR 2: foundation types (`HarnessConfig`, the adapter ABC, events, `HarnessAction`, tool conflict resolution) | [#1097](https://github.com/huggingface/OpenEnv/pull/1097) (package split) and [#1098](https://github.com/huggingface/OpenEnv/pull/1098), merged |
 | PR 3: core implementation (`HarnessEnvironment`, `HarnessProcess`, the MCP bridge, production routing) | [#1100](https://github.com/huggingface/OpenEnv/pull/1100) and [#1099](https://github.com/huggingface/OpenEnv/pull/1099) (bridge shutdown), merged |
-| PR 4: OpenClaw adapter | not in core. The February stack ([#390](https://github.com/huggingface/OpenEnv/pull/390), [#391](https://github.com/huggingface/OpenEnv/pull/391)) merged into feature branches that never reached `main`, and [#389](https://github.com/huggingface/OpenEnv/pull/389) is still open |
+| PR 4: OpenClaw adapter | not in core ([#389](https://github.com/huggingface/OpenEnv/pull/389) is open) |
 | PR 5: documentation and an example | [#1291](https://github.com/huggingface/OpenEnv/pull/1291), open: a Claude Code adapter and a τ²-bench evaluation recipe, with a tutorial |
 
 ---
