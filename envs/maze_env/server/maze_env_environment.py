@@ -115,7 +115,7 @@ class MazeEnvironment(Environment[MazeAction, MazeObservation, MazeState]):
         Args:
             seed: Optional random seed for environment initialization
             start_cell: Optional starting cell (col, row) for the agent
-            episode_id: Optional episode ID to set for the new episode (unused, kept for interface compatibility)
+            episode_id: Optional episode ID to set for the new episode
 
         Returns:
             MazeObservation with initial maze state
@@ -124,7 +124,10 @@ class MazeEnvironment(Environment[MazeAction, MazeObservation, MazeState]):
             np.random.seed(seed)
 
         self.env.reset(self._start_cell if start_cell is None else start_cell)
-        self._state = MazeState(episode_id=str(uuid4()), step_count=0)
+        self._state = MazeState(
+            episode_id=episode_id if episode_id is not None else str(uuid4()),
+            step_count=0,
+        )
         self._reset_count += 1
         self._sync_state(done=False)
 
