@@ -132,6 +132,96 @@
       "title": "CheckStatus",
       "type": "string"
     },
+    "EgressPolicy": {
+      "additionalProperties": false,
+      "description": "Network egress the workload is allowed.\n\nAttributes:\n    mode (`str`, *optional*, defaults to `\"none\"`):\n        `\"none\"` (no egress) or `\"allowlist\"` (only `allow`).\n    allow (`tuple[EgressRule, ...]`):\n        Permitted destinations. Required with `\"allowlist\"`, forbidden otherwise.",
+      "properties": {
+        "allow": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/EgressRule"
+          },
+          "title": "Allow",
+          "type": "array"
+        },
+        "mode": {
+          "default": "none",
+          "enum": [
+            "none",
+            "allowlist"
+          ],
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "title": "EgressPolicy",
+      "type": "object"
+    },
+    "EgressRule": {
+      "additionalProperties": false,
+      "description": "One permitted egress destination.\n\nAttributes:\n    host (`str`):\n        Destination hostname.\n    port (`int`, *optional*, defaults to `443`):\n        Destination port.\n    binaries (`tuple[str, ...]`):\n        Absolute paths of the programs allowed to use this rule, e.g. the\n        harness interpreter. Empty allows every program in the workload.",
+      "properties": {
+        "binaries": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Binaries",
+          "type": "array"
+        },
+        "host": {
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9*][A-Za-z0-9.*-]*$",
+          "title": "Host",
+          "type": "string"
+        },
+        "port": {
+          "default": 443,
+          "maximum": 65535,
+          "minimum": 1,
+          "title": "Port",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "host"
+      ],
+      "title": "EgressRule",
+      "type": "object"
+    },
+    "EnforcementSpec": {
+      "additionalProperties": false,
+      "description": "Which backend enforces the contract, and what it must guarantee.\n\nAttributes:\n    backend (`str`, *optional*, defaults to `\"openshell\"`):\n        Registered backend name: `\"openshell\"` or `\"local\"`.\n    require (`tuple[Guarantee, ...]`):\n        Guarantees the environment depends on. Startup refuses if the backend\n        cannot provide all of them.",
+      "properties": {
+        "backend": {
+          "default": "openshell",
+          "minLength": 1,
+          "title": "Backend",
+          "type": "string"
+        },
+        "require": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Guarantee"
+          },
+          "title": "Require",
+          "type": "array"
+        }
+      },
+      "title": "EnforcementSpec",
+      "type": "object"
+    },
+    "Guarantee": {
+      "description": "A property an enforcement backend makes structurally true for the workload.\n\nEnvironments list the guarantees they depend on under\n`openenvd.enforcement.require`. A backend that cannot provide every one of\nthem refuses to start the runtime instead of running with weaker isolation.",
+      "enum": [
+        "asset_isolation",
+        "egress_control",
+        "privilege_drop",
+        "control_plane_isolation"
+      ],
+      "title": "Guarantee",
+      "type": "string"
+    },
     "JudgePin": {
       "additionalProperties": false,
       "description": "Pinned judge configuration. Required iff `capabilities.llm_judged`.\n\nThe pin lives in the manifest, not the rubric object: `LLMJudge.state_dict()` does\nnot serialize model/version/params, so validation checks the declared pin.",
@@ -232,6 +322,9 @@
         "network": {
           "$ref": "#/$defs/NetworkPolicy"
         },
+        "openenvd": {
+          "$ref": "#/$defs/OpenEnvDConfig"
+        },
         "resources": {
           "$ref": "#/$defs/ResourceDeclaration"
         },
@@ -280,6 +373,118 @@
       "title": "NormalizedManifest",
       "type": "object"
     },
+    "OpenEnvDConfig": {
+      "additionalProperties": false,
+      "description": "The `openenvd:` block of `openenv.yaml`.\n\nAttributes:\n    enabled (`bool`, *optional*, defaults to `False`):\n        Opt-in switch. When `False` the environment runs unchanged.\n    enforcement ([`~openenv.core.openenvd.policy.EnforcementSpec`]):\n        Backend selection and required guarantees.\n    openshell ([`~openenv.core.openenvd.policy.OpenShellConfig`], *optional*):\n        Options for the `openshell` backend; required when it is selected.\n    surfaces (`dict[Principal, SurfacePolicy]`):\n        Declared surface per principal.\n    privileged_assets (`dict[str, str]`):\n        Asset name to a path relative to the daemon's asset root. Assets stay on\n        the daemon host and never enter the episode sandbox.\n    workload ([`~openenv.core.openenvd.policy.WorkloadPaths`]):\n        Filesystem the workload may touch.\n    egress ([`~openenv.core.openenvd.policy.EgressPolicy`]):\n        Network egress the workload is allowed.\n    processes (`dict[str, ProcessSpec]`):\n        Processes beyond the implicit environment worker, by name.\n\nExamples:\n\n```python\nconfig = OpenEnvDConfig.model_validate(\n    {\n        \"enabled\": True,\n        \"enforcement\": {\"backend\": \"openshell\", \"require\": [\"asset_isolation\"]},\n        \"openshell\": {\"image\": \"my-env:openshell\", \"gateway\": \"local\"},\n        \"privileged_assets\": {\"oracle\": \"grade.sh\"},\n    }\n)\n```",
+      "properties": {
+        "egress": {
+          "$ref": "#/$defs/EgressPolicy"
+        },
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "enforcement": {
+          "$ref": "#/$defs/EnforcementSpec"
+        },
+        "openshell": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OpenShellConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "privileged_assets": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Privileged Assets",
+          "type": "object"
+        },
+        "processes": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ProcessSpec"
+          },
+          "title": "Processes",
+          "type": "object"
+        },
+        "surfaces": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SurfacePolicy"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/Principal"
+          },
+          "title": "Surfaces",
+          "type": "object"
+        },
+        "workload": {
+          "$ref": "#/$defs/WorkloadPaths"
+        }
+      },
+      "title": "OpenEnvDConfig",
+      "type": "object"
+    },
+    "OpenShellConfig": {
+      "additionalProperties": false,
+      "description": "Options for the `openshell` enforcement backend.\n\nBy default the sandbox policy is rendered from the backend-neutral `workload`\nand `egress` declarations. `policy` replaces it with a native OpenShell\npolicy, which must still meet openenvd's isolation invariants.\n\nAttributes:\n    image (`str`):\n        Container image holding the environment and OpenEnv.\n    gateway (`str`):\n        OpenShell gateway name.\n    workspace (`str`, *optional*, defaults to `\"default\"`):\n        OpenShell gateway workspace.\n    python (`str`, *optional*, defaults to `\"/usr/local/bin/python3\"`):\n        Interpreter used to start the worker; must not be writable.\n    run_as_user (`str`, *optional*, defaults to `\"1000\"`):\n        Positive numeric user id for the workload.\n    run_as_group (`str`, *optional*, defaults to `\"1000\"`):\n        Positive numeric group id for the workload.\n    policy (`dict`, *optional*):\n        A complete native OpenShell policy, replacing the rendered one.",
+      "properties": {
+        "gateway": {
+          "minLength": 1,
+          "title": "Gateway",
+          "type": "string"
+        },
+        "image": {
+          "minLength": 1,
+          "title": "Image",
+          "type": "string"
+        },
+        "policy": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policy"
+        },
+        "python": {
+          "default": "/usr/local/bin/python3",
+          "title": "Python",
+          "type": "string"
+        },
+        "run_as_group": {
+          "default": "1000",
+          "title": "Run As Group",
+          "type": "string"
+        },
+        "run_as_user": {
+          "default": "1000",
+          "title": "Run As User",
+          "type": "string"
+        },
+        "workspace": {
+          "default": "default",
+          "title": "Workspace",
+          "type": "string"
+        }
+      },
+      "required": [
+        "image",
+        "gateway"
+      ],
+      "title": "OpenShellConfig",
+      "type": "object"
+    },
     "OracleDeclaration": {
       "additionalProperties": false,
       "description": "How the package demonstrates max reward.\n\nAttributes:\n    form (`str`):\n        `\"injected_state\"` (preferred \u2014 most deterministic; requires the\n        `set_state` capability) or `\"script\"` (Harbor `solution/solve.sh`\n        precedent, executed inside the sandbox).\n    location (`str`):\n        Package-relative path to the oracle artifact; containment-checked.",
@@ -302,6 +507,71 @@
         "location"
       ],
       "title": "OracleDeclaration",
+      "type": "object"
+    },
+    "Principal": {
+      "description": "Who is on the other end of a surface.",
+      "enum": [
+        "orchestrator",
+        "agent",
+        "grader",
+        "observer"
+      ],
+      "title": "Principal",
+      "type": "string"
+    },
+    "ProcessSpec": {
+      "additionalProperties": false,
+      "description": "A process openenvd runs alongside the environment worker.\n\nAttributes:\n    trust (`str`):\n        `\"workload\"` runs in the episode sandbox with the worker, started after\n        it on every reset. `\"privileged\"` runs on demand in a fresh sandbox\n        holding a workspace snapshot and the privileged assets.\n    argv (`tuple[str, ...]`):\n        Workload command; `argv[0]` is an absolute path inside the image.\n    asset (`str`, *optional*):\n        Privileged executable, by privileged asset name.\n    args (`tuple[str, ...]`):\n        Extra arguments for a privileged executable.\n    env (`dict[str, str]`):\n        Additional non-secret environment variables.",
+      "properties": {
+        "args": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Args",
+          "type": "array"
+        },
+        "argv": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Argv",
+          "type": "array"
+        },
+        "asset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Asset"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Env",
+          "type": "object"
+        },
+        "trust": {
+          "enum": [
+            "workload",
+            "privileged"
+          ],
+          "title": "Trust",
+          "type": "string"
+        }
+      },
+      "required": [
+        "trust"
+      ],
+      "title": "ProcessSpec",
       "type": "object"
     },
     "ResourceDeclaration": {
@@ -414,6 +684,54 @@
       "title": "SignatureKind",
       "type": "string"
     },
+    "SurfacePolicy": {
+      "additionalProperties": false,
+      "description": "An explicit allowlist for one principal; unspecified permissions are denied.\n\nAttributes:\n    principal ([`~openenv.core.openenvd.policy.Principal`]):\n        The principal this surface serves.\n    tools (`tuple[str, ...]`):\n        Tool names or patterns. Agent patterns allow only a trailing `*` and can\n        never match lifecycle names or `grader.*`.\n    fs_read (`tuple[str, ...]`):\n        Absolute path globs a grader may read through grader tools.\n    stream (`tuple[str, ...]`):\n        Event streams an observer may subscribe to.\n    allow_lifecycle (`bool`, *optional*, defaults to `False`):\n        Whether the surface may reset, step, or close the episode.\n    allow_privileged_exec (`bool`, *optional*, defaults to `False`):\n        Whether a grader may run privileged processes such as the oracle.",
+      "properties": {
+        "allow_lifecycle": {
+          "default": false,
+          "title": "Allow Lifecycle",
+          "type": "boolean"
+        },
+        "allow_privileged_exec": {
+          "default": false,
+          "title": "Allow Privileged Exec",
+          "type": "boolean"
+        },
+        "fs_read": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Fs Read",
+          "type": "array"
+        },
+        "principal": {
+          "$ref": "#/$defs/Principal"
+        },
+        "stream": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Stream",
+          "type": "array"
+        },
+        "tools": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Tools",
+          "type": "array"
+        }
+      },
+      "required": [
+        "principal"
+      ],
+      "title": "SurfacePolicy",
+      "type": "object"
+    },
     "TaskDistributionPin": {
       "additionalProperties": false,
       "description": "Pins for generated or externally sourced task distributions (#778 test #42).",
@@ -517,6 +835,43 @@
         "kind"
       ],
       "title": "VerifierBinding",
+      "type": "object"
+    },
+    "WorkloadPaths": {
+      "additionalProperties": false,
+      "description": "The filesystem the workload may touch inside its sandbox.\n\nThe episode workspace is uploaded to `/sandbox/workspace`. Writable paths are\nconfined to `/sandbox`, `/tmp`, and `/dev/null`.\n\nAttributes:\n    read_only (`tuple[str, ...]`):\n        Absolute paths the workload may read.\n    read_write (`tuple[str, ...]`):\n        Absolute paths the workload may read and write.",
+      "properties": {
+        "read_only": {
+          "default": [
+            "/bin",
+            "/usr",
+            "/lib",
+            "/lib64",
+            "/etc",
+            "/proc",
+            "/opt",
+            "/dev/urandom"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "title": "Read Only",
+          "type": "array"
+        },
+        "read_write": {
+          "default": [
+            "/sandbox",
+            "/tmp",
+            "/dev/null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "title": "Read Write",
+          "type": "array"
+        }
+      },
+      "title": "WorkloadPaths",
       "type": "object"
     }
   },
