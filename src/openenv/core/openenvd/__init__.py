@@ -12,6 +12,15 @@ Exports load lazily so importing the contract never imports backend modules.
 from importlib import import_module
 
 _EXPORTS = {
+    "Collector": "observation",
+    "GraderClient": "client",
+    "HarnessEventSink": "harness",
+    "ObservationEvent": "observation",
+    "ProcessSpec": "policy",
+    "Runtime": "runtime",
+    "create_surface_app": "surfaces",
+    "main": "daemon",
+    "observer_stream": "client",
     "EgressPolicy": "policy",
     "EgressRule": "policy",
     "EnforcementBackend": "backends",

@@ -281,3 +281,24 @@ For dataset-backed environments that publish enumerable tasks and splits, see th
 [[autodoc]] openenv.core.openenvd.backends.openshell.OpenShellBackend
 
 [[autodoc]] openenv.core.openenvd.backends.local.LocalBackend
+
+### openenvd runtime
+
+The daemon hosts every privileged surface outside the workload and runs the
+environment as a worker inside a backend sandbox. Start it with
+`python -m openenv.core.openenvd --manifest ... --workspace ... --asset-root ...`.
+`EnvClient` and `GenericEnvClient` accept optional `headers` for the
+orchestrator's bearer token. See the
+[openenvd guide](https://github.com/huggingface/OpenEnv/blob/main/src/openenv/core/openenvd/README.md).
+
+[[autodoc]] openenv._openenvd_config.ProcessSpec
+
+[[autodoc]] openenv.core.openenvd.runtime.Runtime
+
+[[autodoc]] openenv.core.openenvd.surfaces.create_surface_app
+
+[[autodoc]] openenv.core.openenvd.client.GraderClient
+
+[[autodoc]] openenv.core.openenvd.client.observer_stream
+
+[[autodoc]] openenv.core.openenvd.harness.HarnessEventSink

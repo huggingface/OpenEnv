@@ -210,6 +210,8 @@ class OpenShellBackend(EnforcementBackend):
 class OpenShellSandbox:
     """Own one gateway sandbox and keep its credentials outside the workload."""
 
+    workspace = WORKSPACE
+
     def __init__(
         self,
         settings: OpenShellConfig,

@@ -41,16 +41,17 @@ class Sandbox(Protocol):
     """
     One isolated workload instance, owned by exactly one episode or grading run.
 
-    The workspace inside every sandbox is `/sandbox/workspace` (or the backend's
-    equivalent); processes start there.
-
     Attributes:
         id (`str`, *optional*):
             Backend identifier while the sandbox exists; `None` once deletion is
             confirmed.
+        workspace (`str` or `Path`):
+            Absolute workspace path as processes inside the sandbox see it; spawned
+            processes start there.
     """
 
     id: str | None
+    workspace: str | Path
 
     async def start(self, seed: Path, directory: Path) -> None:
         """

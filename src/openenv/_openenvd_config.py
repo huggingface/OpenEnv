@@ -312,6 +312,51 @@ class EgressPolicy(BaseModel):
         return self
 
 
+class ProcessSpec(BaseModel):
+    """
+    A process openenvd runs alongside the environment worker.
+
+    Attributes:
+        trust (`str`):
+            `"workload"` runs in the episode sandbox with the worker, started after
+            it on every reset. `"privileged"` runs on demand in a fresh sandbox
+            holding a workspace snapshot and the privileged assets.
+        argv (`tuple[str, ...]`):
+            Workload command; `argv[0]` is an absolute path inside the image.
+        asset (`str`, *optional*):
+            Privileged executable, by privileged asset name.
+        args (`tuple[str, ...]`):
+            Extra arguments for a privileged executable.
+        env (`dict[str, str]`):
+            Additional non-secret environment variables.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    trust: Literal["workload", "privileged"]
+    argv: tuple[str, ...] = ()
+    asset: str | None = None
+    args: tuple[str, ...] = ()
+    env: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_shape(self) -> ProcessSpec:
+        if self.trust == "workload":
+            if not self.argv or self.asset is not None or self.args:
+                raise ValueError("workload processes declare argv only")
+            _absolute_sandbox_path(self.argv[0])
+        elif self.asset is None or self.argv:
+            raise ValueError("privileged processes declare an asset, not argv")
+        for value in (*self.argv, *self.args, *self.env.values()):
+            if "\0" in value:
+                raise ValueError("process arguments cannot contain NUL")
+        for key in self.env:
+            if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) or key.startswith(
+                "OPENENVD_"
+            ):
+                raise ValueError(f"invalid process environment variable {key!r}")
+        return self
+
+
 class OpenShellConfig(BaseModel):
     """
     Options for the `openshell` enforcement backend.
@@ -416,6 +461,8 @@ class OpenEnvDConfig(BaseModel):
             Filesystem the workload may touch.
         egress ([`~openenv.core.openenvd.policy.EgressPolicy`]):
             Network egress the workload is allowed.
+        processes (`dict[str, ProcessSpec]`):
+            Processes beyond the implicit environment worker, by name.
 
     Examples:
 
@@ -439,6 +486,7 @@ class OpenEnvDConfig(BaseModel):
     privileged_assets: dict[str, str] = Field(default_factory=dict)
     workload: WorkloadPaths = Field(default_factory=WorkloadPaths)
     egress: EgressPolicy = Field(default_factory=EgressPolicy)
+    processes: dict[str, ProcessSpec] = Field(default_factory=dict)
 
     @model_validator(mode="before")
     @classmethod
@@ -472,8 +520,17 @@ class OpenEnvDConfig(BaseModel):
                 raise ValueError(
                     "asset sources must be relative paths within the asset root"
                 )
+        for name, process in self.processes.items():
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name == "worker":
+                raise ValueError(f"invalid process name {name!r}")
+            if (
+                process.asset is not None
+                and process.asset not in self.privileged_assets
+            ):
+                raise ValueError(f"process {name!r} names an undeclared asset")
         if self.openshell is not None and self.openshell.policy is not None:
-            if {"workload", "egress"} & self.model_fields_set:
+            # Compare with defaults, not fields_set, so dumps round-trip.
+            if self.workload != WorkloadPaths() or self.egress != EgressPolicy():
                 raise ValueError(
                     "declare workload and egress, or a native openshell.policy, not both"
                 )
@@ -487,6 +544,26 @@ class OpenEnvDConfig(BaseModel):
                         "the worker Python interpreter must not be writable"
                     )
         return self
+
+    def privileged_process(self, name: str) -> ProcessSpec | None:
+        """
+        The privileged process `name`, including the implicit `oracle`.
+
+        Args:
+            name (`str`):
+                Process name.
+
+        Returns:
+            [`~openenv.core.openenvd.policy.ProcessSpec`] or `None`: the process
+            when it is declared privileged, or `name == "oracle"` with an `oracle`
+            asset and no explicit declaration.
+        """
+        process = self.processes.get(name)
+        if process is not None:
+            return process if process.trust == "privileged" else None
+        if name == "oracle" and "oracle" in self.privileged_assets:
+            return ProcessSpec(trust="privileged", asset="oracle")
+        return None
 
     def writable_paths(self) -> tuple[str, ...]:
         """
