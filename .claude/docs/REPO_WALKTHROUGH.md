@@ -30,6 +30,7 @@ OpenEnv/
 src/
 ├── openenv/                  # Main package
 │   ├── __init__.py
+│   ├── _openenvd_config.py    # openenvd contract; validation imports it without server code
 │   │
 │   ├── core/                 # Core abstractions - the heart of OpenEnv
 │   │   ├── env_client.py         # EnvClient base class (WebSocket client)
@@ -56,6 +57,16 @@ src/
 │   │   │   │   └── uv_provider.py         # UVProvider (for local dev)
 │   │   │   └── images/               # Base Docker images
 │   │   │       └── Dockerfile            # openenv-base image
+│   │   │
+│   │   ├── openenvd/             # RFC 009 policy-scoped runtime
+│   │   │   ├── policy.py             # Public exports of the contract
+│   │   │   ├── backends/             # Pluggable enforcement: base, openshell, local
+│   │   │   ├── daemon.py             # Manifest-based CLI startup
+│   │   │   ├── runtime.py            # Episodes, processes, grading, reset
+│   │   │   ├── surfaces.py           # Agent, grader, orchestrator, observer routes
+│   │   │   ├── worker.py             # Environment worker inside the sandbox
+│   │   │   ├── observation.py        # Workspace snapshots and episode events
+│   │   │   └── client.py             # Grader and observer clients
 │   │   │
 │   │   └── tools/                # Reusable tool implementations
 │   │       ├── local_python_executor.py  # Python code execution
@@ -162,7 +173,8 @@ rfcs/
 ├── 000-project-phases.md     # Project vision and phases
 ├── 001-abstractions.md       # Core abstractions (Environment, Client, two-interface model)
 ├── 002-env-spec.md           # Environment specification
-└── 003-mcp-support.md        # MCP integration design
+├── 003-mcp-support.md        # MCP integration design
+└── 009-openenvd.md           # Policy-scoped surfaces with pluggable enforcement
 ```
 
 ## Claude Code Configuration (`.claude/`)

@@ -166,3 +166,23 @@ trace, move whole-turn exclusions into the producer's `loss_mask`, and keep fina
 answers eligible unless your task explicitly masks them. The old Harbor export
 continues to read legacy captures; the strict API requires explicit masks and
 node IDs. Evaluation-only captures cannot be used for training.
+
+## openenvd event publication
+
+`MCPHarnessAdapter` accepts an optional `event_sink` callable. Existing
+`MCPHarnessAdapter()` callers keep their current behavior. Inside an openenvd
+workload, publish events through the daemon-provided write-only pipe:
+
+```python
+from openenv.core.harness import MCPHarnessAdapter
+from openenv.core.openenvd import HarnessEventSink
+
+adapter = MCPHarnessAdapter(event_sink=HarnessEventSink())
+```
+
+`HarnessEventSink()` reads `OPENENVD_EVENT_FD`; construct it only where the
+runtime-provided descriptor exists. Events remain in the rollout result and are
+also forwarded to the sink. Sink failures propagate, and each serialized event
+must fit the pipe's atomic write limit. These are workload-reported events,
+separate from daemon-observed OS activity. See the
+[openenvd runtime guide](../openenvd/README.md) for requirements and limitations.
