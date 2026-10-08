@@ -175,6 +175,7 @@ Base class for environment communication:
 Manage container deployment:
 - `LocalDockerProvider`: Run containers on local Docker daemon
 - `UVProvider`: Run an environment's server from its project directory, without Docker
+- `KubernetesProvider`: Deploy to Kubernetes clusters (`pip install openenv[kubernetes]`)
 - Docker Swarm, Daytona, Modal, Novita, Azure Container Apps and Hugging Face sandboxes: see [Runtime Providers](https://huggingface.co/docs/openenv/guides/runtime-providers)
 
 #### 5. Models
