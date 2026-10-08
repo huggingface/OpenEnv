@@ -59,7 +59,9 @@ RFC 005 (Agentic Harness Integration) defined the wrapping pattern. The gap this
 
 `envs/pi_env/pyproject.toml` also declares `opencode_env` only as a **comment**, not a dependency, so `pip install openenv-pi-env` yields a broken package unless `openenv-opencode-env` is installed separately.
 
-This is not an argument against #1036. It is the statement that **consolidation is now a scheduled obligation rather than an aspiration**: `opencode_env` and `pi_env` should become thin adapters over `core.harness.capture`, and the RFC's original Problem 1 is only closed when they are. See [What remains open](#what-remains-open).
+This is not an argument against #1036. It is the statement that **consolidation is now a scheduled obligation rather than an aspiration**: `opencode_env` and `pi_env` should become thin adapters over `core.harness.capture`, and the RFC's original Problem 1 is only closed when they are.
+
+**Update:** Problem 1 is closed. #1276 deprecated `opencode_env` and `pi_env` in favour of `harbor_env`, and #1346 removed them, so `core.harness.capture`, which Harbor uses, is the only capture proxy.
 
 ### Problem 2: the installed-agent training gap
 
@@ -423,8 +425,6 @@ Landed in [#1036](https://github.com/huggingface/OpenEnv/pull/1036) (merged 2026
 
 | Item | Decision | Note |
 |---|---|---|
-| Consolidate `opencode_env` / `pi_env` onto `core.harness.capture` | Problem 1 | two proxies ship today; `pi_env` reads the older one off disk and re-exports its sandbox types |
-| Declare `opencode_env` as a real dependency of `pi_env` | Problem 1 | currently a comment in `pyproject.toml`; the package is broken without it |
 | Sandbox protocol + E2B/HF/Docker backends into `core/harness/sandbox/` | — | deferred follow-up to [#998](https://github.com/huggingface/OpenEnv/pull/998); orthogonal to Harbor, which brings its own |
 | Served-template hash in provenance + mismatch check | D3, D11 | the one remaining fidelity assertion; not an assembly job |
 | Config-file hashing per call | D11 | agents can rewrite their own prompts mid-episode |
