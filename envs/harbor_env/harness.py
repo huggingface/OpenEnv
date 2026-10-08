@@ -12,11 +12,10 @@
     trace = session.fetch_proxy_trace()   # per-turn records for a trainer
     reward = session.verify(transcript)   # the task's own verifier, forwarded
 
-This is the shape TRL's `HarnessRolloutWorker` consumes in loop-owning mode, and it is deliberately
-the same shape `opencode_env.harness` offers — so the training script is the stock one and nothing has
-to be added to TRL. The difference is where the work happens: opencode_env runs the agent locally,
-while this hands a task to a server that owns the sandbox, the agent and the capture proxy. The
-trainer needs no sandbox credentials, no harness installed, and no capture plumbing of its own.
+This is the shape TRL's `HarnessRolloutWorker` consumes in loop-owning mode, so the training script
+is the stock one and nothing has to be added to TRL. The work happens on a server that owns the
+sandbox, the agent and the capture proxy. The trainer needs no sandbox credentials, no harness
+installed, and no capture plumbing of its own.
 
 WHY THE ENGINE IS AN ARGUMENT HERE. `run_rollout` takes `llm_url` per call, so a trainer points the
 server at the vLLM it is currently syncing weights into. The server probes that engine and the tier
