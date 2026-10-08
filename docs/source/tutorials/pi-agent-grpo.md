@@ -2,7 +2,7 @@
 
 > [!WARNING]
 > **Deprecated.** This tutorial uses `pi_env`, which will be removed in
-> OpenEnv 0.8.0. Pi now runs through [`harbor_env`](https://huggingface.co/docs/openenv/environments/harbor) as one of Harbor's
+> OpenEnv 0.9.0. Pi now runs through [`harbor_env`](https://huggingface.co/docs/openenv/environments/harbor) as one of Harbor's
 > harnesses (`--harness pi`), with the same token-level capture for
 > training.
 

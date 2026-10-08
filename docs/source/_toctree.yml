@@ -63,6 +63,8 @@
   - sections:
     - local: tutorials/browsergym-harness
       title: Agentic Harness
+    - local: tutorials/claude-code-harness
+      title: Evaluate Claude Code in an Environment
     - local: tutorials/opencode-agent-grpo
       title: OpenCode (deprecated)
     - local: tutorials/pi-agent-grpo
@@ -141,6 +143,8 @@
     title: QED Math
   - local: environments/reasoning_gym
     title: Reasoning Gym
+  - local: environments/tau2
+    title: τ²-bench
   - local: environments/tbench2
     title: TBench2
   - local: environments/thinkingbox
