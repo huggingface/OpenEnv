@@ -255,3 +255,29 @@ For dataset-backed environments that publish enumerable tasks and splits, see th
 [[autodoc]] openenv.core.containers.runtime.modal_provider.ModalProvider
 
 [[autodoc]] openenv.core.containers.runtime.novita_provider.NovitaSandboxProvider
+
+## openenvd
+
+[[autodoc]] openenv._openenvd_config.OpenEnvDConfig
+
+[[autodoc]] openenv._openenvd_config.SurfacePolicy
+
+[[autodoc]] openenv._openenvd_config.Guarantee
+
+[[autodoc]] openenv._openenvd_config.EnforcementSpec
+
+[[autodoc]] openenv._openenvd_config.WorkloadPaths
+
+[[autodoc]] openenv._openenvd_config.EgressPolicy
+
+[[autodoc]] openenv._openenvd_config.OpenShellConfig
+
+[[autodoc]] openenv.core.openenvd.backends.base.EnforcementBackend
+
+[[autodoc]] openenv.core.openenvd.backends.base.Sandbox
+
+[[autodoc]] openenv.core.openenvd.backends.base.EnforcementUnavailable
+
+[[autodoc]] openenv.core.openenvd.backends.openshell.OpenShellBackend
+
+[[autodoc]] openenv.core.openenvd.backends.local.LocalBackend
