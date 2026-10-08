@@ -22,13 +22,13 @@ IMPLEMENTED = {
     "runtime.reward_well_formed",
     "runtime.observation_schema",
     "runtime.state_contract",
+    "runtime.network_policy",
 }
 PENDING = {
     "runtime.trajectory_record",
     "runtime.tool_declaration_accuracy",
     "runtime.seed_control",
     "runtime.episode_determinism",
-    "runtime.network_policy",
     "runtime.host_containment",
     "runtime.resource_bounds",
     "runtime.episode_isolation",
