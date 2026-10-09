@@ -18,6 +18,8 @@ An OpenEnv wrapper for [TextArena](https://github.com/textarena/textarena) game 
 > [!NOTE]
 > Generic wrapper for any [TextArena](https://www.textarena.ai/docs/overview) game inside OpenEnv. This module exposes the TextArena `Env` interface through the standard HTTP server/client APIs used by other OpenEnv environments, enabling quick experimentation with the full suite of word, reasoning, and multi-agent games.
 
+Try Wordle on the [`openenv/wordle`](https://huggingface.co/spaces/openenv/wordle) Space, or connect a client to `https://openenv-wordle.hf.space`.
+
 ## Quick Start
 
 The simplest way to use the TextArena environment is through the `TextArenaEnv` class:

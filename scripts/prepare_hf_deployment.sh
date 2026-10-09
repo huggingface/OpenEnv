@@ -614,15 +614,12 @@ create_readme() {
     local space_repo="$3"
     local readme_source="envs/$env_name/README.md"
     local output_readme="$stage_dir/README.md"
-    local env_class="Env"
-
-    case "$env_name" in
-        echo_env) env_class="EchoEnv" ;;
-        coding_env) env_class="CodingEnv" ;;
-        chat_env) env_class="ChatEnv" ;;
-        atari_env) env_class="AtariEnv" ;;
-        openspiel_env) env_class="OpenSpielEnv" ;;
-    esac
+    # Client class: the first class in client.py that subclasses EnvClient or MCPToolClient.
+    local env_class
+    env_class=$(awk '/^class /{name=$2; sub(/[(:].*/,"",name); hdr=1} hdr && /(EnvClient|MCPToolClient)/{print name; exit} hdr && /:[[:space:]]*$/{hdr=0}' "envs/$env_name/client.py" 2>/dev/null)
+    # Space host: https://<owner>-<name>.hf.space, lowercased, with "/", "_" and "." replaced by "-".
+    local space_url
+    space_url="https://$(printf "%s" "$space_repo" | tr '[:upper:]' '[:lower:]' | tr '/_.' '---').hf.space"
 
     if head -n 1 "$readme_source" | grep -q '^---$'; then
         local closing_line
@@ -642,15 +639,25 @@ This Space is built from OpenEnv environment \`$env_name\`.
 - Space URL: \`https://huggingface.co/spaces/$space_repo\`
 - OpenEnv pinned ref: \`$OPENENV_VERSION\`
 - Hub tag: \`$HUB_TAG\`
+README_EOF
+        # The snippet needs anonymous access, so private Spaces skip it.
+        if [ -n "$env_class" ] && [ "$PRIVATE" = false ]; then
+            cat >> "$output_readme" << README_EOF
 
 ### Connecting from Code
 
-\`\`\`python
-from envs.$env_name import $env_class
+\`\`\`bash
+pip install git+https://huggingface.co/spaces/$space_repo
+\`\`\`
 
-env = $env_class(base_url="https://huggingface.co/spaces/$space_repo")
+\`\`\`python
+from $env_name import $env_class
+
+with $env_class(base_url="$space_url").sync() as env:
+    result = env.reset()
 \`\`\`
 README_EOF
+        fi
         tail -n "+$((closing_line + 1))" "$readme_source" >> "$output_readme"
     else
         cat > "$output_readme" << README_EOF

@@ -11,10 +11,6 @@
     title: Auto-Discovery
   - local: guides/catalog-discovery
     title: Catalog Discovery
-  - local: guides/rl-integration
-    title: RL Training
-  - local: guides/harbor-provider-qualification
-    title: Harbor Spec
   - local: guides/rewards
     title: Rewards
   - local: guides/concepts
@@ -51,6 +47,8 @@
       title: Your First Environment
     title: Basics
   - sections:
+    - local: guides/training
+      title: Overview
     - local: tutorials/end-to-end-walkthrough
       title: Train a Reasoning Model
     - local: tutorials/wordle-grpo
@@ -61,8 +59,14 @@
       title: SFT Training with Environments
     title: Training
   - sections:
+    - local: tutorials/harnesses
+      title: Overview
     - local: tutorials/browsergym-harness
-      title: Agentic Harness
+      title: "White-box: Train a Web Agent (BrowserGym)"
+    - local: tutorials/harbor-harness
+      title: "Black-box: Train Real Agents (Harbor)"
+    - local: tutorials/claude-code-harness
+      title: "Agent in Your Env: Evaluate Claude Code"
     - local: tutorials/opencode-agent-grpo
       title: OpenCode (deprecated)
     - local: tutorials/pi-agent-grpo
@@ -89,6 +93,8 @@
     title: Coding Tools
   - local: environments/harbor
     title: Harbor
+  - local: guides/harbor-provider-qualification
+    title: Harbor Qualification
   - local: environments/chat
     title: Chat
   - local: environments/atari
@@ -141,6 +147,8 @@
     title: QED Math
   - local: environments/reasoning_gym
     title: Reasoning Gym
+  - local: environments/tau2
+    title: τ²-bench
   - local: environments/tbench2
     title: TBench2
   - local: environments/thinkingbox

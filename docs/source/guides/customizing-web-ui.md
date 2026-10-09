@@ -88,6 +88,41 @@ If you need a non-Gradio custom UI (e.g. static HTML/JS), you can still register
 
 ---
 
+## Sign in with Hugging Face on a Space
+
+A custom tab can sign visitors in with their Hugging Face account, for example so each visitor's runs use their own [Inference Providers](https://huggingface.co/docs/inference-providers) credits instead of a token stored on the Space. [`tau2_env`](../environments/tau2) does this. A Docker Space needs four things:
+
+1. **The Space README** turns OAuth on, with the scopes you need:
+
+   ```yaml
+   hf_oauth: true
+   hf_oauth_scopes:
+     - inference-api
+   ```
+
+2. **The image** installs Gradio's OAuth dependencies, `authlib` and `itsdangerous` (the `gradio[oauth]` extra).
+3. **`SYSTEM=spaces`** is set before the app is created. Gradio only uses the Space's real OAuth when it is set, and Docker Spaces don't set it, so it mocks the login instead:
+
+   ```python
+   if os.environ.get("SPACE_ID"):
+       os.environ.setdefault("SYSTEM", "spaces")
+   ```
+
+4. **The OAuth routes are forwarded to `/web`.** The UI, and so Gradio's `/login/huggingface`, `/login/callback` and `/logout`, are mounted under `/web`, while the sign-in button and Hugging Face's callback use them at the root:
+
+   ```python
+   @app.get("/login/huggingface", include_in_schema=False)
+   @app.get("/login/callback", include_in_schema=False)
+   @app.get("/logout", include_in_schema=False)
+   def oauth_under_web(request: Request) -> RedirectResponse:
+       query = f"?{request.url.query}" if request.url.query else ""
+       return RedirectResponse(f"/web{request.url.path}{query}")
+   ```
+
+In the builder, add a `gr.LoginButton()` and take a `gr.OAuthToken | None` argument in the event handlers that need the visitor's token. Off a Space the login is mocked with your local Hugging Face login, so show the button only when `SPACE_ID` is set.
+
+---
+
 ## Summary
 
 | Goal                         | Approach                                                                 |
@@ -96,5 +131,6 @@ If you need a non-Gradio custom UI (e.g. static HTML/JS), you can still register
 | Add a custom tab            | Pass `gradio_builder=my_builder`; return your own `gr.Blocks` (shown in “Custom” tab). |
 | Custom tab + default inside | In your builder, call `build_gradio_app(...)` and embed or wrap it in your Blocks. |
 | Change Quick Start / README | Rely on metadata/README, or custom builder that builds custom markdown.  |
+| Sign visitors in on a Space | `hf_oauth` in the README, `SYSTEM=spaces`, OAuth routes forwarded to `/web` ([details](#sign-in-with-hugging-face-on-a-space)). |
 
 The default Playground tab is built with `openenv.core.env_server.gradio_ui.build_gradio_app`; you can import and call it with the same arguments if your custom tab needs to embed or extend it.

@@ -2,7 +2,7 @@
 
 > [!WARNING]
 > **Deprecated.** This tutorial uses `opencode_env`, which will be removed in
-> OpenEnv 0.8.0. OpenCode now runs through [`harbor_env`](https://huggingface.co/docs/openenv/environments/harbor) as one of Harbor's
+> OpenEnv 0.9.0. OpenCode now runs through [`harbor_env`](https://huggingface.co/docs/openenv/environments/harbor) as one of Harbor's
 > harnesses (`--harness opencode`), with the same token-level capture for
 > training. The TRL links below are pinned to v1.14.1, the last release
 > with this recipe.

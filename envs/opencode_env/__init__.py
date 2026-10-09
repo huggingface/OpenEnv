@@ -36,7 +36,7 @@ from .sandbox import E2BSandboxBackend, SandboxBackend, SandboxHandle
 from .task import OpenCodeTask
 
 warnings.warn(
-    "opencode_env is deprecated and will be removed in OpenEnv 0.8.0. "
+    "opencode_env is deprecated and will be removed in OpenEnv 0.9.0. "
     "Run opencode through harbor_env instead: "
     "`HarborSessionFactory(server_url, harness='opencode')` against "
     "`openenv harbor serve`. "

@@ -1,3 +1,16 @@
+---
+title: Chess Environment Server
+emoji: ♟️
+colorFrom: gray
+colorTo: green
+sdk: docker
+pinned: false
+app_port: 8000
+base_path: /web
+tags:
+  - openenv
+---
+
 # Chess Environment
 
 A chess reinforcement learning environment for OpenEnv, powered by the [moonfish](https://github.com/luccabb/moonfish) chess engine.

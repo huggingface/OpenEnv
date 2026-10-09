@@ -16,6 +16,7 @@ is a one-line change.
 | `ACASandboxProvider` | Azure Container Apps Sandboxes | `pip install openenv[aca]` | ✅ |
 | `ModalProvider` | Modal sandboxes | `pip install openenv[modal]` | ✅ |
 | `NovitaSandboxProvider` | Novita AI sandboxes | `pip install openenv[novita]` | ✅ |
+| `HFSandboxProvider` | Hugging Face sandboxes (billed as HF Jobs) | core | ✅ |
 
 A `KubernetesProvider` is planned but not available yet.
 
@@ -47,8 +48,8 @@ async with MyEnv(provider=provider) as env:
     ...
 ```
 
-`ModalProvider`, `DaytonaProvider`, and `ACASandboxProvider` support this
-provider-owned flow. Providers that require an explicit image at
+`ModalProvider`, `DaytonaProvider`, `ACASandboxProvider`, and `HFSandboxProvider`
+support this provider-owned flow. Providers that require an explicit image at
 `start_container()` time, such as `LocalDockerProvider` and
 `DockerSwarmProvider`, should still be started manually and passed in with the
 returned `base_url`:
@@ -160,6 +161,35 @@ from openenv.core.containers.runtime import DockerSwarmProvider
 
 provider = DockerSwarmProvider()
 ```
+
+### HFSandboxProvider
+
+Runs the server in a Hugging Face sandbox, when your Hugging Face account is
+the only cloud account you want to use. Included in core OpenEnv. Requires a
+Hugging Face token (`HF_TOKEN` or `hf auth login`) for an account or
+organization that can run [Jobs](https://huggingface.co/docs/huggingface_hub/guides/jobs).
+The sandbox hosts are billed as Jobs.
+
+The image must provide a `server` command that serves OpenEnv on port 8000.
+Images built from an OpenEnv environment, such as its Space image, already do.
+
+```python
+from coding_env import CodeAction, CodingEnv
+from openenv.core.containers.runtime.hf_sandbox_provider import HFSandboxProvider
+
+provider = HFSandboxProvider(image="hf.co/spaces/openenv/coding_env")
+
+with CodingEnv(provider=provider).sync() as env:
+    env.reset()
+    result = env.step(CodeAction(code="print(40 + 2)"))
+    print(result.observation.stdout)
+```
+
+`flavor` (default `cpu-basic`) picks the hardware and `env_vars` passes
+environment variables to the server. Providers with the same image and flavor
+in one process share a sandbox pool, which shuts down after 10 idle minutes.
+
+Full example: [`examples/hf_sandbox_coding_env.py`](https://github.com/huggingface/OpenEnv/blob/main/examples/hf_sandbox_coding_env.py).
 
 ### KubernetesProvider
 
