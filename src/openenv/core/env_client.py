@@ -146,7 +146,17 @@ class _BootstrapResult(Coroutine, Generic[EnvClientT]):
 
     async def _resolve_async(self) -> EnvClientT:
         client = self._consume()
-        await client.connect()
+        try:
+            await client.connect()
+        except asyncio.CancelledError:
+            # _connect_async releases the provider on ordinary failures, but
+            # cancellation bypasses its `except Exception`. No client reaches
+            # the caller, so release the provider here before propagating the
+            # original cancellation. A repeated cancellation or a stop failure
+            # during cleanup must not replace it.
+            with suppress(Exception, asyncio.CancelledError):
+                await client.close()
+            raise
         return client
 
     def _ensure_coro(self) -> "Coroutine[Any, Any, EnvClientT]":
