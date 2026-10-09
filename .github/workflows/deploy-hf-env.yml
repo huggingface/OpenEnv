@@ -70,26 +70,31 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           ENVS_CSV_INPUT: ${{ github.event.inputs.envs_csv }}
           OPENENV_VERSION: ${{ github.event.inputs.openenv_version }}
+          HF_NAMESPACE_INPUT: ${{ github.event.inputs.hf_namespace }}
+          COLLECTION_NAMESPACE_INPUT: ${{ github.event.inputs.collection_namespace }}
+          PRIVATE_INPUT: ${{ github.event.inputs.private }}
+          SKIP_COLLECTION_INPUT: ${{ github.event.inputs.skip_collection }}
+          DRY_RUN_INPUT: ${{ github.event.inputs.dry_run }}
         run: |
           set -euo pipefail
           chmod +x scripts/prepare_hf_deployment.sh
 
           cmd=(scripts/prepare_hf_deployment.sh
-            --hf-namespace "${{ github.event.inputs.hf_namespace }}"
-            --collection-namespace "${{ github.event.inputs.collection_namespace }}"
+            --hf-namespace "$HF_NAMESPACE_INPUT"
+            --collection-namespace "$COLLECTION_NAMESPACE_INPUT"
           )
 
-          if [ "${{ github.event.inputs.private }}" = "true" ]; then
+          if [ "$PRIVATE_INPUT" = "true" ]; then
             cmd+=(--private)
           else
             cmd+=(--public)
           fi
 
-          if [ "${{ github.event.inputs.skip_collection }}" = "true" ]; then
+          if [ "$SKIP_COLLECTION_INPUT" = "true" ]; then
             cmd+=(--skip-collection)
           fi
 
-          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+          if [ "$DRY_RUN_INPUT" = "true" ]; then
             cmd+=(--dry-run)
           fi
 
