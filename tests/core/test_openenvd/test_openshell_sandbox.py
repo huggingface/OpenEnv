@@ -510,3 +510,46 @@ async def test_workspace_export_caps_stream_and_leaves_staging_empty(
     with pytest.raises(IsolationError, match="output limit"):
         await asyncio.wait_for(value.download(destination), 5)
     assert list(destination.iterdir()) == []
+
+
+async def test_sandbox_name_fits_openshell_limit_and_label_keeps_full_id(
+    sandbox, tmp_path
+):
+    # OpenShell 0.1.2 rejects names longer than 19 characters.
+    value, gateway = sandbox
+    await value.start(*directories(tmp_path))
+    assert len(value.name) <= 19
+    assert value.name == "openenvd-" + value._label[:10]
+    create = next(call for call in gateway.calls if "create" in call)
+    assert create[create.index("--label") + 1] == "openenv-session=" + value._label
+
+
+async def test_gateway_cli_errors_reach_the_daemon_log_not_the_exception(
+    settings, caplog
+):
+    value = OpenShellSandbox(settings, settings.policy, timeout_s=10)
+    value._cli = sys.executable
+    argv = [
+        sys.executable,
+        "-c",
+        "import sys; sys.stderr.write('name exceeds maximum length (41 > 19)'); sys.exit(1)",
+    ]
+    with caplog.at_level("WARNING"):
+        with pytest.raises(IsolationError) as error:
+            await value._run(argv)
+    assert "maximum length" not in str(error.value)
+    assert "name exceeds maximum length (41 > 19)" in caplog.text
+
+
+async def test_transport_errors_are_never_logged(settings, caplog):
+    value = OpenShellSandbox(settings, settings.policy, timeout_s=10)
+    value._cli = "/usr/bin/openshell"
+    argv = [
+        sys.executable,
+        "-c",
+        "import sys; sys.stderr.write('workload secret'); sys.exit(1)",
+    ]
+    with caplog.at_level("WARNING"):
+        with pytest.raises(IsolationError):
+            await value._run(argv)
+    assert "workload secret" not in caplog.text

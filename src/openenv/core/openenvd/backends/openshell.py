@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import logging
 import math
 import os
 import re
@@ -40,6 +41,14 @@ _OUTPUT_LIMIT = 1024 * 1024
 _WORKSPACE_ARCHIVE_LIMIT = 64 * 1024 * 1024
 _WORKSPACE_MEMBER_LIMIT = 4096
 _TERMINATION_TIMEOUT = 5
+# OpenShell 0.1.2 rejects sandbox names longer than 19 characters. The name
+# carries 10 hex digits of the session id; ownership checks use the full id,
+# which travels in the `openenv-session` label.
+_NAME_PREFIX = "openenvd-"
+_NAME_ID_LENGTH = 10
+_DIAGNOSTIC_LIMIT = 2000
+
+logger = logging.getLogger(__name__)
 
 # Paths OpenShell adds to any policy with network rules
 # (docs/how-it-works/policies/default-policy.mdx). Admission accepts them only
@@ -55,6 +64,15 @@ BASELINE_READ_ONLY = (
     "/dev/urandom",
 )
 BASELINE_READ_WRITE = ("/tmp", "/dev/null")
+
+
+def _subcommand(argv: list[str]) -> list[str]:
+    """The OpenShell subcommand words, without global flags or values."""
+    words = [word for word in argv[1:] if not word.startswith("-")]
+    for index, word in enumerate(words):
+        if word in ("sandbox", "status", "forward", "policy", "gateway"):
+            return words[index : index + 2]
+    return words[:2]
 
 
 def render_policy(config: OpenEnvDConfig) -> dict[str, Any]:
@@ -318,14 +336,23 @@ class OpenShellSandbox:
             asyncio.create_task(read_bounded(process.stderr, _OUTPUT_LIMIT)),
         ]
         try:
-            stdout, _, _ = await asyncio.wait_for(
+            stdout, stderr, _ = await asyncio.wait_for(
                 asyncio.gather(*readers, process.wait()), timeout or self.timeout_s
             )
             if process.returncode:
-                # CLI diagnostics can contain gateway credentials or workload
-                # output. Keep them out of daemon errors and agent observations.
+                # Diagnostics stay out of exceptions, which can reach principals.
+                # Gateway CLI errors go to the operator's daemon log; output from
+                # the SSH transport may hold workload data and is never logged.
+                if argv and argv[0] == self._cli:
+                    detail = stderr.decode("utf-8", errors="replace").strip()
+                    logger.warning(
+                        "openshell %s failed (exit %s): %s",
+                        " ".join(_subcommand(argv)),
+                        process.returncode,
+                        detail[-_DIAGNOSTIC_LIMIT:],
+                    )
                 raise IsolationError(
-                    "OpenShell command failed; inspect the gateway diagnostics"
+                    "OpenShell command failed; see the daemon log for the CLI error"
                 )
             return stdout
         except asyncio.TimeoutError:
@@ -407,7 +434,7 @@ class OpenShellSandbox:
         policy_path = directory / "openshell-policy.yaml"
         policy_path.write_text(yaml.safe_dump(self.policy), encoding="utf-8")
         policy_path.chmod(0o600)
-        self.name = "openenvd-" + self._label
+        self.name = _NAME_PREFIX + self._label[:_NAME_ID_LENGTH]
         try:
             # Native ephemeral retention provides a daemon-crash backstop after
             # the main process exits. Allow provisioning and teardown grace in
