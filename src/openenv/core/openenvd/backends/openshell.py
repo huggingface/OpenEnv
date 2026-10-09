@@ -118,8 +118,8 @@ class OpenShellBackend(EnforcementBackend):
       add the daemon's own address to the egress allowlist.
 
     Host prerequisites, checked by `probe()`: the `openshell` CLI (stable
-    `>=0.1.2,<0.2`), OpenSSH, and a reachable gateway with Landlock ABI 3 or
-    newer.
+    `>=0.1.2,<0.2`), OpenSSH, and a registered gateway that answers a sandbox
+    inventory query. The gateway must support Landlock ABI 3 or newer.
 
     Args:
         config ([`~openenv.core.openenvd.policy.OpenEnvDConfig`]):
@@ -161,13 +161,29 @@ class OpenShellBackend(EnforcementBackend):
             raise EnforcementUnavailable(
                 self.name, f"OpenShell {SUPPORTED_VERSIONS} stable is required"
             )
+        # `openshell status` exits 0 even for an unregistered gateway, so ask the
+        # gateway for real work: a label-scoped, read-only inventory query.
         try:
-            await probe._run(probe._command("status"))
+            inventory = await probe._json(
+                "sandbox",
+                "list",
+                "--selector",
+                "openenv-probe=1",
+                "--output",
+                "json",
+                "--page-token",
+                "",
+            )
         except IsolationError:
+            inventory = None
+        if not isinstance(inventory, dict) or not isinstance(
+            inventory.get("sandboxes"), list
+        ):
             raise EnforcementUnavailable(
                 self.name,
-                f"OpenShell gateway {self.settings.gateway!r} is not reachable",
-            ) from None
+                f"OpenShell gateway {self.settings.gateway!r} is not registered or "
+                "not reachable; check `openshell gateway list`",
+            )
 
     def sandbox(self, timeout_s: float) -> "OpenShellSandbox":
         return OpenShellSandbox(self.settings, self.policy, timeout_s=timeout_s)

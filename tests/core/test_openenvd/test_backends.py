@@ -84,16 +84,22 @@ def test_openshell_provides_every_guarantee():
 
 @pytest.fixture
 def cli(monkeypatch):
-    """Fake `openshell` on PATH; records commands and answers `--version`/`status`."""
-    state = {"version": "openshell 0.1.2", "status_ok": True, "calls": []}
+    """Fake `openshell` on PATH; records commands, answers `--version` and inventory."""
+    state = {
+        "version": "openshell 0.1.2",
+        "inventory": '{"sandboxes": [], "next_page_token": ""}',
+        "calls": [],
+    }
     monkeypatch.setattr(openshell_mod.shutil, "which", lambda b: "/usr/bin/" + b)
 
     async def run(self, argv, **kwargs):
         state["calls"].append(argv)
         if argv[-1] == "--version":
             return state["version"]
-        if argv[-1] == "status" and not state["status_ok"]:
-            raise IsolationError("OpenShell command failed")
+        if "list" in argv:
+            if state["inventory"] is None:
+                raise IsolationError("OpenShell command failed")
+            return state["inventory"]
         return ""
 
     monkeypatch.setattr(openshell_mod.OpenShellSandbox, "_run", run)
@@ -102,9 +108,9 @@ def cli(monkeypatch):
 
 async def test_probe_accepts_supported_cli_and_reachable_gateway(cli):
     await OpenShellBackend(_config()).probe()
-    status = cli["calls"][-1]
-    assert status[:3] == ["/usr/bin/openshell", "--gateway", "local"]
-    assert status[-1] == "status"
+    inventory = cli["calls"][-1]
+    assert inventory[:3] == ["/usr/bin/openshell", "--gateway", "local"]
+    assert inventory[inventory.index("sandbox") + 1] == "list"
 
 
 @pytest.mark.parametrize(
@@ -114,12 +120,15 @@ async def test_probe_rejects_unsupported_versions(cli, version):
     cli["version"] = "openshell " + version
     with pytest.raises(EnforcementUnavailable, match="OpenShell"):
         await OpenShellBackend(_config()).probe()
-    assert all(call[-1] != "status" for call in cli["calls"])
+    assert all("list" not in call for call in cli["calls"])
 
 
-async def test_probe_rejects_unreachable_gateway(cli):
-    cli["status_ok"] = False
-    with pytest.raises(EnforcementUnavailable, match="not reachable"):
+@pytest.mark.parametrize("inventory", [None, "not json", '{"unexpected": true}'])
+async def test_probe_rejects_unregistered_or_unreachable_gateway(cli, inventory):
+    # `openshell status` exits 0 for an unregistered gateway, so the probe must
+    # not rely on it: an inventory query fails or returns no sandbox list.
+    cli["inventory"] = inventory
+    with pytest.raises(EnforcementUnavailable, match="not registered or not reachable"):
         await OpenShellBackend(_config()).probe()
 
 
