@@ -591,6 +591,10 @@ def create_web_interface_app(
         css=OPENENV_GRADIO_CSS,
     )
 
+    from .security import attach_guard
+
+    attach_guard(app)
+
     return app
 
 
