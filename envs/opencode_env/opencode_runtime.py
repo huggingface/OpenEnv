@@ -129,7 +129,7 @@ def build_run_cmd(config: OpenCodeConfig) -> str:
         "set -o pipefail && "
         'export PATH="$HOME/.opencode/bin:$PATH" && '
         f"cd {workdir_path(config)} && "
-        f'opencode run {format_flag} "$(cat {instruction_path(config)})" '
+        f'opencode run {format_flag} -- "$(cat {instruction_path(config)})" '
         f"2>&1 | tee {agent_log_path(config)}"
     ).strip()
 

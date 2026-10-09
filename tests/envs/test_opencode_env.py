@@ -245,6 +245,15 @@ def test_opencode_task_coerce_rejects_unknown_type() -> None:
         OpenCodeTask.coerce(42)  # type: ignore[arg-type]
 
 
+def test_run_cmd_does_not_parse_instruction_as_flags() -> None:
+    """An instruction starting with ``-`` (e.g. a markdown list) is not an option."""
+    from opencode_env.config import OpenCodeConfig
+    from opencode_env.opencode_runtime import build_run_cmd, instruction_path
+
+    config = OpenCodeConfig(base_url="https://example.test/v1")
+    assert f'-- "$(cat {instruction_path(config)})"' in build_run_cmd(config)
+
+
 def test_start_proxy_keeps_upstream_key_out_of_command() -> None:
     """The proxy API key must be passed via env, not shell argv."""
     from opencode_env import OpenCodeConfig, OpenCodeSessionFactory
