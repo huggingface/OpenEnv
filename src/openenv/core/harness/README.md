@@ -153,8 +153,8 @@ normalize a rollout that expands into multiple training rows.
 
 For training, construct the session factory with the trainer's `sampling` policy.
 Harbor applies it before inference, so the trainer need not compare sampling
-metadata after generation. Training export checks that each logprob entry pairs
-with its token. A disagreement on an agent turn rejects the training trace; raw
+metadata after generation. When logprob entries identify their tokens
+(`token_id:N`), training export checks that each one pairs with its token. A disagreement on an agent turn rejects the training trace; raw
 capture stays available for inspection. Plain token text is not
 re-tokenized to infer an ID.
 

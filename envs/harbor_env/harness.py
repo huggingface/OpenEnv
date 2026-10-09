@@ -265,8 +265,7 @@ class HarborSession(ResourceSession):
                 api_key=self._api_key,
                 auth_header=self._auth_header,
                 # `is not None`, not `or`: 0 is a documented value meaning "defer to the task
-                # file", and `or` silently replaces it with the factory default. `OpenCodeSession`
-                # takes the same care for the same reason.
+                # file", and `or` silently replaces it with the factory default.
                 agent_step_limit=self._agent_step_limit,
                 **({"sampling": self._sampling} if self._sampling is not None else {}),
                 agent_timeout_sec=(
