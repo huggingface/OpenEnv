@@ -21,7 +21,9 @@ from .policy import ObservationEventType, OpenEnvDConfig, Principal
 
 
 class Runtime:
-    """Keep principal surfaces and assets outside the workload sandbox.
+    """The trusted core of an openenvd environment.
+
+    Principal surfaces and assets stay here, outside every workload sandbox.
 
     Sandboxes come from the enforcement backend the manifest selects; startup
     refuses unless that backend provides every required guarantee. The local

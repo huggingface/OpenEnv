@@ -1,14 +1,32 @@
 # openenvd: policy-scoped environment runtime
 
-`openenvd` implements [RFC 009](../../../../rfcs/009-openenvd.md).
+`openenvd` implements [RFC 009](../../../../rfcs/009-openenvd.md). An openenvd environment is
+still one OpenEnv environment. Principals reach it only through the daemon's surfaces, and
+everything else is inside it:
 
-- **The daemon** hosts the agent, grader, orchestrator and observer surfaces outside the
-  workload.
-- **The environment** runs as a worker inside a fresh sandbox for each episode.
+```
+OpenEnv environment                      principals connect here, only via the daemon
+├─ openenvd daemon (trusted)             surfaces, tokens, seed, assets, snapshots
+└─ OpenShell runtime                     gateway + compute driver
+   ├─ OpenShell sandbox (per episode)    supervisor + workload container
+   │  └─ workload (untrusted)            worker, workload processes, /sandbox/workspace
+   └─ OpenShell sandbox (per privileged run)
+      └─ oracle / rubric                 workspace snapshot + assets
+```
+
+- **The daemon** serves the agent, grader, orchestrator and observer surfaces. It holds every
+  privilege and never shares it with a workload.
+- **The workload** is the environment worker plus its declared processes, in a fresh sandbox
+  for each episode.
 - **Sandboxes** come from a pluggable enforcement backend:
   - `openshell` ([NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell)) is
     kernel-enforced and provides every guarantee.
   - `local` runs host subprocesses and provides none; it is for development.
+
+Packaged this way, the daemon and the OpenShell gateway run as services on the machine, and the
+OpenShell sandboxes are sibling containers. Packaging the whole environment as a single
+container would need the power to create sandboxes from inside it, such as `/dev/kvm` for
+OpenShell's microVM driver. See the RFC's packaging section.
 
 ## Guarantees and refusal
 
@@ -33,7 +51,7 @@ It never falls back to another backend.
 ## Prepare an OpenShell gateway and image
 
 Install the [OpenShell v0.1.2 CLI](https://github.com/NVIDIA/OpenShell/releases/tag/v0.1.2)
-and OpenSSH (`ssh`) on the daemon host. openenvd accepts stable OpenShell `>=0.1.2,<0.2`.
+and OpenSSH (`ssh`) on the machine that runs the daemon. openenvd accepts stable OpenShell `>=0.1.2,<0.2`.
 Configure a reachable gateway using the
 [OpenShell gateway guide](https://docs.nvidia.com/openshell/latest/how-it-works/gateways/overview)
 and name it in the manifest. The gateway must support Landlock ABI 3 or newer. The daemon
@@ -125,7 +143,7 @@ python -m openenv.core.openenvd \
 
 **Factory.** An explicit `--factory` builds the environment without arguments. For standard
 apps built with `create_app`, omit `--factory` and the daemon discovers the factory and
-action class by importing the manifest's app on the daemon host. Those modules must also be
+action class by importing the manifest's app in the daemon. Those modules must also be
 importable inside the sandbox image.
 
 **Arguments.**
