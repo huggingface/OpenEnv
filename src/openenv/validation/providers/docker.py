@@ -504,12 +504,12 @@ class DockerRunningSubject:
         Returns:
             `dict`: a validated [`~openenv.validation.runtime.contracts.NetworkEvidence`].
         """
+        _ensure_image(self._helper_image)
         deadline = time.monotonic() + timeout_s
 
         def remaining():
             return deadline - time.monotonic()
 
-        _ensure_image(self._helper_image)
         self._start_helper(remaining())
         sink = f"{self.name}-sink"
         self._owned_create(

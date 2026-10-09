@@ -1,6 +1,7 @@
 """Docker-local no-network launch and network measurement, against a fake engine."""
 
 import json
+import types
 
 import pytest
 from openenv.validation.manifest import NetworkPolicy, ResourceDeclaration
@@ -190,6 +191,30 @@ def test_measure_network_assembles_validated_evidence(engine):
     assert f"{subject.name}-sink" not in engine.containers
     subject.stop()
     assert engine.containers == {}
+
+
+def test_helper_image_pull_does_not_consume_the_measurement_budget(monkeypatch):
+    fake = FakeEngine()
+    monkeypatch.setattr(docker, "_command", fake)
+    subject = docker.DockerValidationProvider().start(launch_spec())
+    clock = [0.0]
+    monkeypatch.setattr(
+        docker, "time", types.SimpleNamespace(monotonic=lambda: clock[0])
+    )
+    fake.image_present = False
+    budgets = []
+
+    def slow_pull(argv, timeout_s, max_bytes=docker._MAX_OUTPUT):
+        if argv[1] == "pull":
+            clock[0] += 1000
+        elif clock[0]:
+            budgets.append(timeout_s)
+        return fake(argv, timeout_s, max_bytes)
+
+    monkeypatch.setattr(docker, "_command", slow_pull)
+    subject.measure_network(timeout_s=120)
+    assert budgets and min(budgets) > 0
+    subject.stop()
 
 
 @pytest.mark.parametrize(
