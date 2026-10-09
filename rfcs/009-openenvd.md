@@ -25,9 +25,12 @@ surface bound to a declared policy. It splits into two layers:
    openenvd **refuses to start** instead of running with weaker isolation than the manifest
    claims.
 
-The openenvd daemon runs on the trusted side and hosts every privileged surface. The
-environment runs as a worker inside a fresh sandbox per episode. Oracles and other privileged
-processes run in their own short-lived sandboxes. Two backends ship: `openshell`
+An openenvd environment is still one OpenEnv environment. Principals reach it only through the
+daemon's surfaces. Inside it, the trusted daemon drives a backend that runs the untrusted
+workload:
+
+- the environment worker, in a fresh sandbox per episode;
+- oracles and other privileged processes, each in its own short-lived sandbox. Two backends ship: `openshell`
 ([NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell), kernel-enforced, provides every
 guarantee) and `local` (host subprocesses, provides none, for development).
 
@@ -68,8 +71,8 @@ solution was out of reach. Isolation claims must be checkable, and must fail clo
 
 ### Goals
 
-1. One trusted component (the daemon) owns lifecycle, privileged surfaces and privileged assets,
-   outside the workload's reach.
+1. One trusted component inside the environment (the daemon) owns lifecycle, privileged
+   surfaces and privileged assets, outside the workload's reach.
 2. Generalize the dual API boundary into policy-scoped surfaces for four principals.
 3. A first-class grader surface: privileged tools never reachable from the agent's surface.
 4. Make the harness boundary structural: harnesses run inside the workload sandbox, and are
@@ -99,20 +102,39 @@ the reserved namespaces is decidable: `*`, `gr*`, `r*` and `[r]eset` are all rej
 
 ### Topology
 
+The OpenEnv environment is the outer boundary. Principals connect only to the daemon's surfaces,
+which are the environment's entire public interface. With the `openshell` backend the inside
+nests as follows:
+
 ```
-              trusted side                         │   untrusted side (backend sandboxes)
-                                                   │
- orchestrator ─┐                                   │   ┌─ episode sandbox (one per episode) ──┐
- grader ───────┼─▶ openenvd daemon :8100           │   │  worker  (env factory + actions)     │
- observer ─────┘     surfaces · tokens · runtime   │──▶│  workload processes (harness, ...)   │
- agent ──────────▶   /mcp (agent policy)           │   │  127.0.0.1:8000/mcp  agent-only      │
-                     private dir (0700):           │   │  /sandbox/workspace  (seed copy)     │
-                       seed, assets, snapshots     │   └──────────────────────────────────────┘
-                                                   │   ┌─ privileged sandbox (per run) ───────┐
-                                                   │──▶│  oracle / privileged process         │
-                                                   │   │  workspace snapshot + assets         │
-                                                   │   └──────────────────────────────────────┘
+            ┌─ OpenEnv environment ───────────────────────────────────────────────────────────────────┐
+ orchestr. ─┼▶ openenvd daemon :8100 (trusted)     OpenShell runtime (gateway + driver)               │
+ grader ────┼▶   surfaces · tokens · runtime  ──▶  ┌─ OpenShell sandbox (per episode) ──────────┐     │
+ observer ──┼▶   private dir (0700):               │ supervisor container                       │     │
+ agent ─────┼▶     seed, assets, snapshots         │ ┌─ workload container ───────────────┐     │     │
+            │                                      │ │ workload (untrusted):              │     │     │
+            │                                      │ │  worker, harness, ...              │     │     │
+            │                                      │ │  127.0.0.1:8000/mcp                │     │     │
+            │                                      │ │  /sandbox/workspace                │     │     │
+            │                                      │ └────────────────────────────────────┘     │     │
+            │                                      └────────────────────────────────────────────┘     │
+            │                                      ┌─ OpenShell sandbox (per privileged run) ───┐     │
+            │                                      │ oracle / rubric + snapshot + assets        │     │
+            │                                      └────────────────────────────────────────────┘     │
+            └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+Terms used below:
+
+- **Workload:** the untrusted code. That is the environment worker, its declared workload
+  processes and the workspace.
+- **Backend sandbox:** openenvd's generic `Sandbox` interface (`start`, `spawn`, `download`,
+  `close`).
+- **OpenShell sandbox:** how the `openshell` backend implements a backend sandbox. It is a
+  supervisor container plus a workload container under one policy, created by the OpenShell
+  runtime.
+- With the `local` backend, the workload runs as host subprocesses in a temporary directory,
+  and there are no OpenShell or container boundaries.
 
 - **The daemon is the only holder of privilege.** Principal tokens, backend credentials (for
   example OpenShell gateway credentials), privileged assets and the pristine seed stay in its
@@ -290,6 +312,22 @@ A process that exits does not restart; the orchestrator decides whether to reset
    worker, workload processes and sandbox lifecycle. `fs_diff` samples snapshots. `network` and
    `resource` streams are rejected until backend telemetry is integrated.
 
+### Packaging one environment
+
+The environment is logically one unit. Physically, whatever creates the sandboxes has to sit
+above them, so packaging the whole environment as one deployable means granting it the power to
+create isolated workloads:
+
+| Packaging | The environment needs | OpenShell sandboxes are |
+|-----------|-----------------------|-------------------------|
+| Daemon and gateway as host services (this RFC's implementation) | OpenShell CLI and a gateway on the machine | Sibling containers |
+| One container, microVM driver | `/dev/kvm` passed through | Nested microVMs |
+| One container, Docker driver | The host's Docker socket (effectively host root) | Sibling containers |
+| One Kubernetes pod, Kubernetes driver | Permission to create pods | Sibling pods |
+
+Where nothing can grant that power (HF Spaces, for example), an environment that requires
+guarantees refuses to start. Single-container packaging is future work.
+
 ### Where guarantees are available
 
 | Deployment | `openshell` | `local` |
@@ -342,3 +380,6 @@ Two stacked PRs:
 - **RFC 008:** run the contract checks and OpenShell's policy prover in `openenv validate`.
 - **Mid-episode grader policy:** for example, a grader may connect only after `done`.
 - **More backends:** gVisor, Firecracker, and cloud sandbox providers.
+- **Single-container packaging:** an image bundling the daemon, the OpenShell gateway and the
+  microVM driver, with a declared host requirement (such as KVM) that refuses cleanly when
+  absent.

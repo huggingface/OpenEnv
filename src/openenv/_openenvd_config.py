@@ -411,7 +411,7 @@ class OpenEnvDConfig(BaseModel):
             Declared surface per principal.
         privileged_assets (`dict[str, str]`):
             Asset name to a path relative to the daemon's asset root. Assets stay on
-            the daemon host and never enter the episode sandbox.
+            the daemon and never enter a workload sandbox.
         workload ([`~openenv.core.openenvd.policy.WorkloadPaths`]):
             Filesystem the workload may touch.
         egress ([`~openenv.core.openenvd.policy.EgressPolicy`]):

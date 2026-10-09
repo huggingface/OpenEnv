@@ -6,7 +6,7 @@ The openenvd contract becomes an OpenShell policy (Landlock filesystem rules, a
 non-root identity, default-deny egress). After creation the backend checks that
 the gateway admitted exactly that policy, then reaches the workload only over
 the sandbox's authenticated SSH transport. Gateway credentials stay on the
-daemon host and are never forwarded into the sandbox.
+daemon and are never forwarded into the sandbox.
 """
 
 from __future__ import annotations
@@ -107,13 +107,13 @@ class OpenShellBackend(EnforcementBackend):
 
     Provides every [`~openenv.core.openenvd.policy.Guarantee`]:
 
-    - `asset_isolation`: assets stay on the daemon host and the sandbox's
+    - `asset_isolation`: assets stay with the daemon and the sandbox's
       Landlock policy confines it to its own filesystem.
     - `egress_control`: the sandbox's network namespace only reaches declared
       destinations through OpenShell's policy proxy.
     - `privilege_drop`: the workload runs as a positive numeric uid/gid under
       OpenShell's seccomp filter.
-    - `control_plane_isolation`: openenvd's surfaces run on the daemon host,
+    - `control_plane_isolation`: openenvd's surfaces run in the daemon,
       and OpenShell never authorizes loopback or link-local destinations. Do not
       add the daemon's own address to the egress allowlist.
 
