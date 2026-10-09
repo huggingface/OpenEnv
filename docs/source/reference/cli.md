@@ -194,6 +194,57 @@ pass the key through `OPENAI_API_KEY` instead.
 
 [[autodoc]] openenv.cli.commands.collect.collect
 
+## `openenv harbor`
+
+Runs [Harbor](../environments/harbor) tasks with real coding agents and
+captures the token ids and logprobs of every model call. Requires
+`pip install "openenv[harbor]"` (Python 3.12 or newer).
+
+| Command | What it does |
+|---------|--------------|
+| `openenv harbor info` | Reports the endpoint's capture level and which sandboxes, datasets and harnesses this machine can use. Boots nothing. |
+| `openenv harbor rollout` | Runs one or more rollouts end to end without a server. |
+| `openenv harbor serve` | Serves Harbor tasks over the Task API and MCP, with a UI at `/web`. |
+| `openenv harbor push` | Deploys the same server to a Hugging Face Space. |
+
+```bash
+openenv harbor info --llm-url $LLM --dataset AdithyaSK/data_agent_rl_environment_eval
+
+openenv harbor rollout --llm-url $LLM \
+    --dataset AdithyaSK/data_agent_rl_environment_eval \
+    --task-index 0 --harness opencode --sandbox e2b --out rollout.json
+
+openenv harbor serve --llm-url $LLM --dataset org/train,org/eval
+```
+
+`--llm-url` is any OpenAI-compatible endpoint. Rollouts carry token ids only
+when it returns them (vLLM with `--return-tokens-as-token-ids
+--logprobs-mode processed_logprobs`, or SGLang). `--api-key` defaults to
+`$OPENENV_LLM_API_KEY`. Run `openenv harbor <command> --help` for every flag,
+and see the [Harbor environment page](../environments/harbor#cli-reference)
+for details.
+
+## `openenv catalog` and `openenv discover`
+
+Build a versioned, metadata-only catalog of environments from a Git
+repository, then search it before installing or running anything. See
+[Discover environments before running them](../guides/catalog-discovery).
+
+```bash
+openenv catalog build --repository . \
+    --repository-uri https://github.com/huggingface/OpenEnv.git \
+    --publisher example.org --output catalog.json
+
+openenv discover "client smoke test" --catalog catalog.json
+openenv discover "" --catalog catalog.json --filter license=BSD-3-Clause
+openenv catalog inspect "<identifier from the result>" --catalog catalog.json
+```
+
+`catalog build` reads committed `openenv.yaml` files under `--root` (default
+`envs`) at `--revision` (default `HEAD`). `discover` ranks entries by query
+match (`--limit`, default 20) and `--json` emits the full entries.
+`catalog inspect` prints one entry by its exact identifier.
+
 # API Reference
 
 ## Entry point

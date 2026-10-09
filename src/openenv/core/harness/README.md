@@ -7,6 +7,10 @@ through an LLM + MCP-style tool loop.
   `ResourceSession`, `ResourceSessionFactory`, `StepEnvSessionAdapter`,
   `HarnessAdapter`, `MCPHarnessAdapter`, `CLIHarnessAdapter`,
   `build_harness_rollout_func`, etc.
+- `environment.py`, `adapter.py` — `HarnessEnvironment` and
+  `AgenticHarnessAdapter` (RFC 005), to run an external agentic harness inside
+  an environment, one conversational turn per `step()`. Worked example:
+  [`examples/claude_code_harness_eval`](../../../../examples/claude_code_harness_eval).
 - `collect.py` — synthetic dataset generation on top of the runtime:
   `EpisodeRecord`, `RolloutSerializer`, `CollectRunner`, `build_model_step`,
   `push_to_hf_hub`.

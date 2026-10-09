@@ -168,6 +168,14 @@ For dataset-backed environments that publish enumerable tasks and splits, see th
 
 [[autodoc]] openenv.core.client_types.StepResult
 
+## Auto classes
+
+Load an environment client or its action class by name or Hub repo id, without importing the package. See [Auto-discovery](../guides/auto-discovery).
+
+[[autodoc]] openenv.auto.auto_env.AutoEnv
+
+[[autodoc]] openenv.auto.auto_action.AutoAction
+
 ## MCP (Model Context Protocol)
 
 ### MCP environment
@@ -209,6 +217,34 @@ For dataset-backed environments that publish enumerable tasks and splits, see th
 [[autodoc]] openenv.core.mcp_client.MCPClientBase
 
 [[autodoc]] openenv.core.mcp_client.MCPToolClient
+
+## Harnesses
+
+All classes below are importable from `openenv.core.harness`. See [Harnesses in OpenEnv](../tutorials/harnesses) for when to use each path.
+
+### Agent inside the environment (RFC 005)
+
+[[autodoc]] openenv.core.harness.environment.HarnessEnvironment
+
+[[autodoc]] openenv.core.harness.environment.HarnessAction
+
+[[autodoc]] openenv.core.harness.adapter.AgenticHarnessAdapter
+
+### Rollout sessions
+
+[[autodoc]] openenv.core.harness.rollout.ResourceSessionFactory
+
+### Training captures
+
+[[autodoc]] openenv.core.harness.training.TrainingTrace
+
+[[autodoc]] openenv.core.harness.training.TrainingTurn
+
+## Evaluation
+
+See [Evaluating with Environments](../tutorials/evaluation-inspect) for a worked example.
+
+[[autodoc]] openenv.core.evals.inspect_harness.InspectAIHarness
 
 ## Rubrics
 
@@ -255,3 +291,5 @@ For dataset-backed environments that publish enumerable tasks and splits, see th
 [[autodoc]] openenv.core.containers.runtime.modal_provider.ModalProvider
 
 [[autodoc]] openenv.core.containers.runtime.novita_provider.NovitaSandboxProvider
+
+[[autodoc]] openenv.core.containers.runtime.hf_sandbox_provider.HFSandboxProvider

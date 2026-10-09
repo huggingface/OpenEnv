@@ -109,6 +109,16 @@ This is the right mode when:
 - you do not want callers controlling episode boundaries
 - the MCP interface is the product surface
 
+### Harness Environments: `WS /harness`
+
+When the environment factory produces a [`HarnessEnvironment`](https://github.com/huggingface/OpenEnv/blob/main/rfcs/005-agentic-harnesses.md) (RFC 005: an agent harness such as Claude Code running inside the environment), production mode also registers a `/harness` WebSocket, so clients talk to the harness itself:
+
+- each connection gets its own session, which starts the harness and injects the environment's tools, and the server answers with a `session_started` frame
+- each `{"type": "message", "content": "..."}` frame is one conversational turn, streamed back as harness events that end with `turn_complete`
+- a turn is bounded by the harness config's `session_timeout_s`, and a failure ends the session with an `error` event
+
+[Evaluate Claude Code in an Environment](../tutorials/claude-code-harness) serves a harness this way.
+
 ## How MCP Fits Into Both Modes
 
 MCP is available in both modes, but the role is different.
@@ -133,7 +143,19 @@ MCP is the primary interface.
 
 ## Server-Side Configuration
 
-The server-side switch happens when routes are registered.
+Pass the mode to `create_app`, or set `OPENENV_MODE` (`simulation` or `production`) when the app is created without one. Simulation is the default.
+
+```python
+from openenv.core.env_server.http_server import create_app
+
+app = create_app(MyEnv, MyAction, MyObservation, mode="production")
+```
+
+```bash
+OPENENV_MODE=production uvicorn server.app:app --host 0.0.0.0 --port 8000
+```
+
+The switch happens when routes are registered, so with `HTTPEnvServer` directly:
 
 ```python
 from fastapi import FastAPI
@@ -225,3 +247,4 @@ That is not the model OpenEnv uses.
 - [Getting Started Tutorials](../tutorials/index)
 - [RFC 002: Environment Spec](https://github.com/huggingface/OpenEnv/blob/main/rfcs/002-env-spec.md)
 - [RFC 005: Agentic Harnesses](https://github.com/huggingface/OpenEnv/blob/main/rfcs/005-agentic-harnesses.md)
+- [Evaluate Claude Code in an Environment](../tutorials/claude-code-harness): a harness served in both modes
