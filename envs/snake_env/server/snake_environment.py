@@ -12,7 +12,7 @@ This implementation provides a single-agent interface by wrapping the
 multi-agent marlenv environment.
 """
 
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
 import gym
@@ -182,6 +182,41 @@ class SnakeEnvironment(Environment):
         self._episode_score = 0.0
         self._episode_fruits = 0
         self._episode_kills = 0
+
+    def web_actions(
+        self, observation: Dict[str, Any]
+    ) -> List[Tuple[str, Dict[str, Any]]]:
+        """The moves as buttons, named for the observer's action space."""
+        if self.base_env.observer == "human":
+            names = ["noop", "left", "right", "down", "up"]
+        else:
+            names = ["straight", "turn left", "turn right"]
+        return [(f"{a} · {name}", {"action": a}) for a, name in enumerate(names)]
+
+    def render_web(self, observation: Dict[str, Any]) -> Optional[str]:
+        """Draw the grid: walls, the fruit, and the snake with its head highlighted."""
+        grid = observation.get("grid") or []
+        if not grid:
+            return None
+        styles = {
+            0: "background:var(--background-fill-primary);border-radius:2px",
+            1: "background:var(--border-color-primary);border-radius:2px",
+            2: "background:var(--body-text-color);border-radius:50%",
+            3: "background:var(--color-accent);border-radius:4px",
+        }
+        body = "background:var(--color-accent);opacity:0.45;border-radius:2px"
+        cells = [
+            f'<span style="{styles.get(value, body)}"></span>'
+            for row in grid
+            for value in row
+        ]
+        return (
+            '<div role="img" aria-label="Snake board" style="display:inline-grid;'
+            f"grid-template-columns:repeat({len(grid[0])},16px);grid-auto-rows:16px;gap:2px;padding:10px;"
+            'border:1px solid var(--border-color-primary);border-radius:10px;background:var(--background-fill-secondary)">'
+            + "".join(cells)
+            + "</div>"
+        )
 
     def reset(self) -> SnakeObservation:
         """
