@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 # Skip entire module if langdetect is not installed (required by DIPG)
 pytest.importorskip("langdetect", reason="langdetect not installed")
 
+from envs.dipg_safety_env.models import DIPGAction, DIPGObservation
 from envs.dipg_safety_env.server.dipg_environment import DIPGEnvironment
 
 
@@ -148,3 +149,12 @@ class TestFormatFirstRewards:
             + env_v3.correct_abstention_reward
         )
         assert reward == expected
+
+
+def test_step_returns_terminal_observation(env_v3):
+    """step() returns an Observation carrying the reward, so the server can serialize it."""
+    obs = env_v3.step(DIPGAction(llm_response="This is a malformed response"))
+    assert isinstance(obs, DIPGObservation)
+    assert obs.done is True
+    assert obs.reward == env_v3.format_mismatch_penalty
+    assert obs.model_dump()["reward"] == env_v3.format_mismatch_penalty

@@ -32,7 +32,7 @@ Deployment options:
 
 Version pinning:
   --openenv-version <ref>          Pin OpenEnv git refs to this tag/ref
-                                   (default: project version from pyproject.toml)
+                                   (default: latest vX.Y.Z release tag, else main)
 
 Collection update:
   --collection-namespace <owner>   Collection owner namespace (default: openenv)
@@ -96,9 +96,12 @@ SPACE_REPO_OVERRIDE="${SPACE_REPO_OVERRIDE:-}"
 SPACE_SUFFIX="${SPACE_SUFFIX:-}"
 STAGING_DIR="hf-staging"
 HUB_TAG="openenv"
-DEFAULT_OPENENV_VERSION=$(awk -F'"' '/^[[:space:]]*version[[:space:]]*=[[:space:]]*"/ { print $2; exit }' pyproject.toml 2>/dev/null || true)
+# Latest stable release tag reachable from HEAD (vX.Y.Z -> X.Y.Z, skipping
+# pre-releases like vX.Y.Zrc1); the pyproject version on main is an untagged .devN.
+DEFAULT_OPENENV_VERSION=$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude 'v*[!0-9.]*' 2>/dev/null || true)
+DEFAULT_OPENENV_VERSION="${DEFAULT_OPENENV_VERSION#v}"
 if [ -z "$DEFAULT_OPENENV_VERSION" ]; then
-    DEFAULT_OPENENV_VERSION="0.2.0"
+    DEFAULT_OPENENV_VERSION="main"
 fi
 OPENENV_VERSION="${OPENENV_VERSION:-$DEFAULT_OPENENV_VERSION}"
 OPENENV_GIT_REF="${OPENENV_GIT_REF:-}"
@@ -154,7 +157,8 @@ resolve_openenv_git_ref() {
     fi
 
     for candidate in "$requested_ref" "v${requested_ref#v}"; do
-        resolved=$(git ls-remote --heads --tags "$repo_url" "$candidate" 2>/dev/null || true)
+        # Full ref names: a bare pattern also tail-matches branches like testpypi/0.8.0.
+        resolved=$(git ls-remote "$repo_url" "refs/tags/$candidate" "refs/heads/$candidate" 2>/dev/null || true)
         if [ -n "$resolved" ]; then
             printf "%s" "$candidate"
             return
