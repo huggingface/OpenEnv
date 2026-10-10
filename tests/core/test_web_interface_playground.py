@@ -6,6 +6,7 @@ import asyncio
 import importlib
 import json
 import sys
+from typing import Literal
 
 import gradio as gr
 import pytest
@@ -197,6 +198,18 @@ def test_form_sends_defaults_skips_empty_optionals_and_requires_fields():
         form.values([raw[n] for n, _ in form.names])
 
 
+class TurnAction(Action):
+    direction: Literal["LEFT", "RIGHT"]
+    speed: Literal["slow", "fast"] | None = None
+
+
+def test_required_choice_starts_on_its_first_option():
+    with gr.Blocks():
+        form = _Form(_params(TurnAction.model_json_schema()))
+    assert [i.value for i in form.inputs] == ["LEFT", None]
+    assert form.values([i.value for i in form.inputs]) == {"direction": "LEFT"}
+
+
 def test_description_falls_back_to_the_readme():
     readme = "---\ntitle: X\n---\n# Catch\n\n> [!NOTE]\n> hi\n\nMove the [paddle](x) to catch the ball.\n"
     meta = EnvironmentMetadata(
@@ -240,6 +253,19 @@ def test_secret_arguments_are_masked_in_the_episode():
 
     assert outputs[6][-1][1] == 'step(user="ana", api_key=***)'
     assert "sk-123" not in outputs[5]
+
+
+def test_long_arguments_are_cut_in_the_episode():
+    manager = WebInterfaceManager(TinyEnv(), LoginAction, BoardObservation)
+    blocks = build_gradio_app(manager, _extract_action_fields(LoginAction), None, False)
+    step_fn = next(f.fn for f in blocks.fns.values() if f.fn.__name__ == "step_fn")
+    svg = "<svg>" + "<circle r='1'/>" * 100 + "</svg>"
+
+    outputs = asyncio.run(step_fn([], svg, "sk-123"))
+
+    call = outputs[6][-1][1]
+    assert call.startswith('step(user="<svg><circle') and "…, api_key=***)" in call
+    assert len(call) < 100
 
 
 def test_enter_in_a_text_field_runs_the_step():

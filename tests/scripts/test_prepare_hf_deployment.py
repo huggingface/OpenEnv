@@ -320,3 +320,39 @@ def test_prepare_hf_deployment_pins_release_tag_not_matching_branch(
     assert '"openenv @ git+https://github.com/huggingface/OpenEnv.git@v0.8.0"' in (
         pyproject_text
     )
+
+
+def test_prepare_hf_deployment_keeps_the_env_description_first(tmp_path: Path) -> None:
+    """The web interface describes the env with the README's first paragraph."""
+    from openenv.core.env_server.gradio_ui import _description
+    from openenv.core.env_server.types import EnvironmentMetadata
+
+    repo_root = Path(__file__).resolve().parents[2]
+    staging_dir = tmp_path / "hf-staging"
+    result = subprocess.run(
+        [
+            "bash",
+            str(repo_root / "scripts" / "prepare_hf_deployment.sh"),
+            "--env",
+            "chess_env",
+            "--repo-id",
+            "openenv/chess",
+            "--dry-run",
+            "--skip-collection",
+            "--staging-dir",
+            str(staging_dir),
+        ],
+        cwd=repo_root,
+        env={**os.environ, "OPENENV_VERSION": "main"},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+    readme = (staging_dir / "openenv" / "chess" / "README.md").read_text()
+    meta = EnvironmentMetadata(
+        name="chess_env", description="chess_env environment", readme_content=readme
+    )
+    assert _description(meta).startswith("A chess reinforcement learning environment")
+    assert "This Space is built from OpenEnv environment `chess_env`" in readme

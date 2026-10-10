@@ -201,9 +201,9 @@ def _params(schema: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any], bool]]:
 
 
 def _call_args(arguments: Dict[str, Any]) -> str:
-    """Arguments as `name=value` for the episode log, with secrets masked."""
+    """Arguments as `name=value` for the episode log, with secrets masked and long values cut."""
     return ", ".join(
-        f"{k}={'***' if k.lower().endswith(_SECRET_NAMES) else json.dumps(v)}"
+        f"{k}={'***' if k.lower().endswith(_SECRET_NAMES) else _short(json.dumps(v), 60)}"
         for k, v in arguments.items()
     )
 
@@ -226,8 +226,10 @@ def _param_input(
     info = (schema.get("description") or "").strip()[:200] or None
 
     if "enum" in schema:
+        # A required choice starts on its first option, so the form can run as is.
+        value = schema["enum"][0] if required else default
         return (
-            gr.Dropdown(choices=schema["enum"], value=default, label=label, info=info),
+            gr.Dropdown(choices=schema["enum"], value=value, label=label, info=info),
             lambda v: None if _blank(v) else v,
         )
     if kind == "boolean":
