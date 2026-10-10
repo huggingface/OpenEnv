@@ -263,20 +263,19 @@ class PelicanSvgEnvironment(
 
     def render_web(self, observation: dict[str, Any]) -> Optional[str]:
         """Draw the task on reset, then the submitted SVG next to its scores."""
-        if not observation.get("prompt"):
+        if "prompt" not in observation:
             return None
-        breakdown = observation.get("breakdown")
+        breakdown = observation["breakdown"]
         if not breakdown:
             return (
-                '<div role="img" aria-label="Drawing task" style="max-width:500px;padding:10px;'
+                '<div style="max-width:500px;padding:10px;'
                 "border:1px solid var(--border-color-primary);border-radius:10px;"
                 'background:var(--background-fill-secondary);color:var(--body-text-color)">'
                 f"{html.escape(observation['prompt'])}</div>"
             )
-        # An <img> renders the SVG without running any script it carries. White,
-        # like the canvas it is scored on.
+        # An <img> renders the SVG without running any script it carries.
         picture = (
-            f'<img alt="Submitted SVG" src="data:image/svg+xml;base64,'
+            f'<img alt="Pelican SVG drawing" src="data:image/svg+xml;base64,'
             f'{base64.b64encode(self._svg.encode()).decode()}" style="width:200px;height:200px;'
             'object-fit:contain;background:white;border:1px solid var(--border-color-primary);border-radius:6px">'
             if self._svg
@@ -284,21 +283,22 @@ class PelicanSvgEnvironment(
         )
         lines = [
             f"<b>reward {breakdown['reward']:.2f}</b>",
-            f"gate: {'passed' if observation.get('gate_passed') else 'rejected'}",
-            f"structure: {observation.get('structure_score', 0):.2f}",
-            f"judge: {observation.get('semantic_score', 0):.2f}"
-            if observation.get("judged")
+            f"gate: {'passed' if observation['gate_passed'] else 'rejected'}",
+            f"structure: {observation['structure_score']:.2f}",
+            f"judge: {observation['semantic_score']:.2f}"
+            if observation["judged"]
             else "judge: off",
         ]
-        lines += [
-            f"{'✓' if ok else '✗'} {html.escape(item)}"
-            for item, ok in (breakdown["judge"] or {}).get("checklist", {}).items()
-        ]
+        if breakdown["judge"]:
+            lines += [
+                f"{'✓' if ok else '✗'} {html.escape(item)}"
+                for item, ok in breakdown["judge"]["checklist"].items()
+            ]
         lines.append(
-            f'<span style="opacity:.75">{html.escape(observation.get("feedback", ""))}</span>'
+            f'<span style="opacity:.75">{html.escape(observation["feedback"])}</span>'
         )
         return (
-            '<div role="img" aria-label="Submitted drawing and its scores" style="display:flex;'
+            '<div style="display:flex;'
             "flex-wrap:wrap;gap:12px;max-width:500px;padding:10px;border:1px solid var(--border-color-primary);"
             'border-radius:10px;background:var(--background-fill-secondary);color:var(--body-text-color)">'
             + picture

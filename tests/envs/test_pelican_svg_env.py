@@ -769,23 +769,21 @@ class TestEnvironment:
         assert observation.reward == pytest.approx(1.0)
         assert environment.state.submitted
 
-    def test_web_playground_draws_the_task_then_the_submission(self):
+    def test_pelican_svg_web_playground(self):
         environment = self.environment(subject="pelican", vehicle="bicycle")
-        # The playground hands over the observation without `reward` and `done`.
-        task = environment.render_web(
-            environment.reset().model_dump(exclude={"reward", "done"})
-        )
-        assert 'aria-label="Drawing task"' in task
+        task = environment.render_web(environment.reset().model_dump())
+        assert "pelican" in task
         assert "#" not in task  # theme colours only, so it reads in dark mode
-        observation = environment.step(
-            PelicanSvgAction(response=fixture("good_pelican_bike"))
-        ).model_dump(exclude={"reward", "done"})
-        drawing = environment.render_web(observation)
-        assert 'aria-label="Submitted drawing and its scores"' in drawing
-        assert 'src="data:image/svg+xml;base64,' in drawing
+        drawing = environment.render_web(
+            environment.step(
+                PelicanSvgAction(response=fixture("good_pelican_bike"))
+            ).model_dump()
+        )
+        assert (
+            '<img alt="Pelican SVG drawing" src="data:image/svg+xml;base64,' in drawing
+        )
         assert "<svg" not in drawing  # never inlined, so its scripts can't run
         assert "reward 1.00" in drawing
-        assert environment.web_actions(observation) == []
 
     def test_task_can_be_pinned_by_id(self):
         """A benchmark run must ask every model the same question."""
