@@ -206,7 +206,7 @@ class SnakeEnvironment(Environment):
         }
         body = "background:var(--color-accent);opacity:0.45;border-radius:2px"
         cells = [
-            f'<span style="{styles.get(value, body)}"></span>'
+            f'<span style="{styles.get(value % 10, body)}"></span>'
             for row in grid
             for value in row
         ]

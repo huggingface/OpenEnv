@@ -28,3 +28,5 @@ def test_snake_offers_moves_and_a_board():
     assert board.count("<span") == 100
     assert "#" not in board  # theme colours only, so it reads in dark mode
     assert env.render_web({}) is None
+    # marlenv adds 10 * snake index to its cells, so a second snake's head (13) is a head too
+    assert "border-radius:4px" in env.render_web({"grid": [[13, 14]]})
