@@ -28,16 +28,14 @@ Usage:
     python -m server.app
 """
 
+from openenv.core.env_server.http_server import create_app
+
 # Support both in-repo and standalone imports
 try:
-    # In-repo imports (when running from OpenEnv repository)
-    from openenv.core.env_server.http_server import create_app
-
     from ..models import MazeAction, MazeObservation
     from .maze_env_environment import MazeEnvironment
 except ImportError:
     from models import MazeAction, MazeObservation
-    from openenv.core.env_server.http_server import create_app
     from server.maze_env_environment import MazeEnvironment
 
 

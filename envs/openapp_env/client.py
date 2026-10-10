@@ -13,20 +13,14 @@ over HTTP.
 
 from typing import Any, Dict
 
+from openenv.core.client_types import StepResult
+from openenv.core.env_client import EnvClient
+from openenv.core.env_server.types import State
+
 # Support both in-repo and standalone imports
 try:
-    # In-repo imports (when running from OpenEnv repository)
-    from openenv.core.client_types import StepResult
-    from openenv.core.env_client import EnvClient
-    from openenv.core.env_server.types import State
-
     from .models import OpenAppAction, OpenAppObservation
 except ImportError:
-    # Standalone imports when openenv is available.
-    from openenv.core.client_types import StepResult
-    from openenv.core.env_client import EnvClient
-    from openenv.core.env_server.types import State
-
     from openapp_env.models import OpenAppAction, OpenAppObservation
 
 

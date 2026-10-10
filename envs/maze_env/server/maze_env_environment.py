@@ -13,17 +13,14 @@ A simple gridworld maze with walls, a start cell, and an exit.
 from typing import Any, Optional, Tuple
 from uuid import uuid4
 
+from openenv.core.env_server.interfaces import Environment
+from openenv.core.env_server.types import State
+
 # Support both in-repo and standalone imports
 try:
-    # In-repo imports (when running from OpenEnv repository)
-    from openenv.core.env_server.interfaces import Environment
-    from openenv.core.env_server.types import State
-
     from ..models import MazeAction, MazeObservation, MazeState
 except ImportError:
     from models import MazeAction, MazeObservation, MazeState
-    from openenv.core.env_server.interfaces import Environment
-    from openenv.core.env_server.types import State
 
 from .maze import Maze, Render, Status
 
