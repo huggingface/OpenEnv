@@ -18,7 +18,7 @@ import io
 import os
 from pathlib import Path
 from sys import platform
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
 import numpy as np
@@ -28,7 +28,7 @@ try:
     # In-repo imports (when running from OpenEnv repository root)
     from openenv.core.env_server.interfaces import Environment
 
-    from ..models import UnityAction, UnityObservation, UnityState
+    from ..models import PUSHBLOCK_ACTIONS, UnityAction, UnityObservation, UnityState
 except ImportError:
     # openenv from pip
     from openenv.core.env_server.interfaces import Environment
@@ -42,14 +42,24 @@ except ImportError:
         _parent = str(Path(__file__).parent.parent)
         if _parent not in sys.path:
             sys.path.insert(0, _parent)
-        from models import UnityAction, UnityObservation, UnityState
+        from models import PUSHBLOCK_ACTIONS, UnityAction, UnityObservation, UnityState
     except ImportError:
         try:
             # Package installed as unity_env
-            from unity_env.models import UnityAction, UnityObservation, UnityState
+            from unity_env.models import (
+                PUSHBLOCK_ACTIONS,
+                UnityAction,
+                UnityObservation,
+                UnityState,
+            )
         except ImportError:
             # Running from OpenEnv root with envs prefix
-            from envs.unity_env.models import UnityAction, UnityObservation, UnityState
+            from envs.unity_env.models import (
+                PUSHBLOCK_ACTIONS,
+                UnityAction,
+                UnityObservation,
+                UnityState,
+            )
 
 
 # Persistent cache directory to avoid re-downloading environment binaries
@@ -368,6 +378,34 @@ class UnityMLAgentsEnvironment(Environment):
             action_spec_info=self._state.action_spec,
             observation_spec_info=self._state.observation_spec,
         )
+
+    def render_web(self, observation: Dict[str, Any]) -> Optional[str]:
+        """Draw the agent's camera image, when the observation carries one."""
+        images = observation.get("visual_observations")
+        if not images:
+            return None
+        return (
+            f'<img role="img" aria-label="{observation.get("behavior_name", "")} camera" '
+            f'src="data:image/png;base64,{images[0]}" '
+            'style="width:336px;max-width:100%;image-rendering:pixelated;'
+            'border:1px solid var(--border-color-primary);border-radius:6px">'
+        )
+
+    def web_actions(
+        self, observation: Dict[str, Any]
+    ) -> List[Tuple[str, Dict[str, Any]]]:
+        """One button per option of a single discrete action branch (PushBlock moves are named)."""
+        branches = observation.get("action_spec_info", {}).get("discrete_branches")
+        if not branches or len(branches) != 1:
+            return []
+        pushblock = observation.get("behavior_name", "").startswith("PushBlock")
+        return [
+            (
+                f"{i} · {PUSHBLOCK_ACTIONS[i]}" if pushblock else f"action {i}",
+                {"discrete_actions": [i]},
+            )
+            for i in range(branches[0])
+        ]
 
     def reset(
         self,
