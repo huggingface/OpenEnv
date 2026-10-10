@@ -17,7 +17,7 @@ import uuid
 
 import chess
 from moonfish.lib import search_move
-from moonfish.psqt import board_evaluation
+from moonfish.psqt import board_evaluation, BOARD_EVALUATION_CACHE
 from openenv.core.env_server import Environment
 
 from ..models import ChessAction, ChessObservation, ChessState
@@ -74,6 +74,10 @@ class ChessEnvironment(Environment):
             Initial observation of the board state.
         """
         self._reset_rubric()
+        # moonfish memoizes the evaluation of every position it sees in a
+        # module-level dict that is never trimmed, so it grows without bound
+        # across episodes.
+        BOARD_EVALUATION_CACHE.clear()
 
         if fen:
             self._board = chess.Board(fen)
