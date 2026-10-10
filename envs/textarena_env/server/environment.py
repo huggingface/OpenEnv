@@ -51,6 +51,7 @@ _WORDLE_TILES = {
     "G": "background:var(--color-accent);color:var(--background-fill-primary);border-color:var(--color-accent)",
     "Y": "color:var(--color-accent);border-color:var(--color-accent);border-style:dashed",
     "X": "background:var(--background-fill-primary);color:var(--body-text-color-subdued);border-color:var(--border-color-primary)",
+    "-": "",
 }
 
 
@@ -253,22 +254,8 @@ class TextArenaEnvironment(Environment):
         return observation
 
     def render_web(self, observation: Dict[str, Any]) -> Optional[str]:
-        """
-        Draw the Wordle board: one row of letter tiles per guess, then empty rows for the guesses left.
-
-        Correct letters are filled with the accent colour, present letters get a dashed accent outline and absent
-        letters are muted. Other TextArena games draw nothing.
-
-        Args:
-            observation (`dict`):
-                Serialized [`TextArenaObservation`].
-
-        Returns:
-            `str` with the board HTML, or `None` when the observation is not a Wordle game.
-        """
-        text = "".join(
-            message["content"] for message in observation.get("messages", [])
-        )
+        """Draw the Wordle board (one row per guess, empty rows for those left); other games draw nothing."""
+        text = "".join(message["content"] for message in observation["messages"])
         attempts = _WORDLE_ATTEMPTS.search(text)
         if attempts is None:
             return None
@@ -281,7 +268,7 @@ class TextArenaEnvironment(Environment):
             'border:2px solid var(--border-color-primary);border-radius:4px;{}">{}</span>'
         )
         cells = [
-            tile.format(_WORDLE_TILES.get(mark, ""), letter)
+            tile.format(_WORDLE_TILES[mark], letter)
             for word, marks in rows
             for letter, mark in zip(word, marks)
         ]

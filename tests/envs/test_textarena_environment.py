@@ -67,7 +67,7 @@ def test_wordle_reset_clears_accumulated_state():
     assert obs2.prompt == obs3.prompt
 
 
-def test_wordle_draws_the_guess_board():
+def test_textarena_web_playground():
     pytest.importorskip("textarena", reason="textarena not installed")
     env = TextArenaEnvironment(env_id="Wordle-v0", num_players=1)
     env.reset()
