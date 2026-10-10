@@ -68,7 +68,7 @@ app = create_app(
     create_reasoning_gym_environment,
     ReasoningGymAction,
     ReasoningGymObservation,
-    env_name="reasoning_gym",
+    env_name="reasoning_gym_env",
     max_concurrent_envs=max_concurrent,
 )
 

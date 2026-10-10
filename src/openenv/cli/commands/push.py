@@ -20,7 +20,7 @@ from .._cli_utils import _extract_hf_username, console, validate_env_structure
 app = typer.Typer(help="Push an OpenEnv environment to Hugging Face Spaces")
 
 
-DEFAULT_PUSH_IGNORE_PATTERNS = [".*", "__pycache__", "*.pyc"]
+DEFAULT_PUSH_IGNORE_PATTERNS = [".*", "__pycache__", "*.pyc", "build/", "*.egg-info"]
 
 
 def _format_kv_entry_for_error(entry: str, *, flag: str) -> str:
@@ -495,6 +495,26 @@ def _upload_to_hf_space(
         upload_kwargs["commit_message"] = commit_message
 
     try:
+        # Delete remote files the env no longer ships: files at the root or under a top-level
+        # directory of the upload that are not uploaded again. Files matching the ignore
+        # patterns (or under a directory that does) and files under other directories (e.g.
+        # added by hand on the Space) are kept.
+        stale_files = [
+            path
+            for path in api.list_repo_files(repo_id, repo_type="space")
+            if not (staging_dir / path).is_file()
+            and ("/" not in path or (staging_dir / path.split("/")[0]).is_dir())
+            and not any(
+                _should_exclude_path(part, ignore_patterns)
+                for part in [Path(path), *Path(path).parents[:-1]]
+            )
+        ]
+        for path in stale_files:
+            console.print(
+                f"[bold yellow]Deleting remote file no longer in the env:[/bold yellow] {path}"
+            )
+        upload_kwargs["delete_patterns"] = stale_files
+
         result = api.upload_folder(**upload_kwargs)
         console.print("[bold green]✓[/bold green] Upload completed successfully")
         if create_pr and result is not None and hasattr(result, "pr_url"):

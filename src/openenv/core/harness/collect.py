@@ -15,7 +15,9 @@ The serialized schema is designed to be consumed directly by TRL's
 
 from __future__ import annotations
 
+import asyncio
 import json
+import threading
 import warnings
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -24,7 +26,6 @@ from typing import Any, BinaryIO, Callable, Iterable, Iterator
 
 from ..env_server.mcp_types import Tool
 from ..llm_client import LLMClient
-from ..utils import run_async_safely
 from .rollout import (
     _resolve_env_reward,
     HarnessAdapter,
@@ -420,6 +421,11 @@ def build_model_step(
     -specific schema conversion lives inside the client; this helper only
     handles the sync/async adaptation and tool dict shape.
     """
+    # Async clients (e.g. `AsyncOpenAI`) bind their connection pool to the loop of
+    # the first request, so every call must run on the same long-lived loop. The loop
+    # lives as long as the process, so build one model step per run, not per episode.
+    loop = asyncio.new_event_loop()
+    threading.Thread(target=loop.run_forever, daemon=True).start()
 
     def model_step(
         messages: list[dict[str, Any]],
@@ -444,13 +450,14 @@ def build_model_step(
             k: v for k, v in sampling.items() if k in _SUPPORTED_SAMPLING_KEYS
         }
 
-        response = run_async_safely(
+        response = asyncio.run_coroutine_threadsafe(
             llm_client.complete_with_tools(
                 messages=effective_messages,
                 tools=tool_dicts,
                 **filtered_sampling,
-            )
-        )
+            ),
+            loop,
+        ).result()
         return ModelStepResult(response=response)
 
     return model_step

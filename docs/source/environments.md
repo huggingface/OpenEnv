@@ -312,7 +312,7 @@ The OpenEnv community has built a catalog of ready-to-run environments that cove
 </div>
 
 > [!TIP]
-> Want to publish your own environment? Head over to the [Build Your Own Environment](getting_started/environment-builder.md) guide for a step-by-step walkthrough.
+> Want to publish your own environment? [Your First Environment](guides/first-environment) walks through building one, and [Deploying an Environment](getting_started/environment-builder) covers publishing it.
 
 ## Community Environments
 
