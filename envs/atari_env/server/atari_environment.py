@@ -12,12 +12,12 @@ via the OpenEnv Environment interface.
 """
 
 import base64
-import struct
+import io
 import uuid
-import zlib
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from openenv.core.env_server import Action, Environment, Observation
+from PIL import Image
 
 # Support both in-repo and standalone imports
 try:
@@ -214,36 +214,16 @@ class AtariEnvironment(Environment):
 
     def render_web(self, observation: Dict[str, Any]) -> Optional[str]:
         """Draw the current game frame (RGB or grayscale) as a pixelated PNG."""
-        shape = observation.get("screen_shape") or []
-        if len(shape) not in (2, 3) or not observation.get("screen"):
+        if self.obs_type == "ram":
             return None
-        height, width = shape[0], shape[1]
-        rows = np.asarray(observation["screen"], dtype=np.uint8).reshape(height, -1)
-
-        def chunk(kind: bytes, data: bytes) -> bytes:
-            body = kind + data
-            return (
-                struct.pack(">I", len(data))
-                + body
-                + struct.pack(">I", zlib.crc32(body))
-            )
-
-        color_type = 2 if len(shape) == 3 else 0
-        png = (
-            b"\x89PNG\r\n\x1a\n"
-            + chunk(
-                b"IHDR", struct.pack(">IIBBBBB", width, height, 8, color_type, 0, 0, 0)
-            )
-            + chunk(
-                b"IDAT",
-                zlib.compress(b"".join(b"\x00" + row.tobytes() for row in rows), 9),
-            )
-            + chunk(b"IEND", b"")
-        )
+        shape = observation["screen_shape"]
+        frame = np.asarray(observation["screen"], dtype=np.uint8).reshape(shape)
+        buffer = io.BytesIO()
+        Image.fromarray(frame).save(buffer, format="PNG")
         return (
-            f'<img role="img" aria-label="{self.game_name} frame" '
-            f'src="data:image/png;base64,{base64.b64encode(png).decode()}" '
-            f'style="width:{2 * width}px;max-width:100%;image-rendering:pixelated;'
+            f'<img alt="{self.game_name} frame" '
+            f'src="data:image/png;base64,{base64.b64encode(buffer.getvalue()).decode()}" '
+            f'style="width:{2 * shape[1]}px;max-width:100%;image-rendering:pixelated;'
             'border:1px solid var(--border-color-primary);border-radius:6px">'
         )
 

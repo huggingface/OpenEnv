@@ -3,7 +3,7 @@
 """Tests for the Atari environment's web playground drawing."""
 
 import base64
-import struct
+import io
 
 import pytest
 
@@ -11,9 +11,10 @@ pytest.importorskip("ale_py", reason="ale-py is not installed")
 
 from atari_env.models import AtariAction
 from atari_env.server.atari_environment import AtariEnvironment
+from PIL import Image
 
 
-def test_pong_offers_named_actions_and_a_frame():
+def test_atari_web_playground():
     env = AtariEnvironment(game_name="pong")
     env.reset()
     obs = env.step(AtariAction(action_id=1)).model_dump()
@@ -26,11 +27,9 @@ def test_pong_offers_named_actions_and_a_frame():
         ("5 · LEFTFIRE", {"action_id": 5}),
     ]
     frame = env.render_web(obs)
-    assert 'aria-label="pong frame"' in frame
+    assert 'alt="pong frame"' in frame
     png = base64.b64decode(frame.split("base64,")[1].split('"')[0])
-    assert png.startswith(b"\x89PNG") and struct.unpack(">II", png[16:24]) == (160, 210)
+    assert Image.open(io.BytesIO(png)).size == (160, 210)
 
-
-def test_ram_observations_are_not_drawn():
-    env = AtariEnvironment(game_name="pong", obs_type="ram")
-    assert env.render_web(env.reset().model_dump()) is None
+    ram_env = AtariEnvironment(game_name="pong", obs_type="ram")
+    assert ram_env.render_web(ram_env.reset().model_dump()) is None
