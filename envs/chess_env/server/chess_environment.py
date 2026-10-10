@@ -14,6 +14,7 @@ and opponent play.
 
 import random
 import uuid
+from typing import Any, Dict, List, Optional, Tuple
 
 import chess
 from moonfish.lib import search_move
@@ -270,6 +271,51 @@ class ChessEnvironment(Environment):
         self._state.move_history.append(move.uci())
         self._state.current_player = "white" if self._board.turn else "black"
         self._state.fen = self._board.fen()
+
+    def web_actions(
+        self, observation: Dict[str, Any]
+    ) -> List[Tuple[str, Dict[str, Any]]]:
+        """The legal moves (UCI) as buttons, sorted so moves of the same piece sit together."""
+        return [
+            (move, {"move": move})
+            for move in sorted(observation.get("legal_moves") or [])
+        ]
+
+    def render_web(self, observation: Dict[str, Any]) -> Optional[str]:
+        """Draw the board from the FEN, white at the bottom, the king in check highlighted."""
+        fen = observation.get("fen")
+        if not fen:
+            return None
+        board = chess.Board(fen)
+        checked = board.king(board.turn) if observation.get("is_check") else None
+        cells = []
+        for rank in range(7, -1, -1):
+            cells.append(f'<span style="opacity:.6;font-size:12px">{rank + 1}</span>')
+            for file in range(8):
+                square = chess.square(file, rank)
+                piece = board.piece_at(square)
+                if square == checked:
+                    bg = "var(--color-accent)"
+                elif (file + rank) % 2:
+                    bg = "var(--background-fill-secondary)"
+                else:
+                    bg = "var(--border-color-primary)"
+                # U+FE0E keeps the pawn as a text glyph instead of an emoji.
+                glyph = piece.unicode_symbol() + "\ufe0e" if piece else ""
+                cells.append(f'<span style="background:{bg}">{glyph}</span>')
+        cells.append("<span></span>")
+        cells += [
+            f'<span style="opacity:.6;font-size:12px;line-height:20px">{f}</span>'
+            for f in "abcdefgh"
+        ]
+        return (
+            '<div role="img" aria-label="Chess board" style="display:inline-grid;'
+            "grid-template-columns:16px repeat(8,40px);grid-template-rows:repeat(8,40px) 20px;"
+            "line-height:40px;text-align:center;font-size:30px;color:var(--body-text-color);padding:10px;"
+            'border:1px solid var(--border-color-primary);border-radius:10px;background:var(--background-fill-primary)">'
+            + "".join(cells)
+            + "</div>"
+        )
 
     @property
     def state(self):

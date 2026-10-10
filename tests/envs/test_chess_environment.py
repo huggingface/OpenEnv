@@ -252,3 +252,20 @@ class TestTemporalDiscounting:
 
         assert env1._gamma == 0.99
         assert env2._gamma == 0.5
+
+
+def test_web_playground_draws_the_board_and_offers_legal_moves():
+    env = ChessEnvironment(opponent=None)
+    obs = env.reset().model_dump()
+    actions = env.web_actions(obs)
+    assert len(actions) == 20
+    assert ("e2e4", {"move": "e2e4"}) in actions
+    board = env.render_web(obs)
+    assert 'aria-label="Chess board"' in board
+    assert "♔" in board and "♚" in board
+    assert "var(--color-accent)" not in board
+    assert "#" not in board  # theme colours only, so it reads in dark mode
+
+    check = "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3"
+    assert "var(--color-accent)" in env.render_web(env.reset(fen=check).model_dump())
+    assert env.render_web({}) is None
