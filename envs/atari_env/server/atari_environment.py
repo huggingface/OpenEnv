@@ -11,8 +11,11 @@ This module wraps ALE's ALEInterface and exposes it
 via the OpenEnv Environment interface.
 """
 
+import base64
+import struct
 import uuid
-from typing import Any, Dict, Literal, Optional
+import zlib
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from openenv.core.env_server import Action, Environment, Observation
 
@@ -199,6 +202,50 @@ class AtariEnvironment(Environment):
     def state(self) -> AtariState:
         """Get current environment state."""
         return self._state
+
+    def web_actions(
+        self, observation: Dict[str, Any]
+    ) -> List[Tuple[str, Dict[str, Any]]]:
+        """The legal actions as buttons, named with their ALE meaning (NOOP, FIRE, ...)."""
+        return [
+            (f"{a} · {self._action_set[a].name}", {"action_id": a})
+            for a in observation.get("legal_actions") or []
+        ]
+
+    def render_web(self, observation: Dict[str, Any]) -> Optional[str]:
+        """Draw the current game frame (RGB or grayscale) as a pixelated PNG."""
+        shape = observation.get("screen_shape") or []
+        if len(shape) not in (2, 3) or not observation.get("screen"):
+            return None
+        height, width = shape[0], shape[1]
+        rows = np.asarray(observation["screen"], dtype=np.uint8).reshape(height, -1)
+
+        def chunk(kind: bytes, data: bytes) -> bytes:
+            body = kind + data
+            return (
+                struct.pack(">I", len(data))
+                + body
+                + struct.pack(">I", zlib.crc32(body))
+            )
+
+        color_type = 2 if len(shape) == 3 else 0
+        png = (
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(
+                b"IHDR", struct.pack(">IIBBBBB", width, height, 8, color_type, 0, 0, 0)
+            )
+            + chunk(
+                b"IDAT",
+                zlib.compress(b"".join(b"\x00" + row.tobytes() for row in rows), 9),
+            )
+            + chunk(b"IEND", b"")
+        )
+        return (
+            f'<img role="img" aria-label="{self.game_name} frame" '
+            f'src="data:image/png;base64,{base64.b64encode(png).decode()}" '
+            f'style="width:{2 * width}px;max-width:100%;image-rendering:pixelated;'
+            'border:1px solid var(--border-color-primary);border-radius:6px">'
+        )
 
     def _make_observation(self) -> AtariObservation:
         """
