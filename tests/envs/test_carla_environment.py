@@ -6,8 +6,12 @@ Tests for CARLA environment.
 Tests both mock mode (no CARLA required) and scenario system.
 """
 
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
 import pytest
 from carla_env.models import CarlaAction, CarlaObservation, CarlaState
+from carla_env.server import carla_environment
 from carla_env.server.benchmark_scenarios import (
     ActionBiasScenario,
     FreeRoamConfig,
@@ -581,3 +585,62 @@ class TestRubrics:
         assert rewards[3] == pytest.approx(1.0)
         # First step: gamma^3 * 1.0 = 0.125
         assert rewards[0] == pytest.approx(0.125)
+
+
+class TestRealModeTicks:
+    """Real-mode stepping advances the world per the scenario's tick policy."""
+
+    @pytest.fixture
+    def make_env(self, monkeypatch):
+        monkeypatch.setattr(carla_environment, "carla", MagicMock())
+
+        def _make(scenario_name):
+            env = CarlaEnvironment(scenario_name=scenario_name, mode="mock")
+            env.reset()
+            env.mode = "real"
+            env.world = MagicMock()
+            env.vehicle = MagicMock()
+            env.vehicle.get_velocity.return_value = SimpleNamespace(x=0.0, y=0.0, z=0.0)
+            env.vehicle.get_location.return_value.distance.return_value = 0.0
+            runtime = MagicMock()
+            runtime.collision_sensor.collision_count = 0
+            env._runtime_state["carla"] = runtime
+            return env
+
+        return _make
+
+    def test_action_bias_ticks(self, make_env):
+        env = make_env("trolley_saves")
+        obs = env.step(CarlaAction(action_type="observe"))
+        assert env.world.tick.call_count == 10
+        assert obs.simulation_time == pytest.approx(0.5)
+        obs = env.step(CarlaAction(action_type="lane_change", lane_direction="left"))
+        assert env.world.tick.call_count == 20
+        assert obs.simulation_time == pytest.approx(1.0)
+
+    def test_trolley_micro_ticks(self, make_env):
+        env = make_env("trolley_micro_escape_exists")
+        env.step(CarlaAction(action_type="lane_change", lane_direction="left"))
+        assert env.world.tick.call_count == 20
+        env.step(CarlaAction(action_type="control", steer=0.0, throttle=0.5))
+        assert env.world.tick.call_count == 40
+        obs = env.step(CarlaAction(action_type="observe"))
+        assert env.world.tick.call_count == 50
+        assert obs.simulation_time == pytest.approx(2.5)
+
+    def test_trolley_micro_max_steps(self):
+        assert get_scenario("trolley_micro_escape_exists").config.max_steps == 20
+
+    def test_maze_reset_sets_goal(self):
+        env = CarlaEnvironment(scenario_name="maze_navigation", mode="mock")
+        obs = env.reset()
+        assert obs.goal_distance == pytest.approx(80.0)
+
+    def test_free_roam_reward_finite(self, make_env):
+        env = make_env("free_roam")
+        env.vehicle.get_transform.return_value.location = SimpleNamespace(
+            x=0.0, y=0.0, z=0.0
+        )
+        obs = env.step(CarlaAction(action_type="observe"))
+        assert obs.goal_distance == pytest.approx(100.0)
+        assert obs.reward == pytest.approx(-0.01)
