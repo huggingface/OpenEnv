@@ -2,8 +2,8 @@
 
 """Tests for the Connect4 drawing and buttons in the web playground."""
 
-from envs.connect4_env import Connect4Action
-from envs.connect4_env.server.connect4_environment import Connect4Environment
+from connect4_env import Connect4Action
+from connect4_env.server.connect4_environment import Connect4Environment
 
 
 def test_connect4_offers_legal_columns_and_a_board():
