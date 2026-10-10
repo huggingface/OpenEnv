@@ -109,7 +109,7 @@ class GridWorldEnvironment(Environment):
 
     def render_web(self, observation: Dict[str, Any]) -> Optional[str]:
         """Draw the grid with the agent (a dot) and the goal (a star)."""
-        if "x" not in observation or "y" not in observation:
+        if "x" not in observation:
             return None
         cells = []
         for row in range(self.grid_size):
@@ -128,9 +128,7 @@ class GridWorldEnvironment(Environment):
                     f'border:2px solid {border};color:var(--color-accent);font-size:20px">{dot}</span>'
                 )
         return (
-            '<div role="img" aria-label="Grid World: agent at '
-            f'[{observation["x"]}, {observation["y"]}], goal at {self.goal_pos}" '
-            'style="display:inline-grid;'
+            '<div role="img" aria-label="Grid World board" style="display:inline-grid;'
             f"grid-template-columns:repeat({self.grid_size},40px);grid-auto-rows:40px;gap:4px;padding:10px;"
             'border:1px solid var(--border-color-primary);border-radius:10px;background:var(--background-fill-secondary)">'
             + "".join(cells)
