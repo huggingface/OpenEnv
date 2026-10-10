@@ -122,6 +122,7 @@ Set these environment variables before starting the server:
 | `WILDFIRE_HEIGHT` | `16` | Grid height |
 | `WILDFIRE_HUMIDITY` | `0.25` | Base humidity |
 | `WILDFIRE_WIND` | random | Fixed wind direction (`N` ... `NW`, `CALM`) |
+| `MAX_CONCURRENT_ENVS` | `8` | Maximum concurrent WebSocket sessions |
 | `ENABLE_WEB_INTERFACE` | `true` in the Docker image | Serve the web interface at `/web` |
 
 ```bash

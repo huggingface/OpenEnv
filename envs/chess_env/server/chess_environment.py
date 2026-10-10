@@ -17,7 +17,7 @@ import uuid
 
 import chess
 from moonfish.lib import search_move
-from moonfish.psqt import board_evaluation
+from moonfish.psqt import board_evaluation, BOARD_EVALUATION_CACHE
 from openenv.core.env_server import Environment
 
 from ..models import ChessAction, ChessObservation, ChessState
@@ -32,6 +32,8 @@ class ChessEnvironment(Environment):
     Designed for RL training where an agent plays as one color against
     an opponent (which can be random, moonfish engine, or self-play).
     """
+
+    SUPPORTS_CONCURRENT_SESSIONS = True
 
     def __init__(
         self,
@@ -74,6 +76,8 @@ class ChessEnvironment(Environment):
             Initial observation of the board state.
         """
         self._reset_rubric()
+        # moonfish's module-level evaluation cache is never trimmed.
+        BOARD_EVALUATION_CACHE.clear()
 
         if fen:
             self._board = chess.Board(fen)

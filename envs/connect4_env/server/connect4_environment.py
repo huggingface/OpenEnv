@@ -17,6 +17,7 @@ except ImportError as e:
 class Connect4Environment(Environment):
     ROWS = 6
     COLUMNS = 7
+    SUPPORTS_CONCURRENT_SESSIONS = True
 
     def __init__(self, opponent=None):
         super().__init__()

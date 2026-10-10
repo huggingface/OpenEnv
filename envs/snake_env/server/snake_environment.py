@@ -136,6 +136,8 @@ class SnakeEnvironment(Environment):
         >>> print(obs.reward)
     """
 
+    SUPPORTS_CONCURRENT_SESSIONS = True
+
     def __init__(
         self,
         height: int = 20,

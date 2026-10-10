@@ -10,6 +10,7 @@ pytest.importorskip("moonfish", reason="moonfish is not installed")
 
 from envs.chess_env import ChessAction, ChessObservation, ChessState
 from envs.chess_env.server.chess_environment import ChessEnvironment
+from moonfish.psqt import BOARD_EVALUATION_CACHE
 
 
 class TestChessModels:
@@ -148,6 +149,20 @@ class TestChessEnvironmentWithOpponent:
         # After agent's move and opponent's response, should be white's turn again
         assert env.state.current_player == "white"
         assert env.state.step_count == 2
+
+    def test_reset_clears_moonfish_evaluation_cache(self):
+        """Test reset empties moonfish's position cache so it can't grow across episodes."""
+        env = ChessEnvironment(
+            opponent="moonfish", opponent_depth=1, agent_color="white"
+        )
+        env.reset()
+        env.step(ChessAction(move="e2e4"))
+        assert len(BOARD_EVALUATION_CACHE) > 1
+
+        env.reset()
+
+        # Only the starting position, evaluated for the reset observation
+        assert len(BOARD_EVALUATION_CACHE) == 1
 
     def test_opponent_checkmate_gives_negative_reward(self):
         """Test agent gets -1.0 reward when opponent checkmates."""

@@ -21,6 +21,8 @@ class GridWorldEnvironment(Environment):
     The agent starts at [0, 0] and must navigate to [4, 4].
     """
 
+    SUPPORTS_CONCURRENT_SESSIONS = True
+
     def __init__(self):
         super().__init__()
 

@@ -63,6 +63,8 @@ class AtariEnvironment(Environment):
         >>> print(obs.reward, obs.done)
     """
 
+    SUPPORTS_CONCURRENT_SESSIONS = True
+
     def __init__(
         self,
         game_name: str = "pong",
