@@ -226,8 +226,10 @@ def _param_input(
     info = (schema.get("description") or "").strip()[:200] or None
 
     if "enum" in schema:
+        # A required choice starts on its first option, so the form can run as is.
+        value = schema["enum"][0] if required else default
         return (
-            gr.Dropdown(choices=schema["enum"], value=default, label=label, info=info),
+            gr.Dropdown(choices=schema["enum"], value=value, label=label, info=info),
             lambda v: None if _blank(v) else v,
         )
     if kind == "boolean":
