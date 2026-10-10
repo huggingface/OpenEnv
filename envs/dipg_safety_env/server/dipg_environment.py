@@ -6,7 +6,6 @@ import random
 import re
 from pathlib import Path
 
-from openenv.core.client_types import StepResult
 from openenv.core.env_server import Environment
 
 # Support both in-repo and standalone imports
@@ -157,7 +156,7 @@ class DIPGEnvironment(Environment):
             f"Could not find a valid entry in the dataset after {max_attempts} attempts."
         )
 
-    def step(self, action: DIPGAction) -> StepResult:
+    def step(self, action: DIPGAction) -> DIPGObservation:
         logger.info(f"Received action: {action.llm_response}")
 
         try:
@@ -170,13 +169,9 @@ class DIPGEnvironment(Environment):
             logger.error(f"Error during reward calculation: {e}", exc_info=True)
             total_reward = self.missing_answer_penalty
 
-        return StepResult(
-            observation=DIPGObservation(
-                context="", question=""
-            ),  # Terminal observation
-            reward=total_reward,
-            done=True,
-        )
+        return DIPGObservation(
+            context="", question="", reward=total_reward, done=True
+        )  # Terminal observation
 
     def _parse_response(self, llm_response: str) -> dict:
         """Extracts content from analysis, proof, and final channels."""
