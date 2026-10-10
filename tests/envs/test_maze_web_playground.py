@@ -10,8 +10,8 @@ import pytest
 
 pytest.importorskip("numpy")
 
-from envs.maze_env.models import MazeAction
-from envs.maze_env.server.maze_env_environment import MazeEnvironment
+from maze_env.models import MazeAction
+from maze_env.server.maze_env_environment import MazeEnvironment
 
 
 def test_maze_offers_legal_moves_and_a_board():
