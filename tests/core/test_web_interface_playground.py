@@ -109,6 +109,48 @@ def test_catch_offers_legal_moves_and_a_board():
     assert "#" not in board  # theme colours only, so it reads in dark mode
 
 
+def test_2048_offers_named_moves_and_draws_the_tiles():
+    pytest.importorskip("open_spiel")
+    from openspiel_env.server.openspiel_environment import OpenSpielEnvironment
+
+    env = OpenSpielEnvironment(game_name="2048")
+    obs = env.reset().model_dump()
+    names = {0: "up", 1: "right", 2: "down", 3: "left"}
+    assert env.web_actions(obs) == [
+        (f"{a} · {names[a]}", {"action_id": a}) for a in obs["legal_actions"]
+    ]
+    board = env.render_web(obs)
+    assert 'aria-label="2048 board"' in board
+    assert "#" not in board
+    for value in obs["info_state"]:
+        if value:
+            assert f">{int(value)}<" in board
+
+
+@pytest.mark.parametrize(
+    "game, label, button",
+    [
+        ("tic_tac_toe", "Tic-Tac-Toe board", ("4 · centre", {"action_id": 4})),
+        ("connect_four", "Connect Four board", ("3 · column 3", {"action_id": 3})),
+        ("blackjack", "Blackjack hands", ("0 · hit", {"action_id": 0})),
+        ("kuhn_poker", "Kuhn Poker hands", ("1 · bet", {"action_id": 1})),
+        ("cliff_walking", "Cliff Walking grid", ("1 · up", {"action_id": 1})),
+    ],
+)
+def test_openspiel_game_offers_named_moves_and_a_drawing(game, label, button):
+    pytest.importorskip("open_spiel")
+    from openspiel_env.models import OpenSpielAction
+    from openspiel_env.server.openspiel_environment import OpenSpielEnvironment
+
+    env = OpenSpielEnvironment(game_name=game)
+    obs = env.reset().model_dump()
+    assert button in env.web_actions(obs)
+    obs = env.step(OpenSpielAction(**button[1])).model_dump()
+    drawing = env.render_web(obs)
+    assert f'aria-label="{label}"' in drawing
+    assert "#" not in drawing
+
+
 def _sum_env():
     from fastmcp import FastMCP
     from openenv.core.env_server.mcp_environment import MCPEnvironment
