@@ -492,10 +492,9 @@ def _draw_kuhn_poker(observation: Dict[str, Any]) -> Optional[str]:
 
 def _draw_cliff_walking(observation: Dict[str, Any]) -> Optional[str]:
     """Cliff Walking: 4x8 grid, the walker starts bottom left, the cliff runs to the goal bottom right."""
+    # The info state is a one-hot action history over 100 steps: right, up, left, down.
     state = observation.get("info_state") or []
-    if (
-        len(state) != 400
-    ):  # one-hot action history over 100 steps: right, up, left, down
+    if len(state) != 400:
         return None
     row, col = 3, 0
     for i, value in enumerate(state):
@@ -507,10 +506,12 @@ def _draw_cliff_walking(observation: Dict[str, Any]) -> Optional[str]:
         for c in range(8):
             if (r, c) == (row, col):
                 cells.append(_cell("var(--color-accent)", "50%"))
-            elif r == 3 and c == 7:
+            elif r == 3 and c in (0, 7):
                 cells.append(
                     _cell(
-                        "var(--border-color-primary)", text="G", style="font-weight:700"
+                        "var(--border-color-primary)",
+                        text="S" if c == 0 else "G",
+                        style="font-weight:700",
                     )
                 )
             elif r == 3 and c > 0:
