@@ -14,12 +14,13 @@ from typing import Any, Dict, Optional
 from uuid import uuid4
 
 import gymnasium as gym
+from openenv.core.env_server.interfaces import Environment
+
 from browsergym_env.models import (
     BrowserGymAction,
     BrowserGymObservation,
     BrowserGymState,
 )
-from openenv.core.env_server.interfaces import Environment
 
 logger = logging.getLogger(__name__)
 
@@ -238,11 +239,13 @@ class BrowserGymEnvironment(Environment):
         self,
         seed: Optional[int] = None,
         task_name: Optional[str] = None,
+        episode_id: Optional[str] = None,
     ) -> BrowserGymObservation:
         """Reset the environment with a specific task.
 
         Args:
             seed: Random seed for reproducibility
+            episode_id: Optional episode ID to use
             task_name: Override task name for this episode
 
         Returns:
@@ -253,7 +256,7 @@ class BrowserGymEnvironment(Environment):
         self._switch_task_if_needed(resolved_task_name)
 
         self._state = BrowserGymState(
-            episode_id=str(uuid4()),
+            episode_id=episode_id if episode_id is not None else str(uuid4()),
             step_count=0,
             benchmark=self.benchmark,
             task_name=resolved_task_name,
