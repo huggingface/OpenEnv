@@ -143,6 +143,7 @@ Server environment variables (the `UnityMLAgentsEnvironment` constructor takes t
 | `UNITY_TIME_SCALE` | `1.0` | Simulation speed multiplier |
 | `UNITY_QUALITY_LEVEL` | `5` | Graphics quality, 0-5 |
 | `UNITY_CACHE_DIR` | `~/.mlagents-cache` | Binary cache directory |
+| `UNITY_INCLUDE_VISUAL` | `0` | `1` to include camera images by default, e.g. so the `/web` playground shows them (needs graphics: `UNITY_NO_GRAPHICS=0`) |
 
 ## Limitations
 
