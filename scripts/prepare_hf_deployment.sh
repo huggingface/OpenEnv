@@ -633,7 +633,8 @@ create_readme() {
             error "Could not parse README front matter for $env_name"
         fi
 
-        head -n "$closing_line" "$readme_source" > "$output_readme"
+        # The env's own text comes first: the web interface reads its first paragraph.
+        cat "$readme_source" > "$output_readme"
         cat >> "$output_readme" << README_EOF
 
 ## Hugging Face Space Deployment
@@ -662,7 +663,6 @@ with $env_class(base_url="$space_url").sync() as env:
 \`\`\`
 README_EOF
         fi
-        tail -n "+$((closing_line + 1))" "$readme_source" >> "$output_readme"
     else
         cat > "$output_readme" << README_EOF
 ---
