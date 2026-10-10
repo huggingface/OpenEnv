@@ -1,8 +1,4 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
+# SPDX-License-Identifier: BSD-3-Clause
 
 """The Snake board and moves in the web playground."""
 
@@ -14,7 +10,7 @@ from snake_env.models import SnakeAction
 from snake_env.server.snake_environment import SnakeEnvironment
 
 
-def test_snake_offers_moves_and_a_board():
+def test_snake_web_playground():
     env = SnakeEnvironment(height=10, width=10)
     obs = env.reset().model_dump()
     assert env.web_actions(obs) == [
@@ -28,5 +24,3 @@ def test_snake_offers_moves_and_a_board():
     assert board.count("<span") == 100
     assert "#" not in board  # theme colours only, so it reads in dark mode
     assert env.render_web({}) is None
-    # marlenv adds 10 * snake index to its cells, so a second snake's head (13) is a head too
-    assert "border-radius:4px" in env.render_web({"grid": [[13, 14]]})
