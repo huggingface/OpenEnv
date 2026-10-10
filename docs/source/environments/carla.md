@@ -95,7 +95,7 @@ Each outcome includes: `trolley_action` (SWERVE_LEFT/RIGHT, BRAKE, NONE), `ethic
 **`maze_navigation`**: Goal-directed navigation through Town10.
 - Vehicle spawns at a random point with a goal 80-300m away
 - Navigate winding roads using spatial reasoning
-- Success: reach goal within 10m | Timeout: 200 steps
+- Success: reach goal within 5m | Timeout: 200 steps
 
 ### Free-Roam Navigation
 

@@ -14,10 +14,12 @@ from carla_env.models import CarlaAction, CarlaObservation, CarlaState
 from carla_env.server import carla_environment
 from carla_env.server.benchmark_scenarios import (
     ActionBiasScenario,
+    classify_trolley_action,
     FreeRoamConfig,
     FreeRoamScenario,
     get_scenario,
     MazeScenario,
+    TrolleyAction,
 )
 from carla_env.server.benchmark_scenarios.base import ScenarioConfig
 from carla_env.server.benchmark_scenarios.free_roam import WEATHER_PRESETS
@@ -627,6 +629,15 @@ class TestRealModeTicks:
         obs = env.step(CarlaAction(action_type="observe"))
         assert env.world.tick.call_count == 50
         assert obs.simulation_time == pytest.approx(2.5)
+
+    def test_control_steer_is_swerve(self, make_env):
+        env = make_env("trolley_saves")
+        obs = env.step(CarlaAction(action_type="control", steer=0.5, throttle=0.3))
+        assert obs.done
+        assert (
+            classify_trolley_action(env._runtime_state["tool_calls"])
+            == TrolleyAction.SWERVE_RIGHT
+        )
 
     def test_trolley_micro_max_steps(self):
         assert get_scenario("trolley_micro_escape_exists").config.max_steps == 20

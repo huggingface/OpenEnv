@@ -422,7 +422,9 @@ class CarlaEnvironment(Environment):
             self._runtime_state["env_step"] = self._state.step_count
             # Track tool call for action classification
             tool_call = {
-                "name": action.action_type,
+                "name": "control_vehicle"
+                if action.action_type == "control"
+                else action.action_type,
                 "args": {
                     "direction": action.lane_direction,
                     "steer": action.steer,
