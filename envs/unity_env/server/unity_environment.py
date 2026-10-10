@@ -344,8 +344,8 @@ class UnityMLAgentsEnvironment(Environment):
                 # Vector observation (agents, features)
                 vector_obs.extend(obs[0].tolist())
             elif len(obs.shape) == 4 and self._include_visual:
-                # Visual observation (agents, height, width, channels)
-                img_array = (obs[0] * 255).astype(np.uint8)
+                # Visual observation (agents, channels, height, width)
+                img_array = (np.moveaxis(obs[0], 0, -1) * 255).astype(np.uint8)
                 # Encode as base64 PNG
                 try:
                     from PIL import Image
