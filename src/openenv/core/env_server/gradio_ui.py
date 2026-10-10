@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import html
 import json
+import math
 import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -80,6 +81,24 @@ def _rounded(value: Any) -> Any:
     if isinstance(value, dict):
         return {k: _rounded(v) for k, v in value.items()}
     return value
+
+
+def _folded(value: Any) -> Any:
+    """
+    The value with each array of more than 64 numbers (a grid, a screen, a screenshot)
+    shown as its shape, so the page stays light. Smaller boards and lists keep their values.
+    """
+    if isinstance(value, dict):
+        return {k: _folded(v) for k, v in value.items()}
+    if not isinstance(value, list):
+        return value
+    shape, first = [], value
+    while isinstance(first, list) and first:
+        shape.append(len(first))
+        first = first[0]
+    if isinstance(first, (int, float)) and math.prod(shape) > 64:
+        return f"list · {'×'.join(map(str, shape))}"
+    return [_folded(v) for v in value]
 
 
 def _short(value: Any, limit: int = 160) -> str:
@@ -356,9 +375,13 @@ def build_gradio_app(
 
     def render(data: Dict[str, Any]):
         """The env's drawing and its one-click actions for this observation."""
-        obs = data.get("observation", {}) or {}
+        obs = {
+            **(data.get("observation") or {}),
+            "reward": data.get("reward"),
+            "done": data.get("done"),
+        }
         drawing = env.render_web(obs)
-        actions = env.web_actions(obs) if not data.get("done") else []
+        actions = env.web_actions(obs) if not obs["done"] else []
         return (
             gr.update(value=drawing or "", visible=bool(drawing)),
             gr.update(
@@ -413,12 +436,13 @@ def build_gradio_app(
             ["R", "reset()", f"error: {_short(error)}" if error else "new episode"]
         ]
         visual_update, quick_update, actions = render(data)
+        shown = _folded(data)
         return (
             visual_update,
             quick_update,
             actions,
-            _result_html(data, 0),
-            json.dumps(data, indent=2, default=str),
+            _result_html(shown, 0),
+            json.dumps(shown, indent=2, default=str, ensure_ascii=False),
             _episode_html(entries),
             entries,
             "",
@@ -457,12 +481,13 @@ def build_gradio_app(
         )
         entries = entries + [[str(steps_in(entries) + 1), call, _short(summary)]]
         visual_update, quick_update, actions = render(data)
+        shown = _folded(data)
         return (
             visual_update,
             quick_update,
             actions,
-            _result_html(data, steps_in(entries)),
-            json.dumps(data, indent=2, default=str),
+            _result_html(shown, steps_in(entries)),
+            json.dumps(shown, indent=2, default=str, ensure_ascii=False),
             _episode_html(entries),
             entries,
         )

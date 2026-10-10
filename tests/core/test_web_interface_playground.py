@@ -74,6 +74,48 @@ def test_result_lists_observation_fields():
     assert "metadata" not in html
 
 
+class ScreenObservation(Observation):
+    screen: list = []
+    board: list = []
+    legal_actions: list[int] = []
+
+
+class ScreenEnv(TinyEnv):
+    def reset(self, seed=None, episode_id=None, **kwargs):
+        return ScreenObservation(
+            screen=[[[0, 0, 255]] * 1920] * 1080,
+            board=[[0] * 7] * 6,
+            legal_actions=list(range(7)),
+        )
+
+    def step(self, action, timeout_s=None, **kwargs):
+        return ScreenObservation(reward=1.0, done=True)
+
+    def render_web(self, observation):
+        self.drawn = observation
+        return "<svg></svg>"
+
+
+def test_big_arrays_are_shown_as_their_shape():
+    env = ScreenEnv()
+    manager = WebInterfaceManager(env, MoveAction, ScreenObservation)
+    blocks = build_gradio_app(manager, _extract_action_fields(MoveAction), None, False)
+    fns = {f.fn.__name__: f.fn for f in blocks.fns.values()}
+
+    outputs = asyncio.run(fns["reset_env"]([]))
+
+    assert "list · 1080×1920×3" in outputs[3]
+    assert "[0, 0, 0, 0, 0, 0, 0]" in outputs[3]  # a 6x7 board keeps its cells
+    assert json.loads(outputs[4])["observation"]["screen"] == "list · 1080×1920×3"
+    assert len(outputs[4]) < 1000
+    assert len(env.drawn["screen"]) == 1080  # the drawing gets the full observation
+    assert env.drawn["reward"] is None and env.drawn["done"] is False
+
+    asyncio.run(fns["step_fn"](outputs[6], 0))
+
+    assert env.drawn["reward"] == 1.0 and env.drawn["done"] is True
+
+
 def test_playground_builds_for_a_plain_env():
     manager = WebInterfaceManager(TinyEnv(), MoveAction, BoardObservation)
     blocks = build_gradio_app(manager, _extract_action_fields(MoveAction), None, False)
