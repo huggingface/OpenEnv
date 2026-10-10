@@ -458,9 +458,9 @@ class BrowserGymEnvironment(Environment):
                 f'<img alt="BrowserGym page" src="data:image/jpeg;base64,{data}" '
                 'style="max-width:100%;border:1px solid var(--border-color-primary);border-radius:6px">'
             )
-        error = observation["error"] or observation["metadata"]["browsergym_obs"].get(
-            "last_action_error"
-        )
+        error = observation["error"] or observation["metadata"].get(
+            "browsergym_obs", {}
+        ).get("last_action_error")
         if error:
             parts.append(
                 '<div style="color:var(--color-accent)"><b>Last action error:</b> '
