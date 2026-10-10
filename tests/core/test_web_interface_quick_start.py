@@ -108,6 +108,7 @@ def test_on_a_space_uses_its_url_and_install_line(demo_env, monkeypatch):
     md = get_quick_start_markdown(_metadata(demo_env), DemoAction, CallToolObservation)
 
     assert "pip install git+https://huggingface.co/spaces/openenv/demo_env" in md
+    assert "# Public Spaces only" in md
     assert 'DemoEnv(base_url="https://openenv-demo-env.hf.space")' in md
 
 

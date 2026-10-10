@@ -124,6 +124,8 @@ def get_quick_start_markdown(
     if space_id:
         lines += [
             "```bash",
+            # Spaces don't expose their visibility, so this says it rather than checking.
+            "# Public Spaces only: a private one needs a token to install and connect.",
             f"pip install git+https://huggingface.co/spaces/{space_id}",
             "```",
             "",
