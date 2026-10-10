@@ -65,3 +65,16 @@ def test_wordle_reset_clears_accumulated_state():
     # Verify the prompts are actually the same content
     assert obs1.prompt == obs2.prompt
     assert obs2.prompt == obs3.prompt
+
+
+def test_wordle_draws_the_guess_board():
+    pytest.importorskip("textarena", reason="textarena not installed")
+    env = TextArenaEnvironment(env_id="Wordle-v0", num_players=1)
+    env.reset()
+    obs = env.step(TextArenaAction(message="[crane]")).model_dump()
+    board = env.render_web(obs)
+    assert 'aria-label="Wordle board"' in board
+    assert board.count("<span") == 30  # 6 rows of 5 tiles
+    assert ">C</span>" in board and ">E</span>" in board
+    assert "#" not in board  # theme colours only, so it reads in dark mode
+    assert env.render_web({"messages": []}) is None
