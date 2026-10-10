@@ -6,7 +6,7 @@ from connect4_env import Connect4Action
 from connect4_env.server.connect4_environment import Connect4Environment
 
 
-def test_connect4_offers_legal_columns_and_a_board():
+def test_connect4_web_playground():
     env = Connect4Environment()
     obs = env.reset().model_dump()
     assert env.web_actions(obs) == [(f"col {c}", {"column": c}) for c in range(7)]

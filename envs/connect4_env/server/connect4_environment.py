@@ -110,8 +110,7 @@ class Connect4Environment(Environment):
 
     def render_web(self, observation: Dict[str, Any]) -> Optional[str]:
         """Draw the 6x7 board: player 1 in the accent colour, player -1 in the text colour."""
-        board = observation.get("board") or []
-        if len(board) != self.ROWS:
+        if "board" not in observation:
             return None
         colours = {
             1: "var(--color-accent)",
@@ -120,7 +119,7 @@ class Connect4Environment(Environment):
         }
         cells = [
             f'<span style="background:{colours[value]};border-radius:50%"></span>'
-            for row in board
+            for row in observation["board"]
             for value in row
         ]
         cells += [
