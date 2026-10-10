@@ -379,26 +379,14 @@ class UnityMLAgentsEnvironment(Environment):
             observation_spec_info=self._state.observation_spec,
         )
 
-    def render_web(self, observation: Dict[str, Any]) -> Optional[str]:
-        """Draw the agent's camera image, when the observation carries one."""
-        images = observation.get("visual_observations")
-        if not images:
-            return None
-        return (
-            f'<img role="img" aria-label="{observation.get("behavior_name", "")} camera" '
-            f'src="data:image/png;base64,{images[0]}" '
-            'style="width:336px;max-width:100%;image-rendering:pixelated;'
-            'border:1px solid var(--border-color-primary);border-radius:6px">'
-        )
-
     def web_actions(
         self, observation: Dict[str, Any]
     ) -> List[Tuple[str, Dict[str, Any]]]:
         """One button per option of a single discrete action branch (PushBlock moves are named)."""
-        branches = observation.get("action_spec_info", {}).get("discrete_branches")
-        if not branches or len(branches) != 1:
+        branches = observation["action_spec_info"].get("discrete_branches", [])
+        if len(branches) != 1:
             return []
-        pushblock = observation.get("behavior_name", "").startswith("PushBlock")
+        pushblock = observation["behavior_name"].startswith("PushBlock")
         return [
             (
                 f"{i} · {PUSHBLOCK_ACTIONS[i]}" if pushblock else f"action {i}",
@@ -406,6 +394,18 @@ class UnityMLAgentsEnvironment(Environment):
             )
             for i in range(branches[0])
         ]
+
+    def render_web(self, observation: Dict[str, Any]) -> Optional[str]:
+        """Draw the agent's camera image, when the observation carries one."""
+        images = observation.get("visual_observations")
+        if not images:
+            return None
+        return (
+            '<img alt="Unity camera" '
+            f'src="data:image/png;base64,{images[0]}" '
+            'style="width:336px;max-width:100%;image-rendering:pixelated;'
+            'border:1px solid var(--border-color-primary);border-radius:6px">'
+        )
 
     def reset(
         self,
