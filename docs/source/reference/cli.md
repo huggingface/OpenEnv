@@ -1,6 +1,6 @@
 # CLI
 
-The `openenv` CLI provides a set of commands for building, validating, and pushing environments to Hugging Face Spaces or a custom Docker registry. For an end-to-end tutorial on building environments with OpenEnv, see the [building an environment](../getting_started/environment-builder) guide.
+The `openenv` CLI provides a set of commands for building, validating, and pushing environments to Hugging Face Spaces or a custom Docker registry. For a walkthrough of building an environment, see [Your First Environment](../guides/first-environment).
 
 ## `openenv init`
 

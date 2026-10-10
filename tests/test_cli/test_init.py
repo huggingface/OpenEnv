@@ -2,7 +2,9 @@
 
 """Tests for the openenv init command."""
 
+import importlib
 import os
+import sys
 from pathlib import Path
 
 from openenv.cli.__main__ import app
@@ -347,6 +349,46 @@ def test_init_server_app_imports(tmp_path: Path) -> None:
     # Check that no template placeholders remain
     assert "__ENV_NAME__" not in app_content
     assert "__ENV_CLASS_NAME__" not in app_content
+
+
+def test_init_server_main_parses_host_and_port(tmp_path: Path, monkeypatch) -> None:
+    """Test that the generated `server` entry point honors --host and --port."""
+    import uvicorn
+
+    env_name = "demo_env"
+    result = runner.invoke(app, ["init", env_name, "--output-dir", str(tmp_path)])
+    assert result.exit_code == 0
+
+    calls = []
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kwargs: calls.append(kwargs))
+    monkeypatch.setattr(
+        sys, "argv", ["server", "--host", "127.0.0.1", "--port", "8001"]
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    importlib.import_module(f"{env_name}.server.app").main()
+
+    assert calls == [{"host": "127.0.0.1", "port": 8001}]
+
+
+def test_init_next_steps_use_generated_names(tmp_path: Path) -> None:
+    """Test that the printed next steps and image tags match the generated env."""
+    env_name = "demo_env"
+    result = runner.invoke(app, ["init", env_name, "--output-dir", str(tmp_path)])
+    assert result.exit_code == 0
+
+    output = " ".join(result.output.split())
+    assert "envs/demo_env_env" not in output
+    assert "demo_env_env:latest" not in output
+    assert "Copy this directory to <repo_root>/envs/demo_env" in output
+    assert "openenv build envs/demo_env" in output
+    assert "docker run -p 8000:8000 openenv-demo:latest" in output
+
+    env_dir = tmp_path / env_name
+    for path in [env_dir / "README.md", env_dir / "client.py"]:
+        content = path.read_text()
+        assert "openenv-demo:latest" in content
+        assert "demo_env-env" not in content
 
 
 def test_init_dockerfile_uses_correct_base(tmp_path: Path) -> None:

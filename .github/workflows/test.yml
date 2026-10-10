@@ -88,7 +88,8 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync --all-extras
-          uv pip install pytest pytest-asyncio numpy nltk smolagents python-chess moonfish
+          uv pip install pytest pytest-asyncio numpy nltk smolagents python-chess moonfish \
+            langdetect "math-verify[antlr4_13_2]" datasets open_spiel
 
       - name: Run tests
         run: |

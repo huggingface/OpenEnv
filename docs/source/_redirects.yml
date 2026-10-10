@@ -1,1 +1,3 @@
 guides/rl-integration: guides/training
+guides/mcp-environment-lifecycle: guides/simulation-vs-production
+guides/connecting: guides/runtime-providers

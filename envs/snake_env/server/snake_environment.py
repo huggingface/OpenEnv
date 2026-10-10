@@ -13,7 +13,6 @@ multi-agent marlenv environment.
 """
 
 from typing import Any
-
 from uuid import uuid4
 
 import gym
@@ -30,14 +29,8 @@ try:
 except ImportError:
     # Direct execution from envs/snake_env.
     from models import SnakeAction, SnakeObservation
-
-    try:
-        from openenv.core.env_server.interfaces import Environment
-        from openenv.core.env_server.types import State
-    except ImportError:
-        # Backward-compatible standalone imports with the legacy namespace.
-        from openenv_core.env_server.interfaces import Environment
-        from openenv_core.env_server.types import State
+    from openenv.core.env_server.interfaces import Environment
+    from openenv.core.env_server.types import State
 
 
 class SingleAgentWrapper(gym.Wrapper):

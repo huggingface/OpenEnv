@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import yaml
+from huggingface_hub.utils import filter_repo_objects
 from openenv.cli.__main__ import app
 from openenv.cli.commands.push import _rewrite_dockerfile_for_space
 from typer.testing import CliRunner
@@ -957,6 +958,125 @@ def test_push_does_not_use_gitignore_as_default_excludes(tmp_path: Path) -> None
         assert mock_api.upload_folder.called
 
 
+def test_push_excludes_build_artifacts_by_default(tmp_path: Path) -> None:
+    """Test that local build artifacts are never uploaded to the Space."""
+    _create_test_openenv_env(tmp_path)
+    (tmp_path / "build" / "lib" / "test_env").mkdir(parents=True)
+    (tmp_path / "build" / "lib" / "test_env" / "client.py").write_text("# stale\n")
+    (tmp_path / "test_env.egg-info").mkdir()
+    (tmp_path / "test_env.egg-info" / "PKG-INFO").write_text("Name: test_env\n")
+
+    with (
+        patch("openenv.cli.commands.push.whoami") as mock_whoami,
+        patch("openenv.cli.commands.push.login") as mock_login,
+        patch("openenv.cli.commands.push.HfApi") as mock_hf_api_class,
+    ):
+        mock_whoami.return_value = {"name": "testuser"}
+        mock_login.return_value = None
+        mock_api = MagicMock()
+        mock_hf_api_class.return_value = mock_api
+
+        def _assert_upload_payload(*_unused_args, **kwargs):
+            staged = Path(kwargs["folder_path"])
+            assert not (staged / "build").exists()
+            assert not (staged / "test_env.egg-info").exists()
+            assert (staged / "client.py").exists()
+
+        mock_api.upload_folder.side_effect = _assert_upload_payload
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(str(tmp_path))
+            result = runner.invoke(app, ["push"])
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0
+        assert mock_api.upload_folder.called
+
+
+def _remote_files_deleted_by_upload(
+    remote_files: list[str], folder_path: str, delete_patterns: list[str]
+) -> set[str]:
+    """Return the remote files that `HfApi.upload_folder` deletes.
+
+    Remote files matching `delete_patterns` are deleted unless they are re-uploaded in the
+    same commit or are the root `.gitattributes`.
+    """
+    staging_dir = Path(folder_path)
+    uploaded = {
+        path.relative_to(staging_dir).as_posix()
+        for path in staging_dir.rglob("*")
+        if path.is_file()
+    }
+    return {
+        path
+        for path in filter_repo_objects(remote_files, allow_patterns=delete_patterns)
+        if path not in uploaded and path != ".gitattributes"
+    }
+
+
+def test_push_deletes_only_stale_environment_files(tmp_path: Path) -> None:
+    """Test that push removes files the env no longer ships but keeps user-added and excluded files."""
+    _create_test_openenv_env(tmp_path)
+    (tmp_path / ".openenvignore").write_text("data/\n*.bin\nserver/cache\n")
+
+    with (
+        patch("openenv.cli.commands.push.whoami") as mock_whoami,
+        patch("openenv.cli.commands.push.login") as mock_login,
+        patch("openenv.cli.commands.push.HfApi") as mock_hf_api_class,
+    ):
+        mock_whoami.return_value = {"name": "testuser"}
+        mock_login.return_value = None
+        mock_api = MagicMock()
+        mock_hf_api_class.return_value = mock_api
+        mock_api.list_repo_files.return_value = [
+            ".gitattributes",
+            "README.md",
+            "server/app.py",
+            # Shipped by an earlier push, no longer part of the env.
+            "old_client.py",
+            "server/old_module.py",
+            # Added by hand on the Space, outside the directories the env ships.
+            "assets/demo.gif",
+            # Excluded from the upload with --exclude.
+            "data/train.parquet",
+            "server/weights.bin",
+            # Under a directory excluded without a trailing slash.
+            "server/cache/index.json",
+            # Matches the default ignore patterns.
+            "server/.env",
+        ]
+        deleted: set[str] = set()
+
+        def _capture_deletions(*_unused_args, **kwargs):
+            deleted.update(
+                _remote_files_deleted_by_upload(
+                    mock_api.list_repo_files.return_value,
+                    kwargs["folder_path"],
+                    kwargs["delete_patterns"],
+                )
+            )
+
+        mock_api.upload_folder.side_effect = _capture_deletions
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(str(tmp_path))
+            result = runner.invoke(app, ["push", "--exclude", ".openenvignore"])
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0
+        assert deleted == {
+            "old_client.py",
+            "server/old_module.py",
+        }
+        output = _strip_ansi(result.output)
+        assert "old_client.py" in output
+        assert "server/old_module.py" in output
+
+
 def test_push_fails_when_exclude_file_missing(tmp_path: Path) -> None:
     """Test that push fails if --exclude points to a missing file."""
     _create_test_openenv_env(tmp_path)
@@ -1012,6 +1132,10 @@ def test_push_create_pr_sets_upload_flag_and_skips_create_repo(tmp_path: Path) -
         mock_api.upload_folder.assert_called_once()
         call_kwargs = mock_api.upload_folder.call_args[1]
         assert call_kwargs.get("create_pr") is True
+        # The PR diff against main also removes files that are no longer in the env
+        mock_api.list_repo_files.assert_called_once_with(
+            "my-org/my-env", repo_type="space"
+        )
         # When create_pr we do not create the repo (target repo must exist)
         mock_api.create_repo.assert_not_called()
 

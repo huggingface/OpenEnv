@@ -12,7 +12,7 @@ via the OpenEnv Environment interface.
 """
 
 import uuid
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional, Tuple
 
 # Support both in-repo and standalone imports
 try:
@@ -115,6 +115,43 @@ class OpenSpielEnvironment(Environment):
 
         # Track last opponent action for learning
         self._last_opponent_action: int | None = None
+
+    def web_actions(
+        self, observation: Dict[str, Any]
+    ) -> List[Tuple[str, Dict[str, Any]]]:
+        """The legal moves as buttons, named for Catch."""
+        names = {0: "left", 1: "stay", 2: "right"} if self.game_name == "catch" else {}
+        return [
+            (f"{a} · {names[a]}" if a in names else str(a), {"action_id": a})
+            for a in observation.get("legal_actions") or []
+        ]
+
+    def render_web(self, observation: Dict[str, Any]) -> Optional[str]:
+        """Draw the Catch board (10 rows x 5 columns: ball and paddle)."""
+        state = observation.get("info_state") or []
+        if self.game_name != "catch" or len(state) != 50:
+            return None
+        cells = []
+        for i, value in enumerate(state):
+            if not value:
+                cells.append(
+                    '<span style="background:var(--border-color-primary);border-radius:4px"></span>'
+                )
+            elif i >= 45:
+                cells.append(
+                    '<span style="background:var(--body-text-color);border-radius:4px"></span>'
+                )
+            else:
+                cells.append(
+                    '<span style="background:var(--color-accent);border-radius:50%"></span>'
+                )
+        return (
+            '<div role="img" aria-label="Catch board" style="display:inline-grid;'
+            "grid-template-columns:repeat(5,26px);grid-auto-rows:26px;gap:3px;padding:10px;"
+            'border:1px solid var(--border-color-primary);border-radius:10px;background:var(--background-fill-secondary)">'
+            + "".join(cells)
+            + "</div>"
+        )
 
     def reset(self) -> OpenSpielObservation:
         """
