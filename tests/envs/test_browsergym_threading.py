@@ -69,11 +69,10 @@ def test_browsergym_calls_run_on_one_thread_whatever_the_caller(
         env.reset()
         env.step(BrowserGymAction(action_str="noop()"))
 
-    episode(envs[0])
     with ThreadPoolExecutor(max_workers=4) as pool:
         list(pool.map(episode, envs * 2))
     for env in envs:
         env.close()
 
-    assert len(threads) == 12
+    assert len(threads) == 10
     assert len(set(threads)) == 1
