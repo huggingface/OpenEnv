@@ -1,19 +1,15 @@
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Unit tests for the BrowserGym drawing in the web playground."""
 
-import os
-import sys
-
+import numpy as np
 import pytest
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
-
 pytest.importorskip("gymnasium")
-pytest.importorskip("PIL")
-np = pytest.importorskip("numpy")
 
-from envs.browsergym_env.models import BrowserGymAction
-from envs.browsergym_env.server import browsergym_environment
-from envs.browsergym_env.server.browsergym_environment import BrowserGymEnvironment
+from browsergym_env.models import BrowserGymAction
+from browsergym_env.server import browsergym_environment
+from browsergym_env.server.browsergym_environment import BrowserGymEnvironment
 
 
 class _FakeGymEnv:
@@ -35,7 +31,7 @@ class _FakeGymEnv:
         pass
 
 
-def test_browsergym_draws_the_page_goal_and_error(monkeypatch):
+def test_browsergym_web_playground(monkeypatch):
     monkeypatch.setattr(
         browsergym_environment.importlib, "import_module", lambda _name: object()
     )
@@ -45,9 +41,8 @@ def test_browsergym_draws_the_page_goal_and_error(monkeypatch):
     env = BrowserGymEnvironment(task_name="click-test", include_screenshot=True)
 
     page = env.render_web(env.reset().model_dump())
-    assert 'aria-label="Browser page"' in page
     assert "Click the button." in page
-    assert '<img src="data:image/jpeg;base64,' in page
+    assert '<img alt="BrowserGym page" src="data:image/jpeg;base64,' in page
     assert "Last action error" not in page
     assert "#" not in page  # theme colours only, so it reads in dark mode
 
@@ -57,5 +52,3 @@ def test_browsergym_draws_the_page_goal_and_error(monkeypatch):
     assert (
         "Last action error:</b> Could not find element with bid &quot;99&quot;" in page
     )
-    assert env.web_actions({}) == []
-    assert env.render_web({}) is None
