@@ -769,6 +769,22 @@ class TestEnvironment:
         assert observation.reward == pytest.approx(1.0)
         assert environment.state.submitted
 
+    def test_pelican_svg_web_playground(self):
+        environment = self.environment(subject="pelican", vehicle="bicycle")
+        task = environment.render_web(environment.reset().model_dump())
+        assert "pelican" in task
+        assert "#" not in task  # theme colours only, so it reads in dark mode
+        drawing = environment.render_web(
+            environment.step(
+                PelicanSvgAction(response=fixture("good_pelican_bike"))
+            ).model_dump()
+        )
+        assert (
+            '<img alt="Pelican SVG drawing" src="data:image/svg+xml;base64,' in drawing
+        )
+        assert "<svg" not in drawing  # never inlined, so its scripts can't run
+        assert "reward 1.00" in drawing
+
     def test_task_can_be_pinned_by_id(self):
         """A benchmark run must ask every model the same question."""
         observation = self.environment().reset(task_id="capybara_unicycle")
