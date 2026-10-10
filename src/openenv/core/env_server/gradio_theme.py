@@ -110,7 +110,6 @@ OPENENV_GRADIO_CSS = """
 .oe-tools .wrap label { padding: 12px 14px !important; font-size: 13px; }
 .oe-actions .wrap label { padding: 10px 16px !important; font-size: 14px; }
 .oe-tools .wrap label.selected { border: 1.5px solid var(--color-accent) !important; background: var(--color-accent-soft) !important; }
-.oe-actions .wrap label:hover { border-color: var(--body-text-color) !important; }
 .oe-actions input[type=radio] { display: none; }
 .oe-result { border: 1px solid var(--border-color-primary); border-radius: 10px; overflow: hidden; }
 .oe-output, .oe-fields { background: var(--background-fill-secondary); border-bottom: 1px solid var(--border-color-primary); }
