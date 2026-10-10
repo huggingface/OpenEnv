@@ -76,9 +76,7 @@ class ChessEnvironment(Environment):
             Initial observation of the board state.
         """
         self._reset_rubric()
-        # moonfish memoizes the evaluation of every position it sees in a
-        # module-level dict that is never trimmed, so it grows without bound
-        # across episodes.
+        # moonfish's module-level evaluation cache is never trimmed.
         BOARD_EVALUATION_CACHE.clear()
 
         if fen:
