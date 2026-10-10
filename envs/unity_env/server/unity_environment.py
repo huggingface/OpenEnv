@@ -156,6 +156,9 @@ class UnityMLAgentsEnvironment(Environment):
                 Env var: UNITY_QUALITY_LEVEL (default: 5)
             cache_dir: Directory to cache downloaded environment binaries.
                 Env var: UNITY_CACHE_DIR (default: ~/.mlagents-cache)
+
+        `reset()` includes visual observations by default when the env var
+        UNITY_INCLUDE_VISUAL is 1 (default: 0).
         """
         # Initialize cleanup-critical attributes first (for __del__ safety)
         self._unity_env = None
@@ -192,7 +195,10 @@ class UnityMLAgentsEnvironment(Environment):
         self._cache_dir = cache_dir or os.environ.get(
             "UNITY_CACHE_DIR", PERSISTENT_CACHE_DIR
         )
-        self._include_visual = False
+        self._default_include_visual = os.environ.get(
+            "UNITY_INCLUDE_VISUAL", "0"
+        ).lower() in ("1", "true", "yes")
+        self._include_visual = self._default_include_visual
 
         # State tracking
         self._state = UnityState(
@@ -411,7 +417,7 @@ class UnityMLAgentsEnvironment(Environment):
         self,
         env_id: Optional[str] = None,
         seed: Optional[int] = None,
-        include_visual: bool = False,
+        include_visual: Optional[bool] = None,
         **kwargs,
     ) -> UnityObservation:
         """
@@ -421,12 +427,15 @@ class UnityMLAgentsEnvironment(Environment):
             env_id: Optionally switch to a different Unity environment.
             seed: Random seed (not fully supported by Unity ML-Agents).
             include_visual: If True, include visual observations in output.
+                Defaults to UNITY_INCLUDE_VISUAL.
             **kwargs: Additional arguments (ignored).
 
         Returns:
             UnityObservation with initial state.
         """
-        self._include_visual = include_visual
+        self._include_visual = (
+            self._default_include_visual if include_visual is None else include_visual
+        )
 
         # Load or switch environment if needed
         target_env = env_id or self._env_id
@@ -543,7 +552,7 @@ class UnityMLAgentsEnvironment(Environment):
         self,
         env_id: Optional[str] = None,
         seed: Optional[int] = None,
-        include_visual: bool = False,
+        include_visual: Optional[bool] = None,
         **kwargs,
     ) -> UnityObservation:
         """

@@ -36,3 +36,10 @@ def test_unity_web_playground(tmp_path):
         action_spec_info={"discrete_branches": [5]},
     ).model_dump()
     assert env.web_actions(obs)[4] == ("action 4", {"discrete_actions": [4]})
+
+
+def test_unity_include_visual_default(tmp_path, monkeypatch):
+    monkeypatch.setenv("UNITY_INCLUDE_VISUAL", "1")
+    assert UnityMLAgentsEnvironment(cache_dir=str(tmp_path))._include_visual
+    monkeypatch.delenv("UNITY_INCLUDE_VISUAL")
+    assert not UnityMLAgentsEnvironment(cache_dir=str(tmp_path))._include_visual
