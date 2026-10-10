@@ -8,18 +8,23 @@ with OpenEnv's Environment ABC. BrowserGym includes multiple benchmarks:
 - WorkArena: Enterprise task automation
 """
 
+import base64
+import html
 import importlib
+import io
 import logging
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
 import gymnasium as gym
+import numpy as np
 from browsergym_env.models import (
     BrowserGymAction,
     BrowserGymObservation,
     BrowserGymState,
 )
 from openenv.core.env_server.interfaces import Environment
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -427,6 +432,47 @@ class BrowserGymEnvironment(Environment):
             done=done,
             reward=reward,
             metadata=browsergym_metadata,
+        )
+
+    def render_web(self, observation: Dict[str, Any]) -> Optional[str]:
+        """Draw the page screenshot with the goal, the URL and the last action error."""
+        screenshot = observation.get("screenshot")
+        goal = observation.get("goal")
+        if not screenshot and not goal:
+            return None
+        parts = []
+        if goal:
+            parts.append(f"<div><b>Goal:</b> {html.escape(goal)}</div>")
+        if observation.get("url"):
+            parts.append(
+                '<div style="font-size:12px;opacity:0.7;word-break:break-all">'
+                f"{html.escape(observation['url'])}</div>"
+            )
+        if screenshot:
+            image = Image.fromarray(np.asarray(screenshot, dtype=np.uint8))
+            image.thumbnail((800, 800))
+            buffer = io.BytesIO()
+            image.save(buffer, format="JPEG", quality=80)
+            data = base64.b64encode(buffer.getvalue()).decode()
+            parts.append(
+                f'<img src="data:image/jpeg;base64,{data}" alt="Page screenshot" '
+                'style="max-width:100%;border:1px solid var(--border-color-primary);border-radius:6px">'
+            )
+        error = observation.get("error") or (
+            observation.get("metadata", {})
+            .get("browsergym_obs", {})
+            .get("last_action_error")
+        )
+        if error:
+            parts.append(
+                '<div style="color:var(--color-accent)"><b>Last action error:</b> '
+                f"{html.escape(str(error))}</div>"
+            )
+        return (
+            '<div role="img" aria-label="Browser page" style="display:flex;flex-direction:column;'
+            "gap:8px;max-width:500px;padding:10px;color:var(--body-text-color);"
+            "border:1px solid var(--border-color-primary);border-radius:10px;"
+            'background:var(--background-fill-secondary)">' + "".join(parts) + "</div>"
         )
 
     @property
