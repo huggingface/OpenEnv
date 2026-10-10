@@ -21,6 +21,8 @@ Usage:
     uv run --project . server
 """
 
+import os
+
 try:
     from openenv.core.env_server.http_server import create_app
 
@@ -57,6 +59,7 @@ app = create_app(
     DMControlAction,
     DMControlObservation,
     env_name="dm_control_env",
+    max_concurrent_envs=int(os.getenv("MAX_CONCURRENT_ENVS", "8")),
 )
 
 

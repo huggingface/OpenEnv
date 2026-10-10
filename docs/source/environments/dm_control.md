@@ -153,3 +153,4 @@ python examples/quadruped_control.py --task run
 | `DMCONTROL_TASK` | balance | Default task |
 | `DMCONTROL_RENDER_HEIGHT` | 480 | Render height |
 | `DMCONTROL_RENDER_WIDTH` | 640 | Render width |
+| `MAX_CONCURRENT_ENVS` | 8 | Maximum concurrent WebSocket sessions |

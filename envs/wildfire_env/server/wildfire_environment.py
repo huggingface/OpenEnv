@@ -49,6 +49,8 @@ class WildfireEnvironment(Environment):
       - burning cells burn for multiple ticks, then become ash
     """
 
+    SUPPORTS_CONCURRENT_SESSIONS = True
+
     def __init__(
         self,
         width: int = 32,

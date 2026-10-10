@@ -29,6 +29,7 @@ app = create_app(
     WildfireAction,
     WildfireObservation,
     env_name="wildfire_env",
+    max_concurrent_envs=int(os.getenv("MAX_CONCURRENT_ENVS", "8")),
 )
 
 # Override the default /web route with our custom wildfire interface
