@@ -242,44 +242,42 @@ class WildfireEnvironment(Environment):
 
     def render_web(self, observation: Dict[str, Any]) -> Optional[str]:
         """Draw the fire grid (one colour per cell state) with a legend, wind, humidity and resources."""
-        grid = observation.get("grid")
-        width = observation.get("width")
-        if not grid or not width:
+        if "grid" not in observation:
             return None
+        width = observation["width"]
         size = max(6, min(22, 380 // width))
-        text = f"max-width:{width * (size + 2)}px"
+        max_width = f"max-width:{width * (size + 2)}px"
         cells = "".join(
             f'<span title="x={i % width}, y={i // width}: {CELL_STYLES[v][0]}" '
             f'style="{CELL_STYLES[v][1]};border-radius:3px"></span>'
-            for i, v in enumerate(grid)
+            for i, v in enumerate(observation["grid"])
         )
         legend = "".join(
             f'<span style="display:inline-flex;align-items:center;gap:5px">'
             f'<span style="width:11px;height:11px;border-radius:3px;{style}"></span>{label}</span>'
             for label, style in CELL_STYLES.values()
         )
-        wind = observation.get("wind_dir", "CALM")
+        wind = observation["wind_dir"]
         stats = " · ".join(
             f'<span style="white-space:nowrap">{item}</span>'
             for item in (
-                f"step {observation.get('step', 0)}",
-                f"wind {wind} {WIND_ARROWS.get(wind, '')}",
-                f"humidity {observation.get('humidity', 0):.2f}",
-                f"water {observation.get('remaining_water', 0)}",
-                f"breaks {observation.get('remaining_breaks', 0)}",
-                f"burning {observation.get('burning_count', 0)}",
-                f"ash {observation.get('burned_count', 0)}",
+                f"step {observation['step']}",
+                f"wind {wind} {WIND_ARROWS[wind]}",
+                f"humidity {observation['humidity']:.2f}",
+                f"water {observation['remaining_water']}",
+                f"breaks {observation['remaining_breaks']}",
+                f"burning {observation['burning_count']}",
+                f"ash {observation['burned_count']}",
             )
         )
         return (
-            '<div role="img" aria-label="Wildfire grid" style="display:inline-flex;flex-direction:column;gap:8px;'
+            '<div role="img" aria-label="Wildfire board" style="display:inline-flex;flex-direction:column;gap:8px;'
             "padding:10px;border:1px solid var(--border-color-primary);border-radius:10px;"
             'background:var(--background-fill-secondary);color:var(--body-text-color);font-size:12px">'
             f'<div style="display:grid;grid-template-columns:repeat({width},{size}px);'
             f'grid-auto-rows:{size}px;gap:2px">{cells}</div>'
-            f'<div style="display:flex;flex-wrap:wrap;gap:4px 12px;{text}">{legend}</div>'
-            f'<div style="font-family:var(--font-mono);color:var(--body-text-color-subdued);{text}">{stats}</div>'
-            f'<div style="color:var(--body-text-color-subdued);{text}">x is the column, y the row, (0, 0) top-left</div>'
+            f'<div style="display:flex;flex-wrap:wrap;gap:4px 12px;{max_width}">{legend}</div>'
+            f'<div style="font-family:var(--font-mono);color:var(--body-text-color-subdued);{max_width}">{stats}</div>'
             "</div>"
         )
 
