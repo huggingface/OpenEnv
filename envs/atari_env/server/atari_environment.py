@@ -221,7 +221,7 @@ class AtariEnvironment(Environment):
         buffer = io.BytesIO()
         Image.fromarray(frame).save(buffer, format="PNG")
         return (
-            f'<img alt="{self.game_name} frame" '
+            '<img alt="Atari frame" '
             f'src="data:image/png;base64,{base64.b64encode(buffer.getvalue()).decode()}" '
             f'style="width:{2 * shape[1]}px;max-width:100%;image-rendering:pixelated;'
             'border:1px solid var(--border-color-primary);border-radius:6px">'

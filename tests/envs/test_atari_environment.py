@@ -27,7 +27,7 @@ def test_atari_web_playground():
         ("5 · LEFTFIRE", {"action_id": 5}),
     ]
     frame = env.render_web(obs)
-    assert 'alt="pong frame"' in frame
+    assert 'alt="Atari frame"' in frame
     png = base64.b64decode(frame.split("base64,")[1].split('"')[0])
     assert Image.open(io.BytesIO(png)).size == (160, 210)
 
