@@ -55,6 +55,7 @@ if TYPE_CHECKING:
     from .sync_client import SyncEnvClient
 
 from websockets.asyncio.client import connect as ws_connect
+from websockets.exceptions import ConnectionClosed
 from websockets.protocol import State
 
 ActT = TypeVar("ActT")
@@ -715,7 +716,14 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
 
     async def _send_and_receive(self, message: Dict[str, Any]) -> Dict[str, Any]:
         """Send a message and wait for response."""
-        await self._send(message)
+        try:
+            await self._send(message)
+        except ConnectionClosed:
+            # The server refuses a session (e.g. at capacity) by sending an
+            # error frame and closing. When the close arrives before our send,
+            # the error frame is still queued, so read it instead of failing
+            # with a bare close. With nothing queued, `recv()` re-raises.
+            pass
         response = await self._receive()
 
         # Check for error response
