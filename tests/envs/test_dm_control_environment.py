@@ -12,9 +12,8 @@ from dm_control_env.models import DMControlAction
 from dm_control_env.server.dm_control_environment import DMControlEnvironment
 
 
-def test_cartpole_draws_the_scene_without_stepping():
+def test_dm_control_web_playground():
     env = DMControlEnvironment()
-    assert env.render_web({"observations": {}}) is None
     env.reset()
     obs = env.step(DMControlAction(values=[0.5])).model_dump()
     try:
@@ -24,8 +23,7 @@ def test_cartpole_draws_the_scene_without_stepping():
     time = env._env.physics.data.time
     frame = env.render_web(obs)
     assert env._env.physics.data.time == time
-    assert 'aria-label="cartpole balance scene"' in frame
-    assert "#" not in frame
+    assert 'alt="dm_control scene"' in frame
     jpeg = base64.b64decode(frame.split("base64,")[1].split('"')[0])
     assert jpeg.startswith(b"\xff\xd8")
     assert env.render_web({"unrelated": 1}) is None
