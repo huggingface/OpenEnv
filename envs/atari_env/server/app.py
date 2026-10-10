@@ -28,6 +28,7 @@ Environment variables:
     ATARI_DIFFICULTY: Game difficulty (optional)
     ATARI_REPEAT_ACTION_PROB: Sticky action probability (default: "0.0")
     ATARI_FRAMESKIP: Frameskip (default: "4")
+    MAX_CONCURRENT_ENVS: Maximum concurrent WebSocket sessions (default: "8")
 """
 
 import os
@@ -79,7 +80,11 @@ def create_atari_environment():
 # Create the FastAPI app with web interface and README integration
 # Pass the factory function instead of an instance for WebSocket session support
 app = create_app(
-    create_atari_environment, AtariAction, AtariObservation, env_name="atari_env"
+    create_atari_environment,
+    AtariAction,
+    AtariObservation,
+    env_name="atari_env",
+    max_concurrent_envs=int(os.getenv("MAX_CONCURRENT_ENVS", "8")),
 )
 
 

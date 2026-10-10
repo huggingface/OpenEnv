@@ -22,6 +22,7 @@ Usage:
 """
 
 import inspect
+import os
 
 # Support both in-repo and standalone imports
 try:
@@ -49,7 +50,13 @@ def _create_snake_app():
         "Environment" in annotation_text and "Callable" not in annotation_text
     )
     env_arg = SnakeEnvironment() if expects_instance else SnakeEnvironment
-    return create_app(env_arg, SnakeAction, SnakeObservation, env_name="snake_env")
+    return create_app(
+        env_arg,
+        SnakeAction,
+        SnakeObservation,
+        env_name="snake_env",
+        max_concurrent_envs=int(os.getenv("MAX_CONCURRENT_ENVS", "8")),
+    )
 
 
 # Create the app with web interface and README integration.

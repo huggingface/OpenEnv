@@ -112,7 +112,7 @@ The episode ends with `lose` when the accumulated reward drops below `-0.5 * maz
 
 ## Configuration
 
-The server takes no environment variables. To use another layout, construct `MazeEnvironment(maze_array=..., start_cell=(col, row), exit_cell=(col, row))` in `server/app.py`. The exit defaults to the bottom-right cell.
+`MAX_CONCURRENT_ENVS` sets the maximum number of concurrent WebSocket sessions (default: `8`). To use another layout, construct `MazeEnvironment(maze_array=..., start_cell=(col, row), exit_cell=(col, row))` in `server/app.py`. The exit defaults to the bottom-right cell.
 
 ## Advanced Usage
 

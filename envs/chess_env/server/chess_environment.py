@@ -33,6 +33,8 @@ class ChessEnvironment(Environment):
     an opponent (which can be random, moonfish engine, or self-play).
     """
 
+    SUPPORTS_CONCURRENT_SESSIONS = True
+
     def __init__(
         self,
         opponent: str = "moonfish",

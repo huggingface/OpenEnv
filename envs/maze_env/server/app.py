@@ -28,6 +28,8 @@ Usage:
     python -m server.app
 """
 
+import os
+
 # Support both in-repo and standalone imports
 try:
     # In-repo imports (when running from OpenEnv repository)
@@ -53,7 +55,7 @@ app = create_app(
     MazeAction,
     MazeObservation,
     env_name="maze_env",
-    max_concurrent_envs=1,  # increase this number to allow more concurrent WebSocket sessions
+    max_concurrent_envs=int(os.getenv("MAX_CONCURRENT_ENVS", "8")),
 )
 
 

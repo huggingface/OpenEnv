@@ -271,7 +271,8 @@ PYTHONPATH=src:envs uv run uvicorn pelican_svg_env.server.app:app --port 8000
 
 Environment variables: `HF_TOKEN` for the judge, `PELICAN_SVG_JUDGE_MODEL` to
 change it from `Qwen/Qwen2.5-VL-72B-Instruct`, `PELICAN_SVG_DISABLE_JUDGE=1` to
-force offline scoring.
+force offline scoring, `MAX_CONCURRENT_ENVS` for the maximum number of
+concurrent WebSocket sessions (default `8`).
 
 With no judge configured, structure carries the full weight. A judge that is
 configured but *fails* is treated differently: the semantic component stays at

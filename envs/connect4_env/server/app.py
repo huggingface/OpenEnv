@@ -1,5 +1,7 @@
 """FastAPI application for the Connect4 Environment."""
 
+import os
+
 from openenv.core.env_server import create_app
 
 # Support both in-repo and standalone imports
@@ -17,7 +19,11 @@ except ImportError as e:
 # Create the FastAPI app
 # Pass the class (factory) instead of an instance for WebSocket session support
 app = create_app(
-    Connect4Environment, Connect4Action, Connect4Observation, env_name="connect4_env"
+    Connect4Environment,
+    Connect4Action,
+    Connect4Observation,
+    env_name="connect4_env",
+    max_concurrent_envs=int(os.getenv("MAX_CONCURRENT_ENVS", "8")),
 )
 
 

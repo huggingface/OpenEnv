@@ -227,6 +227,7 @@ docker run -p 8000:8000 -e ATARI_FULL_ACTION_SPACE=true atari-env:latest
 - `ATARI_DIFFICULTY`: Game difficulty (optional, game-specific)
 - `ATARI_REPEAT_ACTION_PROB`: Sticky action probability 0.0-1.0 (default: "0.0")
 - `ATARI_FRAMESKIP`: Frames to skip per action (default: "4")
+- `MAX_CONCURRENT_ENVS`: Maximum concurrent WebSocket sessions (default: "8")
 
 ### Example: Breakout with Custom Settings
 
