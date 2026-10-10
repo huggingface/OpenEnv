@@ -16,6 +16,7 @@ import glob
 import hashlib
 import io
 import os
+import socket
 from pathlib import Path
 from sys import platform
 from typing import Any, Dict, List, Optional
@@ -241,8 +242,14 @@ class UnityMLAgentsEnvironment(Environment):
             tmp_dir=self._cache_dir,
         )
 
+        # Each instance needs its own communication port: ask the OS for a free one
+        with socket.socket() as sock:
+            sock.bind(("localhost", 0))
+            port = sock.getsockname()[1]
+
         # Create the environment
         self._unity_env = persistent_entry.make(
+            base_port=port,
             no_graphics=self._no_graphics,
             side_channels=[self._engine_channel],
         )
