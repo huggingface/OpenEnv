@@ -10,6 +10,7 @@ with OpenEnv's Environment ABC. BrowserGym includes multiple benchmarks:
 
 import importlib
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
@@ -22,6 +23,16 @@ from browsergym_env.models import (
 from openenv.core.env_server.interfaces import Environment
 
 logger = logging.getLogger(__name__)
+
+# browsergym.core keeps one process-wide Playwright instance (sync API), which only
+# works on the thread that started it. Every BrowserGym call runs on this single thread
+# so the HTTP API, WebSocket sessions and the /web playground can share one process.
+_PLAYWRIGHT_THREAD = ThreadPoolExecutor(max_workers=1, thread_name_prefix="browsergym")
+
+
+def _on_playwright_thread(fn, *args, **kwargs):
+    """Run `fn` on the thread that owns the BrowserGym Playwright instance."""
+    return _PLAYWRIGHT_THREAD.submit(fn, *args, **kwargs).result()
 
 
 def _to_jsonable(value: Any) -> Any:
@@ -230,7 +241,7 @@ class BrowserGymEnvironment(Environment):
 
         if previous_gym_env is not None:
             try:
-                previous_gym_env.close()
+                _on_playwright_thread(previous_gym_env.close)
             except Exception as exc:  # noqa: BLE001 - browsergym/playwright cleanup
                 logger.warning("BrowserGym cleanup failed during task switch: %s", exc)
 
@@ -266,13 +277,13 @@ class BrowserGymEnvironment(Environment):
 
         # Reset the gym environment
         try:
-            obs, info = self.gym_env.reset(**reset_options)
+            obs, info = _on_playwright_thread(self.gym_env.reset, **reset_options)
         except AttributeError as err:
             if "context" in str(err) and hasattr(self.gym_env, "close"):
                 # BrowserGym can leave partially initialized state after a
                 # failed reset. Close the hanging resources and try once more.
-                self.gym_env.close()
-                obs, info = self.gym_env.reset(**reset_options)
+                _on_playwright_thread(self.gym_env.close)
+                obs, info = _on_playwright_thread(self.gym_env.reset, **reset_options)
             else:
                 raise
         except Exception as err:  # noqa: BLE001 - browsergym
@@ -300,8 +311,8 @@ class BrowserGymEnvironment(Environment):
 
         # Execute action in gym environment
         try:
-            obs, reward, terminated, truncated, info = self.gym_env.step(
-                action.action_str
+            obs, reward, terminated, truncated, info = _on_playwright_thread(
+                self.gym_env.step, action.action_str
             )
 
             self._last_obs = obs
@@ -438,6 +449,6 @@ class BrowserGymEnvironment(Environment):
         """Clean up environment resources."""
         if hasattr(self, "gym_env"):
             try:
-                self.gym_env.close()
+                _on_playwright_thread(self.gym_env.close)
             except Exception as exc:  # noqa: BLE001 - browsergym/playwright cleanup
                 logger.warning("BrowserGym cleanup failed: %s", exc)
