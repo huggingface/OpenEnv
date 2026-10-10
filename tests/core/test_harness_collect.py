@@ -867,6 +867,16 @@ class TestBuildModelStep:
             server.shutdown()
             server.server_close()
 
+    def test_repeated_builds_share_one_loop_thread(self):
+        client = _RecordingLLMClient(LLMResponse(content="ok", tool_calls=[]))
+        threads_before = threading.active_count()
+
+        for _ in range(5):
+            step = build_model_step(client)
+            assert step([], [], {}).response.content == "ok"
+
+        assert threading.active_count() <= threads_before + 1
+
 
 def _populated_output_dir(tmp_path: Path) -> Path:
     """Write a minimal results.jsonl + metadata.json into tmp_path."""

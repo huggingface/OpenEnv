@@ -23,18 +23,9 @@ Usage:
 
 import inspect
 
-try:
-    from openenv.core.env_server.http_server import create_app
-except Exception as e:  # pragma: no cover
-    try:
-        from openenv_core.env_server.http_server import create_app
-    except Exception as legacy_exc:  # pragma: no cover
-        raise ImportError(
-            "openenv is required for the web interface. Install dependencies with '\n"
-            "    uv sync\n'"
-        ) from legacy_exc
-
 from models import WebSearchAction, WebSearchObservation
+from openenv.core.env_server.http_server import create_app
+
 from .web_search_environment import WebSearchEnvironment
 
 

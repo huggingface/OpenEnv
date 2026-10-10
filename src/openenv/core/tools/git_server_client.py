@@ -10,6 +10,7 @@ instances share the same Gitea server but have isolated workspaces.
 import atexit
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -355,8 +356,7 @@ class GitServerClient:
         if not work_path.exists():
             return (1, "", f"Working directory does not exist: {work_path}")
 
-        # Split command safely
-        cmd_parts = ["git"] + command.split()
+        cmd_parts = ["git"] + shlex.split(command)
 
         result = subprocess.run(
             cmd_parts,

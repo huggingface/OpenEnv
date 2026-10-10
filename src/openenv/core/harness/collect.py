@@ -16,6 +16,7 @@ The serialized schema is designed to be consumed directly by TRL's
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import threading
 import warnings
@@ -407,6 +408,14 @@ def _tool_to_mcp_dict(tool: Tool) -> dict[str, Any]:
     }
 
 
+@functools.cache
+def _model_step_loop() -> asyncio.AbstractEventLoop:
+    """Start the event loop shared by every model step, on its first use."""
+    loop = asyncio.new_event_loop()
+    threading.Thread(target=loop.run_forever, daemon=True).start()
+    return loop
+
+
 def build_model_step(
     llm_client: LLMClient,
     *,
@@ -422,10 +431,9 @@ def build_model_step(
     handles the sync/async adaptation and tool dict shape.
     """
     # Async clients (e.g. `AsyncOpenAI`) bind their connection pool to the loop of
-    # the first request, so every call must run on the same long-lived loop. The loop
-    # lives as long as the process, so build one model step per run, not per episode.
-    loop = asyncio.new_event_loop()
-    threading.Thread(target=loop.run_forever, daemon=True).start()
+    # the first request, so every call must run on the same long-lived loop. All
+    # model steps share one loop, so building one per episode doesn't add threads.
+    loop = _model_step_loop()
 
     def model_step(
         messages: list[dict[str, Any]],
