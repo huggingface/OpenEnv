@@ -461,7 +461,7 @@ def _draw_blackjack(observation: Dict[str, Any]) -> Optional[str]:
     if observation.get("game_phase") != "terminal":
         dealer_cards.append("??")
     return _hand(
-        "Blackjack hands",
+        "Blackjack board",
         "Blackjack",
         [
             (f"You ({total})", [ranks[c % 13] + "♣♦♥♠"[c // 13] for c in player]),
@@ -484,7 +484,7 @@ def _draw_kuhn_poker(observation: Dict[str, Any]) -> Optional[str]:
         if state[5 + 2 * r] or state[6 + 2 * r]
     ]
     return _hand(
-        "Kuhn Poker hands",
+        "Kuhn Poker board",
         "Bets: " + (" → ".join(bets) or "none yet"),
         [("You", [card]), ("Opponent", ["?"])],
     )
@@ -517,7 +517,7 @@ def _draw_cliff_walking(observation: Dict[str, Any]) -> Optional[str]:
                 cells.append(_cell("var(--body-text-color)"))
             else:
                 cells.append(_cell("var(--border-color-primary)"))
-    return _grid("Cliff Walking grid", 8, cells)
+    return _grid("Cliff Walking board", 8, cells)
 
 
 _DRAWINGS = {

@@ -109,7 +109,7 @@ def test_catch_offers_legal_moves_and_a_board():
     assert "#" not in board  # theme colours only, so it reads in dark mode
 
 
-def test_2048_offers_named_moves_and_draws_the_tiles():
+def test_openspiel_2048_web_playground():
     pytest.importorskip("open_spiel")
     from openspiel_env.server.openspiel_environment import OpenSpielEnvironment
 
@@ -132,12 +132,12 @@ def test_2048_offers_named_moves_and_draws_the_tiles():
     [
         ("tic_tac_toe", "Tic-Tac-Toe board", ("4 · centre", {"action_id": 4})),
         ("connect_four", "Connect Four board", ("3 · column 3", {"action_id": 3})),
-        ("blackjack", "Blackjack hands", ("0 · hit", {"action_id": 0})),
-        ("kuhn_poker", "Kuhn Poker hands", ("1 · bet", {"action_id": 1})),
-        ("cliff_walking", "Cliff Walking grid", ("1 · up", {"action_id": 1})),
+        ("blackjack", "Blackjack board", ("0 · hit", {"action_id": 0})),
+        ("kuhn_poker", "Kuhn Poker board", ("1 · bet", {"action_id": 1})),
+        ("cliff_walking", "Cliff Walking board", ("1 · up", {"action_id": 1})),
     ],
 )
-def test_openspiel_game_offers_named_moves_and_a_drawing(game, label, button):
+def test_openspiel_web_playground(game, label, button):
     pytest.importorskip("open_spiel")
     from openspiel_env.models import OpenSpielAction
     from openspiel_env.server.openspiel_environment import OpenSpielEnvironment
