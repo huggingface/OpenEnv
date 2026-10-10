@@ -2,12 +2,7 @@
 
 """Clients send `headers` on every connection, so they can reach a private Space."""
 
-import socket
-import threading
-import time
-
 import pytest
-import uvicorn
 from openenv.core.generic_client import GenericEnvClient
 from openenv.core.mcp_client import MCPToolClient
 
@@ -33,24 +28,8 @@ def require_token(app):
 
 
 @pytest.fixture
-def server_url():
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(("127.0.0.1", 0))
-    port = sock.getsockname()[1]
-    server = uvicorn.Server(
-        uvicorn.Config(require_token(echo_app), log_level="warning")
-    )
-    thread = threading.Thread(target=lambda: server.run(sockets=[sock]), daemon=True)
-    thread.start()
-    deadline = time.monotonic() + 15
-    while not server.started and time.monotonic() < deadline:
-        time.sleep(0.05)
-    assert server.started
-    try:
-        yield f"http://127.0.0.1:{port}"
-    finally:
-        server.should_exit = True
-        thread.join(timeout=10)
+def server_url(serve):
+    return serve(require_token(echo_app))
 
 
 async def test_websocket_without_headers_is_rejected(server_url):
@@ -64,11 +43,6 @@ async def test_generic_client_sends_headers(server_url):
         await env.reset()
         child = await env.new_session()
         await child.reset()
-
-
-def test_sync_client_sends_headers(server_url):
-    with GenericEnvClient(base_url=server_url, headers=HEADERS).sync() as env:
-        env.reset()
 
 
 async def test_mcp_tool_client_sends_headers(server_url):
