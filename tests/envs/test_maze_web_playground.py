@@ -1,8 +1,4 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
+# SPDX-License-Identifier: BSD-3-Clause
 
 """Tests for the Maze drawing and move buttons in the web playground."""
 
@@ -14,7 +10,7 @@ from maze_env.models import MazeAction
 from maze_env.server.maze_env_environment import MazeEnvironment
 
 
-def test_maze_offers_legal_moves_and_a_board():
+def test_maze_web_playground():
     env = MazeEnvironment()
     obs = env.reset().model_dump()
     assert env.web_actions(obs) == [("3 · right", {"action": 3})]

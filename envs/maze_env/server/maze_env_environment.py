@@ -187,24 +187,23 @@ class MazeEnvironment(Environment[MazeAction, MazeObservation, MazeState]):
 
     def render_web(self, observation: Dict[str, Any]) -> Optional[str]:
         """Draw the maze: walls, free cells, the exit (outlined) and the agent (dot)."""
-        metadata = observation.get("metadata") or {}
-        maze = metadata.get("maze")
-        exit_cell = metadata.get("exit_cell")
-        position = observation.get("current_position")
-        if not maze or not exit_cell or not position:
+        if "current_position" not in observation:
             return None
+        maze = observation["metadata"]["maze"]
         cells = []
         for row, values in enumerate(maze):
             for col, value in enumerate(values):
-                style = "border-radius:4px;display:flex;align-items:center;justify-content:center;"
-                if value:
-                    style += "background:var(--body-text-color)"
-                else:
-                    style += "background:var(--border-color-primary)"
-                if [col, row] == exit_cell:
+                background = (
+                    "var(--body-text-color)" if value else "var(--border-color-primary)"
+                )
+                style = (
+                    "border-radius:4px;display:flex;align-items:center;"
+                    f"justify-content:center;background:{background}"
+                )
+                if [col, row] == observation["metadata"]["exit_cell"]:
                     style += ";box-shadow:inset 0 0 0 3px var(--color-accent)"
                 dot = ""
-                if [col, row] == position:
+                if [col, row] == observation["current_position"]:
                     dot = '<span style="width:60%;height:60%;border-radius:50%;background:var(--color-accent)"></span>'
                 cells.append(f'<span style="{style}">{dot}</span>')
         return (
