@@ -10,7 +10,7 @@ Maze Environment Implementation.
 A simple gridworld maze with walls, a start cell, and an exit.
 """
 
-from typing import Any, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
 # Support both in-repo and standalone imports
@@ -173,6 +173,45 @@ class MazeEnvironment(Environment[MazeAction, MazeObservation, MazeState]):
                 "exit_cell": list(self.env.exit_cell),
                 "step": self._state.step_count,
             },
+        )
+
+    def web_actions(
+        self, observation: Dict[str, Any]
+    ) -> List[Tuple[str, Dict[str, Any]]]:
+        """The legal moves as buttons, named by direction."""
+        names = {0: "up", 1: "down", 2: "left", 3: "right"}
+        return [
+            (f"{a} · {names[a]}", {"action": a})
+            for a in sorted(observation.get("legal_actions") or [])
+        ]
+
+    def render_web(self, observation: Dict[str, Any]) -> Optional[str]:
+        """Draw the maze: walls, free cells, the exit (outlined) and the agent (dot)."""
+        if "current_position" not in observation:
+            return None
+        maze = observation["metadata"]["maze"]
+        cells = []
+        for row, values in enumerate(maze):
+            for col, value in enumerate(values):
+                background = (
+                    "var(--body-text-color)" if value else "var(--border-color-primary)"
+                )
+                style = (
+                    "border-radius:4px;display:flex;align-items:center;"
+                    f"justify-content:center;background:{background}"
+                )
+                if [col, row] == observation["metadata"]["exit_cell"]:
+                    style += ";box-shadow:inset 0 0 0 3px var(--color-accent)"
+                dot = ""
+                if [col, row] == observation["current_position"]:
+                    dot = '<span style="width:60%;height:60%;border-radius:50%;background:var(--color-accent)"></span>'
+                cells.append(f'<span style="{style}">{dot}</span>')
+        return (
+            '<div role="img" aria-label="Maze board" style="display:inline-grid;'
+            f"grid-template-columns:repeat({len(maze[0])},26px);grid-auto-rows:26px;gap:3px;padding:10px;"
+            'border:1px solid var(--border-color-primary);border-radius:10px;background:var(--background-fill-secondary)">'
+            + "".join(cells)
+            + "</div>"
         )
 
     def _sync_state(self, done: bool) -> None:
