@@ -254,7 +254,7 @@ class TestTemporalDiscounting:
         assert env2._gamma == 0.5
 
 
-def test_web_playground_draws_the_board_and_offers_legal_moves():
+def test_chess_web_playground():
     env = ChessEnvironment(opponent=None)
     obs = env.reset().model_dump()
     actions = env.web_actions(obs)

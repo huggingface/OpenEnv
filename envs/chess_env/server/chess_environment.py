@@ -283,11 +283,10 @@ class ChessEnvironment(Environment):
 
     def render_web(self, observation: Dict[str, Any]) -> Optional[str]:
         """Draw the board from the FEN, white at the bottom, the king in check highlighted."""
-        fen = observation.get("fen")
-        if not fen:
+        if "fen" not in observation:
             return None
-        board = chess.Board(fen)
-        checked = board.king(board.turn) if observation.get("is_check") else None
+        board = chess.Board(observation["fen"])
+        checked = board.king(board.turn) if observation["is_check"] else None
         cells = []
         for rank in range(7, -1, -1):
             cells.append(f'<span style="opacity:.6;font-size:12px">{rank + 1}</span>')
@@ -297,7 +296,7 @@ class ChessEnvironment(Environment):
                 if square == checked:
                     bg = "var(--color-accent)"
                 elif (file + rank) % 2:
-                    bg = "var(--background-fill-secondary)"
+                    bg = "var(--background-fill-primary)"
                 else:
                     bg = "var(--border-color-primary)"
                 # U+FE0E keeps the pawn as a text glyph instead of an emoji.
@@ -312,7 +311,7 @@ class ChessEnvironment(Environment):
             '<div role="img" aria-label="Chess board" style="display:inline-grid;'
             "grid-template-columns:16px repeat(8,40px);grid-template-rows:repeat(8,40px) 20px;"
             "line-height:40px;text-align:center;font-size:30px;color:var(--body-text-color);padding:10px;"
-            'border:1px solid var(--border-color-primary);border-radius:10px;background:var(--background-fill-primary)">'
+            'border:1px solid var(--border-color-primary);border-radius:10px;background:var(--background-fill-secondary)">'
             + "".join(cells)
             + "</div>"
         )
