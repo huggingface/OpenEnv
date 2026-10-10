@@ -27,6 +27,19 @@ lists every option, and [Async vs Sync](async-sync) covers the client modes.
 A sleeping Space wakes up on the first request, so the first call can take a
 while. To keep your own copy running, duplicate the Space.
 
+A private Space needs your Hugging Face token. Construct the client directly and
+pass it in `headers`, which every client sends on each connection:
+
+```python
+from echo_env import EchoEnv
+from huggingface_hub import get_token
+
+env = EchoEnv(
+    base_url="https://your-name-echo-env.hf.space",
+    headers={"Authorization": f"Bearer {get_token()}"},
+)
+```
+
 To run the server somewhere else, such as a cloud sandbox, pick a provider below.
 
 ## Providers
