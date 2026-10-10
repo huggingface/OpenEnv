@@ -201,9 +201,9 @@ def _params(schema: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any], bool]]:
 
 
 def _call_args(arguments: Dict[str, Any]) -> str:
-    """Arguments as `name=value` for the episode log, with secrets masked."""
+    """Arguments as `name=value` for the episode log, with secrets masked and long values cut."""
     return ", ".join(
-        f"{k}={'***' if k.lower().endswith(_SECRET_NAMES) else json.dumps(v)}"
+        f"{k}={'***' if k.lower().endswith(_SECRET_NAMES) else _short(json.dumps(v), 60)}"
         for k, v in arguments.items()
     )
 

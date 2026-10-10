@@ -242,6 +242,19 @@ def test_secret_arguments_are_masked_in_the_episode():
     assert "sk-123" not in outputs[5]
 
 
+def test_long_arguments_are_cut_in_the_episode():
+    manager = WebInterfaceManager(TinyEnv(), LoginAction, BoardObservation)
+    blocks = build_gradio_app(manager, _extract_action_fields(LoginAction), None, False)
+    step_fn = next(f.fn for f in blocks.fns.values() if f.fn.__name__ == "step_fn")
+    svg = "<svg>" + "<circle r='1'/>" * 100 + "</svg>"
+
+    outputs = asyncio.run(step_fn([], svg, "sk-123"))
+
+    call = outputs[6][-1][1]
+    assert call.startswith('step(user="<svg><circle') and "…, api_key=***)" in call
+    assert len(call) < 100
+
+
 def test_enter_in_a_text_field_runs_the_step():
     manager = WebInterfaceManager(TinyEnv(), RunAction, BoardObservation)
     blocks = build_gradio_app(manager, _extract_action_fields(RunAction), None, False)
