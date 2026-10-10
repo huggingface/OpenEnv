@@ -626,13 +626,6 @@ create_readme() {
     space_url="https://$(printf "%s" "$space_repo" | tr '[:upper:]' '[:lower:]' | tr '/_.' '---').hf.space"
 
     if head -n 1 "$readme_source" | grep -q '^---$'; then
-        local closing_line
-        closing_line=$(grep -n '^---$' "$readme_source" | sed -n '2p' | cut -d: -f1)
-
-        if [ -z "$closing_line" ]; then
-            error "Could not parse README front matter for $env_name"
-        fi
-
         # The env's own text comes first: the web interface reads its first paragraph.
         cat "$readme_source" > "$output_readme"
         cat >> "$output_readme" << README_EOF
