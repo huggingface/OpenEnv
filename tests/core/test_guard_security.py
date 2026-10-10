@@ -11,6 +11,7 @@ import os
 
 import httpx
 from openenv.core.env_server.http_server import create_fastapi_app
+from openenv.core.env_server.security import _build_security_config
 from openenv.core.env_server.interfaces import Environment
 from openenv.core.env_server.types import Action, Observation, State
 
@@ -97,6 +98,28 @@ async def test_ip_lists_enforced_on_excluded_paths(monkeypatch):
     # enforced there too.
     response = await _request(app, "/health", client_ip=blocked)
     assert response.status_code == 403
+
+
+async def test_full_bundle_mapping(monkeypatch):
+    for name in list(os.environ):
+        if name.startswith("OPENENV_GUARD_"):
+            monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("OPENENV_GUARD_ENABLED", "1")
+    monkeypatch.setenv("OPENENV_GUARD_PASSIVE_MODE", "1")
+    monkeypatch.setenv("OPENENV_GUARD_SECURITY_HEADERS", "1")
+    monkeypatch.setenv("OPENENV_GUARD_ENFORCE_HTTPS", "1")
+    monkeypatch.setenv("OPENENV_GUARD_BLOCKED_COUNTRIES", "RU")
+    monkeypatch.setenv("IPINFO_TOKEN", "test-token")
+    monkeypatch.setenv("OPENENV_GUARD_BLOCK_CLOUD_PROVIDERS", "AWS")
+    monkeypatch.setenv("OPENENV_GUARD_LOG_FILE", "guard.log")
+    config = _build_security_config()
+    assert config.passive_mode is True
+    assert config.enforce_https is True
+    assert config.security_headers["enabled"] is True
+    assert config.blocked_countries == frozenset({"RU"})
+    assert config.block_cloud_providers == frozenset({"AWS"})
+    assert config.custom_log_file == "guard.log"
+    assert config.enable_redis is False
 
 
 async def test_rate_limit_returns_429(monkeypatch):

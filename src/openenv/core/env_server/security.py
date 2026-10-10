@@ -30,6 +30,10 @@ def _env_list(name: str, default: str = "") -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+def _env_bool(name: str) -> bool:
+    return os.environ.get(name, "False").strip().lower() in ("1", "true", "yes")
+
+
 def _build_security_config() -> Any:
     from guard import SecurityConfig
 
@@ -61,7 +65,32 @@ def _build_security_config() -> Any:
         "exclude_paths": _env_list(
             "OPENENV_GUARD_EXCLUDED_PATHS", DEFAULT_EXCLUDED_PATHS
         ),
+        "passive_mode": _env_bool("OPENENV_GUARD_PASSIVE_MODE"),
+        "custom_log_file": os.environ.get("OPENENV_GUARD_LOG_FILE") or None,
+        "log_format": os.environ.get("OPENENV_GUARD_LOG_FORMAT", "text"),
+        "security_headers": (
+            {
+                "enabled": True,
+                "hsts": {"max_age": 31536000, "include_subdomains": True},
+                "frame_options": "SAMEORIGIN",
+                "content_type_options": "nosniff",
+                "referrer_policy": "strict-origin-when-cross-origin",
+            }
+            if _env_bool("OPENENV_GUARD_SECURITY_HEADERS")
+            else None
+        ),
+        "enforce_https": _env_bool("OPENENV_GUARD_ENFORCE_HTTPS"),
     }
+
+    if blocked_countries := _env_list("OPENENV_GUARD_BLOCKED_COUNTRIES"):
+        kwargs["blocked_countries"] = frozenset(blocked_countries)
+    if allowed_countries := _env_list("OPENENV_GUARD_ALLOWED_COUNTRIES"):
+        kwargs["whitelist_countries"] = frozenset(allowed_countries)
+    if cloud_providers := _env_list("OPENENV_GUARD_BLOCK_CLOUD_PROVIDERS"):
+        kwargs["block_cloud_providers"] = frozenset(cloud_providers)
+
+    if ipinfo_token := os.environ.get("IPINFO_TOKEN"):
+        kwargs["ipinfo_token"] = ipinfo_token
 
     allowed_ips = _env_list("OPENENV_GUARD_ALLOWED_IPS")
     if allowed_ips:
