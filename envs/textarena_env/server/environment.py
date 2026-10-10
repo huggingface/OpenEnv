@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import urllib.request
@@ -40,6 +41,18 @@ except ImportError:
 _TEXTARENA_MODULE: Any | None = None
 _TEXTARENA_IMPORT_ERROR: Exception | None = None
 _NLTK_DOWNLOADED: bool = False
+
+# TextArena's Wordle feedback, e.g. "You submitted [crane].\nFeedback:\nC R A N E\nG X Y X G".
+_WORDLE_FEEDBACK = re.compile(
+    r"You submitted \[(\w+)\]\.\nFeedback:\n[^\n]*\n([GYX ]+)"
+)
+_WORDLE_ATTEMPTS = re.compile(r"You have (\d+) attempts")
+_WORDLE_TILES = {
+    "G": "background:var(--color-accent);color:var(--background-fill-primary);border-color:var(--color-accent)",
+    "Y": "color:var(--color-accent);border-color:var(--color-accent);border-style:dashed",
+    "X": "background:var(--background-fill-primary);color:var(--body-text-color-subdued);border-color:var(--border-color-primary)",
+    "-": "",
+}
 
 
 def _ensure_nltk_data() -> None:
@@ -239,6 +252,33 @@ class TextArenaEnvironment(Environment):
         self._state.raw_state = self._snapshot_state()
 
         return observation
+
+    def render_web(self, observation: Dict[str, Any]) -> Optional[str]:
+        """Draw the Wordle board (one row per guess, empty rows for those left); other games draw nothing."""
+        text = "".join(message["content"] for message in observation["messages"])
+        attempts = _WORDLE_ATTEMPTS.search(text)
+        if attempts is None:
+            return None
+        guesses = _WORDLE_FEEDBACK.findall(text)
+        length = len(guesses[0][0]) if guesses else 5
+        rows = [(word.upper(), marks.split()) for word, marks in guesses]
+        rows += [(" " * length, ["-"] * length)] * (int(attempts.group(1)) - len(rows))
+        tile = (
+            '<span style="display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px;'
+            'border:2px solid var(--border-color-primary);border-radius:4px;{}">{}</span>'
+        )
+        cells = [
+            tile.format(_WORDLE_TILES[mark], letter)
+            for word, marks in rows
+            for letter, mark in zip(word, marks)
+        ]
+        return (
+            f'<div role="img" aria-label="Wordle board" style="display:inline-grid;'
+            f"grid-template-columns:repeat({length},38px);grid-auto-rows:38px;gap:5px;padding:10px;"
+            'border:1px solid var(--border-color-primary);border-radius:10px;background:var(--background-fill-secondary)">'
+            + "".join(cells)
+            + "</div>"
+        )
 
     @property
     def state(self) -> TextArenaState:
