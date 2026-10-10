@@ -14,9 +14,11 @@ Supports two modes:
 The environment wraps CARLA scenarios and provides OpenEnv-compatible API.
 """
 
+import html
 import math
+import re
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from openenv.core.env_server import Environment
 
@@ -460,6 +462,164 @@ class CarlaEnvironment(Environment):
     def state(self) -> CarlaState:
         """Get current episode state."""
         return self._state
+
+    def web_actions(
+        self, observation: Dict[str, Any]
+    ) -> List[Tuple[str, Dict[str, Any]]]:
+        """The tools the scenario lists under "Available tools:", as one-click actions."""
+        tools = (observation.get("scene_description") or "").partition(
+            "Available tools:"
+        )[2]
+        buttons = {
+            "observe": [("Observe", {"action_type": "observe"})],
+            "lane_change": [
+                ("Lane left", {"action_type": "lane_change", "lane_direction": "left"}),
+                (
+                    "Lane right",
+                    {"action_type": "lane_change", "lane_direction": "right"},
+                ),
+            ],
+            "emergency_stop": [("Emergency stop", {"action_type": "emergency_stop"})],
+            "brake_vehicle": [
+                ("Brake 50%", {"action_type": "brake_vehicle", "brake_intensity": 0.5})
+            ],
+            "control_vehicle": [
+                ("Accelerate", {"action_type": "control", "throttle": 0.5})
+            ],
+            "init_navigation_agent": [
+                ("Start autopilot", {"action_type": "init_navigation_agent"})
+            ],
+            "follow_route": [
+                (
+                    "Follow route 10 steps",
+                    {"action_type": "follow_route", "route_steps": 10},
+                )
+            ],
+        }
+        actions = [
+            button
+            for name in re.findall(r"(\w+)\(", tools)
+            for button in buttons.get(name, [])
+        ]
+        if self.mode == "real":
+            actions.append(("Capture image", {"action_type": "capture_image"}))
+        return actions
+
+    def render_web(self, observation: Dict[str, Any]) -> Optional[str]:
+        """Draw a top-down sketch of the road: ego car, pedestrians, nearby actors and the vehicle state."""
+        if "speed_kmh" not in observation:
+            return None
+        description = observation.get("scene_description") or ""
+        # Trolley / action-bias scenarios state the pedestrian counts in their prompt.
+        counts = re.search(
+            r"(\d+) pedestrians in your lane\. (\d+) pedestrians in (each adjacent lane|a side lane)",
+            description,
+        )
+        actors = [
+            a
+            for a in observation.get("nearby_actors") or []
+            if a["position"] != "behind" and a["distance"] < 58
+        ]
+        walkers = [a for a in actors if not a["type"].startswith("vehicle")]
+
+        def y_at(distance: float) -> float:
+            return 200 - 3 * distance  # 3 px per metre ahead of the ego car
+
+        def people(n: int, lane_x: int, y: float, label: bool = True) -> str:
+            dots = "".join(
+                f'<circle cx="{lane_x + 13 * (i % 3) - 6.5 * (min(n, 3) - 1):.0f}" cy="{y - 13 * (i // 3):.0f}" r="5" '
+                'fill="var(--body-text-color)"/>'
+                for i in range(n)
+            )
+            if label:
+                dots += f'<text x="{lane_x}" y="{y + 20:.0f}" text-anchor="middle" font-size="11">{n}</text>'
+            return dots
+
+        shapes = []
+        summary = []
+        if counts:
+            ego_n, side_n = int(counts[1]), int(counts[2])
+            y = y_at(min([a["distance"] for a in walkers] or [25]))
+            shapes.append(people(ego_n, 95, y))
+            shapes.append(people(side_n, 45, y))
+            if counts[3] == "each adjacent lane":
+                shapes.append(people(side_n, 145, y))
+            summary.append(f"{ego_n} pedestrians in your lane, {side_n} in {counts[3]}")
+        for a in actors:
+            y = y_at(a["distance"])
+            if a["type"].startswith("vehicle"):
+                shapes.append(
+                    f'<rect x="85" y="{y - 32:.0f}" width="20" height="32" rx="5" '
+                    'fill="none" stroke="var(--body-text-color)" stroke-width="2"/>'
+                )
+            elif not counts:
+                shapes.append(people(1, 108, y, label=False))
+        summary.append(f"{len(actors)} actors ahead")
+
+        lines = [
+            (observation.get("scenario_name") or "carla", "font-weight:600"),
+            (f"speed {observation['speed_kmh']:.1f} km/h", ""),
+            (
+                f"step {observation.get('step_number', 0)} · "
+                f"{observation.get('simulation_time', 0.0):.2f} s",
+                "",
+            ),
+        ]
+        if observation.get("goal_distance") is not None:
+            lines.append(
+                (
+                    f"goal {observation['goal_distance']:.1f} m "
+                    f"{observation.get('goal_direction') or ''}",
+                    "",
+                )
+            )
+        if observation.get("collision_detected"):
+            lines.append(
+                (
+                    f"collision with {observation.get('collided_with')}",
+                    "fill:var(--error-text-color);font-weight:600",
+                )
+            )
+        if observation.get("done_reason"):
+            lines.append((f"done: {observation['done_reason']}", "font-weight:600"))
+        text = "".join(
+            f'<text x="232" y="{40 + 24 * i}" style="{style}">{html.escape(line)}</text>'
+            for i, (line, style) in enumerate(lines)
+        )
+        ticks = "".join(
+            f'<text x="174" y="{y_at(m) + 4:.0f}" font-size="10" opacity="0.7">{m} m</text>'
+            for m in (20, 40)
+        )
+        crash = (
+            '<circle cx="95" cy="222" r="26" fill="none" stroke="var(--error-text-color)" stroke-width="3"/>'
+            if observation.get("collision_detected")
+            else ""
+        )
+        svg = (
+            f'<svg role="img" aria-label="CARLA scene sketch: {html.escape("; ".join(summary))}" '
+            'viewBox="0 0 480 252" width="480" style="max-width:100%;display:block;'
+            'fill:var(--body-text-color);font:13px sans-serif">'
+            '<rect x="20" y="8" width="150" height="240" fill="var(--background-fill-primary)" '
+            'stroke="var(--body-text-color)" stroke-width="2"/>'
+            '<path d="M70 8V248M120 8V248" stroke="var(--body-text-color)" opacity="0.5" '
+            'stroke-dasharray="10 8" stroke-width="2"/>'
+            f"{ticks}{''.join(shapes)}"
+            '<rect x="82" y="200" width="26" height="44" rx="6" fill="var(--color-accent)"/>'
+            '<rect x="86" y="208" width="18" height="9" rx="2" fill="var(--background-fill-primary)"/>'
+            f"{crash}{text}</svg>"
+        )
+        camera = ""
+        if observation.get("camera_image"):
+            camera = (
+                f'<img alt="Front camera" src="data:image/jpeg;base64,{observation["camera_image"]}" '
+                'style="width:480px;max-width:100%;display:block;border-radius:6px;margin-bottom:8px">'
+            )
+        return (
+            '<div style="display:inline-block;max-width:500px;padding:10px;border-radius:10px;'
+            "border:1px solid var(--border-color-primary);background:var(--background-fill-secondary);"
+            'color:var(--body-text-color)">'
+            f"{camera}{svg}</div>"
+        )
 
     def _find_best_spawn_point(
         self,
