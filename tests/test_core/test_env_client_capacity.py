@@ -2,13 +2,9 @@
 
 """A server at capacity refuses a session with an error frame the client must surface."""
 
-import socket
-import threading
-import time
 from unittest.mock import AsyncMock, patch
 
 import pytest
-import uvicorn
 from openenv.core.env_server.http_server import create_app
 from openenv.core.env_server.interfaces import Environment
 from openenv.core.env_server.types import Action, Observation, State
@@ -34,23 +30,8 @@ class _Environment(Environment):
 
 
 @pytest.fixture
-def server_url():
-    app = create_app(_Environment, _Action, Observation, max_concurrent_envs=1)
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(("127.0.0.1", 0))
-    port = sock.getsockname()[1]
-    server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
-    thread = threading.Thread(target=lambda: server.run(sockets=[sock]), daemon=True)
-    thread.start()
-    deadline = time.monotonic() + 15
-    while not server.started and time.monotonic() < deadline:
-        time.sleep(0.05)
-    assert server.started
-    try:
-        yield f"http://127.0.0.1:{port}"
-    finally:
-        server.should_exit = True
-        thread.join(timeout=10)
+def server_url(serve):
+    return serve(create_app(_Environment, _Action, Observation, max_concurrent_envs=1))
 
 
 async def test_capacity_error_survives_close_before_send(server_url):

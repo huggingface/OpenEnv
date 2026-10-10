@@ -719,10 +719,8 @@ class EnvClient(ABC, Generic[ActT, ObsT, StateT]):
         try:
             await self._send(message)
         except ConnectionClosed:
-            # The server refuses a session (e.g. at capacity) by sending an
-            # error frame and closing. When the close arrives before our send,
-            # the error frame is still queued, so read it instead of failing
-            # with a bare close. With nothing queued, `recv()` re-raises.
+            # A refused session (e.g. at capacity) sends an error frame then closes. If
+            # the close beats our send, read the queued frame (recv() re-raises if none).
             pass
         response = await self._receive()
 
