@@ -1,6 +1,7 @@
 import os
 import random
 import uuid
+from typing import Any, Dict, Optional
 
 from openenv.core.env_server.interfaces import Environment
 
@@ -17,6 +18,27 @@ DIRS_8 = {
     "W": (-1, 0),
     "NW": (-1, -1),
     "CALM": (0, 0),
+}
+
+# Web drawing: (label, cell style) per grid code. Fire and water need their own hues
+# (no theme variable is orange or blue); the rest follow the theme.
+CELL_STYLES = {
+    2: ("burning", "background:hsl(16 90% 52%)"),
+    1: ("fuel", "background:var(--color-accent);opacity:.45"),
+    4: ("water", "background:hsl(210 80% 55%)"),
+    3: ("firebreak", "background:var(--body-text-color)"),
+    0: ("ash", "background:var(--body-text-color);opacity:.25"),
+}
+WIND_ARROWS = {
+    "N": "↑",
+    "NE": "↗",
+    "E": "→",
+    "SE": "↘",
+    "S": "↓",
+    "SW": "↙",
+    "W": "←",
+    "NW": "↖",
+    "CALM": "·",
 }
 
 
@@ -217,6 +239,49 @@ class WildfireEnvironment(Environment):
         obs.done = done
         obs.reward = reward
         return obs
+
+    def render_web(self, observation: Dict[str, Any]) -> Optional[str]:
+        """Draw the fire grid (one colour per cell state) with a legend, wind, humidity and resources."""
+        grid = observation.get("grid")
+        width = observation.get("width")
+        if not grid or not width:
+            return None
+        size = max(6, min(22, 380 // width))
+        text = f"max-width:{width * (size + 2)}px"
+        cells = "".join(
+            f'<span title="x={i % width}, y={i // width}: {CELL_STYLES[v][0]}" '
+            f'style="{CELL_STYLES[v][1]};border-radius:3px"></span>'
+            for i, v in enumerate(grid)
+        )
+        legend = "".join(
+            f'<span style="display:inline-flex;align-items:center;gap:5px">'
+            f'<span style="width:11px;height:11px;border-radius:3px;{style}"></span>{label}</span>'
+            for label, style in CELL_STYLES.values()
+        )
+        wind = observation.get("wind_dir", "CALM")
+        stats = " · ".join(
+            f'<span style="white-space:nowrap">{item}</span>'
+            for item in (
+                f"step {observation.get('step', 0)}",
+                f"wind {wind} {WIND_ARROWS.get(wind, '')}",
+                f"humidity {observation.get('humidity', 0):.2f}",
+                f"water {observation.get('remaining_water', 0)}",
+                f"breaks {observation.get('remaining_breaks', 0)}",
+                f"burning {observation.get('burning_count', 0)}",
+                f"ash {observation.get('burned_count', 0)}",
+            )
+        )
+        return (
+            '<div role="img" aria-label="Wildfire grid" style="display:inline-flex;flex-direction:column;gap:8px;'
+            "padding:10px;border:1px solid var(--border-color-primary);border-radius:10px;"
+            'background:var(--background-fill-secondary);color:var(--body-text-color);font-size:12px">'
+            f'<div style="display:grid;grid-template-columns:repeat({width},{size}px);'
+            f'grid-auto-rows:{size}px;gap:2px">{cells}</div>'
+            f'<div style="display:flex;flex-wrap:wrap;gap:4px 12px;{text}">{legend}</div>'
+            f'<div style="font-family:var(--font-mono);color:var(--body-text-color-subdued);{text}">{stats}</div>'
+            f'<div style="color:var(--body-text-color-subdued);{text}">x is the column, y the row, (0, 0) top-left</div>'
+            "</div>"
+        )
 
     # --- Internal mechanics ---
 
