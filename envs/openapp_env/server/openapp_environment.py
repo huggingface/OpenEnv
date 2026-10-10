@@ -31,18 +31,11 @@ try:
 
     from ..models import OpenAppAction, OpenAppObservation
 except ImportError:
-    try:
-        from openapp_env.models import OpenAppAction, OpenAppObservation
+    # Standalone imports when openenv is available.
+    from openenv.core.env_server.interfaces import Environment
+    from openenv.core.env_server.types import State
 
-        # Standalone imports when openenv is available.
-        from openenv.core.env_server.interfaces import Environment
-        from openenv.core.env_server.types import State
-    except ImportError:
-        from openapp_env.models import OpenAppAction, OpenAppObservation
-
-        # Backward-compatible standalone imports when only openenv_core is available.
-        from openenv_core.env_server.interfaces import Environment
-        from openenv_core.env_server.types import State
+    from openapp_env.models import OpenAppAction, OpenAppObservation
 
 
 class GenericOpenAppsTask:

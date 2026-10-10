@@ -22,15 +22,8 @@ try:
     from ..models import MazeAction, MazeObservation, MazeState
 except ImportError:
     from models import MazeAction, MazeObservation, MazeState
-
-    try:
-        # Standalone imports with the current package namespace.
-        from openenv.core.env_server.interfaces import Environment
-        from openenv.core.env_server.types import State
-    except ImportError:
-        # Backward-compatible standalone imports with the legacy namespace.
-        from openenv_core.env_server.interfaces import Environment
-        from openenv_core.env_server.types import State
+    from openenv.core.env_server.interfaces import Environment
+    from openenv.core.env_server.types import State
 
 from .maze import Maze, Render, Status
 

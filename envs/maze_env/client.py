@@ -25,9 +25,9 @@ except ImportError:
     from models import MazeAction, MazeObservation, MazeState
 
     # Standalone imports (when environment is standalone with openenv from pip)
-    from openenv_core.client_types import StepResult
-    from openenv_core.env_client import EnvClient
-    from openenv_core.env_server.types import State
+    from openenv.core.client_types import StepResult
+    from openenv.core.env_client import EnvClient
+    from openenv.core.env_server.types import State
 
 
 class MazeEnv(EnvClient[MazeAction, MazeObservation, MazeState]):

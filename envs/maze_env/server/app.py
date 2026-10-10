@@ -37,13 +37,7 @@ try:
     from .maze_env_environment import MazeEnvironment
 except ImportError:
     from models import MazeAction, MazeObservation
-
-    try:
-        # Standalone imports with the current package namespace.
-        from openenv.core.env_server.http_server import create_app
-    except ImportError:
-        # Backward-compatible standalone imports with the legacy namespace.
-        from openenv_core.env_server.http_server import create_app
+    from openenv.core.env_server.http_server import create_app
     from server.maze_env_environment import MazeEnvironment
 
 
