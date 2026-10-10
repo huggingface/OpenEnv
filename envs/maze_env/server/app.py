@@ -33,10 +33,10 @@ try:
     # In-repo imports (when running from OpenEnv repository)
     from openenv.core.env_server.http_server import create_app
 
-    from ..models import MazeAction, MazeObservation
+    from ..models import MazeAction, MazeObservation, MazeState
     from .maze_env_environment import MazeEnvironment
 except ImportError:
-    from models import MazeAction, MazeObservation
+    from models import MazeAction, MazeObservation, MazeState
 
     try:
         # Standalone imports with the current package namespace.
@@ -53,7 +53,8 @@ app = create_app(
     MazeAction,
     MazeObservation,
     env_name="maze_env",
-    max_concurrent_envs=1,  # increase this number to allow more concurrent WebSocket sessions
+    max_concurrent_envs=1,
+    state_cls=MazeState,  # increase this number to allow more concurrent WebSocket sessions
 )
 
 

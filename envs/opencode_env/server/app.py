@@ -60,9 +60,11 @@ try:
     from openenv.core.env_server.http_server import create_app
     from openenv.core.env_server.mcp_types import CallToolAction, CallToolObservation
 
+    from ..models import OpenCodeState
     from .gradio_ui import opencode_gradio_builder
     from .opencode_environment import OpenCodeEnvironment
 except ImportError:  # pragma: no cover
+    from models import OpenCodeState  # type: ignore
     from openenv.core.env_server.http_server import create_app
     from openenv.core.env_server.mcp_types import CallToolAction, CallToolObservation
     from server.gradio_ui import opencode_gradio_builder  # type: ignore
@@ -101,6 +103,7 @@ app = create_app(
     reset_observation_cls=Observation,
     max_concurrent_envs=int(os.getenv("MAX_CONCURRENT_ENVS", "4")),
     gradio_builder=_custom_gradio_builder,
+    state_cls=OpenCodeState,
 )
 
 

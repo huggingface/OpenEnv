@@ -16,9 +16,11 @@ from openenv.core.env_server.mcp_types import CallToolAction, CallToolObservatio
 from openenv.core.env_server.types import Observation
 
 try:
+    from ..models import JupyterState
     from .gradio_ui import jupyter_ui_builder
     from .jupyter_environment import JupyterEnvironment
 except ImportError:  # pragma: no cover
+    from models import JupyterState  # type: ignore
     from server.gradio_ui import jupyter_ui_builder  # type: ignore
     from server.jupyter_environment import JupyterEnvironment  # type: ignore
 
@@ -51,6 +53,7 @@ app = create_app(
     reset_observation_cls=Observation,
     max_concurrent_envs=int(os.getenv("MAX_CONCURRENT_ENVS", "4")),
     gradio_builder=jupyter_ui_builder,
+    state_cls=JupyterState,
 )
 
 
