@@ -25,7 +25,8 @@ def test_carla_offers_scenario_tools_and_a_sketch():
     for _, action in env.web_actions(obs):
         CarlaAction(**action)
     sketch = env.render_web(obs)
-    assert 'aria-label="CARLA scene sketch: 3 pedestrians in your lane' in sketch
-    assert sketch.count("<circle") == 3
+    assert 'role="img" aria-label="CARLA scene"' in sketch
+    assert sketch.count("<circle") == 3  # the 3 pedestrians in the ego lane
+    assert ">step 1<" in sketch
     assert "#" not in sketch  # theme colours only, so it reads in dark mode
     assert env.render_web({}) is None
