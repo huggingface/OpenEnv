@@ -33,3 +33,23 @@ def test_grid_world_flow():
     assert payload["action"] == "UP"
 
     print("Grid World Client tests passed!")
+
+
+def test_grid_world_offers_moves_and_draws_the_grid():
+    from envs.grid_world_env.server.grid_world_environment import GridWorldEnvironment
+
+    env = GridWorldEnvironment()
+    obs = env.reset().model_dump()
+    assert env.web_actions(obs) == [
+        ("↑ up", {"action": "UP"}),
+        ("↓ down", {"action": "DOWN"}),
+        ("← left", {"action": "LEFT"}),
+        ("→ right", {"action": "RIGHT"}),
+    ]
+    obs = env.step(GridWorldAction(action=MoveAction.DOWN)).model_dump()
+    grid = env.render_web(obs)
+    assert 'aria-label="Grid World: agent at [1, 0], goal at [4, 4]"' in grid
+    assert grid.count("border-radius:50%") == 1  # one agent
+    assert "★" in grid
+    assert "#" not in grid  # theme colours only, so it reads in dark mode
+    assert env.render_web({}) is None
