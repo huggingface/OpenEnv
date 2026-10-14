@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import inspect
 import os
 from pathlib import Path
 
@@ -43,11 +44,18 @@ def _load_env_file() -> None:
 _load_env_file()
 os.environ.setdefault("ENABLE_WEB_INTERFACE", "true")
 
+# Older openenv-core releases lack `reset_observation_cls`.
+_reset_observation_kwargs = (
+    {"reset_observation_cls": Observation}
+    if "reset_observation_cls" in inspect.signature(create_app).parameters
+    else {}
+)
+
 app = create_app(
     CodingToolsEnvironment,
     CallToolAction,
     CallToolObservation,
-    reset_observation_cls=Observation,
+    **_reset_observation_kwargs,
     env_name="coding_tools_env",
     max_concurrent_envs=int(os.getenv("MAX_CONCURRENT_ENVS", "4")),
     gradio_builder=coding_tools_ui_builder,
