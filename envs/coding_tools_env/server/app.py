@@ -16,9 +16,11 @@ from openenv.core.env_server.mcp_types import CallToolAction, CallToolObservatio
 from openenv.core.env_server.types import Observation
 
 try:
+    from ..models import CodingToolsState
     from .coding_tools_env_environment import CodingToolsEnvironment
     from .gradio_ui import coding_tools_ui_builder
 except ImportError:  # pragma: no cover
+    from models import CodingToolsState  # type: ignore
     from server.coding_tools_env_environment import (  # type: ignore
         CodingToolsEnvironment,
     )
@@ -51,6 +53,7 @@ app = create_app(
     env_name="coding_tools_env",
     max_concurrent_envs=int(os.getenv("MAX_CONCURRENT_ENVS", "4")),
     gradio_builder=coding_tools_ui_builder,
+    state_cls=CodingToolsState,
 )
 
 
