@@ -195,6 +195,11 @@ class MCPEnvironment(Environment):
 
         # Track tool schemas for list_tools: {tool_name: {mode: schema}}
         self._mode_tool_schemas = defaultdict(dict)
+        self._mode: Optional[str] = None
+
+    def set_mode(self, mode: Optional[str]) -> None:
+        """Set the active mode ('production' or 'simulation') for mode-aware tools."""
+        self._mode = mode
 
     def _require_mcp_client(self) -> Any:
         """Return MCP client or raise if environment has been closed."""
