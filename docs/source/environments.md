@@ -137,6 +137,13 @@ The OpenEnv community has built a catalog of ready-to-run environments that cove
       </div>
     </div>
     <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">Helium Browser</div>
+      <p class="text-sm">Chromium browser driven with Helium and Selenium: one typed action per step, a screenshot and the URL back. A small example of the OpenEnv pieces, with a sample agent loop.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="environments/helium_browser" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+      </div>
+    </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
       <div class="font-bold mb-2">KernRL</div>
       <p class="text-sm">RL environment for GPU kernel optimization. Train LLM agents to write fast CUDA/Triton kernels that beat baseline implementations.</p>
       <div class="flex gap-2 mt-3">
