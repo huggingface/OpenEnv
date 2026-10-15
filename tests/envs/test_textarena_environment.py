@@ -79,3 +79,48 @@ def test_textarena_web_playground():
     assert "#" not in board  # theme colours only, so it reads in dark mode
     assert env.render_web({"messages": []}) is None
     assert env.render_web({}) is None
+
+
+def _secret_word(env: TextArenaEnvironment) -> str:
+    # Wordle's prompt is static instructions, so the puzzle has to be read from
+    # TextArena's own game state to tell episodes apart.
+    return env._ta_env.state.game_state["secret_word"]
+
+
+def test_reset_seed_is_forwarded_to_textarena():
+    pytest.importorskip("textarena", reason="textarena not installed")
+    env = TextArenaEnvironment(env_id="Wordle-v0", num_players=1)
+
+    seeded = []
+    for _ in range(3):
+        env.reset(seed=1234)
+        seeded.append(_secret_word(env))
+
+    env.reset(seed=999)
+    other_seed = _secret_word(env)
+
+    assert len(set(seeded)) == 1, f"seed=1234 produced {sorted(set(seeded))}"
+    assert other_seed != seeded[0], "a different seed produced the same episode"
+
+
+def test_reset_seed_is_reproducible_across_instances():
+    pytest.importorskip("textarena", reason="textarena not installed")
+    first = TextArenaEnvironment(env_id="Wordle-v0", num_players=1)
+    first.reset(seed=1234)
+
+    second = TextArenaEnvironment(env_id="Wordle-v0", num_players=1)
+    second.reset(seed=1234)
+
+    assert _secret_word(first) == _secret_word(second)
+
+
+def test_reset_without_seed_still_varies():
+    pytest.importorskip("textarena", reason="textarena not installed")
+    env = TextArenaEnvironment(env_id="Wordle-v0", num_players=1)
+
+    words = set()
+    for _ in range(8):
+        env.reset()
+        words.add(_secret_word(env))
+
+    assert len(words) > 1, "unseeded resets should not be deterministic"

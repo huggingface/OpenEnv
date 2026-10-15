@@ -12,6 +12,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import urllib.request
 from typing import Any, Dict, Iterable, List, Optional
 from uuid import uuid4
@@ -41,6 +42,11 @@ except ImportError:
 _TEXTARENA_MODULE: Any | None = None
 _TEXTARENA_IMPORT_ERROR: Exception | None = None
 _NLTK_DOWNLOADED: bool = False
+
+# TextArena seeds and draws from the process-global ``random`` module, so a
+# seeded reset in one session can race with a draw in another. The lock keeps
+# each reset's seed-and-draw atomic.
+_RESET_LOCK = threading.Lock()
 
 # TextArena's Wordle feedback, e.g. "You submitted [crane].\nFeedback:\nC R A N E\nG X Y X G".
 _WORDLE_FEEDBACK = re.compile(
@@ -178,7 +184,8 @@ class TextArenaEnvironment(Environment):
         # Initialize environment state - TextArena envs require reset() to be called
         # before step() can be used, as the internal state object isn't created until reset.
         # This ensures the environment is always in a valid state after construction.
-        self._ta_env.reset(num_players=self.num_players)
+        with _RESET_LOCK:
+            self._ta_env.reset(num_players=self.num_players)
 
     # ------------------------------------------------------------------
     # Environment interface
@@ -201,7 +208,8 @@ class TextArenaEnvironment(Environment):
         if hasattr(env, "full_observations"):
             env.full_observations = {}
 
-        self._ta_env.reset(num_players=self.num_players)
+        with _RESET_LOCK:
+            self._ta_env.reset(num_players=self.num_players, seed=seed)
 
         for provider in self._reward_providers:
             provider.reset()
