@@ -13,6 +13,7 @@ import typer
 from openenv.cli.commands import (
     build,
     catalog,
+    check,
     collect,
     fork,
     harbor,
@@ -68,6 +69,7 @@ app.command(
     help="Collect rollouts from a deployed OpenEnv environment",
 )(collect.collect)
 app.add_typer(catalog.app, name="catalog")
+app.add_typer(check.app, name="check")
 app.command(name="discover")(catalog.discover)
 
 
