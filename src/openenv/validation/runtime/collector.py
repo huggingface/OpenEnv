@@ -11,6 +11,7 @@ from websockets.sync.client import connect
 
 from ...core.env_server.types import WSErrorCode
 from .contracts import RuntimeEvidence, RuntimePlan, WireExchange
+from .discovery import collect_task_evidence
 from .transport import abort_socket, http_deadline
 
 MAX_MESSAGE_BYTES = 1024 * 1024
@@ -72,6 +73,8 @@ def collect_runtime_evidence(
     episode_timeout_s: float,
     request_timeout_s: float | None = None,
     validation_token: str | None = None,
+    collect_tools: bool = False,
+    collect_tasks: bool = False,
 ) -> RuntimeEvidence:
     """
     Preserve schema and reset/step/state responses without model coercion.
@@ -92,6 +95,10 @@ def collect_runtime_evidence(
             remaining declared episode budget.
         validation_token (`str`, *optional*):
             Run-scoped telemetry authorization; never retained in evidence.
+        collect_tools (`bool`, *optional*, defaults to `False`):
+            Discover tools on the measured WebSocket before reset.
+        collect_tasks (`bool`, *optional*, defaults to `False`):
+            Discover the server's environment namespace and sample its task metadata.
 
     Returns:
         [`~openenv.validation.runtime.contracts.RuntimeEvidence`]: raw evidence.
@@ -103,6 +110,7 @@ def collect_runtime_evidence(
     trace_bytes = 0
     telemetry_json = None
     telemetry_error = None
+    tools_json = tools_error = tasks_json = tasks_error = None
     server_code = None
 
     def remaining() -> float:
@@ -209,10 +217,10 @@ def collect_runtime_evidence(
                     raise
                 return connection.recv(timeout=remaining())
 
-            def telemetry_request(operation, data):
+            def telemetry_request(operation, data, max_bytes=MAX_TRACE_BYTES):
                 request = json.dumps({"type": operation, "data": data})
                 raw = receive_response(request)
-                if not isinstance(raw, str) or len(raw.encode()) > MAX_TRACE_BYTES:
+                if not isinstance(raw, str) or len(raw.encode()) > max_bytes:
                     raise ValueError("invalid telemetry response")
                 response = json.loads(raw)
                 if not isinstance(response, dict):
@@ -267,6 +275,61 @@ def collect_runtime_evidence(
                 if isinstance(value, list):
                     return any(contains_credential(child) for child in value)
                 return False
+
+            if collect_tools:
+                phase = "tools/list"
+                try:
+                    response = telemetry_request(
+                        "mcp",
+                        {
+                            "jsonrpc": "2.0",
+                            "id": 1,
+                            "method": "tools/list",
+                            "params": {},
+                        },
+                        MAX_MESSAGE_BYTES,
+                    )
+                    if contains_credential(response):
+                        raise ValueError("discovery contains validation credentials")
+                    rpc = response.get("data")
+                    if (
+                        response.get("type") != "mcp"
+                        or not isinstance(rpc, dict)
+                        or rpc.get("jsonrpc") != "2.0"
+                        or type(rpc.get("id")) is not int
+                        or rpc["id"] != 1
+                        or rpc.get("error") is not None
+                        or not isinstance(rpc.get("result"), dict)
+                        or not isinstance(rpc["result"].get("tools"), list)
+                    ):
+                        raise ValueError("invalid tool discovery response")
+                    discovered = json.dumps(
+                        rpc["result"], allow_nan=False, ensure_ascii=False
+                    )
+                    if len(discovered.encode()) > MAX_MESSAGE_BYTES:
+                        raise ValueError("discovery exceeds size bound")
+                    tools_json = discovered
+                except Exception as exc:
+                    tools_error = f"tool discovery failed ({type(exc).__name__})"
+
+            if collect_tasks:
+                phase = "tasks"
+                try:
+                    discovered, tasks_error = collect_task_evidence(
+                        base_url,
+                        deadline=deadline,
+                        request_timeout_s=request_timeout_s,
+                    )
+                    if discovered is not None:
+                        if contains_credential(discovered) or contains_credential(
+                            json.loads(discovered)
+                        ):
+                            raise ValueError(
+                                "discovery contains validation credentials"
+                            )
+                        tasks_json = discovered
+                except Exception as exc:
+                    tasks_error = f"task discovery failed ({type(exc).__name__})"
 
             def exchange(operation: str, data: dict | None = None) -> dict:
                 nonlocal phase, trace_bytes, server_code
@@ -372,6 +435,10 @@ def collect_runtime_evidence(
             observation_schema_json=schema_json,
             telemetry_json=telemetry_json,
             telemetry_error=telemetry_error,
+            tools_json=tools_json,
+            tools_error=tools_error,
+            tasks_json=tasks_json,
+            tasks_error=tasks_error,
             reset_observation_schema_json=reset_schema_json,
         )
     except KeyboardInterrupt:
@@ -384,6 +451,10 @@ def collect_runtime_evidence(
                 failure_reason=f"{phase} failed (KeyboardInterrupt)",
                 telemetry_json=telemetry_json,
                 telemetry_error=telemetry_error,
+                tools_json=tools_json,
+                tools_error=tools_error,
+                tasks_json=tasks_json,
+                tasks_error=tasks_error,
             )
         ) from None
     except Exception as exc:
@@ -396,4 +467,8 @@ def collect_runtime_evidence(
             failure_reason=f"{phase} failed ({server_code or type(exc).__name__})",
             telemetry_json=telemetry_json,
             telemetry_error=telemetry_error,
+            tools_json=tools_json,
+            tools_error=tools_error,
+            tasks_json=tasks_json,
+            tasks_error=tasks_error,
         )

@@ -51,9 +51,11 @@ supports that capability. Docker validation uses two containers concurrently
 during the fresh-container replay. Both use the same immutable image and are
 removed even if a check fails.
 
-The seven implemented runtime checks cover startup, rewards, observation schemas,
-state continuity, seed control, determinism and emitted trajectory records. Other
-applicable Level 2 checks appear as `SKIP`; they make
+The 11 implemented runtime checks cover startup, rewards, observation schemas,
+state continuity, seed control, determinism, emitted trajectory records, tool and
+task discovery, rubric introspection and reward attribution. Five checks remain
+unimplemented: network policy, host containment, resource bounds, episode isolation
+and oracle containment. Applicable unimplemented checks appear as `SKIP`; they make
 the result `WARN`, which exits zero and does not mean Level 2 is complete.
 `FAIL` exits 1, unsupported package formats exit 2, and internal or policy errors
 exit 3. `--level semantic`
