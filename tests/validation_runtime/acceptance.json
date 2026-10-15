@@ -48,6 +48,8 @@
       "tests.test_validation.integration.test_docker_lifecycle::test_docker_lifecycle_effective_limits_and_owned_cleanup",
       "tests.test_validation.integration.test_docker_lifecycle::test_docker_unhealthy_startup_removes_container",
       "tests.test_validation.integration.test_docker_lifecycle::test_docker_exec_timeout_removes_process_tree",
+      "tests.test_validation.integration.test_docker_lifecycle::test_docker_owned_image_cleanup_preserves_shared_images[False]",
+      "tests.test_validation.integration.test_docker_lifecycle::test_docker_owned_image_cleanup_preserves_shared_images[True]",
       "tests.test_validation.integration.test_echo_canary::test_reference_echo_validates_reset_and_unscored_steps",
       "tests.test_validation.integration.test_runtime_cli::test_cli_runtime_contract_findings[good-None]",
       "tests.test_validation.integration.test_runtime_cli::test_cli_runtime_contract_findings[slow_step-None]",
