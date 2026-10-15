@@ -320,5 +320,13 @@ The OpenEnv community has built a catalog of ready-to-run environments that cove
         <a href="https://huggingface.co/spaces/reasoning-core/reasoning-core-openenv" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">🤗 HF</a>
       </div>
     </div>
+    <div class="border dark:border-gray-700 p-5 rounded-lg shadow">
+      <div class="font-bold mb-2">FineEnvs</div>
+      <p class="text-sm">End-to-end environment projects (LaTeX OCR, watercolour painting, GeoGuessr, multilingual, simulation) with their datasets, models and training runs.</p>
+      <div class="flex gap-2 mt-3">
+        <a href="https://github.com/adithya-s-k/FineEnvs" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">📄 Docs</a>
+        <a href="https://huggingface.co/FineEnvs" class="!no-underline border dark:border-gray-700 px-3 py-1 rounded text-sm hover:shadow">🤗 HF</a>
+      </div>
+    </div>
   </div>
 </div>
