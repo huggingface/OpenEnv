@@ -73,6 +73,10 @@ class Rubric(ABC):
             for hook in self._forward_pre_hooks:
                 hook(self, action, observation)
             result = self.forward(action, observation)
+            if inspect.iscoroutine(result):
+                # forward() handed back an async child's call unawaited (e.g. a
+                # RubricDict dispatch): await it before recording the score
+                return self._finish_awaited(action, observation, result)
             return self._call_sync(action, observation, result)
 
     def _call_sync(self, action: Any, observation: Any, result: float) -> float:
@@ -116,6 +120,13 @@ class Rubric(ABC):
                 hook(self, action, observation, result)
 
         return result
+
+    async def _finish_awaited(
+        self, action: Any, observation: Any, result_coro
+    ) -> float:
+        """Await a coroutine returned by a sync forward(); pre-hooks already ran."""
+        result = await result_coro
+        return await self._finish_forward_async(action, observation, result)
 
     async def _call_async(self, action: Any, observation: Any, result_coro) -> float:
         """Asynchronous call path."""
