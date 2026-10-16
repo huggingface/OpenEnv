@@ -429,6 +429,9 @@ class RolloutGraph:
 
         by_prompt: dict[tuple[int, ...], list[str]] = {}
         for node in self.roots():
+            # Missing token IDs do not establish that two prompts are identical.
+            if not node.prompt_ids:
+                continue
             by_prompt.setdefault(tuple(node.prompt_ids), []).append(node.node_id)
         sibling_groups.extend(group for group in by_prompt.values() if len(group) > 1)
 

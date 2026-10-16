@@ -111,6 +111,15 @@ def test_an_abandoned_branch_is_discarded_and_the_continued_one_is_not():
     assert "live" not in discarded and "live2" not in discarded
 
 
+def test_an_abandoned_first_call_with_the_same_prompt_is_discarded():
+    graph = RolloutGraph()
+    graph.add_turn(node("dead", [1, 2], [3]))
+    graph.add_turn(node("live", [1, 2], [4]))
+    graph.add_turn(node("continued", [1, 2, 4, 5], [6]))
+
+    assert {turn.node_id for turn in graph.discarded_nodes()} == {"dead"}
+
+
 # --- sequences, the actual training rows -------------------------------------
 def test_sequence_masks_prompt_and_marks_only_sampled_tokens():
     g = RolloutGraph()
